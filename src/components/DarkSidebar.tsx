@@ -332,6 +332,8 @@ interface DarkSidebarProps {
   onMyGroupClick?: () => void;
   onMyCoachingGroupClick?: () => void;
   onPostsClick?: () => void;
+  /** Member info → Registration info (purchased version details in dashboard). */
+  onRegistrationInfoClick?: () => void;
   /** My Club → Music for the club → opens OGP-style panel in dashboard main area */
   onClubAddSongsPlaylistsClick?: () => void;
   /** General settings → Identification devices (card readers list in dashboard) */
@@ -378,6 +380,7 @@ export default function DarkSidebar({
   onMyGroupClick,
   onMyCoachingGroupClick,
   onPostsClick,
+  onRegistrationInfoClick,
   onClubAddSongsPlaylistsClick,
   onIdentificationDevicesClick,
   onAccessOutcomeSettingsClick,
@@ -1748,8 +1751,22 @@ export default function DarkSidebar({
                   <div className="border-t border-teal-900/40 bg-[#2d2d2d] text-sm text-white">
                     <button
                       type="button"
-                      onClick={() => router.push('/profile#member-info')}
+                      onClick={() => {
+                        if (onRegistrationInfoClick) {
+                          onRegistrationInfoClick();
+                        } else {
+                          router.push('/profile#member-registration-info');
+                        }
+                      }}
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+                    >
+                      <ClipboardList className="h-4 w-4 shrink-0 opacity-90" />
+                      <span>Registration info</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/profile#member-info')}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90 border-t border-black/25"
                     >
                       <UserCircle className="h-4 w-4 shrink-0 opacity-90" />
                       <span>Member info</span>

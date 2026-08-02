@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { getSubscriptionEditData } from '@/lib/admin/subscriptionSettingsMock';
 import {
   formatRegistrationPrice,
   getDefaultVersionId,
@@ -10,7 +11,11 @@ import {
   type RegistrationUserType,
 } from '@/lib/registration/waysToGetStarted';
 import RegistrationPackageInfoModal from './RegistrationPackageInfoModal';
+import RegistrationSubscriptionPricingBlock from './RegistrationSubscriptionPricingBlock';
+import RegistrationMonthlyCostLine from './RegistrationMonthlyCostLine';
+import RegistrationVersionLastNewsBlock from './RegistrationVersionLastNewsBlock';
 import RegistrationVersionNewsModal from './RegistrationVersionNewsModal';
+import { SubscriptionSharingSummary } from '@/components/admin/subscriptions/SubscriptionMembershipSharingDisplay';
 
 type WaysToGetStartedSectionProps = {
   userType: RegistrationUserType;
@@ -33,6 +38,7 @@ export default function WaysToGetStartedSection({
 
   const versions = useMemo(() => getRegistrationVersions(userType), [userType]);
   const selectedVersion = versions.find((v) => v.id === selectedVersionId);
+  const selectedEditData = selectedVersionId ? getSubscriptionEditData(selectedVersionId, false) : null;
 
   useEffect(() => {
     if (!versions.length) return;
@@ -107,9 +113,35 @@ export default function WaysToGetStartedSection({
                       <span className="text-sm text-gray-700 whitespace-nowrap ml-auto sm:ml-0">
                         Duration : <span className="font-medium">{version.durationDays} days</span>
                       </span>
+                      <RegistrationMonthlyCostLine
+                        price={version.price}
+                        durationDays={version.durationDays}
+                        className="w-full sm:w-auto basis-full sm:basis-auto"
+                      />
                     </label>
                   );
                 })}
+
+                {selectedEditData ? (
+                  <>
+                    <SubscriptionSharingSummary
+                      settings={selectedEditData.settings}
+                      userType={
+                        REGISTRATION_USER_TYPE_TABS.find((t) => t.key === userType)
+                          ?.subscriptionType ?? 'athlete'
+                      }
+                    />
+                    <RegistrationSubscriptionPricingBlock
+                      general={selectedEditData.general}
+                      scenario="first"
+                    />
+                    <RegistrationVersionLastNewsBlock
+                      lastNewsByLang={selectedEditData.settings.lastNewsByLang}
+                      lang={lang}
+                      versionName={selectedVersion?.name}
+                    />
+                  </>
+                ) : null}
               </div>
 
               <div className="flex sm:flex-col gap-2 sm:w-36 shrink-0 justify-center sm:justify-start">

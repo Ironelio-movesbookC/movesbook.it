@@ -109,11 +109,32 @@ export function getSubscriptionById(id: number): SubscriptionListRow | undefined
   return SUBSCRIPTION_LIST_ROWS.find((r) => r.id === id);
 }
 
+/** Resolve /subscriptions/edit_subscription/[param]/… — accepts subscription id or listOrder. */
+export function resolveSubscriptionFromEditRouteParam(
+  param: number,
+): SubscriptionListRow | undefined {
+  if (!Number.isFinite(param)) return undefined;
+
+  const byListOrder = getSubscriptionByListOrder(param);
+  const byId = getSubscriptionById(param);
+
+  // e.g. /edit_subscription/15/en → id 15 Club Base, not listOrder 15 Team Pro
+  if (byId?.userType === 'club' && byListOrder?.userType !== 'club') {
+    return byId;
+  }
+
+  return byListOrder ?? byId;
+}
+
+export function getClubEditHref(row: SubscriptionListRow): string {
+  return `/subscriptions/club_edit_subscription/${row.id}/club`;
+}
+
 export function getEditHref(row: SubscriptionListRow): string {
   if (row.userType === 'club') {
-    return `/subscriptions/club_edit_subscription/${row.id}/club`;
+    return getClubEditHref(row);
   }
-  return `/subscriptions/edit_subscription/${row.listOrder}/en`;
+  return `/subscriptions/edit_subscription/${row.id}/en`;
 }
 
 function buildDefaultEditData(row: SubscriptionListRow): SubscriptionEditData {
@@ -145,7 +166,9 @@ function buildDefaultEditData(row: SubscriptionListRow): SubscriptionEditData {
             ? '<p><em>This is a Test of Insertions of a Trial Base News.</em></p>'
             : row.userType === 'coach'
               ? '<p>Great offer for a 3 years renewal !!</p>'
-              : '',
+              : row.userType === 'club'
+                ? '<p><strong>Club version</strong> — training management, member sharing, and team tools for your organization.</p>'
+                : '',
       },
     },
     settings: {
@@ -177,11 +200,13 @@ function buildDefaultEditData(row: SubscriptionListRow): SubscriptionEditData {
       },
       lastNewsByLang: {
         en:
-          row.userType === 'club' && row.code === 'Club Base'
-            ? '<p style="text-align:center"><strong style="color:#8b0000;font-size:1.25rem">NEW FEATURES OF <em>CLUB version BASE</em></strong></p><p style="background:#e0e0e0;padding:8px"><strong style="color:#8b0000;font-style:italic">11 Nov 2021</strong></p><p style="color:#888;font-style:italic;font-size:0.875rem">Elio</p>'
-            : row.userType === 'coach'
-              ? '<p>Great offer for a 3 years renewal !!</p>'
-              : '',
+          row.userType === 'athlete'
+            ? '<p><em>This is a Test of Insertions of a Trial Base News.</em></p>'
+            : row.userType === 'club' && row.code === 'Club Base'
+              ? '<p style="text-align:center"><strong style="color:#8b0000;font-size:1.25rem">NEW FEATURES OF <em>CLUB version BASE</em></strong></p><p style="background:#e0e0e0;padding:8px"><strong style="color:#8b0000;font-style:italic">11 Nov 2021</strong></p><p style="color:#888;font-style:italic;font-size:0.875rem">Elio</p>'
+              : row.userType === 'coach'
+                ? '<p>Great offer for a 3 years renewal !!</p>'
+                : '',
       },
     },
   };

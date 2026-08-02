@@ -1,10 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useParams } from 'next/navigation';
 import ClubEditSubscriptionPanel from '@/components/admin/subscriptions/ClubEditSubscriptionPanel';
 import { getSubscriptionEditData } from '@/lib/admin/subscriptionSettingsMock';
 
-export default function ClubEditSubscriptionPage() {
+function ClubEditSubscriptionContent() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? '';
   const subscriptionId = Number(id);
@@ -19,4 +20,12 @@ export default function ClubEditSubscriptionPage() {
   }
 
   return <ClubEditSubscriptionPanel id={subscriptionId} initialData={data} />;
+}
+
+export default function ClubEditSubscriptionPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-600">Loading…</div>}>
+      <ClubEditSubscriptionContent />
+    </Suspense>
+  );
 }

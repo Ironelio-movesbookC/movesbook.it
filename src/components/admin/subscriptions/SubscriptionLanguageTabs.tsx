@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { SUBSCRIPTION_LANGUAGES } from '@/lib/admin/subscriptionSettingsMock';
 
 type SubscriptionLanguageTabsProps = {
@@ -7,6 +8,7 @@ type SubscriptionLanguageTabsProps = {
   onChange: (lang: string) => void;
   label?: string;
   variant?: 'upper' | 'lower';
+  actions?: ReactNode;
 };
 
 export default function SubscriptionLanguageTabs({
@@ -14,6 +16,7 @@ export default function SubscriptionLanguageTabs({
   onChange,
   label,
   variant = 'upper',
+  actions,
 }: SubscriptionLanguageTabsProps) {
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-[#f5f5f5] px-3 py-2">
@@ -35,6 +38,7 @@ export default function SubscriptionLanguageTabs({
           </button>
         );
       })}
+      {actions ? <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
   );
 }

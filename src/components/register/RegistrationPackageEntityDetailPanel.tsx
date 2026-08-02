@@ -1,12 +1,17 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Check, Share2, X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
+import SubscriptionMembershipSharingDisplay, {
+  getSubscriptionSharingDaysValue,
+} from '@/components/admin/subscriptions/SubscriptionMembershipSharingDisplay';
+import RegistrationVersionLastNewsBlock from './RegistrationVersionLastNewsBlock';
 import { getSubscriptionEditData } from '@/lib/admin/subscriptionSettingsMock';
 import {
   getEntityDisplayTitle,
   getOverviewFeaturesForEntity,
   getSubscriptionRowForEntity,
+  REGISTRATION_USER_TYPE_TABS,
   type RegistrationPackageCategory,
   type RegistrationSelectedEntity,
   type RegistrationUserType,
@@ -45,7 +50,9 @@ type RegistrationPackageEntityDetailPanelProps = {
   userType: RegistrationUserType;
   lang: string;
   category: RegistrationPackageCategory;
-  onClose: () => void;
+  onClose?: () => void;
+  /** When true, renders inline (dashboard) instead of as a modal overlay. */
+  embedded?: boolean;
 };
 
 function NoImagePlaceholder() {
@@ -273,7 +280,13 @@ function DetailedOverviewTab({
   );
 }
 
-function AvailabilitySharesTab({ entity }: { entity: RegistrationSelectedEntity }) {
+function AvailabilitySharesTab({
+  entity,
+  userType,
+}: {
+  entity: RegistrationSelectedEntity;
+  userType: RegistrationUserType;
+}) {
   const row = getSubscriptionRowForEntity(entity);
   const editData = entity.subscriptionId ? getSubscriptionEditData(entity.subscriptionId, false) : null;
 
@@ -285,105 +298,36 @@ function AvailabilitySharesTab({ entity }: { entity: RegistrationSelectedEntity 
     );
   }
 
-  const daysValue = row.days2 || row.days1;
-  const settings = editData.settings;
+  const subscriptionUserType = REGISTRATION_USER_TYPE_TABS.find((t) => t.key === userType)
+    ?.subscriptionType ?? 'athlete';
 
   return (
-    <div className="overflow-y-auto p-4 space-y-6">
-      <div>
-        <div className="mb-2 text-sm font-medium text-gray-800">Days duration</div>
-        <div className="flex flex-wrap items-center gap-2">
-          {SUBSCRIPTION_TIERS.map((tier) => (
-            <span
-              key={tier.key}
-              className="inline-flex h-10 w-14 items-center justify-center border border-gray-300 bg-[#e8e8e8] text-sm"
-            >
-              {daysValue}!
-            </span>
-          ))}
-          <span className="ml-auto border border-gray-300 px-2 py-1 text-xs text-gray-600">
-            -1=Unlimited
-          </span>
-        </div>
-      </div>
-
-      <div>
-        <div className="mb-2 text-sm font-medium text-gray-800">Athletes</div>
-        <div className="flex flex-wrap items-center gap-2">
-          {SUBSCRIPTION_TIERS.map((tier) => (
-            <span
-              key={tier.key}
-              className="inline-flex h-10 w-14 items-center justify-center border border-gray-300 bg-[#e8e8e8] text-sm"
-            >
-              {settings.athleteTiers[tier.key] ? settings.athletesLimit : ''}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="border border-gray-300 p-4">
-        <p className="mb-3 text-sm text-gray-700">can be member of....</p>
-        {(
-          [
-            { label: 'Teams', setting: settings.teams, shareLabel: 'Sharing with teams' },
-            { label: 'Groups', setting: settings.groups, shareLabel: 'Sharing with groups' },
-            { label: 'Clubs', setting: settings.clubs, shareLabel: 'Sharing with clubs' },
-          ] as const
-        ).map(({ label, setting, shareLabel }) => (
-          <div
-            key={label}
-            className="grid grid-cols-[80px_60px_32px_32px_1fr] items-center gap-2 py-1"
-          >
-            <span className="text-sm font-medium text-gray-700">{label}</span>
-            <span className="border border-gray-300 bg-[#fffacd] px-2 py-1 text-sm text-center">
-              {setting.limit}
-            </span>
-            <div className="flex justify-center">
-              <Share2 className="h-5 w-5 text-[#5cb85c]" />
-            </div>
-            <input type="checkbox" readOnly checked={setting.sharingEnabled} className="justify-self-center" />
-            <span className="text-sm text-gray-600">{shareLabel}</span>
-          </div>
-        ))}
-        <p className="mt-2 text-xs text-gray-500">-1=Unlimited</p>
-      </div>
+    <div className="overflow-y-auto p-4">
+      <SubscriptionMembershipSharingDisplay
+        settings={editData.settings}
+        userType={subscriptionUserType}
+        daysValue={getSubscriptionSharingDaysValue(row.days1, row.days2)}
+        mode="registration"
+      />
     </div>
   );
 }
 
 function LastNewsTab({ entity, lang }: { entity: RegistrationSelectedEntity; lang: string }) {
-  const row = getSubscriptionRowForEntity(entity);
   const editData = entity.subscriptionId ? getSubscriptionEditData(entity.subscriptionId, false) : null;
-  const newsHtml =
-    editData?.settings.lastNewsByLang[lang] ||
-    editData?.settings.lastNewsByLang.en ||
-    editData?.general.sloganByLang[lang] ||
-    editData?.general.sloganByLang.en ||
-    '';
 
-  const versionLabel = row?.name ?? entity.versionLabel;
+  if (!editData) {
+    return (
+      <p className="p-6 text-sm text-gray-600">Last news is not available for this version.</p>
+    );
+  }
 
   return (
-    <div className="p-6">
-      <h3 className="text-center text-lg font-bold text-[#7a1f2e]">Last news about this version</h3>
-      <hr className="my-4 border-gray-200" />
-      {newsHtml ? (
-        <div
-          className="prose prose-sm max-w-none text-gray-800"
-          dangerouslySetInnerHTML={{ __html: newsHtml }}
-        />
-      ) : (
-        <div>
-          <p className="text-center text-xl font-bold uppercase text-red-700">
-            New features of <em>{versionLabel}</em>
-          </p>
-          <div className="mt-4 bg-gray-200 px-4 py-2">
-            <span className="text-sm font-bold italic text-red-700">11 Nov 2021</span>
-          </div>
-          <p className="mt-3 text-sm italic text-gray-500">Elio</p>
-        </div>
-      )}
-    </div>
+    <RegistrationVersionLastNewsBlock
+      lastNewsByLang={editData.settings.lastNewsByLang}
+      lang={lang}
+      variant="tab"
+    />
   );
 }
 
@@ -393,6 +337,7 @@ export default function RegistrationPackageEntityDetailPanel({
   lang,
   category,
   onClose,
+  embedded = false,
 }: RegistrationPackageEntityDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<EntityDetailTab>('overview');
   const [clubSubTab, setClubSubTab] = useState<ClubPricelistTab>('versions_features');
@@ -415,19 +360,27 @@ export default function RegistrationPackageEntityDetailPanel({
     setActiveTab('overview');
   };
 
+  const containerClass = embedded
+    ? 'absolute inset-0 z-10 flex flex-col overflow-hidden bg-white'
+    : 'absolute inset-x-2 bottom-2 top-24 z-20 flex flex-col overflow-hidden rounded-md border-2 border-gray-400 bg-white shadow-2xl sm:inset-x-4';
+
   return (
-    <div className="absolute inset-x-2 bottom-2 top-24 z-20 flex flex-col overflow-hidden rounded-md border-2 border-gray-400 bg-white shadow-2xl sm:inset-x-4">
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute right-2 top-2 z-30 rounded-full bg-[#444] p-1 text-white hover:bg-black"
-        aria-label="Close details"
-      >
-        <X className="h-4 w-4" />
-      </button>
+    <div className={containerClass}>
+      {!embedded && onClose ? (
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-2 top-2 z-30 rounded-full bg-[#444] p-1 text-white hover:bg-black"
+          aria-label="Close details"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      ) : null}
 
       {!showClubSubNav ? (
-        <div className="flex flex-wrap border-b border-gray-300 bg-[#f0f0f0] pr-10">
+        <div
+          className={`flex flex-wrap border-b border-gray-300 bg-[#f0f0f0] ${embedded ? '' : 'pr-10'}`}
+        >
           {visibleTabs.map((tab) => {
             const isActive = activeTab === tab.key;
             return (
@@ -463,7 +416,7 @@ export default function RegistrationPackageEntityDetailPanel({
         ) : activeTab === 'detailed_overview' ? (
           <DetailedOverviewTab entity={entity} userType={userType} />
         ) : activeTab === 'availability_shares' ? (
-          <AvailabilitySharesTab entity={entity} />
+          <AvailabilitySharesTab entity={entity} userType={userType} />
         ) : activeTab === 'last_news' ? (
           <LastNewsTab entity={entity} lang={lang} />
         ) : null}

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { getSloganForLang } from '@/lib/admin/subscriptionSlogan';
 import { getSubscriptionEditData } from '@/lib/admin/subscriptionSettingsMock';
 
 type RegistrationVersionNewsModalProps = {
@@ -13,6 +14,7 @@ type RegistrationVersionNewsModalProps = {
   lang: string;
 };
 
+/** Modal opened by "News about version" — shows Info version content from subscription admin. */
 export default function RegistrationVersionNewsModal({
   isOpen,
   onClose,
@@ -32,12 +34,7 @@ export default function RegistrationVersionNewsModal({
   if (!isOpen) return null;
 
   const editData = versionId ? getSubscriptionEditData(versionId, false) : null;
-  const newsHtml =
-    editData?.settings.lastNewsByLang[lang] ||
-    editData?.settings.lastNewsByLang.en ||
-    editData?.general.sloganByLang[lang] ||
-    editData?.general.sloganByLang.en ||
-    '';
+  const infoHtml = getSloganForLang(editData?.general.sloganByLang, lang);
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
@@ -50,21 +47,21 @@ export default function RegistrationVersionNewsModal({
       <div className="relative z-10 max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-200 bg-[#7a1f2e] px-4 py-3 text-white">
           <h3 className="font-bold text-sm uppercase">
-            News about version{versionName ? ` — ${versionName}` : ''}
+            Info version{versionName ? ` — ${versionName}` : ''}
           </h3>
           <button type="button" onClick={onClose} className="text-white hover:text-gray-200">
             <X className="h-5 w-5" />
           </button>
         </div>
         <div className="max-h-[70vh] overflow-y-auto p-6">
-          {newsHtml ? (
+          {infoHtml ? (
             <div
               className="prose prose-sm max-w-none text-gray-800"
-              dangerouslySetInnerHTML={{ __html: newsHtml }}
+              dangerouslySetInnerHTML={{ __html: infoHtml }}
             />
           ) : (
             <p className="text-sm text-gray-600">
-              News content for this version will be available soon.
+              Info version content for this plan will be available soon.
             </p>
           )}
         </div>

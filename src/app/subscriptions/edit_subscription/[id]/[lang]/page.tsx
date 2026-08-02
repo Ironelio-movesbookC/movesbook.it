@@ -1,23 +1,53 @@
 'use client';
 
-import { useParams } from 'next/navigation';
+import { useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import EditSubscriptionPanel from '@/components/admin/subscriptions/EditSubscriptionPanel';
-import { getSubscriptionEditData } from '@/lib/admin/subscriptionSettingsMock';
+import {
+  getClubEditHref,
+  getSubscriptionEditData,
+  resolveSubscriptionFromEditRouteParam,
+} from '@/lib/admin/subscriptionSettingsMock';
 
 export default function EditSubscriptionPage() {
   const params = useParams<{ id: string; lang: string }>();
-  const id = params?.id ?? '';
+  const router = useRouter();
+  const routeParam = Number(params?.id ?? '');
   const lang = params?.lang ?? 'en';
-  const listOrder = Number(id);
-  const data = getSubscriptionEditData(listOrder, true);
+  const row = resolveSubscriptionFromEditRouteParam(routeParam);
 
-  if (!data) {
+  useEffect(() => {
+    if (row?.userType === 'club') {
+      router.replace(getClubEditHref(row));
+    }
+  }, [row, router]);
+
+  if (!row) {
     return (
       <div className="p-6 text-gray-600">
-        Subscription not found for list order {id}.
+        Subscription not found for id or list order {params?.id ?? ''}.
       </div>
     );
   }
 
-  return <EditSubscriptionPanel listOrder={listOrder} lang={lang} initialData={data} />;
+  if (row.userType === 'club') {
+    return (
+      <div className="p-6 text-gray-600">
+        Redirecting to club subscription settings…
+      </div>
+    );
+  }
+
+  const data = getSubscriptionEditData(row.id, false);
+  if (!data) {
+    return (
+      <div className="p-6 text-gray-600">
+        Subscription settings could not be loaded for {row.name}.
+      </div>
+    );
+  }
+
+  return (
+    <EditSubscriptionPanel subscriptionId={row.id} lang={lang} initialData={data} />
+  );
 }

@@ -1,8 +1,15 @@
 'use client';
 
+import { useState } from 'react';
 import type { SubscriptionGeneralSettings, SubscriptionListRow } from '@/types/adminSubscriptionSettings';
+import { translateEnglishRichTextToAllLangs } from '@/lib/admin/subscriptionMultilangTranslate';
 import SubscriptionLanguageTabs from './SubscriptionLanguageTabs';
+import SubscriptionPricingPresentation from './SubscriptionPricingPresentation';
+import RegistrationVersionSloganBlock from '@/components/register/RegistrationVersionSloganBlock';
 import RichTextEditor from '@/components/shared/RichTextEditor';
+import {
+  hasRichTextContent,
+} from '@/utils/richTextTranslation';
 
 type SubscriptionGeneralFormProps = {
   general: SubscriptionGeneralSettings;
@@ -17,11 +24,13 @@ function FieldInput({
   value,
   onChange,
   className = '',
+  highlight = false,
 }: {
   label: string;
   value: string | number;
   onChange: (value: string) => void;
   className?: string;
+  highlight?: boolean;
 }) {
   return (
     <div className={`flex items-center gap-2 ${className}`}>
@@ -30,7 +39,9 @@ function FieldInput({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="border border-gray-300 bg-[#fffacd] px-2 py-1 text-sm w-24 focus:outline-none focus:border-gray-400"
+        className={`border px-2 py-1 text-sm w-24 focus:outline-none focus:border-gray-400 ${
+          highlight ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-[#fffacd]'
+        }`}
       />
     </div>
   );
@@ -43,6 +54,8 @@ export default function SubscriptionGeneralForm({
   onLangChange,
   onChange,
 }: SubscriptionGeneralFormProps) {
+  const [translatingSlogan, setTranslatingSlogan] = useState(false);
+
   const update = (patch: Partial<SubscriptionGeneralSettings>) => {
     onChange({ ...general, ...patch });
   };
@@ -52,6 +65,30 @@ export default function SubscriptionGeneralForm({
       ...general,
       sloganByLang: { ...general.sloganByLang, [activeLang]: html },
     });
+  };
+
+  const handleSloganTranslate = async () => {
+    const enHtml = general.sloganByLang.en ?? '';
+    if (!hasRichTextContent(enHtml)) {
+      window.alert('Enter English Info version text first, then press Translate.');
+      return;
+    }
+
+    setTranslatingSlogan(true);
+    try {
+      const record = await translateEnglishRichTextToAllLangs(enHtml, general.sloganByLang);
+      onChange({
+        ...general,
+        sloganByLang: { ...general.sloganByLang, ...record },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      window.alert(
+        `Translation failed.\n\n${msg}\n\nYou can edit other languages manually. Same API as Settings → Technical → Pathologies.`
+      );
+    } finally {
+      setTranslatingSlogan(false);
+    }
   };
 
   return (
@@ -160,16 +197,21 @@ export default function SubscriptionGeneralForm({
           <div className="bg-[#5bc0de] text-white px-3 py-1.5 text-xs font-bold">
             1th subscription {row.name}
           </div>
+          <p className="border-b border-gray-200 bg-[#f9fcfe] px-3 py-1.5 text-xs text-gray-600">
+            Shown during registration when the user subscribes for the first time
+          </p>
           <div className="p-3 flex flex-wrap gap-6">
             <FieldInput
               label="Days durations :"
               value={general.firstSubscriptionDays}
               onChange={(v) => update({ firstSubscriptionDays: Number(v) || 0 })}
+              highlight
             />
             <FieldInput
               label="Price 1th subscription :"
               value={general.firstSubscriptionPrice}
               onChange={(v) => update({ firstSubscriptionPrice: Number(v) || 0 })}
+              highlight
             />
             <FieldInput
               label="Discount with promocode:"
@@ -183,16 +225,21 @@ export default function SubscriptionGeneralForm({
           <div className="bg-[#5bc0de] text-white px-3 py-1.5 text-xs font-bold">
             Standard or renewal
           </div>
+          <p className="border-b border-gray-200 bg-[#f9fcfe] px-3 py-1.5 text-xs text-gray-600">
+            Shown when the user renews an already existing subscription
+          </p>
           <div className="p-3 flex flex-wrap gap-6">
             <FieldInput
               label="Days durations :"
               value={general.renewalDays}
               onChange={(v) => update({ renewalDays: Number(v) || 0 })}
+              highlight
             />
             <FieldInput
               label="Price for the renewal :"
               value={general.renewalPrice}
               onChange={(v) => update({ renewalPrice: Number(v) || 0 })}
+              highlight
             />
             <FieldInput
               label="Discount with promocode:"
@@ -202,29 +249,71 @@ export default function SubscriptionGeneralForm({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-6 pt-2 border-t border-gray-200">
-          <FieldInput
-            label="Discount Triple Duration %"
-            value={general.tripleDurationDiscount}
-            onChange={(v) => update({ tripleDurationDiscount: Number(v) || 0 })}
-          />
-          <FieldInput
-            label="Price :"
-            value={general.tripleDurationPrice}
-            onChange={(v) => update({ tripleDurationPrice: Number(v) || 0 })}
-          />
+        <div className="border border-gray-300">
+          <div className="bg-[#5bc0de] text-white px-3 py-1.5 text-xs font-bold">
+            Triple subscription
+          </div>
+          <p className="border-b border-gray-200 bg-[#f9fcfe] px-3 py-1.5 text-xs text-gray-600">
+            Optional extra discount — displayed under the standard cost during registration (duration
+            is 3× the active scenario)
+          </p>
+          <div className="p-3 flex flex-wrap gap-6">
+            <FieldInput
+              label="Discount Triple Duration %"
+              value={general.tripleDurationDiscount}
+              onChange={(v) => update({ tripleDurationDiscount: Number(v) || 0 })}
+              highlight
+            />
+            <FieldInput
+              label="Price :"
+              value={general.tripleDurationPrice}
+              onChange={(v) => update({ tripleDurationPrice: Number(v) || 0 })}
+              highlight
+            />
+          </div>
         </div>
+
+        <SubscriptionPricingPresentation general={general} />
 
         <div className="border border-gray-300">
           <div className="px-3 py-2 text-sm text-gray-700 bg-[#f5f5f5] border-b border-gray-200">
-            Slogan (Select a language to edit for each language)
+            Info version (Select a language to edit for each language)
           </div>
-          <SubscriptionLanguageTabs activeLang={activeLang} onChange={onLangChange} />
+          <p className="border-b border-gray-200 bg-[#fafafa] px-3 py-2 text-xs text-gray-600">
+            Opened during registration when the user clicks <span className="font-semibold">News
+            about version</span> — describes features and advantages of purchasing this version.
+            Shown in the user&apos;s language; if empty, English is used.
+          </p>
+          <SubscriptionLanguageTabs
+            activeLang={activeLang}
+            onChange={onLangChange}
+            actions={
+              <button
+                type="button"
+                disabled={translatingSlogan}
+                onClick={() => void handleSloganTranslate()}
+                className="rounded border border-[#337ab7] bg-white px-3 py-1 text-xs font-semibold text-[#337ab7] hover:bg-[#eef5fb] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {translatingSlogan ? 'Translating…' : 'Translate'}
+              </button>
+            }
+          />
           <div className="p-2">
             <RichTextEditor
               value={general.sloganByLang[activeLang] ?? ''}
               onChange={updateSlogan}
               minHeight="200px"
+            />
+          </div>
+          <div className="border-t border-gray-200 bg-[#f9f9f9] p-3">
+            <div className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-600">
+              Registration preview — News about version button
+            </div>
+            <RegistrationVersionSloganBlock
+              general={general}
+              lang={activeLang}
+              versionName={general.name}
+              variant="admin-preview"
             />
           </div>
         </div>

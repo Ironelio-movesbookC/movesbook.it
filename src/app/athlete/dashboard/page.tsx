@@ -87,6 +87,7 @@ import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModa
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
 import AthleteMyClubRightSidebar from '@/components/dashboard/AthleteMyClubRightSidebar';
+import MemberRegistrationInfoPanel from '@/components/member/MemberRegistrationInfoPanel';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import {
   getEntityDirectAccessLock,
@@ -111,7 +112,18 @@ function AthleteDashboardContent() {
   const { t } = useLanguage();
   
   // All hooks must be called before any conditional returns
-  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'nutrition' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news' | 'posts'>('overview');
+  const [activeSection, setActiveSection] = useState<
+    | 'overview'
+    | 'workouts'
+    | 'nutrition'
+    | 'progress'
+    | 'settings'
+    | 'personal-settings'
+    | 'chat'
+    | 'news'
+    | 'posts'
+    | 'registration-info'
+  >('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -194,8 +206,13 @@ function AthleteDashboardContent() {
 
   // Open News/OGP section when navigating with ?open=news
   useEffect(() => {
-    if (searchParams != null && searchParams.get('open') === 'news') {
+    if (searchParams == null) return;
+    const open = searchParams.get('open');
+    if (open === 'news') {
       setActiveSection('news');
+      router.replace('/athlete/dashboard', { scroll: false });
+    } else if (open === 'registration-info') {
+      setActiveSection('registration-info');
       router.replace('/athlete/dashboard', { scroll: false });
     }
   }, [searchParams, router]);
@@ -779,6 +796,10 @@ function AthleteDashboardContent() {
                   setActiveTab('my-page');
                   setActiveSection('posts');
                 }}
+                onRegistrationInfoClick={() => {
+                  setActiveTab('my-page');
+                  setActiveSection('registration-info');
+                }}
                 onMyClubClick={() => setActiveTab('my-entity')}
                 onClubAddSongsPlaylistsClick={() => {
                   setActiveTab('my-entity');
@@ -830,6 +851,14 @@ function AthleteDashboardContent() {
                     <PostsPanel
                       onClose={() => setActiveSection('overview')}
                       embedded
+                    />
+                  </div>
+                )}
+                {activeSection === 'registration-info' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <MemberRegistrationInfoPanel
+                      embedded
+                      onClose={() => setActiveSection('overview')}
                     />
                   </div>
                 )}

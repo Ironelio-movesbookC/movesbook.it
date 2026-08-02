@@ -7,6 +7,7 @@ import type {
   SubscriptionTier,
   SubscriptionUserType,
 } from '@/types/adminSubscriptionSettings';
+import SubscriptionMembershipSharingDisplay from './SubscriptionMembershipSharingDisplay';
 
 const TIERS: { key: SubscriptionTier; label: string }[] = [
   { key: 'trial', label: 'Trial' },
@@ -20,6 +21,7 @@ type SubscriptionEditSettingsFormProps = {
   userType: SubscriptionUserType;
   onChange: (settings: SubscriptionEditSettings) => void;
   variant: 'athlete' | 'coach';
+  daysValue: number;
 };
 
 function MembershipRow({
@@ -61,6 +63,7 @@ export default function SubscriptionEditSettingsForm({
   userType,
   onChange,
   variant,
+  daysValue,
 }: SubscriptionEditSettingsFormProps) {
   const update = (patch: Partial<SubscriptionEditSettings>) => {
     onChange({ ...settings, ...patch });
@@ -151,7 +154,11 @@ export default function SubscriptionEditSettingsForm({
         )}
 
         <div>
-          <p className="text-sm text-gray-700 mb-3">{roleLabel} can be member of....</p>
+          <p className="text-sm text-gray-700 mb-1">{roleLabel} can be member of....</p>
+          <p className="text-xs text-gray-500 mb-3">
+            Sharing limits for this version — displayed during registration (Package → Availability
+            shares tab and when the user selects this version).
+          </p>
           <MembershipRow
             label="Teams"
             setting={settings.teams}
@@ -171,6 +178,18 @@ export default function SubscriptionEditSettingsForm({
             onChange={(patch) => updateMembership('clubs', patch)}
           />
           <p className="text-xs text-gray-500 mt-2">-1=Unlimited</p>
+
+          <div className="mt-4">
+            <div className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-600">
+              Registration preview — Availability shares
+            </div>
+            <SubscriptionMembershipSharingDisplay
+              settings={settings}
+              userType={userType}
+              daysValue={daysValue}
+              mode="admin-preview"
+            />
+          </div>
         </div>
 
         <div>

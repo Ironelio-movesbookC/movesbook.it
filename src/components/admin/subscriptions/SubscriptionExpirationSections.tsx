@@ -1,6 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import type { SubscriptionEditSettings } from '@/types/adminSubscriptionSettings';
+import RegistrationVersionLastNewsBlock from '@/components/register/RegistrationVersionLastNewsBlock';
+import { translateEnglishRichTextToAllLangs } from '@/lib/admin/subscriptionMultilangTranslate';
 import SubscriptionLanguageTabs from './SubscriptionLanguageTabs';
 import RichTextEditor from '@/components/shared/RichTextEditor';
 
@@ -9,6 +12,7 @@ type SubscriptionExpirationSectionsProps = {
   activeLang: string;
   onLangChange: (lang: string) => void;
   onChange: (settings: SubscriptionEditSettings) => void;
+  versionName?: string;
 };
 
 export default function SubscriptionExpirationSections({
@@ -16,7 +20,10 @@ export default function SubscriptionExpirationSections({
   activeLang,
   onLangChange,
   onChange,
+  versionName,
 }: SubscriptionExpirationSectionsProps) {
+  const [translatingLastNews, setTranslatingLastNews] = useState(false);
+
   const update = (patch: Partial<SubscriptionEditSettings>) => {
     onChange({ ...settings, ...patch });
   };
@@ -33,6 +40,25 @@ export default function SubscriptionExpirationSections({
       ...settings,
       lastNewsByLang: { ...settings.lastNewsByLang, [activeLang]: html },
     });
+  };
+
+  const handleLastNewsTranslate = async () => {
+    const enHtml = settings.lastNewsByLang.en ?? '';
+    setTranslatingLastNews(true);
+    try {
+      const record = await translateEnglishRichTextToAllLangs(enHtml, settings.lastNewsByLang);
+      onChange({
+        ...settings,
+        lastNewsByLang: { ...settings.lastNewsByLang, ...record },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      window.alert(
+        `Translation failed.\n\n${msg}\n\nYou can edit other languages manually. Same API as Settings → Technical → Pathologies.`
+      );
+    } finally {
+      setTranslatingLastNews(false);
+    }
   };
 
   return (
@@ -95,16 +121,41 @@ export default function SubscriptionExpirationSections({
         <div className="bg-[#d9534f] text-white px-4 py-2 font-bold text-sm">
           Last news about this version
         </div>
+        <p className="border-b border-gray-200 bg-[#fdf5f5] px-4 py-2 text-xs text-gray-600">
+          Displayed during registration in Package → Last news tab. Shown in the user&apos;s
+          language; if that language is empty, the English text is used.
+        </p>
         <SubscriptionLanguageTabs
           activeLang={activeLang}
           onChange={onLangChange}
           label="Edit last news for each language"
+          actions={
+            <button
+              type="button"
+              disabled={translatingLastNews}
+              onClick={() => void handleLastNewsTranslate()}
+              className="rounded border border-[#337ab7] bg-white px-3 py-1 text-xs font-semibold text-[#337ab7] hover:bg-[#eef5fb] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {translatingLastNews ? 'Translating…' : 'Translate'}
+            </button>
+          }
         />
         <div className="p-2 bg-white">
           <RichTextEditor
             value={settings.lastNewsByLang[activeLang] ?? ''}
             onChange={updateLastNews}
             minHeight="250px"
+          />
+        </div>
+        <div className="border-t border-gray-200 bg-[#f9f9f9] p-3">
+          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-600">
+            Registration preview — Last news tab
+          </div>
+          <RegistrationVersionLastNewsBlock
+            lastNewsByLang={settings.lastNewsByLang}
+            lang={activeLang}
+            versionName={versionName}
+            variant="admin-preview"
           />
         </div>
       </div>
