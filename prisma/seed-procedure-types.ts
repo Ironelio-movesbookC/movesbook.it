@@ -18,6 +18,11 @@ const PROCEDURE_TYPES = [
     name: 'Product Sale',
     description: 'Sell a product to a club member with optional payment.',
   },
+  {
+    code: 'member_debt',
+    name: 'Member Debt',
+    description: 'Create a free-form club member debt (debit) with optional payment of deadline.',
+  },
 ];
 
 async function main() {

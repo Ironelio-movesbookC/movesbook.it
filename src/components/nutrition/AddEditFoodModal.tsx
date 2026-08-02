@@ -1028,7 +1028,6 @@ export default function AddEditNutritionFoodModal({
   const renderAnaerobicFastPlannerMacroFooter = () => (
     <div className="flex items-end gap-2 px-2.5 py-1.5 shadow-sm">
       <div className="flex flex-col gap-0.5">
-        <span className="text-[10px] font-semibold leading-none text-red-600">Default = 5&apos;</span>
         <div className="flex flex-row items-center gap-1.5">
           <span className="mr-1 text-xs font-bold text-purple-800">Macro</span>
           <select
@@ -2883,9 +2882,6 @@ export default function AddEditNutritionFoodModal({
                             className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-cyan-500"
                             placeholder="1"
                           />
-                          <p className="mt-1 text-[10px] text-gray-500">
-                            Range: 1-9 (default: 1) | Total will be = Meters × Series × Repetitions
-                          </p>
                         </div>
                       )}
 

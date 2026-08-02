@@ -19,7 +19,11 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const detail = await getThreadForUser(id, auth.userId, auth.isStaff);
+    const { searchParams } = new URL(request.url);
+    const communityReview = searchParams.get('communityReview') === '1';
+    const detail = await getThreadForUser(id, auth.userId, auth.isStaff, {
+      allowCommunityReview: communityReview,
+    });
     if (!detail) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(detail);
   } catch (e) {
@@ -56,7 +60,9 @@ export async function POST(
       body: text,
     });
 
-    const detail = await getThreadForUser(id, auth.userId, auth.isStaff);
+    const detail = await getThreadForUser(id, auth.userId, auth.isStaff, {
+      allowCommunityReview: false,
+    });
     return NextResponse.json(detail);
   } catch (e) {
     console.error('POST /api/messages/threads/[id]', e);

@@ -20,3 +20,42 @@ export function interpolateBetweenAnchoredLevels(
   const step = (professionalVal - beginnerVal) / TRAINING_LEVEL_INTERPOLATION_DIVISOR;
   return beginnerVal + step * idx;
 }
+
+/** Indices 0–4 = Beginner…Professional; index 5 mirrors Professional (legacy readers). */
+export const ANCHORED_LEVEL_SLOT_COUNT = 6;
+
+/** Fill indices 1–3 by linear interpolation between index 0 (Beginner) and index 4 (Professional). */
+export function fillAnchoredLevelArray(
+  values: number[],
+  round?: (n: number) => number,
+): number[] {
+  const arr = Array.from({ length: ANCHORED_LEVEL_SLOT_COUNT }, (_, i) =>
+    Number(values[i] ?? values[0] ?? 0),
+  );
+  const beginner = arr[0];
+  const professional = arr[4] ?? beginner;
+  for (let i = 1; i <= 3; i++) {
+    let v = interpolateBetweenAnchoredLevels(beginner, professional, i);
+    if (round) v = round(v);
+    arr[i] = v;
+  }
+  arr[4] = professional;
+  arr[5] = professional;
+  return arr;
+}
+
+export function fillAnchoredLevelPair(
+  fromValues: number[],
+  toValues: number[],
+  round?: (n: number) => number,
+): { from: number[]; to: number[] } {
+  return {
+    from: fillAnchoredLevelArray(fromValues, round),
+    to: fillAnchoredLevelArray(toValues, round),
+  };
+}
+
+/** Pause spinners use 5-second steps — round interpolated middle levels accordingly. */
+export function roundPauseSeconds(n: number): number {
+  return Math.round(n / 5) * 5;
+}

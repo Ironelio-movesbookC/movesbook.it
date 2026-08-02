@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   createInitialBachecaLabels,
+  normalizeBachecaLabel,
   type BachecaLabel,
 } from '@/lib/clubBachecaLabels';
 
@@ -18,6 +19,7 @@ function authHeaders(): HeadersInit {
 
 export function useClubBachecaLabels(clubId: string | undefined) {
   const [labels, setLabels] = useState<BachecaLabel[]>(() => createInitialBachecaLabels());
+  const [savedLabels, setSavedLabels] = useState<BachecaLabel[]>(() => createInitialBachecaLabels());
   const [loading, setLoading] = useState(Boolean(clubId));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +27,9 @@ export function useClubBachecaLabels(clubId: string | undefined) {
 
   const loadLabels = useCallback(async () => {
     if (!clubId) {
-      setLabels(createInitialBachecaLabels());
+      const initial = createInitialBachecaLabels();
+      setLabels(initial);
+      setSavedLabels(initial);
       setHydrated(true);
       setLoading(false);
       return;
@@ -43,7 +47,11 @@ export function useClubBachecaLabels(clubId: string | undefined) {
         throw new Error(data?.error || 'Unable to load bacheca labels');
       }
       if (Array.isArray(data.labels)) {
-        setLabels(data.labels as BachecaLabel[]);
+        const loaded = (data.labels as BachecaLabel[]).map((label) =>
+          normalizeBachecaLabel(label),
+        );
+        setLabels(loaded);
+        setSavedLabels(loaded);
       }
       setHydrated(true);
     } catch (err) {
@@ -59,7 +67,7 @@ export function useClubBachecaLabels(clubId: string | undefined) {
   }, [loadLabels]);
 
   const applyLabel = useCallback(
-    async (label: Pick<BachecaLabel, 'id' | 'name' | 'activated' | 'content'>) => {
+    async (label: Pick<BachecaLabel, 'id' | 'name' | 'activated' | 'content' | 'updatedOn'>) => {
       if (!clubId) {
         setError('No club selected');
         return false;
@@ -81,18 +89,18 @@ export function useClubBachecaLabels(clubId: string | undefined) {
         const saved = data.label as BachecaLabel | undefined;
         if (saved?.id) {
           setLabels((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
+          setSavedLabels((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
         } else {
+          const normalized = {
+            ...label,
+            name: label.name.trim(),
+            updatedOn: (label.updatedOn ?? '').trim(),
+          };
           setLabels((prev) =>
-            prev.map((item) =>
-              item.id === label.id
-                ? {
-                    ...item,
-                    name: label.name.trim(),
-                    activated: label.activated,
-                    content: label.content,
-                  }
-                : item,
-            ),
+            prev.map((item) => (item.id === label.id ? { ...item, ...normalized } : item)),
+          );
+          setSavedLabels((prev) =>
+            prev.map((item) => (item.id === label.id ? { ...item, ...normalized } : item)),
           );
         }
         return true;
@@ -108,6 +116,7 @@ export function useClubBachecaLabels(clubId: string | undefined) {
 
   return {
     labels,
+    savedLabels,
     setLabels,
     loading,
     saving,

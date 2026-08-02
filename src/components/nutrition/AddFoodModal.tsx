@@ -2519,9 +2519,6 @@ export default function AddEditNutritionFoodModal({
                             className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-cyan-500"
                             placeholder="1"
                           />
-                          <p className="mt-1 text-[10px] text-gray-500">
-                            Range: 1-9 (default: 1) | Total will be = Meters × Series × Repetitions
-                          </p>
                         </div>
                       )}
 

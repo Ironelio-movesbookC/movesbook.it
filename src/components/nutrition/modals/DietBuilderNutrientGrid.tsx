@@ -6,6 +6,7 @@ import {
   NUTRIENT_DISPLAY_COLUMNS,
   NutrientTotals,
   formatNutrient,
+  getNutrientColumnBgClass,
 } from '@/utils/nutritionMealTotals';
 
 export interface DietBuilderGridRow {
@@ -30,6 +31,9 @@ interface DietBuilderNutrientGridProps {
   suffixHeaders?: string[];
   compact?: boolean;
   maxHeight?: string;
+  nameColumnLabel?: string;
+  /** Pin Ingredients + Grams when scrolling horizontally (recipe list expand). */
+  stickyLeadColumns?: boolean;
 }
 
 /** Horizontally scrollable nutrient table — Grams, Cal, Pro, Carb, Fats, Fiber, vitamins, minerals. */
@@ -44,18 +48,38 @@ export default function DietBuilderNutrientGrid({
   suffixHeaders = [],
   compact = false,
   maxHeight = '220px',
+  nameColumnLabel = 'Name',
+  stickyLeadColumns = false,
 }: DietBuilderNutrientGridProps) {
   const cellClass = compact
     ? 'border border-gray-300 px-1.5 py-1 text-[11px] whitespace-nowrap'
     : 'border border-gray-300 px-2 py-1.5 text-xs whitespace-nowrap';
 
+  const stickyNameClass = stickyLeadColumns
+    ? 'sticky left-0 z-[2] bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] min-w-[140px]'
+    : 'bg-white';
+  const stickyGramsClass = stickyLeadColumns
+    ? 'sticky left-[140px] z-[2] bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]'
+    : 'bg-white';
+
+  const stickyOmegaClass =
+    'sticky right-0 z-20 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.12)]';
+
+  const nutrientCellClass = (key: keyof NutrientTotals, extra = '') =>
+    `${cellClass} text-right min-w-[2.75rem] ${getNutrientColumnBgClass(key)} ${
+      key === 'omega3' ? stickyOmegaClass : ''
+    } ${extra}`.trim();
+
   return (
-    <div className="overflow-x-auto overflow-y-auto border border-gray-300 rounded" style={{ maxHeight }}>
-      <table className="border-collapse min-w-full text-left">
-        <thead className="bg-gray-100 sticky top-0 z-10">
+    <div
+      className="w-full min-w-0 overflow-x-auto overflow-y-auto border border-gray-300 rounded"
+      style={{ maxHeight }}
+    >
+      <table className="border-collapse w-max text-left">
+        <thead className="sticky top-0 z-10">
           <tr>
             {showCheckbox && (
-              <th className={`${cellClass} text-center w-8`}>
+              <th className={`${cellClass} text-center w-8 bg-white`}>
                 <input
                   type="checkbox"
                   checked={allSelected}
@@ -65,19 +89,19 @@ export default function DietBuilderNutrientGrid({
               </th>
             )}
             {prefixHeaders.map((h) => (
-              <th key={h} className={`${cellClass} font-bold bg-gray-100`}>
+              <th key={h} className={`${cellClass} font-bold bg-white`}>
                 {h}
               </th>
             ))}
-            <th className={`${cellClass} font-bold`}>Name</th>
-            <th className={`${cellClass} font-bold text-right`}>Grams</th>
+            <th className={`${cellClass} font-bold ${stickyNameClass}`}>{nameColumnLabel}</th>
+            <th className={`${cellClass} font-bold text-right ${stickyGramsClass}`}>Grams</th>
             {NUTRIENT_DISPLAY_COLUMNS.map((col) => (
-              <th key={col.key} className={`${cellClass} font-bold text-right`}>
+              <th key={col.key} className={`${nutrientCellClass(col.key)} font-bold`}>
                 {col.short || col.label}
               </th>
             ))}
             {suffixHeaders.map((h) => (
-              <th key={h} className={`${cellClass} font-bold bg-gray-100 sticky right-0`}>
+              <th key={h} className={`${cellClass} font-bold bg-white sticky right-0`}>
                 {h}
               </th>
             ))}
@@ -94,16 +118,16 @@ export default function DietBuilderNutrientGrid({
                   NUTRIENT_DISPLAY_COLUMNS.length +
                   suffixHeaders.length
                 }
-                className={`${cellClass} text-center text-gray-500 py-6`}
+                className={`${cellClass} text-center text-gray-500 py-6 bg-white`}
               >
                 No items
               </td>
             </tr>
           ) : (
             rows.map((row) => (
-              <tr key={row.id} className="hover:bg-blue-50/50 even:bg-gray-50/50">
+              <tr key={row.id}>
                 {showCheckbox && (
-                  <td className={`${cellClass} text-center`}>
+                  <td className={`${cellClass} text-center bg-white`}>
                     <input
                       type="checkbox"
                       checked={!!row.selected}
@@ -112,16 +136,21 @@ export default function DietBuilderNutrientGrid({
                   </td>
                 )}
                 {row.prefixCells?.map((cell, i) => (
-                  <td key={i} className={cellClass}>
+                  <td key={i} className={`${cellClass} bg-white`}>
                     {cell}
                   </td>
                 ))}
-                <td className={`${cellClass} font-medium max-w-[180px] truncate`} title={row.name}>
+                <td
+                  className={`${cellClass} font-medium max-w-[200px] truncate ${stickyNameClass}`}
+                  title={row.name}
+                >
                   {row.name}
                 </td>
-                <td className={`${cellClass} text-right`}>{row.grams.toFixed(1)}</td>
+                <td className={`${cellClass} text-right ${stickyGramsClass}`}>
+                  {row.grams.toFixed(1)}
+                </td>
                 {NUTRIENT_DISPLAY_COLUMNS.map((col) => (
-                  <td key={col.key} className={`${cellClass} text-right`}>
+                  <td key={col.key} className={nutrientCellClass(col.key)}>
                     {formatNutrient(row.nutrients[col.key], col.key)}
                   </td>
                 ))}
@@ -134,22 +163,22 @@ export default function DietBuilderNutrientGrid({
             ))
           )}
           {totalRow && rows.length > 0 && (
-            <tr className="bg-yellow-50 font-bold border-t-2 border-gray-400">
-              {showCheckbox && <td className={cellClass} />}
+            <tr className="font-bold border-t-2 border-gray-400">
+              {showCheckbox && <td className={`${cellClass} bg-white`} />}
               {prefixHeaders.map((_, i) => (
-                <td key={i} className={cellClass} />
+                <td key={i} className={`${cellClass} bg-white`} />
               ))}
-              <td className={cellClass}>Total</td>
-              <td className={`${cellClass} text-right`}>
+              <td className={`${cellClass} ${stickyNameClass}`}>Total</td>
+              <td className={`${cellClass} text-right ${stickyGramsClass}`}>
                 {rows.reduce((s, r) => s + r.grams, 0).toFixed(1)}
               </td>
               {NUTRIENT_DISPLAY_COLUMNS.map((col) => (
-                <td key={col.key} className={`${cellClass} text-right`}>
+                <td key={col.key} className={nutrientCellClass(col.key, 'font-bold')}>
                   {formatNutrient(totalRow[col.key], col.key)}
                 </td>
               ))}
               {suffixHeaders.map((_, i) => (
-                <td key={i} className={cellClass} />
+                <td key={i} className={`${cellClass} bg-white`} />
               ))}
             </tr>
           )}

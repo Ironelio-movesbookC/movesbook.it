@@ -22,9 +22,25 @@ export function buildDefaultTopicsSectionOrder(
   customTopics: ClubWebsiteTopic[],
   friendItems: ClubWebsiteFriendItem[],
 ): TopicsSectionRowRef[] {
+  const customEntries: TopicsSectionRowRef[] = [];
+  const placed = new Set<string>();
+  const roots = customTopics.filter((topic) => !topic.parentId);
+  for (const root of roots) {
+    customEntries.push({ kind: 'custom', id: root.id });
+    placed.add(root.id);
+    for (const child of customTopics.filter((topic) => topic.parentId === root.id)) {
+      customEntries.push({ kind: 'custom', id: child.id });
+      placed.add(child.id);
+    }
+  }
+  for (const topic of customTopics) {
+    if (placed.has(topic.id)) continue;
+    customEntries.push({ kind: 'custom', id: topic.id });
+  }
+
   const friendIds = friendItemsToRows(friendItems).map((row) => row.id);
   return [
-    ...customTopics.map((topic) => ({ kind: 'custom' as const, id: topic.id })),
+    ...customEntries,
     ...friendIds.map((id) => ({ kind: 'friend' as const, id })),
   ];
 }
@@ -44,12 +60,35 @@ export function reconcileTopicsSectionOrder(
     seen.add(key);
   }
 
-  for (const entry of defaults) {
+  for (let defaultIdx = 0; defaultIdx < defaults.length; defaultIdx += 1) {
+    const entry = defaults[defaultIdx];
     const key = entryKey(entry);
-    if (!seen.has(key)) {
-      result.push(entry);
-      seen.add(key);
+    if (seen.has(key)) continue;
+
+    // Place new rows next to their neighbors from the default (parent/sibling) order,
+    // not at the end of the whole section.
+    let insertAt = result.length;
+    for (let i = defaultIdx - 1; i >= 0; i -= 1) {
+      const prevKey = entryKey(defaults[i]);
+      const idxInResult = result.findIndex((e) => entryKey(e) === prevKey);
+      if (idxInResult >= 0) {
+        insertAt = idxInResult + 1;
+        break;
+      }
     }
+    if (insertAt === result.length) {
+      for (let i = defaultIdx + 1; i < defaults.length; i += 1) {
+        const nextKey = entryKey(defaults[i]);
+        const idxInResult = result.findIndex((e) => entryKey(e) === nextKey);
+        if (idxInResult >= 0) {
+          insertAt = idxInResult;
+          break;
+        }
+      }
+    }
+
+    result.splice(insertAt, 0, entry);
+    seen.add(key);
   }
 
   return result;

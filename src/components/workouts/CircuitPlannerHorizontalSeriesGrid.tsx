@@ -204,6 +204,7 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   notes: '',
                 } as Station);
               const isPlaceholderSlot = !stationRaw;
+              const canPickSector = !station.sector;
               const isFirstRowOfCircuit = rowIndex === 0;
               const isFirstRowOfStationBlock = seriesIdx === 0;
               rowIndex += 1;
@@ -361,24 +362,25 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   </td>
 
                   <td
-                    className={`border border-gray-300 px-2 py-1 ${isPlaceholderSlot ? 'bg-gray-100' : 'bg-green-50 cursor-pointer hover:bg-green-100'}`}
-                    onDragOver={(e) => !isPlaceholderSlot && e.preventDefault()}
+                    className={`border border-gray-300 px-2 py-1 ${
+                      station.sector
+                        ? 'bg-green-50 cursor-pointer hover:bg-green-100'
+                        : 'bg-green-50 cursor-pointer hover:bg-green-100'
+                    }`}
+                    onDragOver={(e) => station.sector && e.preventDefault()}
                     onDrop={
-                      !isPlaceholderSlot
+                      station.sector
                         ? (e) => handleDropOnStation(e, circuit.letter, seriesIdx, station.stationNumber)
                         : undefined
                     }
-                    onClick={() =>
-                      !isPlaceholderSlot &&
-                      !station.sector &&
-                      handleSectorCellClick(circuit.letter, 0, station.stationNumber)
-                    }
+                    onClick={() => {
+                      if (canPickSector) {
+                        handleSectorCellClick(circuit.letter, seriesIdx, stationNum);
+                      }
+                    }}
+                    title={canPickSector ? 'Click + to select a muscular area' : undefined}
                   >
-                    {isPlaceholderSlot ? (
-                      <div className="flex min-h-[50px] items-center justify-center text-xs text-gray-400">
-                        —
-                      </div>
-                    ) : station.sector && MUSCULAR_SECTOR_IMAGES[station.sector] ? (
+                    {station.sector ? (
                       <div className="flex items-center gap-2 group">
                         <div
                           draggable
@@ -393,13 +395,16 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                           }
                           className="flex items-center gap-2 flex-1 cursor-move hover:opacity-70"
                         >
-                          <Image
-                            src={MUSCULAR_SECTOR_IMAGES[station.sector]}
-                            alt={station.sector}
-                            width={56}
-                            height={56}
-                            className="w-14 h-14 object-contain flex-shrink-0 pointer-events-none"
-                          />
+                          {station.exercise?.trim() &&
+                          MUSCULAR_SECTOR_IMAGES[station.sector] ? (
+                            <Image
+                              src={MUSCULAR_SECTOR_IMAGES[station.sector]}
+                              alt={station.sector}
+                              width={56}
+                              height={56}
+                              className="w-14 h-14 object-contain flex-shrink-0 pointer-events-none"
+                            />
+                          ) : null}
                           <span className="text-sm font-medium text-gray-700 flex-1">
                             {station.sector}
                           </span>
@@ -423,7 +428,11 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   </td>
 
                   <td
-                    className={`border border-gray-300 px-0 py-0 ${isPlaceholderSlot ? 'bg-gray-100' : 'bg-green-50 cursor-pointer'}`}
+                    className={`border border-gray-300 px-0 py-0 ${
+                      isPlaceholderSlot && !canPickSector
+                        ? 'bg-gray-100'
+                        : 'bg-green-50 cursor-pointer'
+                    }`}
                     onDragOver={!isPlaceholderSlot ? handleDragExerciseOver : undefined}
                     onDrop={
                       !isPlaceholderSlot
@@ -463,9 +472,13 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                     }}
                     title="Double-click to open Load new station"
                   >
-                    {isPlaceholderSlot ? (
+                    {isPlaceholderSlot && !canPickSector ? (
                       <div className="flex min-h-[44px] items-center justify-center text-xs text-gray-400">
                         —
+                      </div>
+                    ) : !station.sector ? (
+                      <div className="flex min-h-[44px] items-center px-2">
+                        <span className="text-sm text-gray-400 italic">Select exercise</span>
                       </div>
                     ) : (
                     <div className="flex items-center gap-1 exercise-menu-container relative z-[10000]">
@@ -479,29 +492,16 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                           thumb?.src ?? (station.exercise?.trim() && sectorImg ? sectorImg : null);
                         const openGallery = () => {
                           const exName = (station.exercise || '').trim();
-                          const sectorS = (station.sector || '').trim();
-                          const media = exName ? getExerciseMedia(exName) : null;
-                          const title = exName || (sectorS ? `${sectorS} — select exercise` : 'Exercise');
-                          const fallback = sectorImg || null;
+                          if (!exName) return;
+                          const media = getExerciseMedia(exName);
                           setExerciseGallery({
-                            title,
-                            pictureA: media?.pictureA ?? fallback,
-                            pictureB: media?.pictureB ?? media?.pictureA ?? fallback,
+                            title: exName,
+                            pictureA: media?.pictureA ?? sectorImg,
+                            pictureB: media?.pictureB ?? media?.pictureA ?? sectorImg,
                           });
                         };
                         if (!src) {
-                          return (
-                            <button
-                              type="button"
-                              className="ml-1 h-11 w-11 flex-shrink-0 rounded-md border border-green-300 bg-green-100 hover:bg-green-200"
-                              title="Click to view muscular area / exercise images"
-                              aria-label="Open exercise images"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openGallery();
-                              }}
-                            />
-                          );
+                          return null;
                         }
                         const isData = thumb?.isDataUrl === true || src.startsWith('data:');
                         return (
@@ -561,7 +561,11 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   </td>
 
                   <td className="border border-gray-300 px-2 py-1">
-                    {isPlaceholderSlot ? (
+                    {isPlaceholderSlot && !canPickSector ? (
+                      <div className="flex min-h-[38px] items-center justify-center text-xs text-gray-400">
+                        —
+                      </div>
+                    ) : !station.sector ? (
                       <div className="flex min-h-[38px] items-center justify-center text-xs text-gray-400">
                         —
                       </div>

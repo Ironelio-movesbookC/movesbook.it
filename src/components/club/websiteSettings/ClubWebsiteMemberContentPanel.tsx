@@ -1,9 +1,8 @@
 'use client';
 
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import type { ClubWebsiteLanguageCode } from '@/lib/clubWebsiteLanguages';
-import { CLUB_WEBSITE_LANGUAGE_TABS } from '@/lib/clubWebsiteLanguages';
 import {
   filterClubWebsiteFriendItemsForMembers,
   type ClubWebsiteFriendItem,
@@ -13,6 +12,7 @@ import {
   type ClubWebsiteTopic,
 } from '@/lib/clubWebsiteTopics';
 import {
+  languagesWithTopicHtmlContent,
   resolveMemberDisplayEmbed,
   topicHasEmbedUrl,
   topicHasHtmlContent,
@@ -23,6 +23,9 @@ import {
 } from '@/components/club/websiteSettings/clubWebsiteSettingsSidebarData';
 import { prepareRichHtmlForDisplay } from '@/lib/richHtmlDisplay';
 import ClubBachecaMemberPanel from '@/components/club/websiteSettings/ClubBachecaMemberPanel';
+import TopicDisplayLanguageSelect, {
+  pickInitialTopicDisplayLang,
+} from '@/components/club/websiteSettings/TopicDisplayLanguageSelect';
 
 const PLACEHOLDER_IDS = new Set([
   ...MOVEBOOK_TOPIC_ROWS.map((r) => r.id),
@@ -99,7 +102,7 @@ export default function ClubWebsiteMemberContentPanel({
   displayMode?: boolean;
   showExampleNote?: boolean;
 }) {
-  const { t } = useLanguage();
+  const { t, currentLanguage } = useLanguage();
 
   const visibleFriends = useMemo(
     () => filterClubWebsiteFriendItemsForMembers(friendItems),
@@ -119,7 +122,26 @@ export default function ClubWebsiteMemberContentPanel({
     [visibleTopics, selectedTopicId]
   );
 
-  const activeLang = CLUB_WEBSITE_LANGUAGE_TABS.some((l) => l.code === lang) ? lang : 'en';
+  const contentItem = friendItem ?? customTopic;
+  const availableLanguages = useMemo(
+    () => (contentItem ? languagesWithTopicHtmlContent(contentItem) : []),
+    [contentItem]
+  );
+
+  const [displayLang, setDisplayLang] = useState<ClubWebsiteLanguageCode>(() =>
+    pickInitialTopicDisplayLang(availableLanguages, lang || currentLanguage)
+  );
+
+  useEffect(() => {
+    setDisplayLang((prev) => {
+      if (availableLanguages.includes(prev)) return prev;
+      return pickInitialTopicDisplayLang(availableLanguages, lang || currentLanguage);
+    });
+  }, [selectedTopicId, availableLanguages, lang, currentLanguage]);
+
+  const activeLang = availableLanguages.includes(displayLang)
+    ? displayLang
+    : pickInitialTopicDisplayLang(availableLanguages, lang || currentLanguage);
 
   const displayEmbed = useMemo(() => {
     if (!displayMode) return null;
@@ -171,6 +193,8 @@ export default function ClubWebsiteMemberContentPanel({
           item={friendItem}
           clubDisplayName={clubDisplayName}
           lang={activeLang}
+          availableLanguages={availableLanguages}
+          onLangChange={setDisplayLang}
           displayMode={displayMode}
         />
       </ContentShell>
@@ -184,6 +208,8 @@ export default function ClubWebsiteMemberContentPanel({
           topic={customTopic}
           clubDisplayName={clubDisplayName}
           lang={activeLang}
+          availableLanguages={availableLanguages}
+          onLangChange={setDisplayLang}
           displayMode={displayMode}
         />
       </ContentShell>
@@ -235,11 +261,15 @@ function FriendItemContent({
   item,
   clubDisplayName,
   lang,
+  availableLanguages,
+  onLangChange,
   displayMode = false,
 }: {
   item: ClubWebsiteFriendItem;
   clubDisplayName: string;
   lang: ClubWebsiteLanguageCode;
+  availableLanguages: ClubWebsiteLanguageCode[];
+  onLangChange: (lang: ClubWebsiteLanguageCode) => void;
   displayMode?: boolean;
 }) {
   if (topicHasEmbedUrl(item)) {
@@ -256,8 +286,8 @@ function FriendItemContent({
     );
   }
 
-  const html = item.contentsByLang[lang] || item.contentsByLang.en || '';
-  const keywords = item.keywordsByLang[lang] || item.keywordsByLang.en || '';
+  const html = item.contentsByLang[lang] ?? '';
+  const keywords = item.keywordsByLang[lang] ?? '';
 
   return (
     <HtmlContent
@@ -269,6 +299,9 @@ function FriendItemContent({
       lastUpdate={item.lastUpdate}
       html={html}
       keywords={keywords}
+      availableLanguages={availableLanguages}
+      selectedLang={lang}
+      onLangChange={onLangChange}
     />
   );
 }
@@ -277,11 +310,15 @@ function TopicContent({
   topic,
   clubDisplayName,
   lang,
+  availableLanguages,
+  onLangChange,
   displayMode = false,
 }: {
   topic: ClubWebsiteTopic;
   clubDisplayName: string;
   lang: ClubWebsiteLanguageCode;
+  availableLanguages: ClubWebsiteLanguageCode[];
+  onLangChange: (lang: ClubWebsiteLanguageCode) => void;
   displayMode?: boolean;
 }) {
   if (topicHasEmbedUrl(topic)) {
@@ -298,8 +335,8 @@ function TopicContent({
     );
   }
 
-  const html = topic.contentsByLang[lang] || topic.contentsByLang.en || '';
-  const keywords = topic.keywordsByLang[lang] || topic.keywordsByLang.en || '';
+  const html = topic.contentsByLang[lang] ?? '';
+  const keywords = topic.keywordsByLang[lang] ?? '';
 
   return (
     <HtmlContent
@@ -311,6 +348,9 @@ function TopicContent({
       lastUpdate={topic.lastUpdate}
       html={html}
       keywords={keywords}
+      availableLanguages={availableLanguages}
+      selectedLang={lang}
+      onLangChange={onLangChange}
     />
   );
 }
@@ -358,6 +398,9 @@ function HtmlContent({
   lastUpdate,
   html,
   keywords,
+  availableLanguages,
+  selectedLang,
+  onLangChange,
 }: {
   title: string;
   bannerColor: string;
@@ -367,16 +410,25 @@ function HtmlContent({
   lastUpdate: string;
   html: string;
   keywords: string;
+  availableLanguages: ClubWebsiteLanguageCode[];
+  selectedLang: ClubWebsiteLanguageCode;
+  onLangChange: (lang: ClubWebsiteLanguageCode) => void;
 }) {
   const { t } = useLanguage();
   const displayHtml = useMemo(() => prepareRichHtmlForDisplay(html || '<p></p>'), [html]);
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[#ececec]">
       <div
-        className="shrink-0 px-4 py-3 text-sm font-semibold"
+        className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm font-semibold"
         style={{ backgroundColor: bannerColor, color: titleColor }}
       >
-        {title}
+        <span className="min-w-0 truncate">{title}</span>
+        <TopicDisplayLanguageSelect
+          availableLanguages={availableLanguages}
+          value={selectedLang}
+          onChange={onLangChange}
+          titleColor={titleColor}
+        />
       </div>
       <div className="mx-auto w-full max-w-4xl flex-1 bg-white p-6 shadow-sm">
         <p className="text-xs text-zinc-500">

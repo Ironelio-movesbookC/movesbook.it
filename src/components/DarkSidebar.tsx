@@ -118,6 +118,7 @@ import {
   isGroupAccountUserType,
   isManagedEntityAdminUserType,
   isTeamAccountUserType,
+  userOwnsMovesbookWebsite,
 } from '@/utils/dashboardRouting';
 import {
   formatMyClubsSidebarLabel,
@@ -141,11 +142,17 @@ import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSide
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
+import { PERSONAL_WEBSITE_TOPICS_PATH } from '@/lib/personalWebsiteSettingsPaths';
 import {
   readSelectedClubHint,
   writeClubWorkspaceTab,
 } from '@/lib/club/clubWorkspaceTab';
-import { requestOpenClubTopicsSection } from '@/lib/club/clubTopicsNavigation';
+import {
+  requestOpenClubTopicsSection,
+  requestOpenPersonalTopicsSection,
+} from '@/lib/club/clubTopicsNavigation';
+import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
+import { getAuthToken } from '@/utils/auth.utils';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
   return (
@@ -163,32 +170,39 @@ function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
 }
 
 type ClubAdminInsertItem =
-  | { kind: 'icon'; Icon: LucideIcon; label: string }
-  | { kind: 'affiliate'; label: string }
-  | { kind: 'assignAlert'; label: string }
-  | { kind: 'recordAlert'; label: string };
+  | { kind: 'icon'; Icon: LucideIcon; label: string; path?: string }
+  | { kind: 'affiliate'; label: string; path?: string }
+  | { kind: 'assignAlert'; label: string; path?: string }
+  | { kind: 'recordAlert'; label: string; path?: string };
 
 const CLUB_ADMIN_INSERT_NEW_ITEM_GROUPS: ClubAdminInsertItem[][] = [
   [
     { kind: 'icon', Icon: FileText, label: 'New user' },
-    { kind: 'affiliate', label: 'New affiliate to the club' },
+    { kind: 'affiliate', label: 'New affiliate to the club', path: '/clubMembers/memberList' },
   ],
   [
     { kind: 'icon', Icon: Contact2, label: 'New subscription to the Club' },
     { kind: 'icon', Icon: Timer, label: 'Quick renew subscription' },
-    { kind: 'icon', Icon: CheckCircle, label: 'Payment of deadlines' },
+    { kind: 'icon', Icon: CheckCircle, label: 'Payment of deadlines', path: '/clubs/archive_deadlines' },
   ],
   [
-    { kind: 'icon', Icon: ShoppingCart, label: 'Sell products' },
-    { kind: 'icon', Icon: ShoppingBasket, label: 'Insert a movement/Sell service' },
-    { kind: 'icon', Icon: Hourglass, label: 'Payment other deadlines' },
+    { kind: 'icon', Icon: ShoppingCart, label: 'Sell products', path: '/ArchiveSeles/product_sale_list' },
+    // PHP: clubs/new_moment_cash — sell a service / cash movement
+    {
+      kind: 'icon',
+      Icon: ShoppingBasket,
+      label: 'Insert a movement of selling service',
+      path: '/clubs/new_moment_cash',
+    },
+    { kind: 'icon', Icon: Hourglass, label: 'Payment other deadlines', path: '/clubs/archive_service_list' },
   ],
   [
     { kind: 'icon', Icon: Award, label: 'Add a new credit' },
-    { kind: 'icon', Icon: Hourglass, label: 'Insert a new debit' },
+    // PHP: clubMembers/debt_member — create a member debt (Member debts typology)
+    { kind: 'icon', Icon: Hourglass, label: 'Insert a new debit', path: '/clubMembers/debt_member' },
   ],
   [
-    { kind: 'icon', Icon: ArrowUpRight, label: 'Payment expenses' },
+    { kind: 'icon', Icon: ArrowUpRight, label: 'Payment expenses', path: '/clubs/new_expense' },
     { kind: 'icon', Icon: ArrowUpRight, label: 'Pay a member' },
   ],
   [
@@ -261,7 +275,7 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '/clubs/access_list' },
   ],
   [
-    { kind: 'icon', Icon: Hourglass, label: 'Deadlines of payment', path: '/users/deadline' },
+    { kind: 'icon', Icon: Hourglass, label: 'Archive of Deadlines', path: '/clubs/archive_deadlines' },
     { kind: 'icon', Icon: Award, label: 'Credit voucher', path: '/clubSettings/creditCustomer' },
     { kind: 'icon', Icon: Hourglass, label: 'Other debts', path: '/clubs/other_debts' },
     { kind: 'icon', Icon: Hourglass, label: 'Planned expenses', path: '/clubs/arc_expenses' },
@@ -278,7 +292,10 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: CornerDownRight, label: 'Cash Out', path: '/clubs/movement_cash_details/OUT' },
     { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)', path: '/clubs/movement_cash_details' },
   ],
-  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubs/service_receipts' }],
+  [
+    { kind: 'icon', Icon: CreditCard, label: 'Archive of Payments', path: '/clubs/archive_payments' },
+    { kind: 'icon', Icon: ClipboardCheck, label: 'Archive of Receipts', path: '/clubs/archive_receipts' },
+  ],
   [
     { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '/clubs/cards_assignments' },
     { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '/clubs/alerts_assigned' },
@@ -417,14 +434,88 @@ export default function DarkSidebar({
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [myDashboardOpen, setMyDashboardOpen] = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
+  const [myFeedbackCount, setMyFeedbackCount] = useState(0);
   const [myClubsOpen, setMyClubsOpen] = useState(false);
   const [clubAdminInfoOpen, setClubAdminInfoOpen] = useState(false);
   const [memberInfoOpen, setMemberInfoOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const token = getAuthToken();
+    if (!token) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/messages/support?countOnly=1&mine=1', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (typeof data.count === 'number') setMyFeedbackCount(data.count);
+      } catch {
+        /* optional */
+      }
+    })();
+  }, [user?.id]);
 
   const formCreatedClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(entities),
     [entities]
   );
+  const formCreatedEntities = useMemo(
+    () => getFormCreatedEntitiesSortedByCreatedAt(entities),
+    [entities]
+  );
+  /** Clubs this user administers (any role) — used so coach/team/group can open club website display. */
+  const [administeredClubs, setAdministeredClubs] = useState<
+    { id: string; name: string; description?: string | null }[]
+  >([]);
+  const administeredClubIds = useMemo(
+    () => new Set(administeredClubs.map((c) => c.id)),
+    [administeredClubs],
+  );
+
+  useEffect(() => {
+    if (
+      isClubAccountUserType(userType) ||
+      userType === 'ATHLETE' ||
+      !(
+        isTeamAccountUserType(userType) ||
+        isGroupAccountUserType(userType) ||
+        userType === 'COACH'
+      )
+    ) {
+      setAdministeredClubs([]);
+      return;
+    }
+    let cancelled = false;
+    const token = getAuthToken();
+    if (!token) return;
+    fetch('/api/clubs/my-clubs', { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          clubs?: { id: string; name: string; description?: string | null }[];
+        };
+        if (!cancelled && Array.isArray(data.clubs)) {
+          setAdministeredClubs(
+            data.clubs.map((c) => ({
+              id: c.id,
+              name: c.name,
+              description: c.description ?? null,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        /* picker can still use trained team/group entities */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userType]);
+
   const clubsForTopicsPicker = useMemo(() => {
     if (isClubAccountUserType(userType)) {
       return formCreatedClubs as { id: string; name: string; description?: string | null }[];
@@ -432,12 +523,24 @@ export default function DarkSidebar({
     if (userType === 'ATHLETE') {
       return entities as { id: string; name: string; description?: string | null }[];
     }
+    if (
+      isTeamAccountUserType(userType) ||
+      isGroupAccountUserType(userType) ||
+      userType === 'COACH'
+    ) {
+      const byId = new Map<string, { id: string; name: string; description?: string | null }>();
+      for (const club of administeredClubs) byId.set(club.id, club);
+      for (const entity of formCreatedEntities as {
+        id: string;
+        name: string;
+        description?: string | null;
+      }[]) {
+        if (!byId.has(entity.id)) byId.set(entity.id, entity);
+      }
+      return Array.from(byId.values());
+    }
     return [];
-  }, [userType, formCreatedClubs, entities]);
-  const formCreatedEntities = useMemo(
-    () => getFormCreatedEntitiesSortedByCreatedAt(entities),
-    [entities]
-  );
+  }, [userType, formCreatedClubs, formCreatedEntities, entities, administeredClubs]);
   const clubUserHasProfile =
     !isClubAccountUserType(userType) || userHasClubProfile(entities);
   const isAthleteUser = userType === 'ATHLETE';
@@ -920,13 +1023,40 @@ export default function DarkSidebar({
     [onEntitySelect, setCurrentTab, userType, isAthleteUser, onMyClubClick]
   );
 
+  /**
+   * "My Topics" picker — after picking an entity, open topics DISPLAY
+   * (never the settings editor). Real clubs → club website display;
+   * team/group/trained entities → personal My Topics display.
+   */
   const handleClubSelectedForTopics = useCallback(
-    (clubId: string) => {
+    (entityId: string) => {
       setClubTopicsPickerOpen(false);
-      requestOpenClubTopicsSection();
-      handleMyPageClubSelect(clubId);
+
+      const isClubOrAthlete =
+        isClubAccountUserType(userType) || userType === 'ATHLETE';
+      const isAdministeredClub = administeredClubIds.has(entityId);
+
+      if (isClubOrAthlete || isAdministeredClub) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('selectedClub', entityId);
+        }
+        writeClubWorkspaceTab('my-entity');
+        onEntitySelect?.(entityId);
+        setCurrentTab('my-entity');
+        requestOpenClubTopicsSection();
+        router.push(clubWebsiteDisplayUrl(entityId));
+        return;
+      }
+
+      // Team / group / coach trained entity — personal topics display (not settings).
+      // Never store a non-club id in selectedClub (avoids wrong page after switch).
+      writeClubWorkspaceTab('my-page');
+      onEntitySelect?.(entityId);
+      setCurrentTab('my-page');
+      requestOpenPersonalTopicsSection();
+      router.push(`${PERSONAL_WEBSITE_TOPICS_PATH}/display`);
     },
-    [handleMyPageClubSelect]
+    [onEntitySelect, setCurrentTab, router, userType, administeredClubIds]
   );
 
   const openMyTopicsClubPicker = useCallback(() => {
@@ -1588,6 +1718,9 @@ export default function DarkSidebar({
                       </ul>
                     </>
                   )}
+                  <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15 pt-3">
+                    <MyPageTopicsEntryRow onOpenClubPicker={openMyTopicsClubPicker} />
+                  </div>
                 </div>
               )}
               {myClubsOpen && isTeamManagerUser && (
@@ -1632,6 +1765,9 @@ export default function DarkSidebar({
                       </ul>
                     </>
                   ) : null}
+                  <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15 pt-3">
+                    <MyPageTopicsEntryRow onOpenClubPicker={openMyTopicsClubPicker} />
+                  </div>
                 </div>
               )}
               {myClubsOpen && isGroupAdminUser && (
@@ -1676,6 +1812,9 @@ export default function DarkSidebar({
                       </ul>
                     </>
                   )}
+                  <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15 pt-3">
+                    <MyPageTopicsEntryRow onOpenClubPicker={openMyTopicsClubPicker} />
+                  </div>
                 </div>
               )}
             </div>
@@ -1841,7 +1980,7 @@ export default function DarkSidebar({
                       <Settings className="w-4 h-4" />
                     </button>
                   </div>
-                  {isManagedEntityAdminUserType(userType) ? (
+                  {userOwnsMovesbookWebsite(userType) ? (
                     <PersonalMyTopicsSidebarBlock userId={user?.id} canManage />
                   ) : null}
                   <div className="flex w-full items-stretch min-h-[44px]">
@@ -1908,15 +2047,47 @@ export default function DarkSidebar({
               <ChevronDown className="w-4 h-4 opacity-80" />
             </button>
 
-            <button
-              className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
-            >
-              <div className="flex items-center gap-3">
-                <MessageSquare className="w-5 h-5" />
-                <span>Messages</span>
+            <div className="border-b border-teal-700">
+              <div className="flex w-full items-stretch bg-teal-800 text-white">
+                <button
+                  type="button"
+                  onClick={() => setMessagesOpen((v) => !v)}
+                  aria-expanded={messagesOpen}
+                  className="flex flex-1 items-center gap-3 min-w-0 py-3 pl-4 pr-2 text-left hover:bg-teal-700 transition-colors"
+                >
+                  <MessageSquare className="w-5 h-5 shrink-0" />
+                  <span className="truncate">Messages</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMessagesOpen((v) => !v)}
+                  aria-label={messagesOpen ? t('collapse') : t('expand')}
+                  className="shrink-0 px-4 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 opacity-80 transition-transform duration-200 ${messagesOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
               </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+              {messagesOpen && (
+                <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40 px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (user?.id) {
+                        router.push(legacyUserBugProblemUrl(String(user.id)));
+                      }
+                    }}
+                    className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2.5 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                  >
+                    <Users2 className="h-4 w-4 shrink-0 opacity-95" />
+                    <span className="leading-snug">
+                      {t('sidebar_my_feedbacks_staff')} ({myFeedbackCount})
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
@@ -2388,16 +2559,47 @@ export default function DarkSidebar({
                   </div>
                 </button>
 
-                <button
-                  type="button"
-                  className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <MessageSquare className="w-5 h-5 shrink-0" />
-                    <span className="font-semibold tracking-wide truncate">Messages</span>
+                <div className="border-b border-teal-700">
+                  <div className="flex w-full items-stretch bg-teal-800 text-white">
+                    <button
+                      type="button"
+                      onClick={() => setMessagesOpen((v) => !v)}
+                      aria-expanded={messagesOpen}
+                      className="flex flex-1 items-center gap-2.5 min-w-0 py-2.5 pl-3 pr-2 text-left hover:bg-teal-700 transition-colors"
+                    >
+                      <MessageSquare className="w-5 h-5 shrink-0" />
+                      <span className="font-semibold tracking-wide truncate">Messages</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMessagesOpen((v) => !v)}
+                      aria-label={messagesOpen ? t('collapse') : t('expand')}
+                      className="shrink-0 px-3 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                    >
+                      <ChevronDown
+                        className={`w-4 h-4 opacity-90 transition-transform duration-200 ${messagesOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
                   </div>
-                  <ChevronDown className="w-4 h-4 opacity-90" />
-                </button>
+                  {messagesOpen && (
+                    <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40 px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (user?.id) {
+                            router.push(legacyUserBugProblemUrl(String(user.id)));
+                          }
+                        }}
+                        className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2.5 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                      >
+                        <Users2 className="h-4 w-4 shrink-0 opacity-95" />
+                        <span className="leading-snug">
+                          {t('sidebar_my_feedbacks_staff')} ({myFeedbackCount})
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 <button
                   type="button"
@@ -2572,11 +2774,8 @@ export default function DarkSidebar({
                       <button
                         type="button"
                         onClick={() => {
-                          window.open(
-                            CLUB_WEBSITE_SETTINGS_INDEX_PATH,
-                            '_blank',
-                            'noopener,noreferrer'
-                          );
+                          writeClubWorkspaceTab('my-entity');
+                          router.push(CLUB_WEBSITE_SETTINGS_INDEX_PATH);
                         }}
                         className="flex shrink-0 items-center border-l border-teal-700/40 px-3 text-gray-300 transition-colors hover:bg-teal-700 hover:text-white"
                         aria-label={t('sidebar_club_website_editor_aria')}
@@ -3550,11 +3749,16 @@ export default function DarkSidebar({
                                       <button
                                         key={item.label}
                                         type="button"
+                                        onClick={() => {
+                                          if ('path' in item && item.path) {
+                                            router.push(item.path);
+                                          }
+                                        }}
                                         className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${
                                           ii < group.length - 1
                                             ? 'border-b border-gray-600/50'
                                             : ''
-                                        }`}
+                                        } ${'path' in item && item.path ? 'cursor-pointer' : 'cursor-default opacity-90'}`}
                                       >
                                         {renderClubAdminInsertItemLeading(item)}
                                         <span className="min-w-0 leading-snug">{item.label}</span>

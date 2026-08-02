@@ -76,6 +76,8 @@ import FavouritesSettings from '@/components/settings/FavouritesSettings';
 import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
 import NewsOGPPanel from '@/components/news/NewsOGPPanel';
+import MyMusicPanel from '@/components/music/MyMusicPanel';
+import MusicOGPPanel from '@/components/music/MusicOGPPanel';
 import PostsPanel from '@/components/posts/PostsPanel';
 import AthleteLegacyBanner, {
   type AthleteLegacyBannerProfile,
@@ -122,6 +124,8 @@ function AthleteDashboardContent() {
     | 'chat'
     | 'news'
     | 'posts'
+    | 'music'
+    | 'music-editor'
     | 'registration-info'
   >('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
@@ -129,6 +133,7 @@ function AthleteDashboardContent() {
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
   const [newsExpanded, setNewsExpanded] = useState(false);
+  const [musicExpanded, setMusicExpanded] = useState(false);
   const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
   const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
@@ -204,15 +209,27 @@ function AthleteDashboardContent() {
     }
   }, [user, router]);
 
-  // Open News/OGP section when navigating with ?open=news
+  // Open News/OGP, My Music, or Music editor when navigating with ?open=news / ?open=music / ?open=add-songs
   useEffect(() => {
     if (searchParams == null) return;
     const open = searchParams.get('open');
     if (open === 'news') {
+      setActiveTab('my-page');
       setActiveSection('news');
       router.replace('/athlete/dashboard', { scroll: false });
     } else if (open === 'registration-info') {
+      setActiveTab('my-page');
       setActiveSection('registration-info');
+      router.replace('/athlete/dashboard', { scroll: false });
+    } else if (open === 'music') {
+      setActiveTab('my-page');
+      setActiveSection('music');
+      setMusicExpanded(false);
+      router.replace('/athlete/dashboard', { scroll: false });
+    } else if (open === 'add-songs') {
+      setActiveTab('my-page');
+      setActiveSection('music-editor');
+      setMusicExpanded(false);
       router.replace('/athlete/dashboard', { scroll: false });
     }
   }, [searchParams, router]);
@@ -773,7 +790,7 @@ function AthleteDashboardContent() {
 
         <div className="flex-1 flex gap-0">
           {/* Left Sidebar - Hidden when News Expand is on */}
-          {showLeftSidebar && !newsExpanded && !clubAddSongsOgpExpanded && (
+          {showLeftSidebar && !newsExpanded && !musicExpanded && !clubAddSongsOgpExpanded && (
             <div className="w-80 flex-shrink-0 sticky top-0 self-start print:hidden">
               <DarkSidebar
                 userType={user?.userType || ''}
@@ -846,6 +863,32 @@ function AthleteDashboardContent() {
                     />
                   </div>
                 )}
+                {activeSection === 'music' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <MyMusicPanel
+                      onClose={() => {
+                        setActiveSection('overview');
+                        setMusicExpanded(false);
+                      }}
+                      embedded
+                      isExpanded={musicExpanded}
+                      onExpandReduce={() => setMusicExpanded((prev) => !prev)}
+                    />
+                  </div>
+                )}
+                {activeSection === 'music-editor' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <MusicOGPPanel
+                      onClose={() => {
+                        setActiveSection('overview');
+                        setMusicExpanded(false);
+                      }}
+                      embedded
+                      isExpanded={musicExpanded}
+                      onExpandReduce={() => setMusicExpanded((prev) => !prev)}
+                    />
+                  </div>
+                )}
                 {activeSection === 'posts' && (
                   <div className="flex-1 flex flex-col min-h-0">
                     <PostsPanel
@@ -892,6 +935,7 @@ function AthleteDashboardContent() {
           {!(activeTab === 'my-page' && activeSection === 'personal-settings') &&
             showRightSidebar &&
             !newsExpanded &&
+            !musicExpanded &&
             !clubAddSongsOgpExpanded && (
             <div className="w-80 flex-shrink-0 print:hidden">
               <div className="bg-white shadow-sm border h-full flex flex-col overflow-y-auto">

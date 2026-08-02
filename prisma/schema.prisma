@@ -65,7 +65,14 @@ model User {
   ogpArticles              OgpArticle[]
   ogpArticlesDeleted       OgpArticle[]       @relation("OgpDeletedBy")
   ogpArticleLikes          OgpArticleLike[]
+  ogpNewsGroups            OgpNewsGroup[]
+  ogpNewsGroupLikes        OgpNewsGroupLike[]
   newsTypedArticles       NewsTypedArticle[]
+  musicTopics              UserMusicTopic[]
+  musicOgpArticles         MusicOgpArticle[]
+  musicOgpArticlesDeleted  MusicOgpArticle[]  @relation("MusicOgpDeletedBy")
+  musicOgpArticleLikes     MusicOgpArticleLike[]
+  musicTypedArticles       MusicTypedArticle[]
   plannedActionTemplates  PlannedActionTemplate[]
   workoutDayPlannedActions WorkoutDayPlannedAction[]
   sportMachines           SportMachine[]
@@ -124,6 +131,30 @@ model MyDeskItem {
   @@map("my_desk_items")
 }
 
+/** Club Desk tree — same shape as My Desk, scoped to a club (admin-managed). */
+model ClubDeskItem {
+  id          String    @id @default(cuid())
+  clubId      String
+  parentId    String?
+  title       String
+  path        String?
+  faIconClass String?
+  bgColor     String?
+  titleColor  String?
+  displayMode String? // "new_label" | "central_page"
+  visible     Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  parent   ClubDeskItem?  @relation("ClubDeskParentChild", fields: [parentId], references: [id], onDelete: Cascade)
+  children ClubDeskItem[] @relation("ClubDeskParentChild")
+
+  @@index([clubId, parentId, sortOrder])
+  @@index([parentId])
+  @@map("club_desk_items")
+}
+
 model UserNewsTopic {
   id          String   @id @default(cuid())
   userId      String
@@ -160,6 +191,7 @@ model OgpArticle {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy             User?     @relation("OgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   likes                 OgpArticleLike[]
+  groupItems            OgpNewsGroupItem[]
 
   @@index([userId])
   @@index([userId, topic])
@@ -181,6 +213,62 @@ model OgpArticleLike {
   @@map("ogp_article_likes")
 }
 
+/// Named collection of OGP News articles (OGP News group).
+model OgpNewsGroup {
+  id                    String    @id @default(cuid())
+  userId                String
+  name                  String
+  topic                 String
+  customDescription     String?   @db.Text
+  savedAt               DateTime  @default(now())
+  expiresAt             DateTime?
+  deletedAt             DateTime?
+  deletedByUserId       String?
+  visibilityUserTypes   String?   @db.Text
+  visibilityCountries   String?   @db.Text
+  visibilityLanguages   String?   @db.Text
+  visibilitySports      String?   @db.Text
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items                 OgpNewsGroupItem[]
+  likes                 OgpNewsGroupLike[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([userId, topic])
+  @@index([topic])
+  @@index([deletedAt])
+  @@map("ogp_news_groups")
+}
+
+model OgpNewsGroupItem {
+  id           String      @id @default(cuid())
+  groupId      String
+  ogpArticleId String
+  sortOrder    Int         @default(0)
+  addedAt      DateTime    @default(now())
+  group        OgpNewsGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  ogpArticle   OgpArticle  @relation(fields: [ogpArticleId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, ogpArticleId])
+  @@index([groupId])
+  @@index([ogpArticleId])
+  @@map("ogp_news_group_items")
+}
+
+model OgpNewsGroupLike {
+  id        String      @id @default(cuid())
+  groupId   String
+  userId    String
+  createdAt DateTime    @default(now())
+  group     OgpNewsGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+  @@map("ogp_news_group_likes")
+}
+
 model NewsTypedArticle {
   id          String   @id @default(cuid())
   userId      String
@@ -190,6 +278,92 @@ model NewsTypedArticle {
 
   @@index([userId])
   @@map("news_typed_articles")
+}
+
+/// Custom topics for the Music OGP section (mirrors UserNewsTopic).
+model UserMusicTopic {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("user_music_topics")
+}
+
+/// OGP-style music cards (mirrors OgpArticle).
+model MusicOgpArticle {
+  id                    String    @id @default(cuid())
+  userId                String
+  title                 String?   @db.Text
+  /// Artist name entered in Add Music (free text).
+  artist                String?
+  image                 String?   @db.Text
+  description           String?   @db.Text
+  url                   String    @db.Text
+  siteName              String?
+  type                  String?
+  customDescription     String?   @db.Text
+  topic                 String
+  /// Musical genre selected when adding music (shown as grey chip in topic bar).
+  genre                 String?
+  /// Song / Album / Playlist selected in Add Music.
+  registrationType      String?
+  /// True when the creator checked "Put in my favourites" at save time.
+  isFavourite           Boolean   @default(false)
+  languageCode          String?
+  savedAt               DateTime  @default(now())
+  expiresAt             DateTime?
+  deletedAt             DateTime?
+  deletedByUserId       String?
+  visibilityUserTypes   String?   @db.Text
+  visibilityCountries   String?   @db.Text
+  visibilityLanguages   String?   @db.Text
+  visibilitySports      String?   @db.Text
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deletedBy             User?     @relation("MusicOgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
+  likes                 MusicOgpArticleLike[]
+
+  @@index([userId])
+  @@index([userId, topic])
+  @@index([deletedAt])
+  @@map("music_ogp_articles")
+}
+
+model MusicOgpArticleLike {
+  id                 String          @id @default(cuid())
+  musicOgpArticleId  String
+  userId             String
+  createdAt          DateTime        @default(now())
+  musicOgpArticle    MusicOgpArticle @relation(fields: [musicOgpArticleId], references: [id], onDelete: Cascade)
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([musicOgpArticleId, userId])
+  @@index([musicOgpArticleId])
+  @@index([userId])
+  @@map("music_ogp_article_likes")
+}
+
+model MusicTypedArticle {
+  id          String   @id @default(cuid())
+  userId      String
+  description String   @db.Text
+  /// Artist name entered in Add Music (free text).
+  artist      String?
+  /// Track title entered in Add Music (free text).
+  title       String?
+  /// Song / Album / Playlist selected in Add Music.
+  registrationType String?
+  /// True when the creator checked "Put in my favourites" at save time.
+  isFavourite Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("music_typed_articles")
 }
 
 model ChatConversation {
@@ -361,6 +535,9 @@ model WorkoutDay {
   feelingStatus      String?
   notes              String?          
   createdAt          DateTime         @default(now())
+  exportedToDoneAt   DateTime?
+  /// Original Yearly Plan date when this Done day was filled from a different planned day.
+  originalPlannedDate DateTime?
   userId             String
   assignedToUserId   String?
   creatorRole        UserType?
@@ -466,6 +643,7 @@ model WorkoutSession {
   feelingStatus     String?
   notes             String?
   status            WorkoutStatus
+  exportedToDoneAt  DateTime?
   createdAt         DateTime              @default(now())
   includeStretching Boolean               @default(true)
   mainSport         SportType?
@@ -515,6 +693,7 @@ model Moveframe {
   manualInputType     String?        @default("meters") // For aerobic sports: "meters" or "time" (123456 format)
   appliedTechnique    String?        // Body Building technique applied (for BODY_BUILDING sport only)
   aerobicSeries       Int?           @default(1) // Series/Batteries/Groups for aerobic sports (range 1-9, default 1)
+  markedDoneAt        DateTime?
   section             WorkoutSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   workoutSession      WorkoutSession @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
   movelaps            Movelap[]
@@ -910,6 +1089,17 @@ model UserSettings {
   yearlyPlanStartDate    DateTime? // Start date for Section B (Yearly Plan)
   templateWeeksStartDate DateTime? // Start date for Section A (3 Weeks Plan)
   newsTopicOrder         String?   @db.Text // JSON array of topic names for user's favorite order
+  /// JSON array of news topic names hidden from the topic menu
+  newsHiddenTopics       String?   @db.Text
+  musicTopicOrder        String?   @db.Text // JSON array of topic names for Music OGP section order
+  /// JSON object: { [topicName]: string[] } — favorite genre order per music topic
+  musicTopicGenreOrder   String?   @db.Text
+  /// JSON array of music topic names hidden from the topic menu
+  musicHiddenTopics      String?   @db.Text
+  /// JSON object: { [topicName]: string[] } — musical genres hidden per topic
+  musicHiddenGenres      String?   @db.Text
+  /// JSON array of musical genre names used in Music (grey chips in topic bar)
+  musicGenres            String?   @db.Text
   /// JSON: { "A"?: PlanPersist, "B"?: … } for Weekly workout structure tab (Plans A–E)
   weeklyStructureV1      String?   @db.LongText
   user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1531,7 +1721,22 @@ enum WorkoutStatus {
   DONE_DIFFERENTLY
   DONE_LESS_75
   DONE_MORE_75
+  /// Originally planned on a different day; done under 60% (light blue)
+  DONE_SHIFTED_LESS_60
+  /// Originally planned on a different day; done 50–80% (blue)
+  DONE_SHIFTED_50_80
+  /// Originally planned on a different day; done over 80% (dark blue)
+  DONE_SHIFTED_MORE_80
 }
+
+// Yearly Plan symbol color meanings (see .cursor/rules/yearly-plan-workout-symbol-colors.mdc):
+// NOT_PLANNED = white (auto)
+// PLANNED_FUTURE = yellow — future week, not done (auto)
+// PLANNED_CURRENT_WEEK = orange — this week, not done (auto)
+// PLANNED_NEXT_WEEK = red — previous week, not done (auto; legacy name)
+// DONE_LESS_75 = light green — same day done <60% (manual)
+// DONE_DIFFERENTLY = green — same day done 60–80% (manual; legacy name)
+// DONE_MORE_75 = dark green — same day done >80% (manual)
 
 enum MoveframeType {
   STANDARD
@@ -1823,7 +2028,8 @@ model NewsSharePost {
 
 model FoodDatabaseSection {
   id               String              @id @default(cuid())
-  legacyId         Int?                @unique
+  legacyId         Int?
+  sourceId         String              @default("movesbook_bundled")
   name             String
   nameTranslations String?             @db.Text
   displayOrder     Int                 @default(0)
@@ -1833,12 +2039,15 @@ model FoodDatabaseSection {
   foods            FoodDatabaseItem[]
   recipes          FoodDatabaseRecipe[]
 
+  @@unique([sourceId, legacyId])
+  @@index([sourceId])
   @@map("food_database_sections")
 }
 
 model FoodDatabaseItem {
   id               String              @id @default(cuid())
-  legacyId         Int?                @unique
+  legacyId         Int?
+  sourceId         String              @default("movesbook_bundled")
   sectionId        String
   name             String
   nameTranslations String?             @db.Text
@@ -1867,14 +2076,17 @@ model FoodDatabaseItem {
   updatedAt        DateTime            @updatedAt
   section          FoodDatabaseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
+  @@unique([sourceId, legacyId])
   @@index([sectionId])
+  @@index([sourceId])
   @@index([name])
   @@map("food_database_items")
 }
 
 model FoodDatabaseRecipe {
   id               String              @id @default(cuid())
-  legacyId         Int?                @unique
+  legacyId         Int?
+  sourceId         String              @default("movesbook_bundled")
   sectionId        String
   name             String
   nameTranslations String?             @db.Text
@@ -1906,9 +2118,31 @@ model FoodDatabaseRecipe {
   updatedAt        DateTime            @updatedAt
   section          FoodDatabaseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
+  @@unique([sourceId, legacyId])
   @@index([sectionId])
+  @@index([sourceId])
   @@index([name])
   @@map("food_database_recipes")
+}
+
+model FoodDatabaseSourceImport {
+  sourceId    String   @id
+  importedAt  DateTime @default(now())
+  foodCount   Int      @default(0)
+  recipeCount Int      @default(0)
+  summary     String?  @db.Text
+
+  @@map("food_database_source_imports")
+}
+
+model FoodDatabaseSourceState {
+  id              String    @id @default("default")
+  activeSourceId  String    @default("fosav")
+  lastLoadedAt    DateTime?
+  lastLoadSummary String?   @db.Text
+  updatedAt       DateTime  @updatedAt
+
+  @@map("food_database_source_state")
 }
 
 // ---------------------------------------------------------------------------

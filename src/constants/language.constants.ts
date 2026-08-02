@@ -168,9 +168,17 @@ export function sortLanguagesByOrder(
  * Helper: Filter translation keys for long texts
  */
 export function filterLongTexts(keys: TranslationKey[]): TranslationKey[] {
+  // Lazy import pattern avoided — registry checked by key name at call sites that import both.
+  // Keep in sync with `KNOWN_LONG_TEXT_ENTRIES` in knownLongTextRegistry.ts
+  const knownKeys = new Set([
+    'AutoProcessInfo',
+    'InfoReps',
+    'IdentificationDevicesInfo',
+  ]);
   return keys.filter((key) => {
-    const hasLongText = Object.values(key.values).some(val => 
-      val && val.length > LONG_TEXT_THRESHOLD
+    if (knownKeys.has(key.key)) return true;
+    const hasLongText = Object.values(key.values).some(
+      (val) => val && val.length > LONG_TEXT_THRESHOLD,
     );
     return hasLongText;
   });

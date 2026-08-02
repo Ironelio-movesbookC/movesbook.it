@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Download, Table, Plus, X, List, ChevronLeft, ChevronRight, Info, ClipboardList } from 'lucide-react';
 import type { SectionId, ViewMode } from '@/types/workout.types';
 import { calculateWeeklyPlanColor, getWorkoutCountLabel } from '@/utils/weeklyPlanColors';
+import {
+  formatYearlyPlanStartDateLabel,
+  resolveYearlyPlanStartDate,
+} from '@/utils/yearlyPlanNavigation';
 
 interface WorkoutSectionHeaderProps {
   // State
@@ -109,6 +113,11 @@ export default function WorkoutSectionHeader({
   // Calculate color for current section (recalculate when workoutPlan changes)
   const planColor = calculateWeeklyPlanColor(workoutPlan);
   const workoutCountLabel = getWorkoutCountLabel(workoutPlan);
+
+  const yearlyPlanStartDateLabel = useMemo(() => {
+    if (activeSection !== 'B') return null;
+    return formatYearlyPlanStartDateLabel(resolveYearlyPlanStartDate(workoutPlan));
+  }, [activeSection, workoutPlan]);
   
   console.log('🎨 Color calculation for section', activeSection, ':', {
     planId: workoutPlan?.id,
@@ -145,8 +154,16 @@ export default function WorkoutSectionHeader({
     <>
       {/* Top bar: Workout Management + Close */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Workout Management</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 min-w-0">
+          <h1 className="text-2xl font-bold text-gray-900 shrink-0">Workout Management</h1>
+          {yearlyPlanStartDateLabel && (
+            <p className="text-base text-gray-900 whitespace-nowrap">
+              Start date :{' '}
+              <span className="font-semibold text-red-600">{yearlyPlanStartDateLabel}</span>
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors"

@@ -12,6 +12,8 @@ export type ClubWebsiteTopic = {
   name: string;
   /** When true, members see this topic (read-only). */
   activated: boolean;
+  /** Parent topic id when this row is a subtopic. */
+  parentId: string | null;
   /** Blue header title text. */
   title: string;
   sectionName: string;
@@ -27,12 +29,13 @@ const STORAGE_PREFIX = 'club-website-topics';
 export const DEFAULT_TOPIC_BANNER_COLOR = '#5b9bd5';
 export const DEFAULT_TOPIC_TITLE_COLOR = '#ffffff';
 
-export function createClubWebsiteTopic(name: string): ClubWebsiteTopic {
+export function createClubWebsiteTopic(name: string, parentId: string | null = null): ClubWebsiteTopic {
   const trimmed = name.trim();
   return {
     id: `topic-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     name: trimmed,
     activated: true,
+    parentId,
     title: trimmed,
     sectionName: trimmed,
     bannerColor: DEFAULT_TOPIC_BANNER_COLOR,
@@ -50,6 +53,7 @@ export function normalizeClubWebsiteTopic(raw: Partial<ClubWebsiteTopic> & { id:
     id: raw.id,
     name: raw.name,
     activated: raw.activated ?? true,
+    parentId: raw.parentId ?? null,
     title: raw.title ?? raw.name,
     sectionName: raw.sectionName ?? raw.name,
     bannerColor: raw.bannerColor ?? DEFAULT_TOPIC_BANNER_COLOR,
@@ -61,12 +65,30 @@ export function normalizeClubWebsiteTopic(raw: Partial<ClubWebsiteTopic> & { id:
   };
 }
 
-export function isClubWebsiteTopicVisibleToMembers(topic: ClubWebsiteTopic): boolean {
-  return topic.activated && topic.name.trim().length > 0;
+export function isClubWebsiteTopicSubtopic(topic: ClubWebsiteTopic): boolean {
+  return Boolean(topic.parentId);
+}
+
+export function canClubWebsiteTopicHaveSubtopics(topic: ClubWebsiteTopic): boolean {
+  return !isClubWebsiteTopicSubtopic(topic);
+}
+
+export function isClubWebsiteTopicVisibleToMembers(
+  topics: ClubWebsiteTopic[],
+  topic: ClubWebsiteTopic
+): boolean {
+  if (!topic.activated || !topic.name.trim()) return false;
+  let parentId = topic.parentId;
+  while (parentId) {
+    const parent = topics.find((t) => t.id === parentId);
+    if (!parent?.activated) return false;
+    parentId = parent.parentId;
+  }
+  return true;
 }
 
 export function filterClubWebsiteTopicsForMembers(topics: ClubWebsiteTopic[]): ClubWebsiteTopic[] {
-  return topics.filter(isClubWebsiteTopicVisibleToMembers);
+  return topics.filter((topic) => isClubWebsiteTopicVisibleToMembers(topics, topic));
 }
 
 export function filterClubWebsiteTopicsForDashboard(topics: ClubWebsiteTopic[]): ClubWebsiteTopic[] {
@@ -78,6 +100,8 @@ export function topicToSettingsFormItem(topic: ClubWebsiteTopic) {
     id: topic.id,
     name: topic.name,
     activated: topic.activated,
+    bannerColor: topic.bannerColor,
+    titleColor: topic.titleColor,
     showInClubDashboardTopics: topic.showInClubDashboardTopics,
     contentDisplayMode: topic.contentDisplayMode,
     externalUrl: topic.externalUrl,

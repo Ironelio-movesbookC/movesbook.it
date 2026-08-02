@@ -17,6 +17,7 @@ export type ProcedureRecordView = {
   id: string;
   userId: string;
   memberName: string;
+  memberImage: string | null;
   typology: string;
   primaryLabel: string;
   secondaryLabel: string;
@@ -39,8 +40,12 @@ export type ProcedurePaymentView = {
   paymentDate: string | null;
   paid: number;
   balance: number;
+  originalDebt: number;
+  residualDebt: number;
   description: string;
+  operatorId: string | null;
   operatorName: string;
+  payMode: string | null;
 };
 
 export type ProcedureReceiptView = {
@@ -87,12 +92,14 @@ function mapRecord(def: ProcedureDefinition, record: ProcedureRecordDto): Proced
     id: record.id,
     userId: record.memberId,
     memberName: record.memberName,
+    memberImage: record.memberImage ?? null,
     typology: getProcedureTypology(def.code),
     primaryLabel: metaString(metadata, def.metadataKeys.primary) || '-',
     secondaryLabel: def.metadataKeys.secondary
       ? metaString(metadata, def.metadataKeys.secondary) || '-'
       : '',
-    paydate: record.recordDate,
+    // Deadline/expire display uses dueDate (PHP ServicePurchase.paydate / installment expire).
+    paydate: record.dueDate ?? record.recordDate,
     value: record.totalAmount,
     pay: record.paidAmount,
     rest: record.balanceAmount,
@@ -114,7 +121,11 @@ function mapPayment(def: ProcedureDefinition, payment: ProcedurePaymentDto): Pro
     paid: payment.amount,
     balance: payment.balanceAfter ?? 0,
     description: payment.notes ?? '',
+    operatorId: payment.operatorId,
     operatorName: payment.operatorName,
+    originalDebt: payment.originalDebt,
+    residualDebt: payment.residualDebt,
+    payMode: payment.payMode,
   };
 }
 
@@ -189,6 +200,16 @@ export function createProcedureClient(code: ProcedureTypeCode) {
     async fetchRecord(id: string): Promise<{ record: ProcedureRecordView }> {
       const res = await clubApiFetch<{ record: ProcedureRecordDto }>(`${base}/records/${id}`);
       return { record: mapRecord(def, res.record) };
+    },
+
+    async updateRecord(
+      id: string,
+      input: { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number }
+    ): Promise<void> {
+      await clubApiFetch(`${base}/records/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      });
     },
 
     async createRecord(body: Record<string, unknown>): Promise<{ recordId: string }> {

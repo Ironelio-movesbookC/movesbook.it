@@ -8,20 +8,33 @@ export const SERVICE_SALE_PAGE_SIZE = 25;
 
 export function getServiceSaleTabs(
   active: ServiceSaleTabId,
-  selectedRecordId?: string | null
+  selectedRecordId?: string | null,
+  /** When set (e.g. from payment form), Historical/Payments/Receipts are scoped to these records. */
+  scopedRecordIds?: string[] | null,
+  /** Extra query suffix already including `?` (e.g. `?ids=a,b&all=1`) to preserve scope on sibling tabs. */
+  scopeQuery?: string | null
 ): ProcedureTab[] {
-  const deadlineHref = selectedRecordId
-    ? `/clubs/payment_detail/${selectedRecordId}`
-    : '/clubs/dead_line';
-  const paymentsHref = selectedRecordId
-    ? `/clubs/user_payment_list/${selectedRecordId}`
-    : '/clubs/service_payments';
+  const ids =
+    scopedRecordIds && scopedRecordIds.length > 0
+      ? scopedRecordIds
+      : selectedRecordId
+        ? [selectedRecordId]
+        : [];
+
+  const builtQuery =
+    scopeQuery && scopeQuery.length > 0
+      ? scopeQuery.startsWith('?')
+        ? scopeQuery
+        : `?${scopeQuery}`
+      : ids.length > 0
+        ? `?ids=${encodeURIComponent(ids.join(','))}`
+        : '';
 
   return [
-    { id: 'historical', label: 'Historical', href: '/clubs/archive_service_list' },
-    { id: 'deadline', label: 'Deadline', href: deadlineHref },
-    { id: 'payments', label: 'Payments', href: paymentsHref },
-    { id: 'receipts', label: 'Receipts', href: '/clubs/service_receipts' },
+    { id: 'historical', label: 'Historical', href: `/clubs/archive_service_list${builtQuery}` },
+    { id: 'deadline', label: 'Archive of Deadlines', href: '/clubs/dead_line' },
+    { id: 'payments', label: 'Payments', href: `/clubs/service_payments${builtQuery}` },
+    { id: 'receipts', label: 'Receipts', href: `/clubs/service_receipts${builtQuery}` },
   ];
 }
 
@@ -34,10 +47,12 @@ export const serviceSaleRecordColumns: Column[] = [
   { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
   { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
   { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
+  { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
   { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
   { key: 'casual', header: 'Notes' },
   { key: 'operator', header: 'Operator' },
-  { key: 'options', header: 'Delete' },
+  { key: 'edit', header: 'Edit' },
+  { key: 'delete', header: 'Delete' },
 ];
 
 export const serviceSaleDeadlineColumns: Column[] = [
@@ -59,9 +74,12 @@ export const serviceSalePaymentColumns: Column[] = [
   { key: 'service', header: 'Service slot' },
   { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
   { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
+  { key: 'originalDebt', header: 'OF..', render: (_, row) => `${row.paid?.toFixed(2) ?? '0.00'} / ${row.originalDebt?.toFixed(2) ?? '0.00'}` },
   { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
   { key: 'casual', header: 'Notes' },
   { key: 'operator', header: 'Operator' },
+  { key: 'edit', header: 'Edit' },
+  { key: 'delete', header: 'Delete' },
 ];
 
 export const serviceSalePaymentDetailColumns: Column[] = [
@@ -86,6 +104,8 @@ export const serviceSaleReceiptColumns: Column[] = [
   { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
   { key: 'casual', header: 'Annotations' },
   { key: 'operator', header: 'Operator' },
+  { key: 'edit', header: 'Edit' },
+  { key: 'delete', header: 'Delete' },
 ];
 
 export const serviceSaleMovementColumns: Column[] = [

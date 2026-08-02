@@ -45,8 +45,11 @@ type Props = {
   initial?: Partial<TaxDocumentFormValues>;
   defaultTotal?: number;
   defaultResidual?: number;
+  hideMemberName?: boolean;
+  /** Override primary save button label (default: SAVE RECEIPT AT THE END). */
+  saveLabel?: string;
   onClose: () => void;
-  onSave: (values: TaxDocumentFormValues) => void;
+  onSave: (values: TaxDocumentFormValues) => void | Promise<void>;
 };
 
 function todayDate(): string {
@@ -69,7 +72,8 @@ function buildFormState(
   defaultCausal: string,
   defaultTotal: number,
   defaultResidual: number,
-  initial?: Partial<TaxDocumentFormValues>
+  initial?: Partial<TaxDocumentFormValues>,
+  hideMemberName?: boolean
 ): TaxDocumentFormValues {
   const documentType = initial?.documentType ?? defaults.documentType;
   const counterValue = counterValueForDocumentType(settings, documentType);
@@ -88,10 +92,10 @@ function buildFormState(
     vatPercentage,
     vatAmount: 0,
     net: total,
-    memberDisplayName: initial?.memberDisplayName ?? memberName,
-    originalMemberName: initial?.originalMemberName ?? memberName,
-    memberAlias: initial?.memberAlias ?? memberName,
-    memberNameEditable: initial?.memberNameEditable ?? false,
+    memberDisplayName: hideMemberName ? '' : (initial?.memberDisplayName ?? memberName),
+    originalMemberName: hideMemberName ? '' : (initial?.originalMemberName ?? memberName),
+    memberAlias: hideMemberName ? '' : (initial?.memberAlias ?? memberName),
+    memberNameEditable: hideMemberName ? false : (initial?.memberNameEditable ?? false),
     formCausal: initial?.formCausal ?? defaultCausal,
     counterKey: initial?.counterKey ?? defaults.counterKey,
   };
@@ -106,13 +110,6 @@ function buildFormState(
   return applyVatToForm(base, total, vatPercentage);
 }
 
-async function persistDocumentCounter(documentType: string, documentNumber: string): Promise<void> {
-  await clubApiFetch('/api/club/procedures/tax-document-counter', {
-    method: 'POST',
-    body: JSON.stringify({ documentType, documentNumber }),
-  });
-}
-
 export default function TaxDocumentModal({
   open,
   memberName,
@@ -120,6 +117,8 @@ export default function TaxDocumentModal({
   initial,
   defaultTotal = 0,
   defaultResidual = 0,
+  hideMemberName = false,
+  saveLabel = 'SAVE RECEIPT AT THE END',
   onClose,
   onSave,
 }: Props) {
@@ -150,7 +149,8 @@ export default function TaxDocumentModal({
             defaultCausal,
             defaultTotal,
             defaultResidual,
-            initial
+            initial,
+            hideMemberName
           )
         );
       })
@@ -178,7 +178,8 @@ export default function TaxDocumentModal({
             defaultCausal,
             defaultTotal,
             defaultResidual,
-            initial
+            initial,
+            hideMemberName
           )
         );
       })
@@ -228,25 +229,22 @@ export default function TaxDocumentModal({
     setSaving(true);
     setError('');
     try {
-      const memberDisplayName = form.memberNameEditable
-        ? buildMemberDisplayName(form.originalMemberName, form.memberAlias)
-        : form.originalMemberName;
+      const memberDisplayName = hideMemberName
+        ? ''
+        : form.memberNameEditable
+          ? buildMemberDisplayName(form.originalMemberName, form.memberAlias)
+          : form.originalMemberName;
 
+      // Payment flow: parent remembers until Confirm. Archive edit: parent persists via updateReceipt.
       const payload: TaxDocumentFormValues = {
         ...form,
         memberDisplayName,
         formCausal: defaultCausal,
       };
-
-      try {
-        await persistDocumentCounter(payload.documentType, payload.documentNumber);
-      } catch (counterErr) {
-        console.warn('Tax document counter update failed:', counterErr);
-      }
-      onSave(payload);
+      await onSave(payload);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save document');
+      setError(err instanceof Error ? err.message : 'Failed to prepare receipt');
     } finally {
       setSaving(false);
     }
@@ -271,33 +269,35 @@ export default function TaxDocumentModal({
           <div className="p-6 text-sm text-gray-600">Loading document settings...</div>
         ) : (
           <form onSubmit={handleSave} className="p-4 space-y-3 max-h-[80vh] overflow-y-auto">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-center">
-              <span className="text-sm text-gray-600 md:text-right">Member</span>
-              <div className="md:col-span-3 space-y-2">
-                <div className="flex items-center gap-2">
+            {!hideMemberName && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-center">
+                <span className="text-sm text-gray-600 md:text-right">Member</span>
+                <div className="md:col-span-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.memberNameEditable}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        updateForm({
+                          ...form,
+                          memberNameEditable: checked,
+                          memberAlias: checked ? form.memberAlias || form.originalMemberName : form.originalMemberName,
+                        });
+                      }}
+                    />
+                    <span className="text-xs text-gray-500">Allow editing member name for receipt</span>
+                  </div>
                   <input
-                    type="checkbox"
-                    checked={form.memberNameEditable}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      updateForm({
-                        ...form,
-                        memberNameEditable: checked,
-                        memberAlias: checked ? form.memberAlias || form.originalMemberName : form.originalMemberName,
-                      });
-                    }}
+                    type="text"
+                    readOnly={!form.memberNameEditable}
+                    className={form.memberNameEditable ? procedureInputClass : procedureReadonlyInputClass}
+                    value={form.memberNameEditable ? form.memberAlias : form.originalMemberName}
+                    onChange={(e) => updateForm({ ...form, memberAlias: e.target.value })}
                   />
-                  <span className="text-xs text-gray-500">Allow editing member name for receipt</span>
                 </div>
-                <input
-                  type="text"
-                  readOnly={!form.memberNameEditable}
-                  className={form.memberNameEditable ? procedureInputClass : procedureReadonlyInputClass}
-                  value={form.memberNameEditable ? form.memberAlias : form.originalMemberName}
-                  onChange={(e) => updateForm({ ...form, memberAlias: e.target.value })}
-                />
               </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-center">
               <span className="text-sm text-gray-600 md:text-right">Document type</span>
@@ -344,6 +344,10 @@ export default function TaxDocumentModal({
                   value={form.documentNumber}
                   onChange={(e) => updateForm({ ...form, documentNumber: e.target.value })}
                 />
+                <p className="text-xs text-amber-600 mt-1">
+                  WARNING: This number is only reserved when you Confirm the payment. Until then the
+                  receipt is not saved and the counter is not updated.
+                </p>
               </label>
             </div>
 
@@ -393,41 +397,43 @@ export default function TaxDocumentModal({
               </label>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <label className="block">
-                <span className="text-sm text-gray-600">VAT %</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  readOnly
-                  className={`mt-1 ${procedureReadonlyInputClass}`}
-                  value={form.vatPercentage}
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm text-gray-600">VAT amount (€)</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  readOnly
-                  className={`mt-1 ${procedureReadonlyInputClass}`}
-                  value={form.vatAmount}
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm text-gray-600">Net (€)</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  readOnly
-                  className={`mt-1 ${procedureReadonlyInputClass}`}
-                  value={form.net}
-                />
-              </label>
-            </div>
+            {settings?.calTaxStatus && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <label className="block">
+                  <span className="text-sm text-gray-600">VAT %</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    readOnly
+                    className={`mt-1 ${procedureReadonlyInputClass}`}
+                    value={form.vatPercentage}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm text-gray-600">VAT amount (€)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    readOnly
+                    className={`mt-1 ${procedureReadonlyInputClass}`}
+                    value={form.vatAmount}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm text-gray-600">Net (€)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    readOnly
+                    className={`mt-1 ${procedureReadonlyInputClass}`}
+                    value={form.net}
+                  />
+                </label>
+              </div>
+            )}
 
             {error && (
               <div className="text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 text-sm">
@@ -441,7 +447,7 @@ export default function TaxDocumentModal({
                 disabled={saving}
                 className="px-5 py-2 bg-red-700 text-white rounded hover:bg-red-800 text-sm disabled:opacity-50"
               >
-                {saving ? 'Saving...' : 'Save document'}
+                {saving ? 'Saving...' : saveLabel}
               </button>
               <button
                 type="button"

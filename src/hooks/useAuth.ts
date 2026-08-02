@@ -8,6 +8,7 @@ import {
   setEntityDirectAccessLock,
 } from '@/lib/entity/entityDirectAccessSession';
 import type { EntityDirectAccessKind } from '@/lib/entity/entityDirectAccessMeta';
+import { clearClubWorkspaceSessionOnLogout } from '@/lib/club/clearClubWorkspaceSession';
 
 export interface AuthUser {
   id: string;
@@ -40,6 +41,7 @@ export function useAuth() {
       localStorage.removeItem('user');
       clearEntityDirectAccessLock();
       clearEntityCompanyLoginSession();
+      clearClubWorkspaceSessionOnLogout();
     }
     setUser(null);
     router.push('/');
@@ -81,6 +83,8 @@ export function useAuth() {
     },
   ) => {
     if (typeof window !== 'undefined') {
+      // Drop previous account's workspace hints before binding a new session.
+      clearClubWorkspaceSessionOnLogout();
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
       const mode = options?.entityAccessMode ?? options?.clubAccessMode;

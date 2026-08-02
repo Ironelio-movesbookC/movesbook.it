@@ -59,6 +59,7 @@ import {
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
+import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
 import {
   DndContext, 
   closestCenter,
@@ -126,6 +127,8 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
   });
 
   const [lastViewedCount, setLastViewedCount] = useState("1");
+  const [adminUserId, setAdminUserId] = useState<string | null>(null);
+  const [myFeedbackCount, setMyFeedbackCount] = useState(0);
   const [lastViewedToggles, setLastViewedToggles] = useState({
     singleUsers: true,
     coaches: true,
@@ -141,6 +144,37 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
   useEffect(() => {
     setIsDndMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const adminData = localStorage.getItem('adminUser');
+    if (!adminData) return;
+    try {
+      const parsed = JSON.parse(adminData) as { id?: string | number };
+      if (parsed?.id != null) setAdminUserId(String(parsed.id));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!adminUserId || typeof window === 'undefined') return;
+    const token = localStorage.getItem('adminToken') || localStorage.getItem('token');
+    if (!token) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/messages/support?countOnly=1&mine=1', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (typeof data.count === 'number') setMyFeedbackCount(data.count);
+      } catch {
+        /* optional */
+      }
+    })();
+  }, [adminUserId]);
 
   const handleToggle = () => {
     if (onToggle) onToggle();
@@ -498,6 +532,18 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
             
             {openSections.messages && (
               <div className="bg-[#2b2b2b] mt-1 space-y-1">
+                {adminUserId ? (
+                  <Link
+                    href={legacyUserBugProblemUrl(adminUserId, 'feedback')}
+                    className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white"
+                  >
+                    <Users2 className="w-4 h-4 shrink-0 opacity-95" />
+                    <span className="leading-snug">
+                      My feedbacks for Staff ({myFeedbackCount})
+                    </span>
+                  </Link>
+                ) : null}
+
                 <Link href="/admin/messages/general" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
                    <Mail className="w-4 h-4 text-white" />
                    <span>Messages from users and club\teams</span>
@@ -669,7 +715,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   <span>Music Tracked</span>
                 </Link>
                 <Link
-                  href="/admin/news/links"
+                  href="/admin/dashboard?panel=og-music"
                   className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] border-b border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white"
                 >
                   <Music className="w-4 h-4 shrink-0 text-white" />

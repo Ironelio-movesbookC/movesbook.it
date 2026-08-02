@@ -4,7 +4,7 @@ import { findExistingTable } from '@/lib/club/legacyTableLookup';
 import { getTableColumns } from '@/lib/outcomeSettingsDb';
 import { getLegacyUsersTable } from '@/lib/promocodes/legacyDb';
 
-export type ClubMemberOption = { id: string; name: string };
+export type ClubMemberOption = { id: string; name: string; image?: string | null };
 
 const SINGLE_USER_LEGACY_ROLE_ID = 5;
 
@@ -88,14 +88,14 @@ export async function fetchSingleUserOptions(): Promise<ClubMemberOption[]> {
   if (options.length === 0) {
     const users = await prisma.user.findMany({
       where: { userType: UserType.ATHLETE },
-      select: { id: true, firstName: true, surname: true, name: true, username: true },
+      select: { id: true, firstName: true, surname: true, name: true, username: true, image: true },
     });
     for (const user of users) {
       if (seenIds.has(user.id)) continue;
       const name = formatMemberName(user);
       if (!name) continue;
       seenIds.add(user.id);
-      options.push({ id: user.id, name });
+      options.push({ id: user.id, name, image: user.image });
     }
   }
 
@@ -109,7 +109,14 @@ export async function fetchClubMemberOptions(clubId: string): Promise<ClubMember
     where: { clubId },
     include: {
       member: {
-        select: { id: true, name: true, firstName: true, surname: true, username: true },
+        select: {
+          id: true,
+          name: true,
+          firstName: true,
+          surname: true,
+          username: true,
+          image: true,
+        },
       },
     },
     orderBy: { joinedAt: 'desc' },
@@ -119,7 +126,7 @@ export async function fetchClubMemberOptions(clubId: string): Promise<ClubMember
   for (const cm of clubMembers) {
     const name = formatMemberName(cm.member);
     if (!name) continue;
-    members.push({ id: cm.member.id, name });
+    members.push({ id: cm.member.id, name, image: cm.member.image });
   }
 
   members.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));

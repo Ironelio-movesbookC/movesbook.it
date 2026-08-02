@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthorizedContext } from '@/lib/clubCardReadersApi';
-import { getBachecaReadAccess } from '@/lib/clubBachecaReadAccess';
+import {
+  getBachecaManageAccess,
+  getBachecaReadAccess,
+} from '@/lib/clubBachecaReadAccess';
 import {
   loadClubBachecaLabels,
   upsertClubBachecaLabel,
@@ -12,7 +14,9 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-function parseLabelBody(body: unknown): Pick<BachecaLabel, 'id' | 'name' | 'activated' | 'content'> | null {
+function parseLabelBody(
+  body: unknown,
+): Pick<BachecaLabel, 'id' | 'name' | 'activated' | 'content' | 'updatedOn'> | null {
   if (!body || typeof body !== 'object') return null;
   const data = body as Record<string, unknown>;
   if (typeof data.id !== 'string' || !data.id.trim()) return null;
@@ -24,6 +28,7 @@ function parseLabelBody(body: unknown): Pick<BachecaLabel, 'id' | 'name' | 'acti
     name: data.name,
     activated: data.activated,
     content: data.content,
+    updatedOn: typeof data.updatedOn === 'string' ? data.updatedOn : '',
   };
 }
 
@@ -43,15 +48,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const context = await getAuthorizedContext(request);
-    if ('error' in context) return context.error;
+    const access = await getBachecaManageAccess(request, requestedClubId);
+    if (!access.ok) return access.error;
 
-    if (!context.club?.id) {
-      return NextResponse.json({ error: 'No club found for this account' }, { status: 404 });
-    }
-
-    const labels = await loadClubBachecaLabels(context.club.id);
-    return NextResponse.json({ labels, clubId: context.club.id });
+    const labels = await loadClubBachecaLabels(access.clubId);
+    return NextResponse.json({ labels, clubId: access.clubId });
   } catch (error) {
     console.error('GET /api/club/website/bacheca', error);
     return NextResponse.json({ error: 'Failed to load bacheca labels' }, { status: 500 });
@@ -59,12 +60,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const context = await getAuthorizedContext(request);
-  if ('error' in context) return context.error;
-
-  if (!context.club?.id) {
-    return NextResponse.json({ error: 'No club found for this account' }, { status: 404 });
-  }
+  const requestedClubId = request.nextUrl.searchParams.get('clubId');
+  const access = await getBachecaManageAccess(request, requestedClubId);
+  if (!access.ok) return access.error;
 
   try {
     const body = await request.json();
@@ -73,8 +71,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid bacheca label payload' }, { status: 400 });
     }
 
-    const saved = await upsertClubBachecaLabel(context.club.id, label);
-    return NextResponse.json({ label: saved, clubId: context.club.id });
+    const saved = await upsertClubBachecaLabel(access.clubId, label);
+    return NextResponse.json({ label: saved, clubId: access.clubId });
   } catch (error) {
     console.error('PUT /api/club/website/bacheca', error);
     const message = error instanceof Error ? error.message : 'Failed to save bacheca label';

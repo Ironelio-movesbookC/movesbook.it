@@ -117,6 +117,7 @@ export default function AddWorkoutModal({
     day,
     workoutNumber,
     workoutSymbol,
+    isWorkoutsDone,
     onSave,
     onClose
   });
@@ -451,30 +452,74 @@ export default function AddWorkoutModal({
             </div>
           </div>
 
-          {/* Section 3: WORKOUTS DONE Fields (only for Section C) */}
-          {isWorkoutsDone && !isViewMode && (
+          {/* Section 3: WORKOUTS DONE Fields (only for Section C) — see WORKOUTS_DONE_WORKOUT_INFO_FIELDS */}
+          {isWorkoutsDone && (
             <div className="space-y-3 bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-lg border border-green-200">
               <h3 className="text-sm font-bold text-green-800 flex items-center gap-2">
                 <span>📊</span>
-                <span>Workout Details (Completed)</span>
+                <span>Workout info (Workouts Done)</span>
               </h3>
-              
+              <p className="text-xs text-green-700">
+                Weather and Feeling Status appear only under WORKOUTS DONE (this section).
+              </p>
+
               <div className="grid grid-cols-2 gap-3">
-                {/* Time (Hours and Minutes) */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Time (HH:MM)
+                    Number of week
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={day?.weekNumber ?? ''}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-amber-50 text-sm text-gray-700"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Day of the week
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={getDayOfWeekName()}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-amber-50 text-sm text-gray-700"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Number of the workout
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={
+                      mode === 'add'
+                        ? `( ${workoutNumber}th )`
+                        : existingWorkout?.sessionNumber
+                          ? `( ${existingWorkout.sessionNumber}th )`
+                          : `( ${workoutNumber}th )`
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-amber-50 text-sm text-gray-700"
+                  />
+                </div>
+
+                {/* Time */}
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Time
                   </label>
                   <input
                     type="time"
                     value={formData.time || ''}
                     onChange={(e) => handleSectionCFieldChange('time', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+                    disabled={isViewMode}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm disabled:bg-gray-100"
                     placeholder="00:00"
                   />
                 </div>
 
-                {/* Weather */}
+                {/* Weather — Done only */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
                     Weather
@@ -483,8 +528,9 @@ export default function AddWorkoutModal({
                     type="text"
                     value={formData.weather || ''}
                     onChange={(e) => handleSectionCFieldChange('weather', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-                    placeholder="Sunny, Cloudy, Rainy..."
+                    disabled={isViewMode}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm disabled:bg-gray-100"
+                    placeholder="in according to the Weather setting"
                     list="weather-options"
                   />
                   <datalist id="weather-options">
@@ -510,7 +556,8 @@ export default function AddWorkoutModal({
                     type="text"
                     value={formData.location || ''}
                     onChange={(e) => handleSectionCFieldChange('location', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+                    disabled={isViewMode}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm disabled:bg-gray-100"
                     placeholder="Gym, Track, Park..."
                     list="location-options"
                   />
@@ -535,7 +582,8 @@ export default function AddWorkoutModal({
                     type="text"
                     value={formData.surface || ''}
                     onChange={(e) => handleSectionCFieldChange('surface', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+                    disabled={isViewMode}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm disabled:bg-gray-100"
                     placeholder="Asphalt, Track, Grass..."
                     list="surface-options"
                   />
@@ -551,39 +599,51 @@ export default function AddWorkoutModal({
                   </datalist>
                 </div>
 
-                {/* Heart Rate Max */}
+                {/* Heart rate (max) — two boxes in mockup map to Max / optional second reading */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Heart Rate Max (60-220)
+                    Heart rate (max)
                   </label>
                   <input
                     type="number"
                     min="60"
                     max="220"
                     value={formData.heartRateMax || ''}
-                    onChange={(e) => handleSectionCFieldChange('heartRateMax', e.target.value ? parseInt(e.target.value) : undefined)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-                    placeholder="180"
+                    onChange={(e) =>
+                      handleSectionCFieldChange(
+                        'heartRateMax',
+                        e.target.value ? parseInt(e.target.value) : undefined,
+                      )
+                    }
+                    disabled={isViewMode}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm disabled:bg-gray-100"
+                    placeholder="000"
                   />
                 </div>
 
                 {/* Average HR */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Average HR (60-220)
+                    Average HR
                   </label>
                   <input
                     type="number"
                     min="60"
                     max="220"
                     value={formData.heartRateAvg || ''}
-                    onChange={(e) => handleSectionCFieldChange('heartRateAvg', e.target.value ? parseInt(e.target.value) : undefined)}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 text-sm ${
+                    onChange={(e) =>
+                      handleSectionCFieldChange(
+                        'heartRateAvg',
+                        e.target.value ? parseInt(e.target.value) : undefined,
+                      )
+                    }
+                    disabled={isViewMode}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 text-sm disabled:bg-gray-100 ${
                       validation.heartRate?.valid === false
                         ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                         : 'border-gray-300 focus:ring-green-500 focus:border-green-500'
                     }`}
-                    placeholder="150"
+                    placeholder="000"
                   />
                   {validation.heartRate?.valid === false && (
                     <p className="text-xs text-red-600 mt-1">{validation.heartRate.message}</p>
@@ -593,20 +653,26 @@ export default function AddWorkoutModal({
                 {/* Calories */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Calories (0-9999)
+                    Calories
                   </label>
                   <input
                     type="number"
                     min="0"
                     max="9999"
                     value={formData.calories || ''}
-                    onChange={(e) => handleSectionCFieldChange('calories', e.target.value ? parseInt(e.target.value) : undefined)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-                    placeholder="500"
+                    onChange={(e) =>
+                      handleSectionCFieldChange(
+                        'calories',
+                        e.target.value ? parseInt(e.target.value) : undefined,
+                      )
+                    }
+                    disabled={isViewMode}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm disabled:bg-gray-100"
+                    placeholder="0000"
                   />
                 </div>
 
-                {/* Feeling Status */}
+                {/* Feeling Status — Done only */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
                     Feeling Status
@@ -615,7 +681,8 @@ export default function AddWorkoutModal({
                     type="text"
                     value={formData.feelingStatus || ''}
                     onChange={(e) => handleSectionCFieldChange('feelingStatus', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+                    disabled={isViewMode}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm disabled:bg-gray-100"
                     placeholder="Great, Good, Tired..."
                     list="feeling-options"
                   />
@@ -639,9 +706,10 @@ export default function AddWorkoutModal({
                   <textarea
                     value={formData.notes || ''}
                     onChange={(e) => handleSectionCFieldChange('notes', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm resize-vertical"
+                    disabled={isViewMode}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm resize-vertical disabled:bg-gray-100"
                     rows={3}
-                    placeholder="Add any notes about this workout..."
+                    placeholder="( input )"
                   />
                 </div>
               </div>

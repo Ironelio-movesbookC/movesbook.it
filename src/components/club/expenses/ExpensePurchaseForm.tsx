@@ -111,7 +111,7 @@ export default function ExpensePurchaseForm() {
         taxDocument: taxDocument ?? undefined,
         companyId,
         companyName: selectedCompany?.name,
-        createReceipt: taxDoc && paid > 0,
+        createReceipt: Boolean(taxDoc && taxDocument && paid > 0),
         receiptNumber: taxDocument?.documentNumber,
         receiptAnnotations: taxDocument?.causal || undefined,
       });

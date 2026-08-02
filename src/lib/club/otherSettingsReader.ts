@@ -4,6 +4,7 @@ import type { TaxDocumentClubSettings } from '@/lib/procedures/taxDocumentDefaul
 import { counterKeyForDocumentType } from '@/lib/procedures/taxDocumentDefaults';
 
 const TABLE_NAME = 'club_reader_other_settings';
+const JSON_TABLE_NAME = 'club_other_settings';
 
 const COUNTER_COLUMNS: Record<'taxReceipt' | 'invoice' | 'simpleReceipt', string> = {
   taxReceipt: 'tax_receipt',
@@ -62,9 +63,34 @@ type FetchContext = {
   clubId: string;
 };
 
+const REQUIRED_COLUMNS: Record<string, string> = {
+  document_type: 'VARCHAR(80) NULL',
+  enable_header: 'VARCHAR(50) NULL',
+  primary_heading: 'VARCHAR(255) NULL',
+  secondary_heading: 'VARCHAR(255) NULL',
+  tax: 'VARCHAR(50) NULL',
+  cal_tax_status: "CHAR(1) NOT NULL DEFAULT 'N'",
+  tax_receipt: 'VARCHAR(50) NULL',
+  invoice: 'VARCHAR(50) NULL',
+  simple_receipt: 'VARCHAR(50) NULL',
+};
+
+async function ensureReaderColumns(tableName: string): Promise<void> {
+  const columns = await getTableColumns(tableName);
+  for (const [column, definition] of Object.entries(REQUIRED_COLUMNS)) {
+    if (!columns.has(column)) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE \`${tableName}\` ADD COLUMN \`${column}\` ${definition}`
+      );
+    }
+  }
+}
+
 async function fetchSettingsRow(context: FetchContext): Promise<Record<string, unknown> | null> {
   const tableName = await findExistingTable([TABLE_NAME]);
   if (!tableName) return null;
+
+  await ensureReaderColumns(tableName);
 
   const columns = await getTableColumns(tableName);
   const legacyUserId = await getLegacyUserId(context.userId);
@@ -127,25 +153,79 @@ async function fetchSettingsRow(context: FetchContext): Promise<Record<string, u
   return rows[0] ?? null;
 }
 
+function parseSavedJson(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchJsonSettingsFallback(context: FetchContext): Promise<Record<string, unknown> | null> {
+  const tableName = await findExistingTable([JSON_TABLE_NAME]);
+  if (!tableName) return null;
+
+  const columns = await getTableColumns(tableName);
+  if (!columns.has('settings_json') || !columns.has('user_id')) return null;
+
+  const legacyUserId = await getLegacyUserId(context.userId);
+  const userIds = Array.from(new Set([context.userId, legacyUserId].filter(Boolean) as string[]));
+  const userPlaceholders = userIds.map(() => '?').join(',');
+  const clubFilter = columns.has('club_key') ? 'AND club_key = ?' : '';
+  const modifiedOrder = columns.has('modified') ? 'modified DESC,' : '';
+  const rows = await prisma.$queryRawUnsafe<{ settings_json: string }[]>(
+    `SELECT settings_json
+     FROM \`${tableName}\`
+     WHERE user_id IN (${userPlaceholders})
+       ${clubFilter}
+     ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END, ${modifiedOrder} id DESC
+     LIMIT 1`,
+    ...userIds,
+    ...(columns.has('club_key') ? [context.clubId] : []),
+    context.userId
+  );
+
+  return parseSavedJson(rows[0]?.settings_json);
+}
+
+const DEFAULT_SETTINGS: TaxDocumentClubSettings = {
+  documentType: 'Tax receipt',
+  enableHeader: 'primary',
+  primaryHeading: '',
+  secondaryHeading: '',
+  tax: '',
+  calTaxStatus: false,
+  taxReceipt: '',
+  invoice: '',
+  simpleReceipt: '',
+};
+
+function toSettings(json: Record<string, unknown>): TaxDocumentClubSettings {
+  return {
+    documentType: text(json.documentType) || text(json.document_type) || 'Tax receipt',
+    enableHeader: text(json.enableHeader) || text(json.enable_header) || 'primary',
+    primaryHeading: text(json.primaryHeading) || text(json.primary_heading),
+    secondaryHeading: text(json.secondaryHeading) || text(json.secondary_heading),
+    tax: text(json.tax),
+    calTaxStatus: toBooleanFlag(json.calTaxStatus) || toBooleanFlag(json.cal_tax_status),
+    taxReceipt: text(json.taxReceipt) || text(json.tax_receipt),
+    invoice: text(json.invoice),
+    simpleReceipt: text(json.simpleReceipt) || text(json.simple_receipt),
+  };
+}
+
 export async function fetchTaxDocumentClubSettings(
   context: FetchContext
 ): Promise<TaxDocumentClubSettings> {
+  const json = await fetchJsonSettingsFallback(context);
   const row = await fetchSettingsRow(context);
-  if (!row) {
-    return {
-      documentType: 'Tax receipt',
-      enableHeader: 'primary',
-      primaryHeading: '',
-      secondaryHeading: '',
-      tax: '',
-      calTaxStatus: false,
-      taxReceipt: '',
-      invoice: '',
-      simpleReceipt: '',
-    };
-  }
 
-  return {
+  const jsonSettings = json ? toSettings(json) : null;
+  const columnSettings = row ? {
     documentType: text(row.document_type) || 'Tax receipt',
     enableHeader: text(row.enable_header) || 'primary',
     primaryHeading: text(row.primary_heading),
@@ -155,7 +235,32 @@ export async function fetchTaxDocumentClubSettings(
     taxReceipt: text(row.tax_receipt),
     invoice: text(row.invoice),
     simpleReceipt: text(row.simple_receipt),
-  };
+  } : null;
+
+  function pick<T extends string | boolean>(col: T | undefined, json: T | undefined): T {
+    if (col != null && col !== '' && col !== false) return col;
+    if (json != null && json !== '' && json !== false) return json;
+    return (col ?? json ?? '') as T;
+  }
+
+  if (columnSettings && jsonSettings) {
+    return {
+      documentType: pick(columnSettings.documentType, jsonSettings.documentType),
+      enableHeader: pick(columnSettings.enableHeader, jsonSettings.enableHeader),
+      primaryHeading: pick(columnSettings.primaryHeading, jsonSettings.primaryHeading),
+      secondaryHeading: pick(columnSettings.secondaryHeading, jsonSettings.secondaryHeading),
+      tax: pick(columnSettings.tax, jsonSettings.tax),
+      calTaxStatus: pick(columnSettings.calTaxStatus, jsonSettings.calTaxStatus),
+      taxReceipt: pick(columnSettings.taxReceipt, jsonSettings.taxReceipt),
+      invoice: pick(columnSettings.invoice, jsonSettings.invoice),
+      simpleReceipt: pick(columnSettings.simpleReceipt, jsonSettings.simpleReceipt),
+    };
+  }
+
+  if (columnSettings) return columnSettings;
+  if (jsonSettings) return jsonSettings;
+
+  return DEFAULT_SETTINGS;
 }
 
 export async function updateTaxDocumentCounter(
@@ -165,6 +270,8 @@ export async function updateTaxDocumentCounter(
 ): Promise<void> {
   const tableName = await findExistingTable([TABLE_NAME]);
   if (!tableName) return;
+
+  await ensureReaderColumns(tableName);
 
   const columns = await getTableColumns(tableName);
   const counterKey = counterKeyForDocumentType(documentType);

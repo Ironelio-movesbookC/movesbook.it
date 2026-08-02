@@ -4,7 +4,8 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Users, Shield, Activity, TrendingUp } from 'lucide-react';
-import AdminSuperAdminOGPNewsContent from '@/components/admin/AdminSuperAdminOGPNewsContent';
+import AdminSuperAdminOGPMusicContent from '@/components/admin/AdminSuperAdminOGPMusicContent';
+import AdminOgMusicPanelContent from '@/components/admin/AdminOgMusicPanelContent';
 
 interface AdminUser {
   id: string;
@@ -36,7 +37,11 @@ function AdminDashboardInner() {
   }
 
   if (panel === 'music-tracked') {
-    return <AdminSuperAdminOGPNewsContent closeHref="/admin/dashboard" />;
+    return <AdminSuperAdminOGPMusicContent closeHref="/admin/dashboard" />;
+  }
+
+  if (panel === 'og-music') {
+    return <AdminOgMusicPanelContent closeHref="/admin/dashboard" />;
   }
 
   const stats = [
