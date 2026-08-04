@@ -171,6 +171,7 @@ export default function WaysToGetStartedSection({
         onClose={() => setShowPackageInfo(false)}
         userType={userType}
         lang={lang}
+        onPurchaseVersion={onVersionSelect}
       />
 
       <RegistrationVersionNewsModal

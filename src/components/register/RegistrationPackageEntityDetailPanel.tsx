@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, X } from 'lucide-react';
 import SubscriptionMembershipSharingDisplay, {
   getSubscriptionSharingDaysValue,
@@ -8,6 +9,7 @@ import SubscriptionMembershipSharingDisplay, {
 import RegistrationVersionLastNewsBlock from './RegistrationVersionLastNewsBlock';
 import { getSubscriptionEditData } from '@/lib/admin/subscriptionSettingsMock';
 import {
+  getDetailedOverviewForEntity,
   getEntityDisplayTitle,
   getOverviewFeaturesForEntity,
   getSubscriptionRowForEntity,
@@ -16,7 +18,6 @@ import {
   type RegistrationSelectedEntity,
   type RegistrationUserType,
 } from '@/lib/registration/waysToGetStarted';
-import type { SubscriptionTier } from '@/types/adminSubscriptionSettings';
 import RegistrationClubPricelistsPanel, {
   type ClubPricelistTab,
 } from './RegistrationClubPricelistsPanel';
@@ -28,19 +29,14 @@ type EntityDetailTab =
   | 'last_news'
   | 'club_pricelists';
 
+export type RegistrationEntityDetailTab = EntityDetailTab;
+
 const ENTITY_TABS: { key: EntityDetailTab; label: string; clubOnly?: boolean }[] = [
   { key: 'overview', label: 'Overview' },
   { key: 'detailed_overview', label: 'Detailed overview' },
   { key: 'availability_shares', label: 'Availability shares' },
   { key: 'last_news', label: 'Last news' },
   { key: 'club_pricelists', label: 'Club pricelists', clubOnly: true },
-];
-
-const SUBSCRIPTION_TIERS: { key: SubscriptionTier; label: string }[] = [
-  { key: 'trial', label: 'Trial' },
-  { key: 'base', label: 'Base' },
-  { key: 'premium', label: 'Premium' },
-  { key: 'pro', label: 'Pro' },
 ];
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30];
@@ -53,6 +49,8 @@ type RegistrationPackageEntityDetailPanelProps = {
   onClose?: () => void;
   /** When true, renders inline (dashboard) instead of as a modal overlay. */
   embedded?: boolean;
+  initialActiveTab?: EntityDetailTab;
+  initialClubSubTab?: ClubPricelistTab;
 };
 
 function NoImagePlaceholder() {
@@ -63,11 +61,61 @@ function NoImagePlaceholder() {
   );
 }
 
-function FeatureImage({ src }: { src: string }) {
+function FeatureImage({
+  src,
+  onClick,
+}: {
+  src: string;
+  onClick?: () => void;
+}) {
   if (!src) return <NoImagePlaceholder />;
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt="" className="h-16 w-16 border border-gray-300 object-cover bg-white" />
+    <button
+      type="button"
+      onClick={onClick}
+      className="block cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-[#337ab7]"
+      aria-label="View enlarged image"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="" className="h-16 w-16 border border-gray-300 object-cover bg-white" />
+    </button>
+  );
+}
+
+function EnlargedImageModal({ src, onClose }: { src: string; onClose: () => void }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Enlarged package image"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 rounded-full bg-[#444] p-2 text-white hover:bg-black"
+        aria-label="Close enlarged image"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt=""
+        className="max-h-[85vh] max-w-[90vw] border-4 border-white bg-white object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>,
+    document.body,
   );
 }
 
@@ -84,16 +132,22 @@ function OverviewTab({
 }) {
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
+  const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
 
   const features = useMemo(
     () => getOverviewFeaturesForEntity(userType, entity.tierKey, lang, category),
     [userType, entity.tierKey, lang, category],
   );
 
+  useEffect(() => {
+    setPage(1);
+  }, [userType, entity.tierKey, lang, category, pageSize]);
+
   const totalPages = Math.max(1, Math.ceil(features.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageFeatures = features.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const title = getEntityDisplayTitle(userType, entity.versionLabel);
+  const canPaginate = totalPages > 1;
 
   return (
     <div className="flex flex-col h-full min-h-[320px]">
@@ -123,28 +177,54 @@ function OverviewTab({
           ))}
         </select>
         <span className="text-gray-600">per page</span>
-        <div className="ml-auto flex gap-1">
+        <span className="text-xs text-gray-500">
+          {features.length} package{features.length === 1 ? '' : 's'}
+        </span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <button
             type="button"
-            disabled={currentPage <= 1}
+            disabled={!canPaginate || currentPage <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="border border-gray-300 bg-white px-2 py-1 text-xs disabled:opacity-40"
+            className="border border-gray-300 bg-white px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40"
           >
             Prev
           </button>
-          <span className="border border-gray-300 bg-[#ddd] px-2 py-1 text-xs font-bold">
-            {currentPage}
-          </span>
+          {canPaginate ? (
+            <label className="flex items-center gap-1 text-xs text-gray-700">
+              <span>Page</span>
+              <select
+                value={currentPage}
+                onChange={(e) => setPage(Number(e.target.value))}
+                className="border border-gray-300 bg-white px-2 py-1 text-xs"
+                aria-label="Select page"
+              >
+                {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
+                  <option key={pageNumber} value={pageNumber}>
+                    {pageNumber}
+                  </option>
+                ))}
+              </select>
+              <span>of {totalPages}</span>
+            </label>
+          ) : (
+            <span className="border border-gray-300 bg-[#ddd] px-2 py-1 text-xs font-bold">
+              {currentPage}
+            </span>
+          )}
           <button
             type="button"
-            disabled={currentPage >= totalPages}
+            disabled={!canPaginate || currentPage >= totalPages}
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="border border-gray-300 bg-white px-2 py-1 text-xs disabled:opacity-40"
+            className="border border-gray-300 bg-white px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next
           </button>
         </div>
       </div>
+
+      {enlargedImage ? (
+        <EnlargedImageModal src={enlargedImage} onClose={() => setEnlargedImage(null)} />
+      ) : null}
 
       <div className="flex-1 overflow-y-auto bg-white">
         {pageFeatures.length === 0 ? (
@@ -156,15 +236,22 @@ function OverviewTab({
               className="flex flex-wrap items-start gap-3 border-b border-gray-200 px-4 py-4"
             >
               <div className="flex gap-2">
-                <FeatureImage src={feature.pictures[0]} />
-                <FeatureImage src={feature.pictures[1]} />
+                {feature.pictures.map((picture, pictureIndex) => (
+                  <FeatureImage
+                    key={`${feature.id}-pic-${pictureIndex}`}
+                    src={picture}
+                    onClick={picture ? () => setEnlargedImage(picture) : undefined}
+                  />
+                ))}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <Check className="h-4 w-4 shrink-0 text-[#5cb85c] stroke-[3]" />
                   <span className="font-bold text-gray-900">{feature.title}</span>
                 </div>
-                <p className="mt-1 text-xs text-gray-400">{feature.langKey}</p>
+                {feature.description ? (
+                  <p className="mt-1 text-sm text-gray-700 leading-relaxed">{feature.description}</p>
+                ) : null}
               </div>
             </div>
           ))
@@ -177,104 +264,43 @@ function OverviewTab({
 function DetailedOverviewTab({
   entity,
   userType,
+  lang,
+  category,
 }: {
   entity: RegistrationSelectedEntity;
   userType: RegistrationUserType;
+  lang: string;
+  category: RegistrationPackageCategory;
 }) {
-  const row = getSubscriptionRowForEntity(entity);
-  const editData = entity.subscriptionId ? getSubscriptionEditData(entity.subscriptionId, false) : null;
+  const items = useMemo(
+    () => getDetailedOverviewForEntity(userType, entity.tierKey, lang, category),
+    [userType, entity.tierKey, lang, category],
+  );
+  const title = getEntityDisplayTitle(userType, entity.versionLabel);
 
-  if (!row || !editData) {
+  if (items.length === 0) {
     return (
-      <p className="p-6 text-sm text-gray-600">Subscription details are not available for this version.</p>
+      <p className="p-6 text-sm text-gray-600">
+        No detailed overviews available for enabled packages in this version.
+      </p>
     );
   }
 
-  const roleLabel = userType === 'club' ? 'Club' : userType === 'coach' ? 'Coach' : 'Athlete';
-  const tierValues =
-    userType === 'club'
-      ? [-1, 5, 10, 15]
-      : [row.credit1, row.credit2, row.credit3, row.credit4];
-  const tierCheckboxes =
-    userType === 'coach' || userType === 'club'
-      ? editData.settings.athleteTiers
-      : editData.settings.coachTiers;
-  const daysValue = row.days2 || row.days1;
-
   return (
     <div className="overflow-y-auto p-4">
-      <h3 className="mb-4 text-base font-bold text-gray-800">
-        Details of subscription{' '}
-        <span className="text-red-600">
-          {row.code} - {row.name}
-        </span>
-      </h3>
-
-      <div className="mb-4 space-y-2 border border-gray-300 bg-white p-4">
-        <div className="grid grid-cols-[180px_1fr] items-center gap-2 text-sm">
-          <span className="text-gray-700">Code</span>
-          <span className="text-gray-900">{editData.general.code}</span>
-          <span className="text-gray-700">Name of subscriptions</span>
-          <span className="text-gray-900">{editData.general.name}</span>
-          <span className="text-gray-700">Days durations</span>
-          <input
-            readOnly
-            value={editData.general.firstSubscriptionDays}
-            className="w-24 border border-gray-300 bg-[#f0f0f0] px-2 py-1 text-sm"
-          />
-          <span className="text-gray-700">Price</span>
-          <input
-            readOnly
-            value={editData.general.firstSubscriptionPrice}
-            className="w-24 border border-gray-300 bg-[#f0f0f0] px-2 py-1 text-sm"
-          />
-        </div>
-      </div>
-
-      <div className="border border-gray-300 bg-white p-4">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[480px] border-collapse text-sm">
-            <thead>
-              <tr>
-                <th className="w-32 border border-gray-300 bg-[#f5f5f5] p-2" />
-                {SUBSCRIPTION_TIERS.map((tier) => (
-                  <th
-                    key={tier.key}
-                    className="border border-gray-300 bg-[#f5f5f5] p-2 text-center font-semibold"
-                  >
-                    <label className="flex flex-col items-center gap-1">
-                      <input type="checkbox" readOnly checked={tierCheckboxes[tier.key]} />
-                      {tier.label}
-                    </label>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="border border-gray-300 bg-[#f9f9f9] p-2 font-medium">{roleLabel}</td>
-                {tierValues.map((value, index) => (
-                  <td key={`role-${index}`} className="border border-gray-300 p-2 text-center">
-                    <span className="inline-block min-w-[48px] border border-gray-300 bg-[#e8e8e8] px-2 py-1">
-                      {value}
-                    </span>
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="border border-gray-300 bg-[#f9f9f9] p-2 font-medium">Days duration</td>
-                {SUBSCRIPTION_TIERS.map((tier) => (
-                  <td key={`days-${tier.key}`} className="border border-gray-300 p-2 text-center">
-                    <span className="inline-block min-w-[48px] border border-gray-300 bg-[#e8e8e8] px-2 py-1">
-                      {daysValue}!
-                    </span>
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-2 text-right text-xs text-gray-500">-1=Unlimited</p>
+      <h3 className="mb-4 text-base font-bold text-gray-800">{title}</h3>
+      <div className="space-y-6">
+        {items.map((item) => (
+          <section key={item.id} className="border border-gray-300 bg-white">
+            <div className="border-b border-gray-300 bg-[#7eb8da] px-4 py-2 text-sm font-bold text-gray-900">
+              {item.title}
+            </div>
+            <div
+              className="prose prose-sm max-w-none p-4 text-gray-800"
+              dangerouslySetInnerHTML={{ __html: item.html }}
+            />
+          </section>
+        ))}
       </div>
     </div>
   );
@@ -338,10 +364,14 @@ export default function RegistrationPackageEntityDetailPanel({
   category,
   onClose,
   embedded = false,
+  initialActiveTab,
+  initialClubSubTab = 'versions_features',
 }: RegistrationPackageEntityDetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<EntityDetailTab>('overview');
-  const [clubSubTab, setClubSubTab] = useState<ClubPricelistTab>('versions_features');
-  const [showClubSubNav, setShowClubSubNav] = useState(false);
+  const [activeTab, setActiveTab] = useState<EntityDetailTab>(initialActiveTab ?? 'overview');
+  const [clubSubTab, setClubSubTab] = useState<ClubPricelistTab>(initialClubSubTab);
+  const [showClubSubNav, setShowClubSubNav] = useState(
+    initialActiveTab === 'club_pricelists',
+  );
 
   const visibleTabs = ENTITY_TABS.filter((tab) => !tab.clubOnly || userType === 'club');
 
@@ -414,7 +444,12 @@ export default function RegistrationPackageEntityDetailPanel({
         ) : activeTab === 'overview' ? (
           <OverviewTab entity={entity} userType={userType} lang={lang} category={category} />
         ) : activeTab === 'detailed_overview' ? (
-          <DetailedOverviewTab entity={entity} userType={userType} />
+          <DetailedOverviewTab
+            entity={entity}
+            userType={userType}
+            lang={lang}
+            category={category}
+          />
         ) : activeTab === 'availability_shares' ? (
           <AvailabilitySharesTab entity={entity} userType={userType} />
         ) : activeTab === 'last_news' ? (

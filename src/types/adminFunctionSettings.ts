@@ -40,13 +40,8 @@ export type ManagementSettingsData = {
   features: ManagementFeatureRow[];
 };
 
-export type ManagementFeatureEditData = {
+export type ManagementFeatureGlobalSettings = {
   id: number;
-  lang: string;
-  functionName: string;
-  linkedPackageFeature: string;
-  description: string;
-  status: 'publish' | 'unpublish';
   clubVersions: {
     basic: boolean;
     premium: boolean;
@@ -56,3 +51,15 @@ export type ManagementFeatureEditData = {
   priceOneYear: number;
   priceNoLimit: number;
 };
+
+export type ManagementFeatureLocalizedSettings = {
+  id: number;
+  lang: string;
+  functionName: string;
+  linkedPackageFeature: string;
+  description: string;
+  status: 'publish' | 'unpublish';
+};
+
+export type ManagementFeatureEditData = ManagementFeatureGlobalSettings &
+  ManagementFeatureLocalizedSettings;

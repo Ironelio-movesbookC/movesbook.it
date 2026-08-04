@@ -10,6 +10,7 @@ import {
 } from '@/lib/admin/managementFunctionSettingsMock';
 import SubscriptionSystemDashboardHeader from './SubscriptionSystemDashboardHeader';
 import FunctionSettingsTabs from './FunctionSettingsTabs';
+import FunctionKeycodeEditor from './FunctionKeycodeEditor';
 import SubscriptionLanguageTabs from './SubscriptionLanguageTabs';
 
 type FunctionManagementSettingsPanelProps = {
@@ -101,6 +102,9 @@ export default function FunctionManagementSettingsPanel({
                 >
                   Optional
                 </th>
+                <th className="border border-gray-300 px-3 py-2 text-center font-bold text-gray-800 w-28">
+                  Keycode
+                </th>
                 <th className="border border-gray-300 px-3 py-2 text-center font-bold text-gray-800 w-16">
                   Edit
                 </th>
@@ -116,6 +120,7 @@ export default function FunctionManagementSettingsPanel({
                 <th className="border border-gray-300 px-2 py-1 text-center text-xs font-bold text-gray-700">
                   No Limit (EURO)
                 </th>
+                <th className="border border-gray-300" />
                 <th className="border border-gray-300" />
               </tr>
             </thead>
@@ -178,6 +183,9 @@ export default function FunctionManagementSettingsPanel({
                           inputDisabled ? 'bg-gray-200 text-gray-500' : 'bg-[#fffacd]'
                         }`}
                       />
+                    </td>
+                    <td className="border border-gray-300 px-2 py-2 text-center align-top">
+                      <FunctionKeycodeEditor tab="management" functionId={row.id} compact />
                     </td>
                     <td className="border border-gray-300 px-2 py-2 text-center">
                       <button

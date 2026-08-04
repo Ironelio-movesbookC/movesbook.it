@@ -27,7 +27,7 @@ export default function MovesbookLanguageGrid({
   onChange,
 }: MovesbookLanguageGridProps) {
   return (
-    <div className="grid grid-cols-5 gap-1 w-fit">
+    <div className="flex flex-wrap gap-1">
       {SUPPORTED_LANGUAGES.map((lang) => {
         const isActive = activeLang === lang.code;
         return (

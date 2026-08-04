@@ -6,6 +6,8 @@ import {
   recalcPackTotals,
   saveClubPurchaseAccountsSettings,
 } from '@/lib/admin/clubPurchaseAccountsMock';
+import { packToDisplayRow } from '@/lib/admin/clubAccountPackPricing';
+import ClubAccountPackPricingSections from '@/components/club/ClubAccountPackPricingSections';
 import SubscriptionLanguageTabs from './SubscriptionLanguageTabs';
 import RichTextEditor from '@/components/shared/RichTextEditor';
 
@@ -46,129 +48,19 @@ function YesNoRadio({
   );
 }
 
-function AccountPackEditor({
-  pack,
-  onChange,
-  onUpdate,
-}: {
-  pack: ClubPurchaseAccountPack;
-  onChange: (pack: ClubPurchaseAccountPack) => void;
-  onUpdate: () => void;
-}) {
-  const updateUnitPrice = (index: number, raw: string) => {
-    const unitPrices = [...pack.unitPrices];
-    unitPrices[index] = Number(raw) || 0;
-    onChange(recalcPackTotals({ ...pack, unitPrices }));
+function displayRowToPack(row: ReturnType<typeof packToDisplayRow>): ClubPurchaseAccountPack {
+  return {
+    versionKey: row.versionKey,
+    versionLabel: row.versionLabel,
+    headerColor: row.headerColor,
+    packSizes: row.packSizes,
+    packEnabled: row.packEnabled,
+    unitPrices: row.unitPrices,
+    totalPrices: row.totalPrices,
+    standardPrice: row.standardPrice,
+    resellingSuggestion: row.resellingSuggestion,
+    durationDays: row.durationDays,
   };
-
-  const togglePack = (index: number) => {
-    const packEnabled = [...pack.packEnabled];
-    packEnabled[index] = !packEnabled[index];
-    onChange({ ...pack, packEnabled });
-  };
-
-  return (
-    <div className="border border-gray-400 bg-[#f0f0f0]">
-      <div
-        className="px-4 py-2 text-sm font-bold text-white"
-        style={{ backgroundColor: pack.headerColor }}
-      >
-        {pack.versionLabel}
-      </div>
-      <div className="p-4 space-y-3">
-        <div className="flex items-end gap-2 pl-[150px]">
-          {pack.packSizes.map((size, i) => (
-            <div key={size} className="flex w-16 flex-col items-center gap-1">
-              <div className="w-full bg-[#c0392b] py-1 text-center text-xs font-bold text-white border border-gray-600">
-                {size}
-              </div>
-              <input
-                type="checkbox"
-                checked={pack.packEnabled[i] ?? false}
-                onChange={() => togglePack(i)}
-                className="h-4 w-4"
-              />
-            </div>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="w-[140px] shrink-0 text-xs text-gray-800">Price for account in Pack</span>
-          <span className="text-sm font-bold">€</span>
-          {pack.unitPrices.map((price, i) => (
-            <input
-              key={`unit-${pack.versionKey}-${i}`}
-              type="text"
-              value={price}
-              onChange={(e) => updateUnitPrice(i, e.target.value)}
-              className="w-16 border border-gray-400 bg-[#fffacd] px-1 py-1 text-center text-sm"
-            />
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="w-[140px] shrink-0 text-xs text-gray-800">Total Price</span>
-          <span className="text-sm font-bold">€</span>
-          {pack.totalPrices.map((price, i) => (
-            <input
-              key={`total-${pack.versionKey}-${i}`}
-              readOnly
-              value={price}
-              className="w-16 border border-gray-400 bg-yellow-300 px-1 py-1 text-center text-sm font-semibold"
-            />
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4 border-t border-gray-300 pt-3 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-gray-700">Standard price of single account</span>
-            <span className="font-bold">€</span>
-            <input
-              type="text"
-              value={pack.standardPrice}
-              onChange={(e) =>
-                onChange({ ...pack, standardPrice: Number(e.target.value) || 0 })
-              }
-              className="w-20 border border-gray-400 bg-[#e8d5f5] px-2 py-1 text-center"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-700">Reselling suggestion</span>
-            <span className="font-bold">€</span>
-            <input
-              type="text"
-              value={pack.resellingSuggestion}
-              onChange={(e) =>
-                onChange({ ...pack, resellingSuggestion: Number(e.target.value) || 0 })
-              }
-              className="w-20 border border-gray-400 bg-white px-2 py-1 text-center"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-700">Dura</span>
-            <input
-              type="text"
-              value={pack.durationDays}
-              onChange={(e) =>
-                onChange({ ...pack, durationDays: Number(e.target.value) || 0 })
-              }
-              className="w-16 border border-gray-400 bg-white px-2 py-1 text-center"
-            />
-          </div>
-        </div>
-
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={onUpdate}
-            className="bg-[#c0392b] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#962d22]"
-          >
-            Update
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export default function ClubPurchaseNewAccountsPanel({
@@ -264,11 +156,10 @@ export default function ClubPurchaseNewAccountsPanel({
               }
               className="border border-gray-300 bg-white px-2 py-1"
             >
-              {Array.from({ length: 30 }, (_, i) => i + 1).map((d) => (
-                <option key={d} value={d}>
-                  ({d}-30)
-                </option>
-              ))}
+              <option value={30}>(1-30)</option>
+              <option value={60}>(1-60)</option>
+              <option value={90}>(1-90)</option>
+              <option value={120}>(1-120)</option>
             </select>
             <span>days</span>
           </div>
@@ -296,18 +187,18 @@ export default function ClubPurchaseNewAccountsPanel({
 
       <div className="border border-gray-300">
         <div className="bg-[#8e44ad] px-4 py-2 text-sm font-bold text-white">
-          Purchase accounts -{' '}
-          <span className="font-normal">Clubs can always buy accounts for their athletes</span>
+          Account list prices —{' '}
+          <span className="font-normal">
+            configured here; shown to club admins only during registration (not after)
+          </span>
         </div>
         <div className="space-y-4 bg-white p-4">
-          {settings.accountPacks.map((pack, index) => (
-            <AccountPackEditor
-              key={pack.versionKey}
-              pack={pack}
-              onChange={(next) => updatePack(index, next)}
-              onUpdate={() => handlePackUpdate(index)}
-            />
-          ))}
+          <ClubAccountPackPricingSections
+            packs={settings.accountPacks.map(packToDisplayRow)}
+            mode="admin-edit"
+            onPackChange={(index, row) => updatePack(index, displayRowToPack(row))}
+            onPackUpdate={handlePackUpdate}
+          />
         </div>
       </div>
     </div>

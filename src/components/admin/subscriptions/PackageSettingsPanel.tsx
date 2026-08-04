@@ -20,7 +20,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Check, GripVertical, Pencil, X } from 'lucide-react';
+import { Check, Copy, GripVertical, Pencil, X } from 'lucide-react';
 import type { PackageItem, PackageSettingsView } from '@/types/adminPackageSettings';
 import {
   addGlobalPackageItem,
@@ -34,6 +34,13 @@ import {
   saveGlobalPackages,
   updatePackageTiersForUserType,
 } from '@/lib/admin/packageSettingsMock';
+import {
+  buildCopyAllSettingsWarning,
+  buildCopySinglePackageWarning,
+  copyAllPackageSettingsToUserType,
+  copySinglePackageToUserType,
+  getPackageCopyTargetOptions,
+} from '@/lib/admin/packageSettingsCopy';
 import { getPackageDisplayTitle } from '@/lib/admin/packageSettingsLang';
 import SubscriptionSystemDashboardHeader from './SubscriptionSystemDashboardHeader';
 import MovesbookLanguageTabs from './MovesbookLanguageTabs';
@@ -66,29 +73,40 @@ function SortablePackageRow({
   index,
   lang,
   userTypeId,
+  userTypeLabel,
   tiers,
   onTogglePublish,
   onToggleTier,
   onDelete,
+  onCopyPackage,
 }: {
   row: PackageItem;
   index: number;
   lang: string;
   userTypeId: PackageSettingsView['userTypeId'];
+  userTypeLabel: string;
   tiers: { key: string; label: string }[];
   onTogglePublish: (id: number, published: boolean) => void;
   onToggleTier: (id: number, tierKey: string) => void;
   onDelete: (id: number) => void;
+  onCopyPackage: (itemId: number, targetUserTypeId: PackageSettingsView['userTypeId']) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: row.id,
   });
   const userTiers = getTiersForUserType(row, userTypeId);
+  const copyTargets = getPackageCopyTargetOptions(userTypeId);
+  const [rowCopyTarget, setRowCopyTarget] = useState<string>('');
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.6 : 1,
+  };
+
+  const handleRowCopy = () => {
+    if (!rowCopyTarget) return;
+    onCopyPackage(row.id, Number(rowCopyTarget) as PackageSettingsView['userTypeId']);
   };
 
   return (
@@ -121,6 +139,32 @@ function SortablePackageRow({
           />
         </td>
       ))}
+      <td className="border border-gray-300 px-2 py-2 text-center align-top">
+        <div className="flex min-w-[120px] flex-col items-stretch gap-1">
+          <select
+            value={rowCopyTarget}
+            onChange={(e) => setRowCopyTarget(e.target.value)}
+            className="w-full border border-gray-300 bg-white px-1 py-0.5 text-[10px]"
+          >
+            <option value="">Copy to…</option>
+            {copyTargets.map((target) => (
+              <option key={target.id} value={target.id}>
+                {target.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!rowCopyTarget}
+            onClick={handleRowCopy}
+            className="inline-flex items-center justify-center gap-1 rounded border border-gray-400 bg-white px-1 py-0.5 text-[10px] font-bold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            title={`Copy this package from ${userTypeLabel} to another user type`}
+          >
+            <Copy className="h-3 w-3" />
+            Copy
+          </button>
+        </div>
+      </td>
       <td className="border border-gray-300 px-2 py-2 text-center">
         <Link
           href={getPackageEditHref(userTypeId, row.id, lang)}
@@ -149,6 +193,9 @@ export default function PackageSettingsPanel({ initialData }: PackageSettingsPan
   const config = PACKAGE_TYPE_CONFIGS.find((c) => c.id === initialData.userTypeId)!;
   const [data, setData] = useState(initialData);
   const [saving, setSaving] = useState(false);
+  const [copyAllTarget, setCopyAllTarget] = useState<string>('');
+
+  const copyTargetOptions = getPackageCopyTargetOptions(data.userTypeId);
 
   const sortedPackages = useMemo(
     () => [...data.packages].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -228,6 +275,43 @@ export default function PackageSettingsPanel({ initialData }: PackageSettingsPan
     setSaving(false);
   };
 
+  const handleCopyAllSettings = () => {
+    if (!copyAllTarget) return;
+    const targetId = Number(copyAllTarget) as PackageSettingsView['userTypeId'];
+    const targetConfig = PACKAGE_TYPE_CONFIGS.find((c) => c.id === targetId);
+    if (!targetConfig) return;
+
+    const confirmed = window.confirm(
+      buildCopyAllSettingsWarning(config.label, targetConfig.label),
+    );
+    if (!confirmed) return;
+
+    copyAllPackageSettingsToUserType(data.userTypeId, targetId);
+    refreshFromGlobal();
+    setCopyAllTarget('');
+  };
+
+  const handleCopySinglePackage = (
+    itemId: number,
+    targetUserTypeId: PackageSettingsView['userTypeId'],
+  ) => {
+    const targetConfig = PACKAGE_TYPE_CONFIGS.find((c) => c.id === targetUserTypeId);
+    const row = data.packages.find((p) => p.id === itemId);
+    if (!targetConfig || !row) return;
+
+    const confirmed = window.confirm(
+      buildCopySinglePackageWarning(
+        getPackageDisplayTitle(row.titlesByLang, data.lang),
+        config.label,
+        targetConfig.label,
+      ),
+    );
+    if (!confirmed) return;
+
+    copySinglePackageToUserType(data.userTypeId, targetUserTypeId, itemId);
+    refreshFromGlobal();
+  };
+
   return (
     <div className="h-full flex flex-col bg-gray-100">
       <SubscriptionSystemDashboardHeader />
@@ -239,14 +323,14 @@ export default function PackageSettingsPanel({ initialData }: PackageSettingsPan
           label="Select a language to edit the features for each package version"
         />
 
-        <div className="flex items-center justify-between border-b border-gray-300 bg-[#f5f5f5] px-4 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-300 bg-[#f5f5f5] px-4 py-2">
           <div className="flex gap-0">
             {PACKAGE_TYPE_CONFIGS.map((pkg) => (
               <button
                 key={pkg.id}
                 type="button"
                 onClick={() => handleUserTypeTab(pkg.id)}
-                className={`px-5 py-2 text-sm font-bold border border-gray-800 ${
+                className={`border border-gray-800 px-5 py-2 text-sm font-bold ${
                   pkg.id === data.userTypeId
                     ? 'bg-black text-white'
                     : 'bg-[#555] text-white hover:bg-black'
@@ -256,13 +340,38 @@ export default function PackageSettingsPanel({ initialData }: PackageSettingsPan
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={handleAddNew}
-            className="bg-black text-white px-5 py-2 text-sm font-bold border border-gray-800 hover:bg-[#333]"
-          >
-            Add New
-          </button>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-gray-800">Copy current on</span>
+            <select
+              value={copyAllTarget}
+              onChange={(e) => setCopyAllTarget(e.target.value)}
+              className="border border-gray-400 bg-white px-2 py-1.5 text-sm"
+            >
+              <option value="">Select user type…</option>
+              {copyTargetOptions.map((target) => (
+                <option key={target.id} value={target.id}>
+                  {target.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!copyAllTarget}
+              onClick={handleCopyAllSettings}
+              className="inline-flex items-center gap-1 border border-gray-800 bg-[#333] px-4 py-1.5 text-sm font-bold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Copy className="h-4 w-4" />
+              Copy
+            </button>
+            <button
+              type="button"
+              onClick={handleAddNew}
+              className="border border-gray-800 bg-black px-5 py-2 text-sm font-bold text-white hover:bg-[#333]"
+            >
+              Add New
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -285,6 +394,9 @@ export default function PackageSettingsPanel({ initialData }: PackageSettingsPan
                       {tier.label}
                     </th>
                   ))}
+                  <th className="border border-gray-300 px-2 py-2 w-28 text-center font-bold text-gray-800">
+                    Copy
+                  </th>
                   <th className="border border-gray-300 px-2 py-2 w-12">Edit</th>
                   <th className="border border-gray-300 px-2 py-2 w-12">Remove</th>
                 </tr>
@@ -301,10 +413,12 @@ export default function PackageSettingsPanel({ initialData }: PackageSettingsPan
                       index={index}
                       lang={data.lang}
                       userTypeId={data.userTypeId}
+                      userTypeLabel={config.label}
                       tiers={config.tiers}
                       onTogglePublish={updatePackagePublished}
                       onToggleTier={toggleTier}
                       onDelete={handleDelete}
+                      onCopyPackage={handleCopySinglePackage}
                     />
                   ))}
                 </tbody>

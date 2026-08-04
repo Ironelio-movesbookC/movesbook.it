@@ -1,30 +1,37 @@
 'use client';
-import { Users, UserCheck, UserPlus } from "lucide-react";
 
-export default function MemberStats() {
-  const maxMembers = 50;
-  const currentMembers = 32;
-  const availableMembers = maxMembers - currentMembers;
+import { Users, UserCheck, UserPlus } from 'lucide-react';
+
+type MemberStatsProps = {
+  maxMembers?: number;
+  currentMembers?: number;
+};
+
+export default function MemberStats({
+  maxMembers = 50,
+  currentMembers = 0,
+}: MemberStatsProps) {
+  const availableMembers = Math.max(0, maxMembers - currentMembers);
 
   const stats = [
     {
-      title: "Maximum Members",
+      title: 'Maximum Members',
       value: `${maxMembers}`,
       icon: Users,
-      gradient: "from-blue-500 to-blue-600"
+      gradient: 'from-blue-500 to-blue-600',
     },
     {
-      title: "Current Members",
+      title: 'Current Members',
       value: `${currentMembers}`,
       icon: UserCheck,
-      gradient: "from-green-500 to-green-600"
+      gradient: 'from-green-500 to-green-600',
     },
     {
-      title: "Available Slots",
+      title: 'Available Slots',
       value: `${availableMembers}`,
       icon: UserPlus,
-      gradient: "from-purple-500 to-purple-600"
-    }
+      gradient: 'from-purple-500 to-purple-600',
+    },
   ];
 
   return (

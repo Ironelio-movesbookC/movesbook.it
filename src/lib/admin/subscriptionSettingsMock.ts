@@ -13,6 +13,8 @@ export const SUBSCRIPTION_LANGUAGES = [
   { code: 'por', label: 'Por' },
   { code: 'rus', label: 'Rus' },
   { code: 'ind', label: 'Ind' },
+  { code: 'indo', label: 'Indo' },
+  { code: 'jap', label: 'Jap' },
   { code: 'chin', label: 'Chin' },
   { code: 'arab', label: 'Arab' },
 ] as const;

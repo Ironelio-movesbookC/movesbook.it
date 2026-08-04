@@ -12,6 +12,7 @@ import {
 } from '@/lib/admin/functionSettingsMock';
 import SubscriptionSystemDashboardHeader from './SubscriptionSystemDashboardHeader';
 import FunctionSettingsTabs from './FunctionSettingsTabs';
+import FunctionKeycodeEditor from './FunctionKeycodeEditor';
 
 type FunctionSettingsPanelProps = {
   tab: FunctionSettingsTab;
@@ -96,25 +97,35 @@ export default function FunctionSettingsPanel({
             {functions.map((fn) => {
               const isActive = fn.id === functionId;
               return (
-                <Link
+                <div
                   key={fn.id}
-                  href={`${basePath}/${fn.id}`}
-                  className={`block px-3 py-2 text-sm border-b border-gray-200 transition-colors ${
-                    isActive
-                      ? 'bg-[#b0b0b0] text-gray-900 font-semibold'
-                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  className={`border-b border-gray-200 px-3 py-2 ${
+                    isActive ? 'bg-[#b0b0b0]' : 'bg-white hover:bg-gray-50'
                   }`}
                 >
-                  {fn.name}
-                </Link>
+                  <Link
+                    href={`${basePath}/${fn.id}`}
+                    className={`block text-sm ${
+                      isActive ? 'font-semibold text-gray-900' : 'text-gray-700'
+                    }`}
+                  >
+                    {fn.name}
+                  </Link>
+                  <FunctionKeycodeEditor tab={tab} functionId={fn.id} compact />
+                </div>
               );
             })}
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto bg-white">
-          <div className="bg-[#e6e6e6] border-b border-gray-300 px-4 py-2 text-sm font-bold text-gray-800 text-center">
-            Available Functionality Setting of Array for the users
+          <div className="bg-[#e6e6e6] border-b border-gray-300 px-4 py-2 text-center">
+            <div className="text-sm font-bold text-gray-800">
+              Available Functionality Setting of Array for the users
+            </div>
+            <div className="mt-2 flex justify-center">
+              <FunctionKeycodeEditor tab={tab} functionId={functionId} />
+            </div>
           </div>
 
           <div className="p-0">

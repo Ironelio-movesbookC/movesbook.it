@@ -1,149 +1,146 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import type {
+  ClubDevicePriceGridConfig,
+  ClubIdentificationCardsSettings,
+} from '@/types/clubIdentificationCards';
 import {
-  CLUB_IDENTIFICATION_DEVICE_TABS,
-  CLUB_IDENTIFICATION_SECTIONS,
-  CLUB_IDENTIFICATION_STYLE_TABS,
-  CLUB_THIRD_PARTY_PRICELIST,
-  type ClubDevicePriceGrid,
-} from '@/lib/registration/clubPricelistsMock';
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-3 py-1.5 text-xs font-bold border border-gray-400 border-b-0 rounded-t ${
-        active
-          ? 'bg-black text-white'
-          : 'bg-gradient-to-b from-[#e8e8e8] to-[#c8c8c8] text-gray-900 hover:from-[#ddd] hover:to-[#bbb]'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function DevicePriceGrid({ grid }: { grid: ClubDevicePriceGrid }) {
-  return (
-    <div className="space-y-2 py-2">
-      <div className="flex items-end gap-2 pl-[80px]">
-        {grid.quantities.map((qty) => (
-          <div
-            key={qty}
-            className="w-14 border border-gray-600 bg-[#c0392b] py-1 text-center text-[10px] font-bold text-white"
-          >
-            {qty}
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="w-[70px] shrink-0 text-xs">Price</span>
-        <span className="text-xs font-bold">€</span>
-        {grid.unitPrices.map((price, i) => (
-          <input
-            key={`p-${i}`}
-            readOnly
-            value={price}
-            className="w-14 border border-gray-400 bg-[#fffacd] px-1 py-0.5 text-center text-xs"
-          />
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="w-[70px] shrink-0 text-xs">Total Price</span>
-        <span className="text-xs font-bold">€</span>
-        {grid.totalPrices.map((price, i) => (
-          <input
-            key={`t-${i}`}
-            readOnly
-            value={price}
-            className="w-14 border border-gray-400 bg-yellow-300 px-1 py-0.5 text-center text-xs font-semibold"
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
+  CLUB_IDENTIFICATION_DEVICE_TAB_LABELS,
+  CLUB_IDENTIFICATION_STYLE_TAB_LABELS,
+  getClubIdentificationCardsSettings,
+  recalcDeviceGrid,
+  saveClubIdentificationCardsSettings,
+} from '@/lib/admin/clubIdentificationCardsMock';
+import ClubIdentificationCardPricingSections from '@/components/club/ClubIdentificationCardPricingSections';
+import SubscriptionLanguageTabs from './SubscriptionLanguageTabs';
+import RichTextEditor from '@/components/shared/RichTextEditor';
 
 export default function ClubIdentificationCardsPricelistPanel() {
-  const [deviceTab, setDeviceTab] = useState<string>(CLUB_IDENTIFICATION_DEVICE_TABS[0]);
-  const [styleTab, setStyleTab] = useState<string>(CLUB_IDENTIFICATION_STYLE_TABS[0]);
-  const thirdParty = CLUB_THIRD_PARTY_PRICELIST;
+  const initialSettings = useMemo(() => getClubIdentificationCardsSettings(), []);
+  const [settings, setSettings] = useState<ClubIdentificationCardsSettings>(initialSettings);
+  const [activeLang, setActiveLang] = useState('en');
+  const [saving, setSaving] = useState(false);
+
+  const update = (patch: Partial<ClubIdentificationCardsSettings>) => {
+    setSettings((prev) => ({ ...prev, ...patch }));
+  };
+
+  const updateThirdPartyMessage = (html: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      thirdPartyMessageByLang: { ...prev.thirdPartyMessageByLang, [activeLang]: html },
+    }));
+  };
+
+  const handleSaveMessage = async () => {
+    setSaving(true);
+    saveClubIdentificationCardsSettings(settings);
+    await new Promise((r) => setTimeout(r, 200));
+    setSaving(false);
+  };
+
+  const handleThirdPartyChange = (
+    deviceIndex: number,
+    pricelist: ClubIdentificationCardsSettings['thirdPartyPricelists'][0],
+  ) => {
+    setSettings((prev) => {
+      const thirdPartyPricelists = [...prev.thirdPartyPricelists];
+      thirdPartyPricelists[deviceIndex] = pricelist;
+      const next = { ...prev, thirdPartyPricelists };
+      saveClubIdentificationCardsSettings(next);
+      return next;
+    });
+  };
+
+  const handleDeviceSectionChange = (
+    sectionIndex: number,
+    style: string,
+    grid: ClubDevicePriceGridConfig,
+  ) => {
+    setSettings((prev) => {
+      const deviceSections = [...prev.deviceSections];
+      const section = { ...deviceSections[sectionIndex] };
+      section.grids = { ...section.grids, [style]: grid };
+      deviceSections[sectionIndex] = section;
+      return { ...prev, deviceSections };
+    });
+  };
+
+  const handleDeviceSectionUpdate = (sectionIndex: number, style: string) => {
+    setSettings((prev) => {
+      const deviceSections = [...prev.deviceSections];
+      const section = { ...deviceSections[sectionIndex] };
+      const grid = section.grids[style as keyof typeof section.grids];
+      if (grid) {
+        section.grids = {
+          ...section.grids,
+          [style]: recalcDeviceGrid(grid),
+        };
+      }
+      deviceSections[sectionIndex] = section;
+      const next = saveClubIdentificationCardsSettings({ ...prev, deviceSections });
+      return next;
+    });
+  };
 
   return (
-    <div className="space-y-3 text-sm">
-      <div className="border border-gray-400">
-        <div className="flex items-center justify-between bg-[#c0392b] px-3 py-2 text-xs font-bold text-white">
-          <span>{thirdParty.title}</span>
-          <span className="font-normal">{thirdParty.subtitle}</span>
+    <div className="space-y-4">
+      <div className="border border-gray-300">
+        <div className="bg-[#a94442] px-4 py-2 text-sm font-bold text-white">
+          Message to be displayed upon the third party pricelist
         </div>
-        <div className="flex flex-wrap gap-1 border-b border-gray-300 bg-[#f5f5f5] p-2">
-          {CLUB_IDENTIFICATION_DEVICE_TABS.map((tab) => (
-            <TabButton key={tab} active={deviceTab === tab} onClick={() => setDeviceTab(tab)}>
-              {tab}
-            </TabButton>
-          ))}
-        </div>
-        <div className="bg-[#fffacd] p-3">
-          <div className="mb-2 flex items-end gap-2 pl-[100px]">
-            {thirdParty.quantities.map((qty) => (
-              <div
-                key={qty}
-                className="w-14 bg-[#c0392b] py-1 text-center text-[10px] font-bold text-white"
-              >
-                {qty}
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-[90px] text-xs font-medium">Total Price</span>
-            <span className="text-xs">€</span>
-            {thirdParty.totals.map((total, i) => (
-              <input
-                key={i}
-                readOnly
-                value={total}
-                className="w-14 border border-gray-400 bg-yellow-300 px-1 py-0.5 text-center text-xs"
-              />
-            ))}
-          </div>
+        <div className="space-y-3 bg-white p-4">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={settings.thirdPartyMessageEnabled}
+              onChange={(e) => update({ thirdPartyMessageEnabled: e.target.checked })}
+            />
+            Enable message
+          </label>
+          <SubscriptionLanguageTabs
+            activeLang={activeLang}
+            onChange={setActiveLang}
+            label="Enter for each language"
+            variant="lower"
+          />
+          <RichTextEditor
+            value={settings.thirdPartyMessageByLang[activeLang] ?? ''}
+            onChange={updateThirdPartyMessage}
+            minHeight="220px"
+          />
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => void handleSaveMessage()}
+            className="bg-[#c0392b] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#962d22] disabled:opacity-60"
+          >
+            {saving ? 'Saving…' : 'Update Terms'}
+          </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1">
-        {CLUB_IDENTIFICATION_STYLE_TABS.map((tab) => (
-          <TabButton key={tab} active={styleTab === tab} onClick={() => setStyleTab(tab)}>
-            {tab}
-          </TabButton>
-        ))}
+      <div className="border border-gray-300">
+        <div className="bg-[#8e44ad] px-4 py-2 text-sm font-bold text-white">
+          Identification card pricelist —{' '}
+          <span className="font-normal">
+            configured here; shown to club admins only during registration (not after)
+          </span>
+        </div>
+        <div className="space-y-4 bg-white p-4">
+          <ClubIdentificationCardPricingSections
+            thirdPartyPricelists={settings.thirdPartyPricelists}
+            deviceSections={settings.deviceSections}
+            deviceTabLabels={CLUB_IDENTIFICATION_DEVICE_TAB_LABELS}
+            styleTabLabels={CLUB_IDENTIFICATION_STYLE_TAB_LABELS}
+            mode="admin-edit"
+            onThirdPartyChange={handleThirdPartyChange}
+            onDeviceSectionChange={handleDeviceSectionChange}
+            onDeviceSectionUpdate={handleDeviceSectionUpdate}
+          />
+        </div>
       </div>
-
-      {CLUB_IDENTIFICATION_SECTIONS.map((section) => {
-        const grid = section.grids[styleTab] ?? Object.values(section.grids)[0];
-        if (!grid) return null;
-        return (
-          <div key={section.key} className="border border-gray-400">
-            <div
-              className="px-3 py-1.5 text-xs font-bold text-white"
-              style={{ backgroundColor: section.headerColor }}
-            >
-              {section.label}
-            </div>
-            <div className="bg-white px-3">
-              <DevicePriceGrid grid={grid} />
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }

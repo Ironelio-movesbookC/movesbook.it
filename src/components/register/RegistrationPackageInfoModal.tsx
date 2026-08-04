@@ -13,13 +13,17 @@ import {
   type RegistrationSelectedEntity,
   type RegistrationUserType,
 } from '@/lib/registration/waysToGetStarted';
-import RegistrationPackageEntityDetailPanel from './RegistrationPackageEntityDetailPanel';
+import RegistrationPackageEntityDetailPanel, {
+  type RegistrationEntityDetailTab,
+} from './RegistrationPackageEntityDetailPanel';
+import type { ClubPricelistTab } from './RegistrationClubPricelistsPanel';
 
 type RegistrationPackageInfoModalProps = {
   isOpen: boolean;
   onClose: () => void;
   userType: RegistrationUserType;
   lang: string;
+  onPurchaseVersion?: (subscriptionId: number) => void;
 };
 
 export default function RegistrationPackageInfoModal({
@@ -27,9 +31,17 @@ export default function RegistrationPackageInfoModal({
   onClose,
   userType,
   lang,
+  onPurchaseVersion,
 }: RegistrationPackageInfoModalProps) {
   const [category, setCategory] = useState<RegistrationPackageCategory>('social_training');
   const [selectedEntity, setSelectedEntity] = useState<RegistrationSelectedEntity | null>(null);
+  const [purchasePanelTab, setPurchasePanelTab] = useState<
+    RegistrationEntityDetailTab | undefined
+  >();
+  const [purchaseClubSubTab, setPurchaseClubSubTab] = useState<ClubPricelistTab>(
+    'account_pricelist',
+  );
+  const [purchasedTierKey, setPurchasedTierKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -44,6 +56,8 @@ export default function RegistrationPackageInfoModal({
     if (!isOpen) {
       setSelectedEntity(null);
       setCategory('social_training');
+      setPurchasePanelTab(undefined);
+      setPurchasedTierKey(null);
     }
   }, [isOpen]);
 
@@ -58,7 +72,26 @@ export default function RegistrationPackageInfoModal({
   const userTypeLabel = getUserTypeReviewLabel(userType);
 
   const handleOtherInfo = (tierKey: string, columnIndex: number) => {
+    setPurchasePanelTab(undefined);
     setSelectedEntity(buildSelectedEntity(userType, tierKey, columnIndex));
+  };
+
+  const handlePurchase = (tierKey: string, columnIndex: number) => {
+    const entity = buildSelectedEntity(userType, tierKey, columnIndex);
+    setPurchasedTierKey(tierKey);
+    if (entity.subscriptionId != null) {
+      onPurchaseVersion?.(entity.subscriptionId);
+    }
+
+    if (userType === 'club') {
+      setPurchasePanelTab('club_pricelists');
+      setPurchaseClubSubTab('account_pricelist');
+      setSelectedEntity(entity);
+      return;
+    }
+
+    setPurchasePanelTab('overview');
+    setSelectedEntity(entity);
   };
 
   return createPortal(
@@ -177,12 +210,23 @@ export default function RegistrationPackageInfoModal({
                   <td className="border-r border-[#286090] px-3 py-2 text-xs font-semibold italic text-white/95">
                     Prices for one your account
                   </td>
-                  {versionColumns.map((version) => (
+                  {versionColumns.map((version, columnIndex) => (
                     <td
                       key={`price-${version.key}`}
-                      className="border-r border-[#286090] last:border-r-0 px-2 py-2 text-center text-xs font-semibold text-[#dbeafe]"
+                      className="border-r border-[#286090] last:border-r-0 px-2 py-2 text-center"
                     >
-                      {formatRegistrationPrice(version.price)}
+                      <button
+                        type="button"
+                        onClick={() => handlePurchase(version.key, columnIndex)}
+                        className={`bg-[#c0392b] hover:bg-[#962d22] text-white text-[10px] sm:text-xs font-bold px-2 py-1 rounded shadow ${
+                          purchasedTierKey === version.key ? 'ring-2 ring-white' : ''
+                        }`}
+                      >
+                        Purchase
+                      </button>
+                      <div className="mt-1 text-[10px] sm:text-xs font-semibold text-[#dbeafe]">
+                        {formatRegistrationPrice(version.price)}
+                      </div>
                     </td>
                   ))}
                 </tr>
@@ -222,7 +266,7 @@ export default function RegistrationPackageInfoModal({
                         <div className="font-bold text-sm uppercase leading-snug mb-1">
                           {pkg.title}
                         </div>
-                        <p className="text-xs text-white/90 leading-relaxed line-clamp-3">
+                        <p className="text-xs text-white/90 leading-relaxed">
                           {pkg.description || '—'}
                         </p>
                       </td>
@@ -253,11 +297,17 @@ export default function RegistrationPackageInfoModal({
 
           {selectedEntity ? (
             <RegistrationPackageEntityDetailPanel
+              key={`${selectedEntity.tierKey}-${purchasePanelTab ?? 'info'}`}
               entity={selectedEntity}
               userType={userType}
               lang={lang}
               category={category}
-              onClose={() => setSelectedEntity(null)}
+              onClose={() => {
+                setSelectedEntity(null);
+                setPurchasePanelTab(undefined);
+              }}
+              initialActiveTab={purchasePanelTab}
+              initialClubSubTab={purchaseClubSubTab}
             />
           ) : null}
         </div>

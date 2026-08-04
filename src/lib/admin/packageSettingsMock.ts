@@ -104,7 +104,8 @@ function emptyTiersByUserType(): Record<PackageTypeId, Record<string, boolean>> 
 
 function athleteTiers(index: number, name: string): Record<string, boolean> {
   const keys = ['trail_base', 'trail_premium', 'basic', 'prem', 'pro'];
-  if (name === 'Online training diary' || name === 'Social Networking') return tierFlags(keys, []);
+  if (name === 'Online training diary') return tierFlags(keys, []);
+  if (name === 'Social Networking') return tierFlags(keys, ['prem', 'pro']);
   if (name === 'View totals') return tierFlags(keys, keys);
   if (name === 'Week plan builder') return tierFlags(keys, ['basic', 'prem', 'pro']);
   if (index % 3 === 0) return tierFlags(keys, ['prem', 'pro']);

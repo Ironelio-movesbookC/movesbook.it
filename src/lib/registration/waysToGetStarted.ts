@@ -4,7 +4,11 @@ import {
   getTiersForUserType,
 } from '@/lib/admin/packageSettingsMock';
 import { getManagementSettingsData } from '@/lib/admin/managementFunctionSettingsMock';
-import { getPackageDisplayTitle } from '@/lib/admin/packageSettingsLang';
+import { getPackageDisplayTitle, getPackageDisplayDescription, getPackageDescriptionFirstLine, hasPackageFullOverview, getPackageFullOverviewHtml } from '@/lib/admin/packageSettingsLang';
+import {
+  isPackageIncludedInVersion,
+  resolveSubscriptionTierMapping,
+} from '@/lib/registration/packageReviewTierMapping';
 import type { PackageItem, PackageTypeId } from '@/types/adminPackageSettings';
 import type { SubscriptionUserType } from '@/types/adminSubscriptionSettings';
 import {
@@ -70,6 +74,8 @@ export function formatRegistrationPrice(price: number): string {
 
 export type RegistrationVersionColumn = {
   key: string;
+  packageTierKey: string;
+  functionSettingsKey: string;
   label: string;
   price: number;
   durationDays: number;
@@ -91,21 +97,39 @@ export function getVersionColumnsForUserType(
   const versions = getRegistrationVersions(userType);
   if (!config) return [];
 
-  return versions.map((version, index) => ({
-    key: config.tiers[index]?.key ?? `version_${version.id}`,
-    label: version.name,
-    price: version.price,
-    durationDays: version.durationDays,
-    subscriptionId: version.id,
-  }));
+  return versions.map((version, index) => {
+    const fallbackKey = config.tiers[index]?.key ?? `version_${version.id}`;
+    const mapping = resolveSubscriptionTierMapping(
+      tab.packageTypeId,
+      version.id,
+      fallbackKey,
+      fallbackKey,
+    );
+
+    return {
+      key: mapping.packageTierKey,
+      packageTierKey: mapping.packageTierKey,
+      functionSettingsKey: mapping.functionSettingsKey,
+      label: version.name,
+      price: version.price,
+      durationDays: version.durationDays,
+      subscriptionId: version.id,
+    };
+  });
 }
 
 export type RegistrationPackageReviewRow = {
   id: number;
+  sortOrder: number;
   title: string;
   description: string;
   tiers: Record<string, boolean>;
 };
+
+function comparePackageSortOrder(a: { sortOrder: number; id: number }, b: { sortOrder: number; id: number }) {
+  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+  return a.id - b.id;
+}
 
 export function getPackageReviewRows(
   userType: RegistrationUserType,
@@ -115,8 +139,8 @@ export function getPackageReviewRows(
 
   return getGlobalPackages()
     .filter((pkg) => pkg.published)
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((pkg) => packageToReviewRow(pkg, userTypeId, lang));
+    .sort(comparePackageSortOrder)
+    .map((pkg) => packageToReviewRow(pkg, userTypeId, lang, userType));
 }
 
 export type RegistrationPackageCategory = 'social_training' | 'management';
@@ -131,9 +155,45 @@ export type RegistrationSelectedEntity = {
 export type RegistrationOverviewFeature = {
   id: number;
   title: string;
-  langKey: string;
+  description: string;
   pictures: [string, string, string];
 };
+
+export type RegistrationDetailedOverviewItem = {
+  id: number;
+  title: string;
+  html: string;
+};
+
+export function getDetailedOverviewForEntity(
+  userType: RegistrationUserType,
+  tierKey: string,
+  lang: string,
+  category: RegistrationPackageCategory,
+): RegistrationDetailedOverviewItem[] {
+  if (category === 'management') {
+    return [];
+  }
+
+  const userTypeId = getPackageTypeIdForUserType(userType);
+
+  return getGlobalPackages()
+    .filter((pkg) => {
+      if (!pkg.published) return false;
+      if (!hasPackageFullOverview(pkg.htmlByLang, lang)) return false;
+      const userTiers = getTiersForUserType(pkg, userTypeId);
+      const columns = getVersionColumnsForUserType(userType);
+      const column = columns.find((col) => col.key === tierKey);
+      if (!column) return userTiers[tierKey] ?? false;
+      return isPackageIncludedInVersion(userTiers, column.packageTierKey);
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((pkg) => ({
+      id: pkg.id,
+      title: getPackageDisplayTitle(pkg.titlesByLang, lang),
+      html: getPackageFullOverviewHtml(pkg.htmlByLang, lang),
+    }));
+}
 
 export function getSubscriptionVersionForColumn(
   userType: RegistrationUserType,
@@ -188,18 +248,25 @@ export function getOverviewFeaturesForEntity(
       .map((feature) => ({
         id: feature.id,
         title: feature.name,
-        langKey: `en_${feature.name.toLowerCase().replace(/\s+/g, '_').slice(0, 12)}`,
+        description: feature.optionalEnabled ? 'Optional module' : '',
         pictures: ['', '', ''] as [string, string, string],
       }));
   }
 
   return getGlobalPackages()
-    .filter((pkg) => pkg.published && (getTiersForUserType(pkg, userTypeId)[tierKey] ?? false))
+    .filter((pkg) => {
+      if (!pkg.published) return false;
+      const userTiers = getTiersForUserType(pkg, userTypeId);
+      const columns = getVersionColumnsForUserType(userType);
+      const column = columns.find((col) => col.key === tierKey);
+      if (!column) return userTiers[tierKey] ?? false;
+      return isPackageIncludedInVersion(userTiers, column.packageTierKey);
+    })
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((pkg) => ({
       id: pkg.id,
       title: getPackageDisplayTitle(pkg.titlesByLang, lang),
-      langKey: `en_${pkg.titlesByLang.en?.toLowerCase().replace(/\s+/g, '_').slice(0, 12) ?? pkg.id}`,
+      description: getPackageDisplayDescription(pkg.descriptionsByLang, lang),
       pictures: pkg.pictures,
     }));
 }
@@ -231,6 +298,7 @@ export function getManagementReviewRows(
 
     return {
       id: feature.id,
+      sortOrder: feature.id,
       title: feature.name.toUpperCase(),
       description: feature.optionalEnabled ? 'Optional module' : '',
       tiers,
@@ -266,17 +334,24 @@ function packageToReviewRow(
   pkg: PackageItem,
   userTypeId: PackageTypeId,
   lang: string,
+  userType: RegistrationUserType,
 ): RegistrationPackageReviewRow {
-  const description =
-    pkg.descriptionsByLang[lang] ||
-    pkg.descriptionsByLang.en ||
-    Object.values(pkg.descriptionsByLang).find(Boolean) ||
-    '';
+  const description = getPackageDescriptionFirstLine(pkg.descriptionsByLang, lang);
+  const title = getPackageDisplayTitle(pkg.titlesByLang, lang);
+  const userTiers = getTiersForUserType(pkg, userTypeId);
+  const columns = getVersionColumnsForUserType(userType);
+  const tiers = Object.fromEntries(
+    columns.map((column) => [
+      column.key,
+      isPackageIncludedInVersion(userTiers, column.packageTierKey),
+    ]),
+  );
 
   return {
     id: pkg.id,
-    title: getPackageDisplayTitle(pkg.titlesByLang, lang).toUpperCase(),
+    sortOrder: pkg.sortOrder,
+    title: title.toUpperCase(),
     description,
-    tiers: getTiersForUserType(pkg, userTypeId),
+    tiers,
   };
 }

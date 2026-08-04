@@ -1,13 +1,12 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SubscriptionEditData } from '@/types/adminSubscriptionSettings';
 import {
   getSubscriptionById,
   saveSubscriptionEditData,
 } from '@/lib/admin/subscriptionSettingsMock';
-import { getClubPurchaseAccountsSettings } from '@/lib/admin/clubPurchaseAccountsMock';
 import SubscriptionSystemDashboardHeader from './SubscriptionSystemDashboardHeader';
 import SubscriptionGeneralForm from './SubscriptionGeneralForm';
 import SubscriptionEditSettingsForm from './SubscriptionEditSettingsForm';
@@ -15,7 +14,6 @@ import SubscriptionExpirationSections from './SubscriptionExpirationSections';
 import ClubSubscriptionEditTabs, {
   type ClubSubscriptionEditTab,
 } from './ClubSubscriptionEditTabs';
-import ClubPurchaseNewAccountsPanel from './ClubPurchaseNewAccountsPanel';
 import ClubIdentificationCardsPricelistPanel from './ClubIdentificationCardsPricelistPanel';
 
 type ClubEditSubscriptionPanelProps = {
@@ -45,7 +43,12 @@ export default function ClubEditSubscriptionPanel({
     parseTab(searchParams?.get('tab') ?? null),
   );
 
-  const purchaseSettings = useMemo(() => getClubPurchaseAccountsSettings(), []);
+  useEffect(() => {
+    const tab = searchParams?.get('tab');
+    if (tab === 'purchase' || tab === 'purchase_new_accounts') {
+      router.replace(`/clubs/clubSettings?subscriptionId=${id}`);
+    }
+  }, [searchParams, router, id]);
 
   if (!row || row.userType !== 'club') {
     return (
@@ -56,13 +59,12 @@ export default function ClubEditSubscriptionPanel({
   }
 
   const handleTabChange = (tab: ClubSubscriptionEditTab) => {
+    if (tab === 'purchase_new_accounts') {
+      router.push(`/clubs/clubSettings?subscriptionId=${id}`);
+      return;
+    }
     setActiveTab(tab);
-    const tabParam =
-      tab === 'purchase_new_accounts'
-        ? 'purchase'
-        : tab === 'identification_cards'
-          ? 'identification'
-          : null;
+    const tabParam = tab === 'identification_cards' ? 'identification' : null;
     const base = `/subscriptions/club_edit_subscription/${id}/club`;
     router.replace(tabParam ? `${base}?tab=${tabParam}` : base, { scroll: false });
   };
@@ -144,10 +146,6 @@ export default function ClubEditSubscriptionPanel({
               </button>
             </div>
           </>
-        ) : null}
-
-        {activeTab === 'purchase_new_accounts' ? (
-          <ClubPurchaseNewAccountsPanel initialSettings={purchaseSettings} />
         ) : null}
 
         {activeTab === 'identification_cards' ? (

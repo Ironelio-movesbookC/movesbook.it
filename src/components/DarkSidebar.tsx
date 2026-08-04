@@ -3,6 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
+import { REGISTRATION_ONLY_ID_CARDS_TOOLTIP } from '@/lib/registration/clubIdentificationCardsRegistration';
 import type { LucideIcon } from 'lucide-react';
 import { 
   Home,
@@ -3290,34 +3291,33 @@ export default function DarkSidebar({
                                         </button>
                                         {clubAccountsYellowOpen && (
                                           <div className="border-t border-gray-700/70 bg-[#2a2a2a]">
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                                              <span>Price list</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                                              <span>Requests of accounts</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-lime-400" />
-                                              <span>Accounts purchased</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-800" />
-                                              <span>Manage member&apos;s accounts</span>
-                                            </button>
+                                            {(
+                                              [
+                                                { dot: 'bg-amber-400', label: 'Price list' },
+                                                { dot: 'bg-red-500', label: 'Requests of accounts' },
+                                                { dot: 'bg-lime-400', label: 'Accounts purchased' },
+                                                {
+                                                  dot: 'bg-emerald-800',
+                                                  label: "Manage member's accounts",
+                                                  last: true,
+                                                },
+                                              ] as const
+                                            ).map((item) => (
+                                              <button
+                                                key={item.label}
+                                                type="button"
+                                                disabled
+                                                title="Club account purchase is available only during club registration / creation."
+                                                className={`flex w-full cursor-not-allowed items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-gray-500 opacity-60 ${
+                                                  'last' in item && item.last
+                                                    ? ''
+                                                    : 'border-b border-gray-700/60'
+                                                }`}
+                                              >
+                                                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                                                <span>{item.label}</span>
+                                              </button>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
@@ -3365,34 +3365,33 @@ export default function DarkSidebar({
                                         </button>
                                         {clubQrCodesOpen && (
                                           <div className="border-t border-gray-700/70 bg-[#2a2a2a]">
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                                              <span>Price list</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                                              <span>Requests of QR Code</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-lime-400" />
-                                              <span>QR Code purchased</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" />
-                                              <span>Manage QR Code assignement</span>
-                                            </button>
+                                            {(
+                                              [
+                                                { dot: 'bg-amber-400', label: 'Price list' },
+                                                { dot: 'bg-red-500', label: 'Requests of QR Code' },
+                                                { dot: 'bg-lime-400', label: 'QR Code purchased' },
+                                                {
+                                                  dot: 'bg-sky-400',
+                                                  label: 'Manage QR Code assignement',
+                                                  last: true,
+                                                },
+                                              ] as const
+                                            ).map((item) => (
+                                              <button
+                                                key={item.label}
+                                                type="button"
+                                                disabled
+                                                title={REGISTRATION_ONLY_ID_CARDS_TOOLTIP}
+                                                className={`flex w-full cursor-not-allowed items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-gray-500 opacity-60 ${
+                                                  'last' in item && item.last
+                                                    ? ''
+                                                    : 'border-b border-gray-700/60'
+                                                }`}
+                                              >
+                                                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                                                <span>{item.label}</span>
+                                              </button>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
@@ -3414,34 +3413,33 @@ export default function DarkSidebar({
                                         </button>
                                         {clubRfidBadgesOpen && (
                                           <div className="border-t border-gray-700/70 bg-[#2a2a2a]">
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                                              <span>Price list</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                                              <span>Requests of Rfids</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-lime-400" />
-                                              <span>Rfids purchased</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" />
-                                              <span>Manage rfidbadge assignement</span>
-                                            </button>
+                                            {(
+                                              [
+                                                { dot: 'bg-amber-400', label: 'Price list' },
+                                                { dot: 'bg-red-500', label: 'Requests of Rfids' },
+                                                { dot: 'bg-lime-400', label: 'Rfids purchased' },
+                                                {
+                                                  dot: 'bg-sky-400',
+                                                  label: 'Manage rfidbadge assignement',
+                                                  last: true,
+                                                },
+                                              ] as const
+                                            ).map((item) => (
+                                              <button
+                                                key={item.label}
+                                                type="button"
+                                                disabled
+                                                title={REGISTRATION_ONLY_ID_CARDS_TOOLTIP}
+                                                className={`flex w-full cursor-not-allowed items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-gray-500 opacity-60 ${
+                                                  'last' in item && item.last
+                                                    ? ''
+                                                    : 'border-b border-gray-700/60'
+                                                }`}
+                                              >
+                                                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                                                <span>{item.label}</span>
+                                              </button>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
@@ -3463,34 +3461,33 @@ export default function DarkSidebar({
                                         </button>
                                         {clubMagneticOpen && (
                                           <div className="border-t border-gray-700/70 bg-[#2a2a2a]">
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                                              <span>Price list</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                                              <span>Requests of badges</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-lime-400" />
-                                              <span>Badges purchased</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" />
-                                              <span>Manage magnetic assignement</span>
-                                            </button>
+                                            {(
+                                              [
+                                                { dot: 'bg-amber-400', label: 'Price list' },
+                                                { dot: 'bg-red-500', label: 'Requests of badges' },
+                                                { dot: 'bg-lime-400', label: 'Badges purchased' },
+                                                {
+                                                  dot: 'bg-sky-400',
+                                                  label: 'Manage magnetic assignement',
+                                                  last: true,
+                                                },
+                                              ] as const
+                                            ).map((item) => (
+                                              <button
+                                                key={item.label}
+                                                type="button"
+                                                disabled
+                                                title={REGISTRATION_ONLY_ID_CARDS_TOOLTIP}
+                                                className={`flex w-full cursor-not-allowed items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-gray-500 opacity-60 ${
+                                                  'last' in item && item.last
+                                                    ? ''
+                                                    : 'border-b border-gray-700/60'
+                                                }`}
+                                              >
+                                                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                                                <span>{item.label}</span>
+                                              </button>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
@@ -3512,34 +3509,33 @@ export default function DarkSidebar({
                                         </button>
                                         {clubSmartcardsOpen && (
                                           <div className="border-t border-gray-700/70 bg-[#2a2a2a]">
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                                              <span>Price list</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                                              <span>Requests of badges</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-lime-400" />
-                                              <span>Badges purchased</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" />
-                                              <span>Manage smartcard assignement</span>
-                                            </button>
+                                            {(
+                                              [
+                                                { dot: 'bg-amber-400', label: 'Price list' },
+                                                { dot: 'bg-red-500', label: 'Requests of badges' },
+                                                { dot: 'bg-lime-400', label: 'Badges purchased' },
+                                                {
+                                                  dot: 'bg-sky-400',
+                                                  label: 'Manage smartcard assignement',
+                                                  last: true,
+                                                },
+                                              ] as const
+                                            ).map((item) => (
+                                              <button
+                                                key={item.label}
+                                                type="button"
+                                                disabled
+                                                title={REGISTRATION_ONLY_ID_CARDS_TOOLTIP}
+                                                className={`flex w-full cursor-not-allowed items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-gray-500 opacity-60 ${
+                                                  'last' in item && item.last
+                                                    ? ''
+                                                    : 'border-b border-gray-700/60'
+                                                }`}
+                                              >
+                                                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                                                <span>{item.label}</span>
+                                              </button>
+                                            ))}
                                           </div>
                                         )}
                                       </div>

@@ -1,20 +1,16 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
-import { Share2 } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
-  CLUB_ACCOUNT_PACK_ROWS,
-  CLUB_IDENTIFICATION_DEVICE_TABS,
-  CLUB_IDENTIFICATION_SECTIONS,
-  CLUB_IDENTIFICATION_STYLE_TABS,
   CLUB_OTHERS_VERSIONS,
-  CLUB_THIRD_PARTY_PRICELIST,
+  getClubAccountPackRows,
   getClubOptionalModuleRows,
   getClubVersionSubscriptionRows,
-  type ClubAccountPackRow,
-  type ClubDevicePriceGrid,
   type ClubOthersVersionData,
 } from '@/lib/registration/clubPricelistsMock';
+import { getClubIdentificationCardsDisplay } from '@/lib/admin/clubIdentificationCardPricing';
+import ClubAccountPackPricingSections from '@/components/club/ClubAccountPackPricingSections';
+import ClubIdentificationCardPricingSections from '@/components/club/ClubIdentificationCardPricingSections';
 
 export type ClubPricelistTab =
   | 'versions_features'
@@ -35,27 +31,43 @@ function PricelistTabButton({
   active,
   onClick,
   children,
+  vertical = false,
 }: {
   active: boolean;
   onClick: () => void;
   children: ReactNode;
+  vertical?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`px-3 py-1.5 text-xs font-bold border border-gray-400 border-b-0 rounded-t ${
-        active
-          ? 'bg-black text-white'
-          : 'bg-gradient-to-b from-[#e8e8e8] to-[#c8c8c8] text-gray-900 hover:from-[#ddd] hover:to-[#bbb]'
-      }`}
+      className={
+        vertical
+          ? `w-full px-3 py-2 text-left text-xs font-bold border border-gray-400 rounded transition-colors ${
+              active
+                ? 'bg-black text-white'
+                : 'bg-gradient-to-b from-[#e8e8e8] to-[#c8c8c8] text-gray-900 hover:from-[#ddd] hover:to-[#bbb]'
+            }`
+          : `px-3 py-1.5 text-xs font-bold border border-gray-400 border-b-0 rounded-t ${
+              active
+                ? 'bg-black text-white'
+                : 'bg-gradient-to-b from-[#e8e8e8] to-[#c8c8c8] text-gray-900 hover:from-[#ddd] hover:to-[#bbb]'
+            }`
+      }
     >
       {children}
     </button>
   );
 }
 
-function VersionsFeaturesView() {
+function VersionsFeaturesView({
+  selectedVersionId,
+  onSelectVersion,
+}: {
+  selectedVersionId: number | null;
+  onSelectVersion: (id: number) => void;
+}) {
   const rows = getClubVersionSubscriptionRows();
 
   return (
@@ -63,6 +75,7 @@ function VersionsFeaturesView() {
       <table className="w-full max-w-2xl border-collapse border border-gray-300 text-sm">
         <thead>
           <tr className="bg-[#008b8b] text-white">
+            <th className="border border-gray-300 px-4 py-2 text-center font-bold w-16">Select</th>
             <th className="border border-gray-300 px-4 py-2 text-left font-bold">Code</th>
             <th className="border border-gray-300 px-4 py-2 text-left font-bold">Name Subscription</th>
             <th className="border border-gray-300 px-4 py-2 text-right font-bold">Price</th>
@@ -70,7 +83,17 @@ function VersionsFeaturesView() {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={`${row.code}-${row.name}`} className="bg-white">
+            <tr key={row.id} className="bg-white">
+              <td className="border border-gray-300 px-4 py-2 text-center">
+                <input
+                  type="radio"
+                  name="club-version-purchase"
+                  checked={selectedVersionId === row.id}
+                  onChange={() => onSelectVersion(row.id)}
+                  className="h-4 w-4 cursor-pointer"
+                  aria-label={`Select ${row.name}`}
+                />
+              </td>
               <td className="border border-gray-300 px-4 py-2">{row.code}</td>
               <td className="border border-gray-300 px-4 py-2">{row.name}</td>
               <td className="border border-gray-300 px-4 py-2 text-right">
@@ -84,7 +107,15 @@ function VersionsFeaturesView() {
   );
 }
 
-function OptionalModulesView({ lang }: { lang: string }) {
+function OptionalModulesView({
+  lang,
+  selectedModuleIds,
+  onToggleModule,
+}: {
+  lang: string;
+  selectedModuleIds: Set<number>;
+  onToggleModule: (id: number) => void;
+}) {
   const rows = getClubOptionalModuleRows(lang);
 
   return (
@@ -92,6 +123,7 @@ function OptionalModulesView({ lang }: { lang: string }) {
       <table className="w-full max-w-3xl border-collapse border border-gray-400 text-sm bg-[#e8e8e8]">
         <thead>
           <tr className="bg-[#d0d0d0]">
+            <th className="border border-gray-400 px-3 py-2 text-center font-bold w-16">Select</th>
             <th className="border border-gray-400 px-3 py-2 text-left font-bold w-16">Sr. no</th>
             <th className="border border-gray-400 px-3 py-2 text-left font-bold">List of features</th>
             <th className="border border-gray-400 px-3 py-2 text-center font-bold" colSpan={2}>
@@ -99,7 +131,7 @@ function OptionalModulesView({ lang }: { lang: string }) {
             </th>
           </tr>
           <tr className="bg-[#d0d0d0]">
-            <th className="border border-gray-400" colSpan={2} />
+            <th className="border border-gray-400" colSpan={3} />
             <th className="border border-gray-400 px-3 py-1 text-center text-xs font-bold">No limit</th>
             <th className="border border-gray-400 px-3 py-1 text-center text-xs font-bold">1 year</th>
           </tr>
@@ -107,6 +139,15 @@ function OptionalModulesView({ lang }: { lang: string }) {
         <tbody>
           {rows.map((row, index) => (
             <tr key={row.id} className="bg-[#ececec]">
+              <td className="border border-gray-400 px-3 py-2 text-center">
+                <input
+                  type="checkbox"
+                  checked={selectedModuleIds.has(row.id)}
+                  onChange={() => onToggleModule(row.id)}
+                  className="h-4 w-4 cursor-pointer"
+                  aria-label={`Select ${row.name}`}
+                />
+              </td>
               <td className="border border-gray-400 px-3 py-2 text-center">{index + 1}</td>
               <td className="border border-gray-400 px-3 py-2">{row.name}</td>
               <td className="border border-gray-400 px-3 py-2 text-center">
@@ -131,181 +172,41 @@ function OptionalModulesView({ lang }: { lang: string }) {
   );
 }
 
-function AccountPackSection({ section }: { section: ClubAccountPackRow }) {
-  return (
-    <div className="border border-gray-400 bg-[#f0f0f0]">
-      <div
-        className="px-4 py-2 text-sm font-bold text-white"
-        style={{ backgroundColor: section.headerColor }}
-      >
-        {section.versionLabel}
-      </div>
-      <div className="p-4 space-y-3">
-        <div className="flex items-end gap-2 pl-[140px]">
-          {section.packSizes.map((size) => (
-            <div
-              key={size}
-              className="w-16 bg-[#c0392b] text-white text-xs font-bold text-center py-1 border border-gray-600"
-            >
-              {size}
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-[130px] text-xs text-gray-800 shrink-0">Price for account in Pack</span>
-          <span className="text-sm font-bold">€</span>
-          {section.unitPrices.map((price, i) => (
-            <input
-              key={`unit-${i}`}
-              readOnly
-              value={price}
-              className="w-16 border border-gray-400 bg-[#fffacd] px-1 py-1 text-center text-sm"
-            />
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-[130px] text-xs text-gray-800 shrink-0">Total Price</span>
-          <span className="text-sm font-bold">€</span>
-          {section.totalPrices.map((price, i) => (
-            <input
-              key={`total-${i}`}
-              readOnly
-              value={price}
-              className="w-16 border border-gray-400 bg-yellow-300 px-1 py-1 text-center text-sm font-semibold"
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+const CLUB_VERSION_TO_OTHERS_KEY: Record<number, 'base' | 'premium' | 'pro'> = {
+  15: 'base',
+  16: 'premium',
+  17: 'pro',
+  18: 'base',
+};
 
 function AccountPricelistView() {
+  const packs = getClubAccountPackRows();
   return (
-    <div className="p-4 space-y-4 max-w-3xl mx-auto">
-      {CLUB_ACCOUNT_PACK_ROWS.map((section) => (
-        <AccountPackSection key={section.versionKey} section={section} />
-      ))}
+    <div className="p-4 max-w-3xl mx-auto">
+      <ClubAccountPackPricingSections packs={packs} mode="review" />
     </div>
   );
 }
 
-function DevicePriceGrid({ grid }: { grid: ClubDevicePriceGrid }) {
-  return (
-    <div className="space-y-2 py-2">
-      <div className="flex items-end gap-2 pl-[80px]">
-        {grid.quantities.map((qty) => (
-          <div
-            key={qty}
-            className="w-14 bg-[#c0392b] text-white text-[10px] font-bold text-center py-1 border border-gray-600"
-          >
-            {qty}
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="w-[70px] text-xs shrink-0">Price</span>
-        <span className="text-xs font-bold">€</span>
-        {grid.unitPrices.map((price, i) => (
-          <input
-            key={`p-${i}`}
-            readOnly
-            value={price}
-            className="w-14 border border-gray-400 bg-[#fffacd] px-1 py-0.5 text-center text-xs"
-          />
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="w-[70px] text-xs shrink-0">Total Price</span>
-        <span className="text-xs font-bold">€</span>
-        {grid.totalPrices.map((price, i) => (
-          <input
-            key={`t-${i}`}
-            readOnly
-            value={price}
-            className="w-14 border border-gray-400 bg-yellow-300 px-1 py-0.5 text-center text-xs font-semibold"
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function IdentificationDevicesView() {
-  const [deviceTab, setDeviceTab] = useState<string>(CLUB_IDENTIFICATION_DEVICE_TABS[0]);
-  const [styleTab, setStyleTab] = useState<string>(CLUB_IDENTIFICATION_STYLE_TABS[0]);
-
-  const thirdParty = CLUB_THIRD_PARTY_PRICELIST;
+function IdentificationDevicesView({ lang }: { lang: string }) {
+  const display = getClubIdentificationCardsDisplay();
+  const messageHtml = display.thirdPartyMessageByLang[lang] ?? display.thirdPartyMessageByLang.en ?? '';
 
   return (
-    <div className="p-3 space-y-3 text-sm">
-      <div className="border border-gray-400">
-        <div className="flex items-center justify-between bg-[#c0392b] px-3 py-2 text-white text-xs font-bold">
-          <span>{thirdParty.title}</span>
-          <span className="font-normal">{thirdParty.subtitle}</span>
-        </div>
-        <div className="flex flex-wrap gap-1 p-2 bg-[#f5f5f5] border-b border-gray-300">
-          {CLUB_IDENTIFICATION_DEVICE_TABS.map((tab) => (
-            <PricelistTabButton
-              key={tab}
-              active={deviceTab === tab}
-              onClick={() => setDeviceTab(tab)}
-            >
-              {tab}
-            </PricelistTabButton>
-          ))}
-        </div>
-        <div className="bg-[#fffacd] p-3">
-          <div className="flex items-end gap-2 pl-[100px] mb-2">
-            {thirdParty.quantities.map((qty) => (
-              <div
-                key={qty}
-                className="w-14 bg-[#c0392b] text-white text-[10px] font-bold text-center py-1"
-              >
-                {qty}
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-[90px] text-xs font-medium">Total Price</span>
-            <span className="text-xs">€</span>
-            {thirdParty.totals.map((total, i) => (
-              <input
-                key={i}
-                readOnly
-                value={total}
-                className="w-14 border border-gray-400 bg-yellow-300 px-1 py-0.5 text-center text-xs"
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-1">
-        {CLUB_IDENTIFICATION_STYLE_TABS.map((tab) => (
-          <PricelistTabButton key={tab} active={styleTab === tab} onClick={() => setStyleTab(tab)}>
-            {tab}
-          </PricelistTabButton>
-        ))}
-      </div>
-
-      {CLUB_IDENTIFICATION_SECTIONS.map((section) => {
-        const grid = section.grids[styleTab] ?? Object.values(section.grids)[0];
-        if (!grid) return null;
-        return (
-          <div key={section.key} className="border border-gray-400">
-            <div
-              className="px-3 py-1.5 text-xs font-bold text-white"
-              style={{ backgroundColor: section.headerColor }}
-            >
-              {section.label}
-            </div>
-            <div className="px-3 bg-white">
-              <DevicePriceGrid grid={grid} />
-            </div>
-          </div>
-        );
-      })}
+    <div className="space-y-3 p-3 text-sm">
+      {display.thirdPartyMessageEnabled && messageHtml ? (
+        <div
+          className="prose prose-sm max-w-none rounded border border-gray-300 bg-white p-4 text-sm text-gray-800"
+          dangerouslySetInnerHTML={{ __html: messageHtml }}
+        />
+      ) : null}
+      <ClubIdentificationCardPricingSections
+        thirdPartyPricelists={display.thirdPartyPricelists}
+        deviceSections={display.deviceSections}
+        deviceTabLabels={display.deviceTabLabels}
+        styleTabLabels={display.styleTabLabels}
+        mode="review"
+      />
     </div>
   );
 }
@@ -319,6 +220,9 @@ function OthersVersionPanel({ data }: { data: ClubOthersVersionData }) {
           <div className="mb-2 inline-block border border-gray-400 bg-white px-2 py-0.5 text-[10px]">
             {data.unlimitedLegend}
           </div>
+          <p className="mb-2 text-[10px] text-gray-700">
+            Assigned automatically according to the club version selected in Versions and features.
+          </p>
           <div className="bg-[#337ab7] text-white text-xs font-bold px-2 py-1 mb-2">
             {data.sharingHeader}
           </div>
@@ -326,7 +230,7 @@ function OthersVersionPanel({ data }: { data: ClubOthersVersionData }) {
             {data.sharingRows.map((row) => (
               <div
                 key={row.label}
-                className="grid grid-cols-[90px_60px_24px_60px_32px] items-center gap-2 text-xs"
+                className="grid grid-cols-[90px_60px_24px_60px] items-center gap-2 text-xs"
               >
                 <span className="font-medium">{row.label}</span>
                 <input
@@ -334,31 +238,8 @@ function OthersVersionPanel({ data }: { data: ClubOthersVersionData }) {
                   value={row.freeUntil}
                   className="border border-gray-400 bg-[#fffacd] px-1 py-1 text-center"
                 />
-                {row.costEach !== '' ? (
-                  <>
-                    <span>€</span>
-                    <span>{row.costEach}</span>
-                    <button
-                      type="button"
-                      className="flex h-7 w-7 items-center justify-center bg-[#5cb85c] text-white"
-                      aria-label={`Share ${row.label}`}
-                    >
-                      <Share2 className="h-4 w-4" />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span>€</span>
-                    <span />
-                    <button
-                      type="button"
-                      className="flex h-7 w-7 items-center justify-center bg-[#5cb85c] text-white"
-                      aria-label={`Share ${row.label}`}
-                    >
-                      <Share2 className="h-4 w-4" />
-                    </button>
-                  </>
-                )}
+                <span>€</span>
+                <span>{row.costEach !== '' ? row.costEach : '—'}</span>
               </div>
             ))}
           </div>
@@ -369,6 +250,9 @@ function OthersVersionPanel({ data }: { data: ClubOthersVersionData }) {
         <div className="bg-[#337ab7] px-3 py-2 text-white text-sm font-bold">
           Permission for management section
         </div>
+        <p className="border-b border-gray-300 px-4 py-2 text-[10px] text-gray-700">
+          Display only — cost to open the Management section from additional devices.
+        </p>
         <div className="p-4 space-y-3 text-sm">
           <div className="flex items-center gap-2">
             <span className="w-28 shrink-0">Exceeded the:</span>
@@ -398,23 +282,39 @@ function OthersVersionPanel({ data }: { data: ClubOthersVersionData }) {
   );
 }
 
-function OthersView() {
-  const [versionTab, setVersionTab] = useState<'base' | 'premium' | 'pro'>('base');
+function OthersView({ selectedVersionId }: { selectedVersionId: number | null }) {
+  const mappedKey = selectedVersionId ? CLUB_VERSION_TO_OTHERS_KEY[selectedVersionId] : null;
+  const [versionTab, setVersionTab] = useState<'base' | 'premium' | 'pro'>(mappedKey ?? 'base');
+
+  useEffect(() => {
+    if (mappedKey) setVersionTab(mappedKey);
+  }, [mappedKey]);
+
   const active = CLUB_OTHERS_VERSIONS.find((v) => v.key === versionTab) ?? CLUB_OTHERS_VERSIONS[0];
+  const selectedVersionName = selectedVersionId
+    ? getClubVersionSubscriptionRows().find((row) => row.id === selectedVersionId)?.name
+    : null;
 
   return (
     <div>
-      <div className="flex flex-wrap gap-1 px-4 pt-3 border-b border-gray-300 bg-[#f5f5f5]">
-        {CLUB_OTHERS_VERSIONS.map((version) => (
-          <PricelistTabButton
-            key={version.key}
-            active={versionTab === version.key}
-            onClick={() => setVersionTab(version.key)}
-          >
-            {version.label}
-          </PricelistTabButton>
-        ))}
-      </div>
+      {selectedVersionName ? (
+        <p className="border-b border-gray-300 bg-sky-50 px-4 py-2 text-xs text-sky-950">
+          Showing limits and costs for <strong>{selectedVersionName}</strong> (from your version
+          selection).
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-1 px-4 pt-3 border-b border-gray-300 bg-[#f5f5f5]">
+          {CLUB_OTHERS_VERSIONS.map((version) => (
+            <PricelistTabButton
+              key={version.key}
+              active={versionTab === version.key}
+              onClick={() => setVersionTab(version.key)}
+            >
+              {version.label}
+            </PricelistTabButton>
+          ))}
+        </div>
+      )}
       <OthersVersionPanel data={active} />
     </div>
   );
@@ -433,49 +333,75 @@ export default function RegistrationClubPricelistsPanel({
   onSubTabChange,
   onBack,
 }: RegistrationClubPricelistsPanelProps) {
+  const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
+  const [selectedOptionalModules, setSelectedOptionalModules] = useState<Set<number>>(new Set());
+
+  const toggleOptionalModule = (id: number) => {
+    setSelectedOptionalModules((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const renderContent = () => {
     switch (activeSubTab) {
       case 'versions_features':
-        return <VersionsFeaturesView />;
+        return (
+          <VersionsFeaturesView
+            selectedVersionId={selectedVersionId}
+            onSelectVersion={setSelectedVersionId}
+          />
+        );
       case 'optional_modules':
-        return <OptionalModulesView lang={lang} />;
+        return (
+          <OptionalModulesView
+            lang={lang}
+            selectedModuleIds={selectedOptionalModules}
+            onToggleModule={toggleOptionalModule}
+          />
+        );
       case 'account_pricelist':
         return <AccountPricelistView />;
       case 'identification_devices':
-        return <IdentificationDevicesView />;
+        return <IdentificationDevicesView lang={lang} />;
       case 'others':
-        return <OthersView />;
+        return <OthersView selectedVersionId={selectedVersionId} />;
       default:
         return null;
     }
   };
 
   return (
-    <div className="flex flex-col h-full min-h-[320px] bg-[#eef6fc]">
-      <div className="bg-[#7294c1] px-4 py-2.5 text-center text-sm font-bold text-white shrink-0">
+    <div className="flex h-full min-h-[320px] flex-col bg-[#eef6fc]">
+      <div className="shrink-0 bg-[#7294c1] px-4 py-2.5 text-center text-sm font-bold text-white">
         Club Pricelists
       </div>
 
-      <div className="flex flex-wrap items-end gap-0 border-b border-black bg-[#f0f0f0] px-2 pt-2 shrink-0">
-        <button
-          type="button"
-          onClick={onBack}
-          className="mr-2 mb-0.5 px-3 py-1.5 text-xs font-bold text-gray-800 border border-gray-400 bg-[#ddd] hover:bg-[#ccc] rounded"
-        >
-          Back
-        </button>
-        {CLUB_PRICELIST_TABS.map((tab) => (
-          <PricelistTabButton
-            key={tab.key}
-            active={activeSubTab === tab.key}
-            onClick={() => onSubTabChange(tab.key)}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex w-44 shrink-0 flex-col gap-1 border-r border-black bg-[#f0f0f0] p-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="w-full rounded border border-gray-400 bg-[#ddd] px-3 py-2 text-left text-xs font-bold text-gray-800 hover:bg-[#ccc]"
           >
-            {tab.label}
-          </PricelistTabButton>
-        ))}
-      </div>
+            Back
+          </button>
+          {CLUB_PRICELIST_TABS.map((tab) => (
+            <PricelistTabButton
+              key={tab.key}
+              active={activeSubTab === tab.key}
+              onClick={() => onSubTabChange(tab.key)}
+              vertical
+            >
+              {tab.label}
+            </PricelistTabButton>
+          ))}
+        </div>
 
-      <div className="flex-1 overflow-y-auto bg-[#eef6fc]">{renderContent()}</div>
+        <div className="min-w-0 flex-1 overflow-y-auto bg-[#eef6fc]">{renderContent()}</div>
+      </div>
     </div>
   );
 }

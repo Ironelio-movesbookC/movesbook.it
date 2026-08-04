@@ -11,7 +11,7 @@ const DEFAULT_SETTINGS: ClubPurchaseAccountsSettings = {
   paymentWithoutCreditCard: true,
   sendMoneyLaterDays: 30,
   activationMessageEnabled: true,
-  activationDaysAfterAssignment: 15,
+  activationDaysAfterAssignment: 30,
   activationMessageByLang: { en: '' },
   accountPacks: [
     {
@@ -23,8 +23,8 @@ const DEFAULT_SETTINGS: ClubPurchaseAccountsSettings = {
       unitPrices: [7, 3, 5, 4],
       totalPrices: [1400, 900, 2000, 4000],
       standardPrice: 4.9,
-      resellingSuggestion: 0,
-      durationDays: 0,
+      resellingSuggestion: 14.9,
+      durationDays: 10,
     },
     {
       versionKey: 'premium',
@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS: ClubPurchaseAccountsSettings = {
       unitPrices: [5, 6, 2, 8],
       totalPrices: [1000, 1800, 1000, 8000],
       standardPrice: 9.9,
-      resellingSuggestion: 0,
+      resellingSuggestion: 6,
       durationDays: 20,
     },
     {
@@ -44,10 +44,10 @@ const DEFAULT_SETTINGS: ClubPurchaseAccountsSettings = {
       headerColor: '#c0392b',
       packSizes: [200, 300, 500, 1000],
       packEnabled: [true, true, true, true],
-      unitPrices: [8, 4, 6, 5],
-      totalPrices: [1600, 1200, 3000, 5000],
+      unitPrices: [2, 5, 6, 2],
+      totalPrices: [400, 1500, 3000, 2000],
       standardPrice: 19.9,
-      resellingSuggestion: 0,
+      resellingSuggestion: 29.9,
       durationDays: 40,
     },
   ],
