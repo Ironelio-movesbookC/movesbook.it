@@ -33,6 +33,7 @@ import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/Ch
 import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import { ClubWorkspaceContext } from '@/contexts/ClubWorkspaceContext';
+import TopBar from '@/app/club/dashboard/components/topbar/TopBar';
 
 function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -334,7 +335,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
           />
         )}
 
-        <div className="flex-1 flex gap-0 min-h-0">
+        <div className="flex-1 flex gap-0 min-h-0 py-2 px-4">
           {showLeftSidebar && (
             <aside className="w-80 flex-shrink-0 sticky top-0 self-start">
               <DarkSidebar
@@ -357,6 +358,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
           )}
 
           <main className="flex-1 min-w-0 flex flex-col px-4 overflow-y-auto">
+            <TopBar/>
             {children}
           </main>
 

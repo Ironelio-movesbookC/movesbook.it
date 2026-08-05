@@ -433,6 +433,9 @@ export default function DarkSidebar({
   const [myClubsOpen, setMyClubsOpen] = useState(false);
   const [clubAdminInfoOpen, setClubAdminInfoOpen] = useState(false);
   const [memberInfoOpen, setMemberInfoOpen] = useState(false);
+  const [myPageForVisitorsOpen, setMyPageForVisitorsOpen] = useState(false);
+  const [bannerMenuItems, setBannerMenuItems] = useState<Array<{name: string, icon: string}>>([]);
+  const [bannerCheckedItems, setBannerCheckedItems] = useState<boolean[]>([]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -452,6 +455,78 @@ export default function DarkSidebar({
       }
     })();
   }, [user?.id]);
+
+  // Load banner menu items from localStorage (saved from TopBar.tsx)
+  const loadBannerItems = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const savedBannerItems = localStorage.getItem('topbar_banner_menu');
+      const savedCheckedBanner = localStorage.getItem('topbar_checked_banner');
+      
+      if (savedBannerItems) {
+        const items = JSON.parse(savedBannerItems);
+        setBannerMenuItems(items);
+      }
+      
+      if (savedCheckedBanner) {
+        const checked = JSON.parse(savedCheckedBanner);
+        setBannerCheckedItems(checked);
+      }
+    } catch (error) {
+      console.error('Error loading banner menu items:', error);
+    }
+  }, []);
+
+  // Load banner items on mount
+  useEffect(() => {
+    loadBannerItems();
+  }, [loadBannerItems]);
+
+  // Listen for localStorage changes and custom events to update banner items in real-time
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleStorageChange = (event: StorageEvent) => {
+      // Check if the changed key is banner menu related
+      if (event.key === 'topbar_banner_menu' || event.key === 'topbar_checked_banner') {
+        loadBannerItems();
+      }
+    };
+
+    const handleBannerMenuUpdated = (event: Event) => {
+      // Update banner items immediately when custom event is received
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail && customEvent.detail.items && customEvent.detail.checked) {
+        // Ensure arrays have same length before updating
+        if (customEvent.detail.items.length === customEvent.detail.checked.length) {
+          console.log('DarkSidebar received banner update:', {
+            itemCount: customEvent.detail.items.length,
+            checkedCount: customEvent.detail.checked.filter(Boolean).length
+          });
+          setBannerMenuItems(customEvent.detail.items);
+          setBannerCheckedItems(customEvent.detail.checked);
+        } else {
+          console.error('Banner menu update received with mismatched array lengths:', {
+            itemsLength: customEvent.detail.items.length,
+            checkedLength: customEvent.detail.checked.length,
+            items: customEvent.detail.items.map((i: any) => i.name),
+            checked: customEvent.detail.checked
+          });
+          // Fallback to loading from localStorage
+          loadBannerItems();
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('bannerMenuUpdated', handleBannerMenuUpdated as EventListener);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('bannerMenuUpdated', handleBannerMenuUpdated as EventListener);
+    };
+  }, [loadBannerItems]);
 
   const formCreatedClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(entities),
@@ -1900,16 +1975,61 @@ export default function DarkSidebar({
               </div>
             )}
 
-            <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
-              <div className="flex items-center gap-3">
-                <Eye className="w-5 h-5" />
-                <span>My page for visitors</span>
+            <div className="border-b border-teal-700">
+              <div className="flex w-full items-stretch bg-teal-800 text-white">
+                <button
+                  type="button"
+                  onClick={() => setMyPageForVisitorsOpen((v) => !v)}
+                  aria-expanded={myPageForVisitorsOpen}
+                  className="flex flex-1 items-center gap-3 min-w-0 py-3 pl-4 pr-2 text-left hover:bg-teal-700 transition-colors"
+                >
+                  <Eye className="w-5 h-5 shrink-0" />
+                  <span className="truncate">My page for visitors</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMyPageForVisitorsOpen((v) => !v)}
+                  aria-label={myPageForVisitorsOpen ? 'Collapse' : 'Expand'}
+                  className="shrink-0 px-4 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 opacity-80 transition-transform duration-200 ${myPageForVisitorsOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
               </div>
-              <div className="flex items-center gap-2">
-                <ChevronDown className="w-4 h-4 opacity-80" />
-                <Settings className="w-4 h-4 text-gray-300" />
-              </div>
-            </button>
+              {myPageForVisitorsOpen && bannerMenuItems.length > 0 && (
+                <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40">
+                  {/* Banner menu items selected in TopBar */}
+                  {bannerMenuItems.map((item, index) => {
+                    // Safety check: ensure checked items array has this index
+                    const isChecked = index < bannerCheckedItems.length ? bannerCheckedItems[index] : false;
+                    
+                    // Only show checked/selected items
+                    if (isChecked) {
+                      return (
+                        <div 
+                          key={index}
+                          className="flex items-center gap-3 px-4 py-2.5 border-t border-black/25 hover:bg-zinc-700/90 transition-colors"
+                        >
+                          <span className="text-sm">{item.icon}</span>
+                          <span className="truncate">{item.name}</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }).filter(Boolean)}
+                  
+                  {/* Show message if no items are selected */}
+                  {bannerMenuItems.filter((_, index) => 
+                    index < bannerCheckedItems.length ? bannerCheckedItems[index] : false
+                  ).length === 0 && (
+                    <div className="px-4 py-3 text-gray-400 text-sm italic">
+                      No items selected in Banner menu
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="border-b border-teal-700">
               <div className="flex w-full items-stretch bg-teal-800 text-white">
