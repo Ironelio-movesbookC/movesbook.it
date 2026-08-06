@@ -66,7 +66,14 @@ model User {
   ogpArticles              OgpArticle[]
   ogpArticlesDeleted       OgpArticle[]       @relation("OgpDeletedBy")
   ogpArticleLikes          OgpArticleLike[]
+  ogpNewsGroups            OgpNewsGroup[]
+  ogpNewsGroupLikes        OgpNewsGroupLike[]
   newsTypedArticles       NewsTypedArticle[]
+  musicTopics              UserMusicTopic[]
+  musicOgpArticles         MusicOgpArticle[]
+  musicOgpArticlesDeleted  MusicOgpArticle[]  @relation("MusicOgpDeletedBy")
+  musicOgpArticleLikes     MusicOgpArticleLike[]
+  musicTypedArticles       MusicTypedArticle[]
   plannedActionTemplates  PlannedActionTemplate[]
   workoutDayPlannedActions WorkoutDayPlannedAction[]
   sportMachines           SportMachine[]
@@ -125,6 +132,30 @@ model MyDeskItem {
   @@map("my_desk_items")
 }
 
+/** Club Desk tree — same shape as My Desk, scoped to a club (admin-managed). */
+model ClubDeskItem {
+  id          String    @id @default(cuid())
+  clubId      String
+  parentId    String?
+  title       String
+  path        String?
+  faIconClass String?
+  bgColor     String?
+  titleColor  String?
+  displayMode String? // "new_label" | "central_page"
+  visible     Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  parent   ClubDeskItem?  @relation("ClubDeskParentChild", fields: [parentId], references: [id], onDelete: Cascade)
+  children ClubDeskItem[] @relation("ClubDeskParentChild")
+
+  @@index([clubId, parentId, sortOrder])
+  @@index([parentId])
+  @@map("club_desk_items")
+}
+
 model UserNewsTopic {
   id          String   @id @default(cuid())
   userId      String
@@ -161,6 +192,7 @@ model OgpArticle {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy             User?     @relation("OgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   likes                 OgpArticleLike[]
+  groupItems            OgpNewsGroupItem[]
 
   @@index([userId])
   @@index([userId, topic])
@@ -182,6 +214,62 @@ model OgpArticleLike {
   @@map("ogp_article_likes")
 }
 
+/// Named collection of OGP News articles (OGP News group).
+model OgpNewsGroup {
+  id                    String    @id @default(cuid())
+  userId                String
+  name                  String
+  topic                 String
+  customDescription     String?   @db.Text
+  savedAt               DateTime  @default(now())
+  expiresAt             DateTime?
+  deletedAt             DateTime?
+  deletedByUserId       String?
+  visibilityUserTypes   String?   @db.Text
+  visibilityCountries   String?   @db.Text
+  visibilityLanguages   String?   @db.Text
+  visibilitySports      String?   @db.Text
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items                 OgpNewsGroupItem[]
+  likes                 OgpNewsGroupLike[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([userId, topic])
+  @@index([topic])
+  @@index([deletedAt])
+  @@map("ogp_news_groups")
+}
+
+model OgpNewsGroupItem {
+  id           String      @id @default(cuid())
+  groupId      String
+  ogpArticleId String
+  sortOrder    Int         @default(0)
+  addedAt      DateTime    @default(now())
+  group        OgpNewsGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  ogpArticle   OgpArticle  @relation(fields: [ogpArticleId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, ogpArticleId])
+  @@index([groupId])
+  @@index([ogpArticleId])
+  @@map("ogp_news_group_items")
+}
+
+model OgpNewsGroupLike {
+  id        String      @id @default(cuid())
+  groupId   String
+  userId    String
+  createdAt DateTime    @default(now())
+  group     OgpNewsGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+  @@map("ogp_news_group_likes")
+}
+
 model NewsTypedArticle {
   id          String   @id @default(cuid())
   userId      String
@@ -191,6 +279,92 @@ model NewsTypedArticle {
 
   @@index([userId])
   @@map("news_typed_articles")
+}
+
+/// Custom topics for the Music OGP section (mirrors UserNewsTopic).
+model UserMusicTopic {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("user_music_topics")
+}
+
+/// OGP-style music cards (mirrors OgpArticle).
+model MusicOgpArticle {
+  id                    String    @id @default(cuid())
+  userId                String
+  title                 String?   @db.Text
+  /// Artist name entered in Add Music (free text).
+  artist                String?
+  image                 String?   @db.Text
+  description           String?   @db.Text
+  url                   String    @db.Text
+  siteName              String?
+  type                  String?
+  customDescription     String?   @db.Text
+  topic                 String
+  /// Musical genre selected when adding music (shown as grey chip in topic bar).
+  genre                 String?
+  /// Song / Album / Playlist selected in Add Music.
+  registrationType      String?
+  /// True when the creator checked "Put in my favourites" at save time.
+  isFavourite           Boolean   @default(false)
+  languageCode          String?
+  savedAt               DateTime  @default(now())
+  expiresAt             DateTime?
+  deletedAt             DateTime?
+  deletedByUserId       String?
+  visibilityUserTypes   String?   @db.Text
+  visibilityCountries   String?   @db.Text
+  visibilityLanguages   String?   @db.Text
+  visibilitySports      String?   @db.Text
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deletedBy             User?     @relation("MusicOgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
+  likes                 MusicOgpArticleLike[]
+
+  @@index([userId])
+  @@index([userId, topic])
+  @@index([deletedAt])
+  @@map("music_ogp_articles")
+}
+
+model MusicOgpArticleLike {
+  id                 String          @id @default(cuid())
+  musicOgpArticleId  String
+  userId             String
+  createdAt          DateTime        @default(now())
+  musicOgpArticle    MusicOgpArticle @relation(fields: [musicOgpArticleId], references: [id], onDelete: Cascade)
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([musicOgpArticleId, userId])
+  @@index([musicOgpArticleId])
+  @@index([userId])
+  @@map("music_ogp_article_likes")
+}
+
+model MusicTypedArticle {
+  id          String   @id @default(cuid())
+  userId      String
+  description String   @db.Text
+  /// Artist name entered in Add Music (free text).
+  artist      String?
+  /// Track title entered in Add Music (free text).
+  title       String?
+  /// Song / Album / Playlist selected in Add Music.
+  registrationType String?
+  /// True when the creator checked "Put in my favourites" at save time.
+  isFavourite Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("music_typed_articles")
 }
 
 model ChatConversation {
@@ -939,6 +1113,17 @@ model UserSettings {
   yearlyPlanStartDate    DateTime? // Start date for Section B (Yearly Plan)
   templateWeeksStartDate DateTime? // Start date for Section A (3 Weeks Plan)
   newsTopicOrder         String?   @db.Text // JSON array of topic names for user's favorite order
+  /// JSON array of news topic names hidden from the topic menu
+  newsHiddenTopics       String?   @db.Text
+  musicTopicOrder        String?   @db.Text // JSON array of topic names for Music OGP section order
+  /// JSON object: { [topicName]: string[] } — favorite genre order per music topic
+  musicTopicGenreOrder   String?   @db.Text
+  /// JSON array of music topic names hidden from the topic menu
+  musicHiddenTopics      String?   @db.Text
+  /// JSON object: { [topicName]: string[] } — musical genres hidden per topic
+  musicHiddenGenres      String?   @db.Text
+  /// JSON array of musical genre names used in Music (grey chips in topic bar)
+  musicGenres            String?   @db.Text
   /// JSON: { "A"?: PlanPersist, "B"?: … } for Weekly workout structure tab (Plans A–E)
   weeklyStructureV1      String?   @db.LongText
   user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)

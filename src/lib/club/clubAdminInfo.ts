@@ -141,7 +141,7 @@ export const CLUB_ADMIN_PUBLIC_LINK_FIELDS: {
   { key: 'whatsapp', label: 'Whatsapp' },
   { key: 'instagram', label: 'Instagram' },
   { key: 'youtube', label: 'You tube' },
-  { key: 'linkedin', label: 'Linkedin' },
+  { key: 'linkedin', label: 'LinkedIn' },
   { key: 'blogSite', label: 'My blog site' },
   { key: 'googleMap', label: 'Google map' },
 ];

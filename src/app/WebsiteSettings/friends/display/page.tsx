@@ -13,16 +13,22 @@ import {
   type ClubWebsiteFriendItem,
 } from '@/lib/clubWebsiteFriendList';
 import { isTopicAudienceAllowed } from '@/lib/clubWebsiteTopicSettingsFields';
+import { languagesWithTopicHtmlContent } from '@/lib/clubWebsiteDisplayContent';
 import { useClubWebsiteSettingsPage } from '@/hooks/useClubWebsiteSettingsPage';
+import TopicDisplayLanguageSelect, {
+  pickInitialTopicDisplayLang,
+} from '@/components/club/websiteSettings/TopicDisplayLanguageSelect';
 
 function FriendMemberDisplayContent() {
-  const { t } = useLanguage();
+  const { t, currentLanguage } = useLanguage();
   const searchParams = useSearchParams();
   const friendId = searchParams?.get('id') ?? null;
   const langParam = searchParams?.get('lang');
-  const lang = (
-    CLUB_WEBSITE_LANGUAGE_TABS.some((l) => l.code === langParam) ? langParam : 'en'
-  ) as ClubWebsiteLanguageCode;
+  const preferredLang = (
+    CLUB_WEBSITE_LANGUAGE_TABS.some((l) => l.code === langParam)
+      ? langParam
+      : currentLanguage
+  ) as string;
   const { clubId, clubDisplayName, loading, clubsLoading } = useClubWebsiteSettingsPage();
   const [items, setItems] = useState<ClubWebsiteFriendItem[]>([]);
 
@@ -36,6 +42,21 @@ function FriendMemberDisplayContent() {
     if (!found || !isTopicAudienceAllowed(getEffectiveFriendItemAudience(items, found))) return null;
     return found;
   }, [items, friendId]);
+
+  const availableLanguages = useMemo(
+    () => (item ? languagesWithTopicHtmlContent(item) : []),
+    [item]
+  );
+
+  const [displayLang, setDisplayLang] = useState<ClubWebsiteLanguageCode>('en');
+
+  useEffect(() => {
+    setDisplayLang(pickInitialTopicDisplayLang(availableLanguages, preferredLang));
+  }, [item?.id, availableLanguages, preferredLang]);
+
+  const lang = availableLanguages.includes(displayLang)
+    ? displayLang
+    : pickInitialTopicDisplayLang(availableLanguages, preferredLang);
 
   if (loading || clubsLoading) {
     return (
@@ -88,8 +109,8 @@ function FriendMemberDisplayContent() {
     );
   }
 
-  const html = item.contentsByLang[lang] || item.contentsByLang.en || '';
-  const keywords = item.keywordsByLang[lang] || item.keywordsByLang.en || '';
+  const html = item.contentsByLang[lang] ?? '';
+  const keywords = item.keywordsByLang[lang] ?? '';
 
   return (
     <div className="min-h-screen bg-zinc-100">
@@ -97,10 +118,16 @@ function FriendMemberDisplayContent() {
         {t('club_topic_display_readonly_banner')}
       </div>
       <div
-        className="px-4 py-3 text-lg font-semibold"
+        className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-lg font-semibold"
         style={{ backgroundColor: item.bannerColor, color: item.titleColor }}
       >
-        {item.title}
+        <span className="min-w-0 truncate">{item.title}</span>
+        <TopicDisplayLanguageSelect
+          availableLanguages={availableLanguages}
+          value={lang}
+          onChange={setDisplayLang}
+          titleColor={item.titleColor}
+        />
       </div>
       <div className="mx-auto max-w-4xl bg-white p-6 shadow-sm">
         <p className="text-xs text-zinc-500">

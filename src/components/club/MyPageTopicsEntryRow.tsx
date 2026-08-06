@@ -4,8 +4,8 @@ import { MessagesSquare } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 /**
- * MY PAGE shortcut to club topics — opens club picker, then MY CLUB for the selected club.
- * Does not list or edit topics here; topics live under MY CLUB only.
+ * MY PAGE shortcut — pick club/team/group, then open that entity's topics DISPLAY
+ * (not website settings).
  */
 export default function MyPageTopicsEntryRow({
   onOpenClubPicker,

@@ -59,25 +59,25 @@ export type MovebookTopicRow = {
 
 /** Legacy “Social sites” submenu when expanded. */
 export const SOCIAL_SITE_ROWS = [
-  { id: 'social-twitter', label: 'Twitter' },
-  { id: 'social-instagram', label: 'Instagram' },
-  { id: 'social-youtube', label: 'YouTube' },
-  { id: 'social-linkedin', label: 'Linkdedin' },
-  { id: 'social-telegram', label: 'Telegram' },
-  { id: 'social-whatsapp', label: 'Whatsapp channel' },
-  { id: 'social-blog', label: 'Blog site' },
+  { id: 'social-twitter', label: 'Twitter', defaultStatus: 'on' as SidebarTopicStatus },
+  { id: 'social-instagram', label: 'Instagram', defaultStatus: 'on' as SidebarTopicStatus },
+  { id: 'social-youtube', label: 'YouTube', defaultStatus: 'on' as SidebarTopicStatus },
+  { id: 'social-linkedin', label: 'LinkedIn', defaultStatus: 'on' as SidebarTopicStatus },
+  { id: 'social-telegram', label: 'Telegram', defaultStatus: 'on' as SidebarTopicStatus },
+  { id: 'social-whatsapp', label: 'Whatsapp channel', defaultStatus: 'on' as SidebarTopicStatus },
+  { id: 'social-blog', label: 'Blog site', defaultStatus: 'on' as SidebarTopicStatus },
 ] as const;
 
 export const MOVEBOOK_TOPIC_ROWS: MovebookTopicRow[] = [
-  { id: 'member-list', label: 'Member list', showStatus: false },
+  { id: 'member-list', label: 'Member list', showStatus: true, defaultStatus: 'on' },
   { id: 'member-posts', label: "Member's posts", showStatus: true, defaultStatus: 'on' },
   { id: 'blog', label: 'Blog', showStatus: true, defaultStatus: 'on' },
   { id: 'news', label: 'News', showStatus: true, defaultStatus: 'on' },
   { id: 'gallery', label: 'Image gallery', showStatus: true, defaultStatus: 'on' },
   { id: 'videos', label: 'Videos', showStatus: true, defaultStatus: 'on' },
-  { id: 'stores', label: 'Stores', showStatus: false },
-  { id: 'workouts', label: 'Workouts', showStatus: false },
-  { id: 'notebook', label: 'Note book for members', showStatus: false },
+  { id: 'stores', label: 'Stores', showStatus: true, defaultStatus: 'on' },
+  { id: 'workouts', label: 'Workouts', showStatus: true, defaultStatus: 'on' },
+  { id: 'notebook', label: 'Note book for members', showStatus: true, defaultStatus: 'on' },
 ];
 
 export const LEGACY_SIDEBAR_BLUE = '#6d8cb5';

@@ -23,7 +23,9 @@ import {
   CLUB_WEBSITE_SETTINGS_INDEX_PATH,
   CLUB_WEBSITE_BACHECA_PATH,
   clubBachecaDashboardUrl,
-  clubTopicDashboardUrl,
+  clubTopicsHorizontalDashboardUrl,
+  clubWebsiteDisplayUrl,
+  clubWebsiteDisplayTopicUrl,
 } from '@/lib/clubWebsiteSettingsPaths';
 import { writeClubWorkspaceTab } from '@/lib/club/clubWorkspaceTab';
 import { CLUB_WEBSITE_SETTINGS_CHANGED_EVENT } from '@/lib/clubWebsiteSettingsEvents';
@@ -31,6 +33,7 @@ import ClubDashboardTopicsList from '@/components/club/ClubDashboardTopicsList';
 import { consumeOpenClubTopicsSection } from '@/lib/club/clubTopicsNavigation';
 import { useClubWebsiteFriendList } from '@/hooks/useClubWebsiteFriendList';
 import { useClubWebsiteTopics } from '@/hooks/useClubWebsiteTopics';
+import { clubDeskListUrl, clubDeskSettingsUrl } from '@/lib/club/clubDeskPaths';
 
 type BootstrappedClub = {
   id: string;
@@ -153,9 +156,8 @@ export default function ClubMembersDashboardSection({
   };
 
   const effectiveClubId = resolvedClubId ?? clubId;
-  const deskHref = effectiveClubId
-    ? `/my-club?clubId=${encodeURIComponent(effectiveClubId)}`
-    : undefined;
+  const deskListHref = effectiveClubId ? clubDeskListUrl(effectiveClubId) : undefined;
+  const deskSettingsHref = effectiveClubId ? clubDeskSettingsUrl(effectiveClubId) : undefined;
   const openBachecaPanel = () => {
     if (!effectiveClubId) return;
     writeClubWorkspaceTab('my-entity');
@@ -165,13 +167,32 @@ export default function ClubMembersDashboardSection({
     router.push(clubBachecaDashboardUrl(effectiveClubId));
   };
 
-  const openTopicPanel = (topicId: string, _label: string) => {
+  const openClubWebsiteDisplay = () => {
     if (!effectiveClubId) return;
     writeClubWorkspaceTab('my-entity');
     if (typeof window !== 'undefined') {
       localStorage.setItem('selectedClub', effectiveClubId);
     }
-    router.push(clubTopicDashboardUrl(effectiveClubId, topicId));
+    // Always open member DISPLAY — never the settings editor.
+    router.push(clubWebsiteDisplayUrl(effectiveClubId));
+  };
+
+  const openTopicsHorizontalPanel = () => {
+    if (!effectiveClubId) return;
+    writeClubWorkspaceTab('my-entity');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('selectedClub', effectiveClubId);
+    }
+    router.push(clubTopicsHorizontalDashboardUrl(effectiveClubId));
+  };
+
+  const openTopicDisplay = (topicId: string, _label: string) => {
+    if (!effectiveClubId) return;
+    writeClubWorkspaceTab('my-entity');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('selectedClub', effectiveClubId);
+    }
+    router.push(clubWebsiteDisplayTopicUrl(effectiveClubId, topicId));
   };
 
   const {
@@ -319,7 +340,11 @@ export default function ClubMembersDashboardSection({
                   aria-label={t('club_bacheca_open_editor_aria')}
                   onClick={(e) => {
                     e.stopPropagation();
-                    window.open(CLUB_WEBSITE_BACHECA_PATH, '_blank', 'noopener,noreferrer');
+                    writeClubWorkspaceTab('my-entity');
+                    if (effectiveClubId && typeof window !== 'undefined') {
+                      localStorage.setItem('selectedClub', effectiveClubId);
+                    }
+                    router.push(CLUB_WEBSITE_BACHECA_PATH);
                   }}
                   className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
                 >
@@ -328,41 +353,68 @@ export default function ClubMembersDashboardSection({
               )}
             </div>
 
-            <div className="flex min-h-[44px] w-full items-stretch border-b border-black/25">
-              <button
-                type="button"
-                disabled={!deskHref}
-                onClick={() => deskHref && router.push(deskHref)}
-                className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-700/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ClipboardList className="h-4 w-4 shrink-0 opacity-90" />
-                <span className="truncate">{t('sidebar_club_desk')}</span>
-              </button>
-              {canManageClub && (
+            {effectiveClubId ? (
+              <div className="flex min-h-[44px] w-full items-stretch border-b border-black/25">
                 <button
                   type="button"
-                  title={t('sidebar_club_desk_admin_aria')}
-                  aria-label={t('sidebar_club_desk_admin_aria')}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push('/club/dashboard');
+                  disabled={!deskListHref}
+                  onClick={() => {
+                    if (!deskListHref || !effectiveClubId) return;
+                    writeClubWorkspaceTab('my-entity');
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('selectedClub', effectiveClubId);
+                    }
+                    router.push(deskListHref);
                   }}
-                  className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-700/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <Settings className="h-4 w-4" />
+                  <ClipboardList className="h-4 w-4 shrink-0 opacity-90" />
+                  <span className="truncate">{t('sidebar_club_desk')}</span>
                 </button>
-              )}
-            </div>
+                {canManageClub ? (
+                  <button
+                    type="button"
+                    disabled={!deskSettingsHref}
+                    title={t('sidebar_club_desk_admin_aria')}
+                    aria-label={t('sidebar_club_desk_admin_aria')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!deskSettingsHref || !effectiveClubId) return;
+                      writeClubWorkspaceTab('my-entity');
+                      if (typeof window !== 'undefined') {
+                        localStorage.setItem('selectedClub', effectiveClubId);
+                      }
+                      router.push(deskSettingsHref);
+                    }}
+                    className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="flex min-h-[44px] w-full items-stretch border-b border-black/25">
               <button
                 type="button"
-                onClick={() => setTopicsOpen((v) => !v)}
-                aria-expanded={topicsOpen}
-                className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+                disabled={!effectiveClubId}
+                onClick={openClubWebsiteDisplay}
+                className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-700/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Mail className="h-4 w-4 shrink-0 opacity-90" />
                 <span className="truncate">{t('sidebar_club_topics')}</span>
+              </button>
+              <button
+                type="button"
+                disabled={!effectiveClubId || !hasDashboardTopics}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openTopicsHorizontalPanel();
+                }}
+                title={t('club_topics_display_horizontally')}
+                className="max-w-[7.5rem] shrink-0 border-l border-black/25 px-1.5 text-center text-[10px] font-medium leading-tight text-amber-200 transition-colors hover:bg-zinc-700/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {t('club_topics_display_horizontally')}
               </button>
               {canManageClub ? (
                 <button
@@ -371,7 +423,11 @@ export default function ClubMembersDashboardSection({
                   aria-label={t('sidebar_club_topics_settings_aria')}
                   onClick={(e) => {
                     e.stopPropagation();
-                    window.open(CLUB_WEBSITE_SETTINGS_INDEX_PATH, '_blank', 'noopener,noreferrer');
+                    writeClubWorkspaceTab('my-entity');
+                    if (effectiveClubId && typeof window !== 'undefined') {
+                      localStorage.setItem('selectedClub', effectiveClubId);
+                    }
+                    router.push(CLUB_WEBSITE_SETTINGS_INDEX_PATH);
                   }}
                   className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
                 >
@@ -394,7 +450,7 @@ export default function ClubMembersDashboardSection({
                 clubId={effectiveClubId}
                 friendTopics={friendDashboardTopics}
                 customTopics={customDashboardTopics}
-                onViewTopicContent={openTopicPanel}
+                onViewTopicContent={openTopicDisplay}
               />
             ) : topicsOpen && !hasDashboardTopics ? (
               <p className="border-t border-black/25 bg-[#252525] px-3 py-2.5 text-[11px] leading-snug text-white/60">

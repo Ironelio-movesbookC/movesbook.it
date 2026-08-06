@@ -54,6 +54,8 @@ interface NewsSettingModalProps {
     languages: Option[];
     sports: Option[];
   } | null;
+  /** Modal heading; defaults to "News Setting". Music section passes "Music Setting". */
+  title?: string;
 }
 
 export default function NewsSettingModal({
@@ -63,6 +65,7 @@ export default function NewsSettingModal({
   onSave,
   onDeleteSettings,
   options,
+  title = 'News Setting',
 }: NewsSettingModalProps) {
   const [userTypes, setUserTypes] = useState<string[]>([]);
   const [countries, setCountries] = useState<string[]>([]);
@@ -77,27 +80,54 @@ export default function NewsSettingModal({
   useEffect(() => {
     if (isOpen) {
       const s = initialSettings ?? defaultSettings;
+      const nextCountries = s.countries ?? [];
       setUserTypes(s.userTypes ?? []);
-      setCountries(s.countries ?? []);
+      setCountries(nextCountries);
       setLanguages(s.languages ?? []);
       setSports(s.sports ?? []);
       setExpiresAt(toDateInputValue(s.expiresAt ?? null));
       setEnableUserTypes((s.userTypes?.length ?? 0) > 0);
-      setEnableCountries((s.countries?.length ?? 0) > 0);
+      // Country master = "all selected"; partial/manual picks keep it off.
+      setEnableCountries(
+        !!options?.countries.length &&
+          nextCountries.length === options.countries.length &&
+          options.countries.every((c) => nextCountries.includes(c))
+      );
       setEnableLanguages((s.languages?.length ?? 0) > 0);
       setEnableSports((s.sports?.length ?? 0) > 0);
     }
-  }, [isOpen, initialSettings]);
+  }, [isOpen, initialSettings, options]);
 
   const handleSave = () => {
     onSave({
       userTypes: enableUserTypes ? userTypes : [],
-      countries: enableCountries ? countries : [],
+      // Persist whatever countries are checked (including manual picks while master is off).
+      countries,
       languages: enableLanguages ? languages : [],
       sports: enableSports ? sports : [],
       expiresAt: expiresAt.trim() || null,
     });
     onClose();
+  };
+
+  const syncCountryMaster = (next: string[]) => {
+    if (!options) {
+      setEnableCountries(false);
+      return;
+    }
+    setEnableCountries(
+      options.countries.length > 0 &&
+        next.length === options.countries.length &&
+        options.countries.every((c) => next.includes(c))
+    );
+  };
+
+  const toggleCountry = (value: string) => {
+    const next = countries.includes(value)
+      ? countries.filter((x) => x !== value)
+      : [...countries, value];
+    setCountries(next);
+    syncCountryMaster(next);
   };
 
   const handleDeleteSettings = () => {
@@ -127,7 +157,7 @@ export default function NewsSettingModal({
       >
         <div className="flex justify-between items-center p-4 border-b border-gray-200">
           <h2 id="news-setting-title" className="text-lg font-semibold text-gray-900">
-            News Setting
+            {title}
           </h2>
           <div className="flex items-center gap-2">
             {onDeleteSettings && (
@@ -281,7 +311,7 @@ export default function NewsSettingModal({
                 </div>
               </div>
 
-              {/* Country */}
+              {/* Country: master selects/clears all; individuals stay editable when master is off */}
               <div>
                 <label className="flex items-center gap-2 mb-2">
                   <input
@@ -290,7 +320,7 @@ export default function NewsSettingModal({
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableCountries(checked);
-                      if (checked) setCountries(options.countries.slice());
+                      setCountries(checked ? options.countries.slice() : []);
                     }}
                     className="rounded border-gray-300"
                   />
@@ -303,8 +333,7 @@ export default function NewsSettingModal({
                         <input
                           type="checkbox"
                           checked={countries.includes(c)}
-                          onChange={() => toggle(countries, c, setCountries)}
-                          disabled={!enableCountries}
+                          onChange={() => toggleCountry(c)}
                           className="rounded border-gray-300"
                         />
                         {c}

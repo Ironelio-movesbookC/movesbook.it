@@ -22,6 +22,9 @@ import ClubWebsiteLastUpdatePicker, {
   LEGACY_FIELD_CLASS,
 } from '@/components/club/websiteSettings/ClubWebsiteLastUpdatePicker';
 import ClubWebsiteTopicSettingsFormModal from '@/components/club/websiteSettings/ClubWebsiteTopicSettingsFormModal';
+import ClubWebsiteTopicLinkActivated, {
+  topicDirectLinkActivated,
+} from '@/components/club/websiteSettings/ClubWebsiteTopicLinkActivated';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
 
@@ -47,13 +50,20 @@ export default function ClubWebsiteFriendItemEditor({
   const [activeLang, setActiveLang] = useState<ClubWebsiteLanguageCode>('en');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [saveAck, setSaveAck] = useState(false);
+  /** Keep link mode active while still allowing the HTML editor to open. */
+  const [forceShowEditor, setForceShowEditor] = useState(false);
   const contentPanelRef = useRef<HTMLDivElement>(null);
   const saveAckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const patch = useCallback((p: Partial<ClubWebsiteFriendItem>) => onUpdate(p), [onUpdate]);
 
   useEffect(() => {
+    setForceShowEditor(false);
+  }, [item.id]);
+
+  useEffect(() => {
     if (!focusContentToken) return;
+    setForceShowEditor(true);
     contentPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [focusContentToken, item.id]);
 
@@ -70,13 +80,12 @@ export default function ClubWebsiteFriendItemEditor({
   };
 
   const openContentEditor = () => {
-    if (item.contentDisplayMode === 'link') {
-      patch({ contentDisplayMode: 'editor' });
-    }
+    setForceShowEditor(true);
     contentPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const showCkEditor = item.contentDisplayMode === 'editor';
+  const linkActivated = topicDirectLinkActivated(item.contentDisplayMode, item.externalUrl);
+  const showCkEditor = item.contentDisplayMode === 'editor' || forceShowEditor;
   const memberDisplayUrl = (lang: string) =>
     displayUrlForItem
       ? displayUrlForItem(item, lang)
@@ -99,17 +108,49 @@ export default function ClubWebsiteFriendItemEditor({
         <input
           type="text"
           value={item.title}
-          onChange={(e) => patch({ title: e.target.value })}
+          onChange={(e) => {
+            const next = e.target.value;
+            patch({
+              title: next,
+              name: next.trim() || item.name,
+            });
+          }}
           placeholder={t('club_website_title_placeholder')}
           className="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm font-semibold outline-none"
           style={{ color: item.titleColor }}
         />
         <div className="flex shrink-0 items-center border-l border-white/25">
+          <label
+            className="flex cursor-pointer items-center gap-1 px-2 py-1.5 opacity-90 hover:opacity-100"
+            title={t('club_topic_color_banner')}
+          >
+            <span className="sr-only">{t('club_topic_color_banner')}</span>
+            <input
+              type="color"
+              value={item.bannerColor}
+              onChange={(e) => patch({ bannerColor: e.target.value })}
+              className="h-6 w-7 cursor-pointer border border-white/40 bg-transparent p-0"
+              aria-label={t('club_topic_color_banner')}
+            />
+          </label>
+          <label
+            className="flex cursor-pointer items-center gap-1 border-l border-white/25 px-2 py-1.5 opacity-90 hover:opacity-100"
+            title={t('club_topic_color_title')}
+          >
+            <span className="sr-only">{t('club_topic_color_title')}</span>
+            <input
+              type="color"
+              value={item.titleColor}
+              onChange={(e) => patch({ titleColor: e.target.value })}
+              className="h-6 w-7 cursor-pointer border border-white/40 bg-transparent p-0"
+              aria-label={t('club_topic_color_title')}
+            />
+          </label>
           <a
             href={memberDisplayUrl(activeLang)}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3 py-2 opacity-90 hover:opacity-100"
+            className="border-l border-white/25 px-3 py-2 opacity-90 hover:opacity-100"
             style={{ color: item.titleColor }}
             aria-label={t('club_topic_preview_members_aria')}
           >
@@ -160,6 +201,22 @@ export default function ClubWebsiteFriendItemEditor({
 
       {!showCkEditor ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 border-b border-zinc-300 bg-[#f0f0f0] p-8 text-center">
+          <div className="flex w-full max-w-3xl flex-wrap items-center justify-between gap-3 border border-zinc-400 bg-[#e4e4e4] px-3 py-2 text-left">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-sm text-zinc-800">{t('club_website_section_label')} :</span>
+              <input
+                type="text"
+                value={item.sectionName}
+                onChange={(e) => patch({ sectionName: e.target.value })}
+                className={`${LEGACY_FIELD_CLASS} w-48`}
+              />
+            </div>
+            <ClubWebsiteTopicLinkActivated activated={linkActivated} url={item.externalUrl} />
+            <ClubWebsiteLastUpdatePicker
+              value={item.lastUpdate}
+              onChange={(v) => patch({ lastUpdate: v })}
+            />
+          </div>
           <p className="text-sm text-zinc-600">{t('club_friend_link_mode_edit_hint')}</p>
           <button
             type="button"
@@ -186,6 +243,7 @@ export default function ClubWebsiteFriendItemEditor({
               className={`${LEGACY_FIELD_CLASS} w-48`}
             />
           </div>
+          <ClubWebsiteTopicLinkActivated activated={linkActivated} url={item.externalUrl} />
           <ClubWebsiteLastUpdatePicker
             value={item.lastUpdate}
             onChange={(v) => patch({ lastUpdate: v })}

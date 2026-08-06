@@ -50,6 +50,7 @@ export default function ClubTopicMemberPanel({
         customTopics={customTopics}
         clubDisplayName={clubDisplayName}
         clubId={clubId}
+        displayMode
       />
     </div>
   );
