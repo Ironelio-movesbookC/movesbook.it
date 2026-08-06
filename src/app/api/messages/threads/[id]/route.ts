@@ -5,7 +5,9 @@ import {
   addReplyToThread,
   canReplyToThread,
   getThreadForUser,
+  updateSupportThreadStatus,
 } from '@/lib/messages/userThreads';
+import { isSupportWorkflowStatus } from '@/lib/messages/supportStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +31,38 @@ export async function GET(
   } catch (e) {
     console.error('GET /api/messages/threads/[id]', e);
     return NextResponse.json({ error: 'Failed to load thread' }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const auth = await requireMessageAuth(request);
+  if (!auth?.isStaff) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+  const { id } = await params;
+
+  try {
+    const body = await request.json().catch(() => ({}));
+    const status = body?.status;
+    if (!isSupportWorkflowStatus(status)) {
+      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+    }
+
+    const updated = await updateSupportThreadStatus(id, status);
+    if (!updated) {
+      return NextResponse.json(
+        { error: 'Thread not found or status not allowed for this category' },
+        { status: 404 },
+      );
+    }
+
+    const detail = await getThreadForUser(id, auth.userId, true);
+    return NextResponse.json(detail ?? updated);
+  } catch (e) {
+    console.error('PATCH /api/messages/threads/[id]', e);
+    return NextResponse.json({ error: 'Failed to update status' }, { status: 500 });
   }
 }
 

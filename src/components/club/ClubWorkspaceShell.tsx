@@ -34,6 +34,7 @@ import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLeg
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import { ClubWorkspaceContext } from '@/contexts/ClubWorkspaceContext';
 import TopBar from '@/app/club/dashboard/components/topbar/TopBar';
+import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 
 function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -62,6 +63,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
   const [createClubModalKey, setCreateClubModalKey] = useState(0);
   const [createClubSaving, setCreateClubSaving] = useState(false);
+  const [showStaffFeedbacks, setShowStaffFeedbacks] = useState(false);
 
   const formClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(clubs),
@@ -353,13 +355,21 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onAccessOutcomeSettingsClick={() => goToDashboardPanel('outcome-settings')}
                 onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
                 onCreateClubClick={openCreateClubFlow}
+                onMyFeedbacksStaffClick={() => {
+                  setActiveTab('my-page');
+                  setShowStaffFeedbacks(true);
+                }}
               />
             </aside>
           )}
 
           <main className="flex-1 min-w-0 flex flex-col px-4 overflow-y-auto">
             <TopBar/>
-            {children}
+            {showStaffFeedbacks ? (
+              <MyStaffFeedbacksPanel onClose={() => setShowStaffFeedbacks(false)} />
+            ) : (
+              children
+            )}
           </main>
 
           {showRightSidebar && (

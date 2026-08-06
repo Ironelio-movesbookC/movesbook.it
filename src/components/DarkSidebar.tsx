@@ -349,6 +349,8 @@ interface DarkSidebarProps {
   onMyGroupClick?: () => void;
   onMyCoachingGroupClick?: () => void;
   onPostsClick?: () => void;
+  /** Messages → My feedbacks for Staff — swap center section (keep left/right sidebars) */
+  onMyFeedbacksStaffClick?: () => void;
   /** My Club → Music for the club → opens OGP-style panel in dashboard main area */
   onClubAddSongsPlaylistsClick?: () => void;
   /** General settings → Identification devices (card readers list in dashboard) */
@@ -393,6 +395,7 @@ export default function DarkSidebar({
   onMyGroupClick,
   onMyCoachingGroupClick,
   onPostsClick,
+  onMyFeedbacksStaffClick,
   onClubAddSongsPlaylistsClick,
   onIdentificationDevicesClick,
   onAccessOutcomeSettingsClick,
@@ -2171,6 +2174,10 @@ export default function DarkSidebar({
                   <button
                     type="button"
                     onClick={() => {
+                      if (onMyFeedbacksStaffClick) {
+                        onMyFeedbacksStaffClick();
+                        return;
+                      }
                       if (user?.id) {
                         router.push(legacyUserBugProblemUrl(String(user.id)));
                       }
@@ -2683,6 +2690,10 @@ export default function DarkSidebar({
                       <button
                         type="button"
                         onClick={() => {
+                          if (onMyFeedbacksStaffClick) {
+                            onMyFeedbacksStaffClick();
+                            return;
+                          }
                           if (user?.id) {
                             router.push(legacyUserBugProblemUrl(String(user.id)));
                           }

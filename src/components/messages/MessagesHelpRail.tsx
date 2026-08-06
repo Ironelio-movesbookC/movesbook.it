@@ -14,7 +14,7 @@ export default function MessagesHelpRail() {
 
   const openPanel = (tab: MainTab) => {
     setPanelTab(tab);
-    setPanelOpen(false);
+    setPanelOpen(true);
   };
 
   return (

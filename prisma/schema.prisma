@@ -61,6 +61,7 @@ model User {
   chatMessagesSent         ChatMessage[]     @relation("MessageSender")
   userMessageThreads      UserMessageThread[]
   userThreadMessagesSent  UserThreadMessage[] @relation("UserThreadMessageSender")
+  userMessageThreadLikes  UserMessageThreadLike[]
   newsTopics               UserNewsTopic[]
   ogpArticles              OgpArticle[]
   ogpArticlesDeleted       OgpArticle[]       @relation("OgpDeletedBy")
@@ -410,17 +411,26 @@ model UserMessageThread {
   realPath        String?               @db.VarChar(2048)
   errorMessage    String?               @db.VarChar(1000)
   supportCategory String?               @db.VarChar(32)
+  /// Workflow status for Suggestions/Problems (pending|progress|future|solved|unsolvable).
+  /// Legacy assistance also used: S=Started, C=Completed, D=Decline
+  status          String?               @db.VarChar(32)
+  /// JSON array of up to 3 public image URLs attached to the first post
+  imageUrls       String?               @db.Text
+  likeCount       Int                   @default(0)
+  dislikeCount    Int                   @default(0)
   isPublic        Boolean               @default(false)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages        UserThreadMessage[]
+  likes           UserMessageThreadLike[]
 
   @@index([userId])
   @@index([userId, kind])
   @@index([supportCategory])
   @@index([languageCode])
   @@index([isPublic, kind])
+  @@index([status])
   @@map("user_message_threads")
 }
 
@@ -436,6 +446,23 @@ model UserThreadMessage {
 
   @@index([threadId])
   @@map("user_thread_messages")
+}
+
+/// Per-user like/dislike on a support/review thread (legacy Assistance_like)
+model UserMessageThreadLike {
+  id        String            @id @default(cuid())
+  threadId  String
+  userId    String
+  /// L = like, D = dislike
+  reaction  String            @db.VarChar(1)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  thread    UserMessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId])
+  @@index([userId])
+  @@map("user_message_thread_likes")
 }
 
 enum UserMessageThreadKind {
