@@ -72,6 +72,7 @@ model User {
   musicOgpArticles         MusicOgpArticle[]
   musicOgpArticlesDeleted  MusicOgpArticle[]  @relation("MusicOgpDeletedBy")
   musicOgpArticleLikes     MusicOgpArticleLike[]
+  musicOgpListenHistory    MusicOgpListenHistory[]
   musicTypedArticles       MusicTypedArticle[]
   plannedActionTemplates  PlannedActionTemplate[]
   workoutDayPlannedActions WorkoutDayPlannedAction[]
@@ -220,6 +221,8 @@ model OgpNewsGroup {
   name                  String
   topic                 String
   customDescription     String?   @db.Text
+  /// Optional custom cover; when null, UI uses the 1st member OGP's image/video.
+  coverImage            String?   @db.Text
   savedAt               DateTime  @default(now())
   expiresAt             DateTime?
   deletedAt             DateTime?
@@ -314,6 +317,8 @@ model MusicOgpArticle {
   registrationType      String?
   /// True when the creator checked "Put in my favourites" at save time.
   isFavourite           Boolean   @default(false)
+  /// Times this music was opened/played (global). Used for Suggested ranking.
+  viewCount             Int       @default(0)
   languageCode          String?
   savedAt               DateTime  @default(now())
   expiresAt             DateTime?
@@ -326,10 +331,12 @@ model MusicOgpArticle {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy             User?     @relation("MusicOgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   likes                 MusicOgpArticleLike[]
+  listenHistory         MusicOgpListenHistory[]
 
   @@index([userId])
   @@index([userId, topic])
   @@index([deletedAt])
+  @@index([viewCount])
   @@map("music_ogp_articles")
 }
 
@@ -345,6 +352,21 @@ model MusicOgpArticleLike {
   @@index([musicOgpArticleId])
   @@index([userId])
   @@map("music_ogp_article_likes")
+}
+
+/// Per-user last listen time for "Listen Again" on My Music Home.
+model MusicOgpListenHistory {
+  id                 String          @id @default(cuid())
+  userId             String
+  musicOgpArticleId  String
+  lastPlayedAt       DateTime        @default(now())
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  musicOgpArticle    MusicOgpArticle @relation(fields: [musicOgpArticleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, musicOgpArticleId])
+  @@index([userId, lastPlayedAt])
+  @@index([musicOgpArticleId])
+  @@map("music_ogp_listen_history")
 }
 
 model MusicTypedArticle {

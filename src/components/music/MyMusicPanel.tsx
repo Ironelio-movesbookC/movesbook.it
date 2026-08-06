@@ -12,7 +12,6 @@ import {
   Disc3,
   Heart,
   Music2,
-  CircleDot,
   Mic2,
   Rss,
   RotateCcw,
@@ -38,29 +37,56 @@ import NewsSettingModal, {
   defaultSettings,
 } from '@/app/news/components/NewsSettingModal';
 import { useAuth } from '@/hooks/useAuth';
+import { getMyMusicShareUrl } from '@/lib/myMusicShareUrl';
 
 type MusicNavKey =
   | 'home'
   | 'recent'
-  | 'playlist'
+  | 'songs-loaded'
   | 'albums'
   | 'favourites'
-  | 'songs-loaded'
-  | 'album-loaded'
+  | 'playlist'
   | 'artists'
   | 'subscriptions';
 
 const NAV_ITEMS: { key: MusicNavKey; label: string; icon: LucideIcon }[] = [
   { key: 'home', label: 'Home', icon: Home },
   { key: 'recent', label: 'Recent', icon: Clock },
-  { key: 'playlist', label: 'Playlist', icon: List },
+  { key: 'songs-loaded', label: 'Songs Loaded', icon: Music2 },
   { key: 'albums', label: 'Albums', icon: Disc3 },
   { key: 'favourites', label: 'Favourites', icon: Heart },
-  { key: 'songs-loaded', label: 'Songs Loaded', icon: Music2 },
-  { key: 'album-loaded', label: 'Album Loaded', icon: CircleDot },
+  { key: 'playlist', label: 'Playlist', icon: List },
   { key: 'artists', label: 'Artists', icon: Mic2 },
   { key: 'subscriptions', label: 'Subscriptions', icon: Rss },
 ];
+
+/** Nav keys that filter music_ogp_articles (same rules as Music OGP library nav). */
+type MusicFilterNavKey =
+  | 'recent'
+  | 'playlist'
+  | 'albums'
+  | 'songs-loaded'
+  | 'favourites'
+  | 'artists';
+
+const MUSIC_FILTER_NAV_KEYS: readonly MusicFilterNavKey[] = [
+  'recent',
+  'playlist',
+  'albums',
+  'songs-loaded',
+  'favourites',
+  'artists',
+];
+
+const REGISTRATION_TYPE_BY_NAV: Partial<Record<MusicFilterNavKey, string>> = {
+  playlist: 'Playlist',
+  albums: 'Album',
+  'songs-loaded': 'Song',
+};
+
+function isMusicFilterNavKey(key: MusicNavKey): key is MusicFilterNavKey {
+  return (MUSIC_FILTER_NAV_KEYS as readonly string[]).includes(key);
+}
 
 type HomeSectionKey =
   | 'suggested'
@@ -110,10 +136,212 @@ type MusicOgpItem = {
   expiresAt?: string | null;
   createdByCurrentUser?: boolean;
   createdBySuperAdmin?: boolean;
+  /** Song / Album / Playlist from music_ogp_articles.registrationType */
+  registrationType?: string | null;
+  /** From music_ogp_articles.isFavourite */
+  isFavourite?: boolean;
+  /** Global play/open count for Suggested ranking */
+  viewCount?: number;
   visibility?: OgpVisibilitySettings;
 };
 
+function mapMusicOgpFromApi(a: Record<string, unknown>): MusicOgpItem {
+  return {
+    id: String(a.id),
+    userId: typeof a.userId === 'string' ? a.userId : undefined,
+    title: (a.title as string | null) ?? null,
+    artist: (a.artist as string | null) ?? null,
+    image: (a.image as string | null) ?? null,
+    url: String(a.url ?? ''),
+    siteName: (a.siteName as string | null) ?? null,
+    description: (a.description as string | null) ?? null,
+    customDescription: (a.customDescription as string | null) ?? null,
+    topic: (a.topic as string | null) ?? null,
+    savedAt: String(a.savedAt ?? ''),
+    creatorUsername: (a.creatorUsername as string | null) ?? null,
+    deletedAt: (a.deletedAt as string | null) ?? null,
+    expiresAt: (a.expiresAt as string | null) ?? null,
+    createdByCurrentUser: a.createdByCurrentUser === true,
+    createdBySuperAdmin: a.createdBySuperAdmin === true,
+    registrationType: (a.registrationType as string | null) ?? null,
+    isFavourite: a.isFavourite === true || a.isFavourite === 1,
+    viewCount: typeof a.viewCount === 'number' ? a.viewCount : Number(a.viewCount) || 0,
+    visibility: {
+      userTypes: Array.isArray(a.visibilityUserTypes) ? (a.visibilityUserTypes as string[]) : [],
+      countries: Array.isArray(a.visibilityCountries) ? (a.visibilityCountries as string[]) : [],
+      languages: Array.isArray(a.visibilityLanguages) ? (a.visibilityLanguages as string[]) : [],
+      sports: Array.isArray(a.visibilitySports) ? (a.visibilitySports as string[]) : [],
+      expiresAt: (a.expiresAt as string | null) ?? null,
+    },
+  };
+}
+
+/** Same filter rules as NewsArticlesList Music library nav (Recent = last 30 days). */
+function filterMusicByNav(
+  articles: MusicOgpItem[],
+  filterNav: MusicFilterNavKey,
+  currentUserId: string | null,
+  opts?: { publicOwnerView?: boolean }
+): MusicOgpItem[] {
+  if (filterNav === 'artists') {
+    // Artists view: only entries with a non-empty artist name.
+    return articles.filter((a) => (a.artist ?? '').trim() !== '');
+  }
+  if (filterNav === 'favourites') {
+    // Public shared My Music: all returned rows are the owner's — just isFavourite.
+    if (opts?.publicOwnerView) {
+      return articles.filter((a) => a.isFavourite === true);
+    }
+    return articles.filter(
+      (a) =>
+        a.isFavourite === true &&
+        (a.userId === currentUserId || a.createdByCurrentUser === true)
+    );
+  }
+  if (filterNav === 'recent') {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    const cutoff = oneMonthAgo.getTime();
+    return articles.filter((a) => {
+      if (!a.savedAt) return false;
+      const t = new Date(a.savedAt).getTime();
+      return !Number.isNaN(t) && t >= cutoff;
+    });
+  }
+  const wanted = REGISTRATION_TYPE_BY_NAV[filterNav];
+  if (wanted) {
+    return articles.filter((a) => (a.registrationType ?? '').trim() === wanted);
+  }
+  return articles;
+}
+
 type LikesMap = Record<string, { count: number; likedByMe: boolean }>;
+
+/** Home carousel sections that are fed from music_ogp_articles (+ likes / listen history). */
+type HomeFeedSectionKey =
+  | 'suggested'
+  | 'mix-to-listen'
+  | 'listen-again'
+  | 'last-insertion'
+  | 'favourite-playlist';
+
+const HOME_FEED_SECTION_KEYS: readonly HomeFeedSectionKey[] = [
+  'suggested',
+  'mix-to-listen',
+  'listen-again',
+  'last-insertion',
+  'favourite-playlist',
+];
+
+function isHomeFeedSectionKey(key: HomeSectionKey): key is HomeFeedSectionKey {
+  return (HOME_FEED_SECTION_KEYS as readonly string[]).includes(key);
+}
+
+/**
+ * Build the ordered list for a Home section.
+ * - Suggested: most viewed, then higher "I like"
+ * - Mixed to Listen: 1–2 tracks per topic (prefer higher likes)
+ * - Listen Again: last listened songs/albums/playlists
+ * - Last Insertion: newest savedAt first
+ * - Favorite Playlist: registrationType Playlist, higher likes
+ */
+function buildHomeSectionArticles(
+  articles: MusicOgpItem[],
+  section: HomeFeedSectionKey,
+  likesMap: LikesMap,
+  listenOrderIds: string[]
+): MusicOgpItem[] {
+  switch (section) {
+    case 'suggested':
+      return [...articles].sort((a, b) => {
+        const views = (b.viewCount ?? 0) - (a.viewCount ?? 0);
+        if (views !== 0) return views;
+        return (likesMap[b.id]?.count ?? 0) - (likesMap[a.id]?.count ?? 0);
+      });
+    case 'mix-to-listen': {
+      const byTopic = new Map<string, MusicOgpItem[]>();
+      for (const a of articles) {
+        const topic = (a.topic || 'Other').trim() || 'Other';
+        const list = byTopic.get(topic);
+        if (list) list.push(a);
+        else byTopic.set(topic, [a]);
+      }
+      const picked: MusicOgpItem[] = [];
+      for (const list of byTopic.values()) {
+        const sorted = [...list].sort(
+          (a, b) => (likesMap[b.id]?.count ?? 0) - (likesMap[a.id]?.count ?? 0)
+        );
+        picked.push(...sorted.slice(0, 2));
+      }
+      return picked;
+    }
+    case 'listen-again': {
+      if (listenOrderIds.length === 0) return [];
+      const byId = new Map(articles.map((a) => [a.id, a]));
+      const ordered: MusicOgpItem[] = [];
+      for (const id of listenOrderIds) {
+        const item = byId.get(id);
+        if (item) ordered.push(item);
+      }
+      return ordered;
+    }
+    case 'last-insertion':
+      return [...articles].sort((a, b) => {
+        const ta = a.savedAt ? new Date(a.savedAt).getTime() : 0;
+        const tb = b.savedAt ? new Date(b.savedAt).getTime() : 0;
+        return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+      });
+    case 'favourite-playlist':
+      return articles
+        .filter((a) => (a.registrationType ?? '').trim() === 'Playlist')
+        .sort((a, b) => (likesMap[b.id]?.count ?? 0) - (likesMap[a.id]?.count ?? 0));
+    default:
+      return articles;
+  }
+}
+
+/** Tile for Artists nav — picture + artist name only. */
+function MusicArtistTile({
+  article,
+  onOpenPlayer,
+}: {
+  article: MusicOgpItem;
+  onOpenPlayer: (article: MusicOgpItem) => void;
+}) {
+  const artistName = (article.artist ?? '').trim();
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenPlayer(article)}
+      className="relative shrink-0 border border-white/20 bg-black text-left focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-inset hover:border-white/40 transition-colors"
+      style={{ width: SUGGESTED_TILE_WIDTH }}
+      aria-label={`Artist: ${artistName}`}
+    >
+      <div
+        className="relative bg-black overflow-hidden"
+        style={{ width: SUGGESTED_TILE_WIDTH, height: SUGGESTED_TILE_WIDTH }}
+      >
+        {article.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={article.image}
+            alt={artistName}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-[#0d1528]">
+            <Mic2 className="w-8 h-8 text-white/30" aria-hidden />
+          </div>
+        )}
+      </div>
+      <div className="px-1.5 py-1.5 border-t border-white/10 min-h-[40px] bg-[#152038]">
+        <p className="text-[11px] leading-tight text-white line-clamp-2" title={artistName}>
+          {artistName}
+        </p>
+      </div>
+    </button>
+  );
+}
 
 function getAuthToken(adminContext?: boolean): string | null {
   if (typeof window === 'undefined') return null;
@@ -126,14 +354,14 @@ function getAuthHeaders(adminContext?: boolean): HeadersInit {
   return { Authorization: `Bearer ${token}` };
 }
 
-function getAdminUserFromStorage(): { id: string; name?: string; userType?: string } | null {
+function getAdminUserFromStorage(): { id: string; name?: string; username?: string; userType?: string } | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem('adminUser');
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { id?: string; name?: string; userType?: string };
+    const parsed = JSON.parse(raw) as { id?: string; name?: string; username?: string; userType?: string };
     if (!parsed?.id) return null;
-    return { id: parsed.id, name: parsed.name, userType: parsed.userType };
+    return { id: parsed.id, name: parsed.name, username: parsed.username, userType: parsed.userType };
   } catch {
     return null;
   }
@@ -439,20 +667,37 @@ function MusicOgpSuggestedTile({
 function MusicSuggestedSection({
   tileCount,
   adminContext = false,
+  filterNav,
+  homeSection,
+  sectionLabel = 'Suggested',
+  sectionIcon: SectionIcon = Music2,
+  publicUserKey,
 }: {
   tileCount: number;
   adminContext?: boolean;
+  /** When set, filter music_ogp_articles instead of showing Suggested (likes sort). */
+  filterNav?: MusicFilterNavKey;
+  /** Home carousel mode (Suggested / Mixed / Listen Again / …). */
+  homeSection?: HomeFeedSectionKey;
+  sectionLabel?: string;
+  sectionIcon?: LucideIcon;
+  /** When set, load that user's music via the public API (no login). */
+  publicUserKey?: string;
 }) {
   const { user } = useAuth();
   const adminUser = adminContext ? getAdminUserFromStorage() : null;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [articles, setArticles] = useState<MusicOgpItem[]>([]);
   const [likesMap, setLikesMap] = useState<LikesMap>({});
+  const [listenOrderIds, setListenOrderIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [likesReady, setLikesReady] = useState(false);
+  const [listenReady, setListenReady] = useState(homeSection !== 'listen-again');
   const [likeLoadingId, setLikeLoadingId] = useState<string | null>(null);
   const [shareArticle, setShareArticle] = useState<MusicOgpItem | null>(null);
   const [playerTrackId, setPlayerTrackId] = useState<string | null>(null);
+  /** Snapshot of the queue when the player opens — must not follow live Suggested re-sorts. */
+  const [playerQueue, setPlayerQueue] = useState<MusicOgpItem[] | null>(null);
   const [expandedArticleIds, setExpandedArticleIds] = useState<Set<string>>(new Set());
   const [copiedArticleId, setCopiedArticleId] = useState<string | null>(null);
   const [topics, setTopics] = useState<string[]>([]);
@@ -480,57 +725,104 @@ function MusicSuggestedSection({
   const [editTopicValue, setEditTopicValue] = useState('');
   const [editTopicDescription, setEditTopicDescription] = useState('');
 
+  const isPublicView = Boolean(publicUserKey);
   const currentUserId = adminContext ? (adminUser?.id ?? null) : (user?.id ?? null);
-  const canDeleteOgp = adminContext || user?.userType === 'ADMIN';
-  const canLike = Boolean(getAuthToken(adminContext));
+  const canDeleteOgp = !isPublicView && (adminContext || user?.userType === 'ADMIN');
+  const canLike = !isPublicView && Boolean(getAuthToken(adminContext));
+  const isFilterView = filterNav != null;
+  const needsListenHistory = homeSection === 'listen-again' && !isPublicView;
 
   const load = useCallback(async () => {
     setLoading(true);
     setLikesReady(false);
     try {
-      const headers = getAuthHeaders(adminContext);
-      const res = await fetch(`${MUSIC_API_BASE}/ogp`, { headers });
-      if (!res.ok) throw new Error('Failed to load music OGPs');
-      const data = await res.json();
-      const list: MusicOgpItem[] = (Array.isArray(data) ? data : []).map((a: Record<string, unknown>) => ({
-        id: String(a.id),
-        userId: typeof a.userId === 'string' ? a.userId : undefined,
-        title: (a.title as string | null) ?? null,
-        artist: (a.artist as string | null) ?? null,
-        image: (a.image as string | null) ?? null,
-        url: String(a.url ?? ''),
-        siteName: (a.siteName as string | null) ?? null,
-        description: (a.description as string | null) ?? null,
-        customDescription: (a.customDescription as string | null) ?? null,
-        topic: (a.topic as string | null) ?? null,
-        savedAt: String(a.savedAt ?? ''),
-        creatorUsername: (a.creatorUsername as string | null) ?? null,
-        deletedAt: (a.deletedAt as string | null) ?? null,
-        expiresAt: (a.expiresAt as string | null) ?? null,
-        createdByCurrentUser: a.createdByCurrentUser === true,
-        createdBySuperAdmin: a.createdBySuperAdmin === true,
-        visibility: {
-          userTypes: Array.isArray(a.visibilityUserTypes) ? (a.visibilityUserTypes as string[]) : [],
-          countries: Array.isArray(a.visibilityCountries) ? (a.visibilityCountries as string[]) : [],
-          languages: Array.isArray(a.visibilityLanguages) ? (a.visibilityLanguages as string[]) : [],
-          sports: Array.isArray(a.visibilitySports) ? (a.visibilitySports as string[]) : [],
-          expiresAt: (a.expiresAt as string | null) ?? null,
-        },
-      }));
-      setArticles(list.filter(isActiveOgp));
+      if (publicUserKey) {
+        const res = await fetch(`/api/public/music/${encodeURIComponent(publicUserKey)}`);
+        if (!res.ok) throw new Error('Failed to load music OGPs');
+        const data = await res.json();
+        const list: MusicOgpItem[] = (Array.isArray(data.articles) ? data.articles : []).map(
+          (a: Record<string, unknown>) => mapMusicOgpFromApi(a)
+        );
+        setArticles(list.filter(isActiveOgp));
+        setLikesReady(true);
+      } else {
+        const headers = getAuthHeaders(adminContext);
+        const res = await fetch(`${MUSIC_API_BASE}/ogp`, { headers });
+        if (!res.ok) throw new Error('Failed to load music OGPs');
+        const data = await res.json();
+        const list: MusicOgpItem[] = (Array.isArray(data) ? data : []).map((a: Record<string, unknown>) =>
+          mapMusicOgpFromApi(a)
+        );
+        setArticles(list.filter(isActiveOgp));
+      }
     } catch {
       setArticles([]);
       setLikesReady(true);
     } finally {
       setLoading(false);
     }
-  }, [adminContext]);
+  }, [adminContext, publicUserKey]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
+    if (!needsListenHistory) {
+      setListenOrderIds([]);
+      setListenReady(true);
+      return;
+    }
+    setListenReady(false);
+    const headers = getAuthHeaders(adminContext);
+    const controller = new AbortController();
+    fetch(`${MUSIC_API_BASE}/ogp/listen-history?limit=24`, {
+      headers,
+      signal: controller.signal,
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const items = Array.isArray(data?.items) ? data.items : [];
+        setListenOrderIds(
+          items
+            .map((it: { id?: unknown }) => (typeof it?.id === 'string' ? it.id : null))
+            .filter((id: string | null): id is string => !!id)
+        );
+        setListenReady(true);
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setListenOrderIds([]);
+        setListenReady(true);
+      });
+    return () => controller.abort();
+  }, [needsListenHistory, adminContext]);
+
+  /** Keep Home carousels in sync when another section records a listen. */
+  useEffect(() => {
+    if (isPublicView) return;
+    const onListen = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string; viewCount?: number }>).detail;
+      const id = detail?.id;
+      if (typeof id !== 'string' || !id) return;
+      if (typeof detail.viewCount === 'number') {
+        setArticles((prev) =>
+          prev.map((a) => (a.id === id ? { ...a, viewCount: detail.viewCount as number } : a))
+        );
+      }
+      if (homeSection === 'listen-again') {
+        setListenOrderIds((prev) => [id, ...prev.filter((x) => x !== id)]);
+      }
+    };
+    window.addEventListener('music-ogp-listen', onListen);
+    return () => window.removeEventListener('music-ogp-listen', onListen);
+  }, [homeSection, isPublicView]);
+
+  useEffect(() => {
+    if (publicUserKey) {
+      setTopics([]);
+      return;
+    }
     const headers = getAuthHeaders(adminContext);
     fetch(`${MUSIC_API_BASE}/topics`, { headers })
       .then((r) => (r.ok ? r.json() : null))
@@ -552,11 +844,16 @@ function MusicSuggestedSection({
         setTopics(Array.from(new Set(names)));
       })
       .catch(() => setTopics([]));
-  }, [adminContext]);
+  }, [adminContext, publicUserKey]);
 
   const articleIdsKey = useMemo(() => articles.map((a) => a.id).join(','), [articles]);
 
   useEffect(() => {
+    if (publicUserKey) {
+      setLikesMap({});
+      if (!loading) setLikesReady(true);
+      return;
+    }
     if (!articleIdsKey) {
       setLikesMap({});
       if (!loading) setLikesReady(true);
@@ -580,7 +877,7 @@ function MusicSuggestedSection({
         setLikesReady(true);
       });
     return () => controller.abort();
-  }, [articleIdsKey, loading, adminContext]);
+  }, [articleIdsKey, loading, adminContext, publicUserKey]);
 
   useEffect(() => {
     if (copiedArticleId == null) return;
@@ -589,13 +886,28 @@ function MusicSuggestedSection({
   }, [copiedArticleId]);
 
   useEffect(() => {
-    if (settingsArticleId != null && !settingsOptions) {
-      fetch('/api/news/ogp-settings-options')
-        .then((r) => r.json())
-        .then((data) => setSettingsOptions(data))
-        .catch(() => setSettingsOptions({ userTypes: [], countries: [], languages: [], sports: [] }));
+    if (
+      settingsArticleId != null &&
+      (!settingsOptions || !Array.isArray(settingsOptions.sports))
+    ) {
+      const empty = { userTypes: [], countries: [], languages: [], sports: [] };
+      fetch('/api/news/ogp-settings-options', { headers: getAuthHeaders(adminContext) })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) {
+            setSettingsOptions(empty);
+            return;
+          }
+          setSettingsOptions({
+            userTypes: data.userTypes ?? [],
+            countries: data.countries ?? [],
+            languages: data.languages ?? [],
+            sports: data.sports ?? [],
+          });
+        })
+        .catch(() => setSettingsOptions(empty));
     }
-  }, [settingsArticleId, settingsOptions]);
+  }, [settingsArticleId, settingsOptions, adminContext]);
 
   useEffect(() => {
     if (editTopicArticleId != null) {
@@ -642,12 +954,64 @@ function MusicSuggestedSection({
     };
   }, [creatorModalArticleId, adminContext]);
 
-  /** Sort by "I liked": most likes first (same order as Music OGP thumbs-up sort). */
-  const suggested = useMemo(() => {
-    return [...articles].sort(
-      (a, b) => (likesMap[b.id]?.count ?? 0) - (likesMap[a.id]?.count ?? 0)
-    );
-  }, [articles, likesMap]);
+  /** Suggested / Home sections / filter navs. */
+  const displayed = useMemo(() => {
+    if (filterNav) {
+      return filterMusicByNav(articles, filterNav, currentUserId, {
+        publicOwnerView: isPublicView,
+      });
+    }
+    if (homeSection) {
+      return buildHomeSectionArticles(articles, homeSection, likesMap, listenOrderIds);
+    }
+    return buildHomeSectionArticles(articles, 'suggested', likesMap, listenOrderIds);
+  }, [articles, likesMap, listenOrderIds, filterNav, homeSection, currentUserId, isPublicView]);
+
+  const recordListen = useCallback(
+    async (articleId: string) => {
+      if (isPublicView) return;
+      const token = getAuthToken(adminContext);
+      if (!token) return;
+      try {
+        const res = await fetch(`${MUSIC_API_BASE}/ogp/${articleId}/listen`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (typeof data.viewCount === 'number') {
+          setArticles((prev) =>
+            prev.map((a) => (a.id === articleId ? { ...a, viewCount: data.viewCount } : a))
+          );
+        }
+        setListenOrderIds((prev) => [articleId, ...prev.filter((id) => id !== articleId)]);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('music-ogp-listen', { detail: { id: articleId, viewCount: data.viewCount } })
+          );
+        }
+      } catch {
+        // keep previous state
+      }
+    },
+    [adminContext, isPublicView]
+  );
+
+  const openPlayer = useCallback(
+    (article: MusicOgpItem) => {
+      // Freeze the current carousel order. Suggested re-sorts by viewCount after each
+      // listen; if the player kept binding to that live list, currentIndex would land
+      // on a different track and fire listen in a loop.
+      setPlayerQueue(displayed);
+      setPlayerTrackId(article.id);
+    },
+    [displayed]
+  );
+
+  const closePlayer = useCallback(() => {
+    setPlayerTrackId(null);
+    setPlayerQueue(null);
+  }, []);
 
   const handleLike = useCallback(async (articleId: string) => {
     const token = getAuthToken(adminContext);
@@ -747,32 +1111,98 @@ function MusicSuggestedSection({
     scrollerRef.current?.scrollBy({ left: dir * (SUGGESTED_TILE_WIDTH + 12) * 2, behavior: 'smooth' });
   };
 
-  const showLoading = loading || (!likesReady && articles.length > 0);
-  const placeholderCount = Math.max(0, tileCount - suggested.length);
+  const showLoading =
+    loading ||
+    (!likesReady && articles.length > 0) ||
+    (needsListenHistory && !listenReady);
+  const placeholderCount = isFilterView ? 0 : Math.max(0, tileCount - displayed.length);
   const settingsArticle = articles.find((a) => a.id === settingsArticleId);
 
+  const renderTile = (article: MusicOgpItem) =>
+    filterNav === 'artists' ? (
+      <MusicArtistTile
+        key={article.id}
+        article={article}
+        onOpenPlayer={openPlayer}
+      />
+    ) : (
+      <MusicOgpSuggestedTile
+        key={article.id}
+        article={article}
+        like={likesMap[article.id] ?? { count: 0, likedByMe: false }}
+        onLike={handleLike}
+        onShare={setShareArticle}
+        onOpenPlayer={openPlayer}
+        likeLoading={likeLoadingId === article.id}
+        canLike={canLike}
+        currentUserId={currentUserId}
+        canDeleteOgp={canDeleteOgp}
+        expanded={expandedArticleIds.has(article.id)}
+        onToggleExpanded={toggleExpanded}
+        copied={copiedArticleId === article.id}
+        onCopyLink={handleCopyLink}
+        onEditTopic={(a) => setEditTopicArticleId(a.id)}
+        onViewCreator={setCreatorModalArticleId}
+        onOpenSettings={(a) => setSettingsArticleId(a.id)}
+        onDelete={(a) => setRemoveConfirmArticleId(a.id)}
+      />
+    );
+
   return (
-    <section className="border border-white/30 bg-[#1a2744]">
+    <section className={`border border-white/30 bg-[#1a2744] ${isFilterView ? 'm-3' : ''}`}>
       <div className="flex items-center justify-between gap-2 border-b border-white/30 px-3 py-2">
         <div className="flex items-center gap-2 min-w-0">
-          <Music2 className="w-4 h-4 shrink-0 text-white" strokeWidth={1.75} aria-hidden />
-          <h3 className="text-sm font-semibold text-white truncate">Suggested</h3>
+          {filterNav === 'artists' ? (
+            <Mic2 className="w-4 h-4 shrink-0 text-white" strokeWidth={1.75} aria-hidden />
+          ) : (
+            <SectionIcon className="w-4 h-4 shrink-0 text-white" strokeWidth={1.75} aria-hidden />
+          )}
+          <h3 className="text-sm font-semibold text-white truncate">{sectionLabel}</h3>
         </div>
-        <button
-          type="button"
-          className="p-1 text-white/90 hover:text-white transition-colors shrink-0"
-          aria-label="Suggested settings"
-        >
-          <Settings className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden />
-        </button>
+        {!isFilterView ? (
+          <button
+            type="button"
+            className="p-1 text-white/90 hover:text-white transition-colors shrink-0"
+            aria-label={`${sectionLabel} settings`}
+          >
+            <Settings className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden />
+          </button>
+        ) : (
+          <span className="text-xs text-white/50 tabular-nums shrink-0">
+            {showLoading ? '…' : `${displayed.length}`}
+          </span>
+        )}
       </div>
 
+      {isFilterView ? (
+        <div className="relative px-3 py-3">
+          {showLoading ? (
+            <div className="flex flex-wrap gap-3">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={`loading-${i}`}
+                  className="shrink-0 bg-black/60 border border-white/10 animate-pulse"
+                  style={{ width: SUGGESTED_TILE_WIDTH, height: SUGGESTED_TILE_WIDTH }}
+                />
+              ))}
+            </div>
+          ) : displayed.length === 0 ? (
+            <p className="text-sm text-white/50 text-center py-12">
+              {filterNav === 'artists'
+                ? 'No artists found.'
+                : 'No music found for this view.'}
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-3 items-start">{displayed.map(renderTile)}</div>
+          )}
+        </div>
+      ) : (
       <div className="relative px-1 py-3">
         <button
           type="button"
           onClick={() => scrollBy(-1)}
           className="absolute left-0 top-1/2 z-10 -translate-y-1/2 p-1 text-amber-400 hover:text-amber-300 transition-colors"
-          aria-label="Scroll Suggested left"
+          aria-label={`Scroll ${sectionLabel} left`}
         >
           <ChevronLeft className="w-7 h-7" strokeWidth={2.5} aria-hidden />
         </button>
@@ -791,29 +1221,7 @@ function MusicSuggestedSection({
               ))
             : null}
 
-          {!showLoading &&
-            suggested.map((article) => (
-              <MusicOgpSuggestedTile
-                key={article.id}
-                article={article}
-                like={likesMap[article.id] ?? { count: 0, likedByMe: false }}
-                onLike={handleLike}
-                onShare={setShareArticle}
-                onOpenPlayer={(a) => setPlayerTrackId(a.id)}
-                likeLoading={likeLoadingId === article.id}
-                canLike={canLike}
-                currentUserId={currentUserId}
-                canDeleteOgp={canDeleteOgp}
-                expanded={expandedArticleIds.has(article.id)}
-                onToggleExpanded={toggleExpanded}
-                copied={copiedArticleId === article.id}
-                onCopyLink={handleCopyLink}
-                onEditTopic={(a) => setEditTopicArticleId(a.id)}
-                onViewCreator={setCreatorModalArticleId}
-                onOpenSettings={(a) => setSettingsArticleId(a.id)}
-                onDelete={(a) => setRemoveConfirmArticleId(a.id)}
-              />
-            ))}
+          {!showLoading && displayed.map(renderTile)}
 
           {!showLoading &&
             Array.from({ length: placeholderCount }).map((_, i) => (
@@ -829,11 +1237,12 @@ function MusicSuggestedSection({
           type="button"
           onClick={() => scrollBy(1)}
           className="absolute right-0 top-1/2 z-10 -translate-y-1/2 p-1 text-amber-400 hover:text-amber-300 transition-colors"
-          aria-label="Scroll Suggested right"
+          aria-label={`Scroll ${sectionLabel} right`}
         >
           <ChevronRight className="w-7 h-7" strokeWidth={2.5} aria-hidden />
         </button>
       </div>
+      )}
 
       <OgpShareModal
         isOpen={shareArticle != null}
@@ -1067,11 +1476,12 @@ function MusicSuggestedSection({
         </div>
       )}
 
-      {playerTrackId != null && suggested.length > 0 ? (
+      {playerTrackId != null && playerQueue != null && playerQueue.length > 0 ? (
         <MusicPlayerWindow
-          tracks={suggested}
+          tracks={playerQueue}
           initialTrackId={playerTrackId}
-          onClose={() => setPlayerTrackId(null)}
+          onClose={closePlayer}
+          onTrackListen={recordListen}
         />
       ) : null}
     </section>
@@ -1153,15 +1563,25 @@ function MusicHomeSection({
   );
 }
 
-function MusicHomeContent({ adminContext = false }: { adminContext?: boolean }) {
+function MusicHomeContent({
+  adminContext = false,
+  publicUserKey,
+}: {
+  adminContext?: boolean;
+  publicUserKey?: string;
+}) {
   return (
     <div className="flex flex-col gap-3 p-3 bg-[#152038]">
       {HOME_SECTIONS.map((section) =>
-        section.key === 'suggested' ? (
+        isHomeFeedSectionKey(section.key) ? (
           <MusicSuggestedSection
             key={section.key}
             tileCount={section.tileCount}
             adminContext={adminContext}
+            publicUserKey={publicUserKey}
+            homeSection={section.key}
+            sectionLabel={section.label}
+            sectionIcon={section.icon}
           />
         ) : (
           <MusicHomeSection
@@ -1184,16 +1604,11 @@ interface MyMusicPanelProps {
   onExpandReduce?: () => void;
   /** When true, use adminToken / adminUser (superadmin admin panel). */
   adminContext?: boolean;
-}
-
-function getMyMusicShareUrl(adminContext?: boolean): string {
-  if (typeof window === 'undefined') {
-    return adminContext ? '/admin/dashboard?panel=og-music' : '/athlete/dashboard?open=music';
-  }
-  if (adminContext) {
-    return `${window.location.origin}/admin/dashboard?panel=og-music`;
-  }
-  return `${window.location.origin}/athlete/dashboard?open=music`;
+  /**
+   * Public shared My Music view (no login). Username or user id of the owner.
+   * Hides Add/edit; loads music via `/api/public/music/[userKey]`.
+   */
+  publicUserKey?: string;
 }
 
 export default function MyMusicPanel({
@@ -1201,23 +1616,41 @@ export default function MyMusicPanel({
   isExpanded = false,
   onExpandReduce,
   adminContext = false,
+  publicUserKey,
 }: MyMusicPanelProps) {
+  const { user } = useAuth();
+  const adminUser = adminContext ? getAdminUserFromStorage() : null;
+  const isPublicView = Boolean(publicUserKey);
   // No tab selected until the user clicks one — Home sections show only after Home is clicked
   const [activeNav, setActiveNav] = useState<MusicNavKey | null>(null);
   const [showMusicEditor, setShowMusicEditor] = useState(false);
   const [sharePanelOpen, setSharePanelOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
+  /** Public share key (username preferred) — same pattern as OGP News group public links. */
+  const shareUserKey = useMemo(() => {
+    if (publicUserKey) return publicUserKey.trim();
+    if (adminContext) {
+      return (adminUser?.username || adminUser?.id || '').trim();
+    }
+    return (user?.username || user?.id || '').trim();
+  }, [publicUserKey, adminContext, adminUser?.username, adminUser?.id, user?.username, user?.id]);
+
+  const publicShareUrl = useMemo(
+    () => (shareUserKey ? getMyMusicShareUrl(shareUserKey) : ''),
+    [shareUserKey]
+  );
+
+  /** Copy the public My Music URL to the clipboard (user pastes it in a new tab). */
   const handleGetLink = useCallback(() => {
-    const url = getMyMusicShareUrl(adminContext);
-    if (typeof navigator?.clipboard?.writeText !== 'function') return;
-    void navigator.clipboard.writeText(url).then(() => {
+    if (!publicShareUrl || typeof navigator?.clipboard?.writeText !== 'function') return;
+    void navigator.clipboard.writeText(publicShareUrl).then(() => {
       setLinkCopied(true);
       window.setTimeout(() => setLinkCopied(false), 2000);
     });
-  }, [adminContext]);
+  }, [publicShareUrl]);
 
-  if (showMusicEditor) {
+  if (showMusicEditor && !isPublicView) {
     return (
       <MusicOGPPanel
         onClose={() => {
@@ -1247,18 +1680,21 @@ export default function MyMusicPanel({
           </div>
 
           <div className="flex items-center gap-4 sm:gap-6 shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowMusicEditor(true)}
-              className="flex items-center gap-1.5 text-sm font-medium text-white/95 hover:text-white transition-colors"
-            >
-              <Settings className="w-4 h-4 shrink-0" strokeWidth={1.75} aria-hidden />
-              <span className="hidden sm:inline whitespace-nowrap">Add/edit my music</span>
-            </button>
+            {!isPublicView && (
+              <button
+                type="button"
+                onClick={() => setShowMusicEditor(true)}
+                className="flex items-center gap-1.5 text-sm font-medium text-white/95 hover:text-white transition-colors"
+              >
+                <Settings className="w-4 h-4 shrink-0" strokeWidth={1.75} aria-hidden />
+                <span className="hidden sm:inline whitespace-nowrap">Add/edit my music</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={handleGetLink}
-              className="flex items-center gap-1.5 text-sm font-medium text-white/95 hover:text-white transition-colors"
+              disabled={!publicShareUrl}
+              className="flex items-center gap-1.5 text-sm font-medium text-white/95 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title={linkCopied ? 'Copied!' : 'Copy My Music URL to clipboard'}
               aria-label={linkCopied ? 'Copied!' : 'Get Link'}
             >
@@ -1270,7 +1706,8 @@ export default function MyMusicPanel({
             <button
               type="button"
               onClick={() => setSharePanelOpen(true)}
-              className="flex items-center gap-1.5 text-sm font-medium text-white/95 hover:text-white transition-colors"
+              disabled={!publicShareUrl}
+              className="flex items-center gap-1.5 text-sm font-medium text-white/95 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Share"
               aria-label="Share"
             >
@@ -1312,7 +1749,15 @@ export default function MyMusicPanel({
       {/* Tab content — Home sections only when Home is selected */}
       <div className="flex-1 min-h-0 overflow-y-auto bg-[#152038]">
         {activeNav === 'home' ? (
-          <MusicHomeContent adminContext={adminContext} />
+          <MusicHomeContent adminContext={adminContext} publicUserKey={publicUserKey} />
+        ) : activeNav && isMusicFilterNavKey(activeNav) ? (
+          <MusicSuggestedSection
+            tileCount={0}
+            adminContext={adminContext}
+            filterNav={activeNav}
+            sectionLabel={NAV_ITEMS.find((item) => item.key === activeNav)?.label ?? activeNav}
+            publicUserKey={publicUserKey}
+          />
         ) : activeNav ? (
           <div className="flex items-center justify-center min-h-[280px] px-4">
             <p className="text-sm text-white/50 text-center">
@@ -1327,11 +1772,7 @@ export default function MyMusicPanel({
       <OgpShareModal
         isOpen={sharePanelOpen}
         onClose={() => setSharePanelOpen(false)}
-        article={{ url: getMyMusicShareUrl(), title: 'My Music' }}
-        onCopyLink={() => {
-          setLinkCopied(true);
-          window.setTimeout(() => setLinkCopied(false), 2000);
-        }}
+        article={{ url: publicShareUrl, title: 'My Music' }}
       />
     </div>
   );

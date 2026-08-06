@@ -12,6 +12,8 @@ interface NewTopicModalProps {
   /** Called when user clicks Delete (only in edit mode) */
   onDelete?: () => void | Promise<void>;
   existingTopics: string[];
+  /** Extra classes for the overlay (e.g. higher z-index when stacked on another modal). */
+  overlayClassName?: string;
 }
 
 export default function NewTopicModal({
@@ -21,6 +23,7 @@ export default function NewTopicModal({
   editingTopic,
   onDelete,
   existingTopics,
+  overlayClassName = '',
 }: NewTopicModalProps) {
   const isEdit = editingTopic != null;
   const [name, setName] = useState('');
@@ -70,7 +73,7 @@ export default function NewTopicModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 ${overlayClassName || 'z-50'}`}
       onClick={onClose}
       role="dialog"
       aria-modal="true"

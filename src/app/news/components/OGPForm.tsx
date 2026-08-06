@@ -116,11 +116,28 @@ export default function OGPForm({
   } | null>(null);
 
   useEffect(() => {
-    if (showSettingsModal && !settingsOptions) {
-      fetch('/api/news/ogp-settings-options')
-        .then((r) => r.json())
-        .then((data) => setSettingsOptions(data))
-        .catch(() => setSettingsOptions({ userTypes: [], countries: [], languages: [], sports: [] }));
+    if (showSettingsModal && (!settingsOptions || !Array.isArray(settingsOptions.sports))) {
+      const empty = { userTypes: [], countries: [], languages: [], sports: [] };
+      const token =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('token') || localStorage.getItem('adminToken')
+          : null;
+      const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      fetch('/api/news/ogp-settings-options', { headers })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) {
+            setSettingsOptions(empty);
+            return;
+          }
+          setSettingsOptions({
+            userTypes: data.userTypes ?? [],
+            countries: data.countries ?? [],
+            languages: data.languages ?? [],
+            sports: data.sports ?? [],
+          });
+        })
+        .catch(() => setSettingsOptions(empty));
     }
   }, [showSettingsModal, settingsOptions]);
 

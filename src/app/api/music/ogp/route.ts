@@ -13,22 +13,47 @@ function parseJsonArray(str: string | null | undefined): string[] {
   }
 }
 
-/** Load artist / registrationType even if Prisma client is stale (dev server locking generate). */
+/** Load artist / registrationType / viewCount even if Prisma client is stale (dev server locking generate). */
 async function loadMusicOgpExtras(
   ids: string[]
-): Promise<Map<string, { artist: string | null; registrationType: string | null; isFavourite: boolean }>> {
-  const map = new Map<string, { artist: string | null; registrationType: string | null; isFavourite: boolean }>();
+): Promise<
+  Map<
+    string,
+    {
+      artist: string | null;
+      registrationType: string | null;
+      isFavourite: boolean;
+      viewCount: number;
+    }
+  >
+> {
+  const map = new Map<
+    string,
+    {
+      artist: string | null;
+      registrationType: string | null;
+      isFavourite: boolean;
+      viewCount: number;
+    }
+  >();
   if (ids.length === 0) return map;
   const rows = await prisma.$queryRaw<
-    { id: string; artist: string | null; registrationType: string | null; isFavourite: number | boolean }[]
+    {
+      id: string;
+      artist: string | null;
+      registrationType: string | null;
+      isFavourite: number | boolean;
+      viewCount: number | null;
+    }[]
   >`
-    SELECT id, artist, registrationType, isFavourite FROM music_ogp_articles WHERE id IN (${Prisma.join(ids)})
+    SELECT id, artist, registrationType, isFavourite, viewCount FROM music_ogp_articles WHERE id IN (${Prisma.join(ids)})
   `;
   for (const row of rows) {
     map.set(row.id, {
       artist: row.artist,
       registrationType: row.registrationType,
       isFavourite: row.isFavourite === true || row.isFavourite === 1,
+      viewCount: typeof row.viewCount === 'number' ? row.viewCount : 0,
     });
   }
   return map;
@@ -161,6 +186,10 @@ export async function GET(request: NextRequest) {
           (a as { registrationType?: string | null }).registrationType ??
           null,
         isFavourite: artistById.get(a.id)?.isFavourite ?? false,
+        viewCount:
+          artistById.get(a.id)?.viewCount ??
+          (a as { viewCount?: number }).viewCount ??
+          0,
         languageCode: a.languageCode ?? null,
         savedAt: a.savedAt.toISOString(),
         visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
@@ -277,6 +306,10 @@ export async function GET(request: NextRequest) {
         (a as { registrationType?: string | null }).registrationType ??
         null,
       isFavourite: artistById.get(a.id)?.isFavourite ?? false,
+      viewCount:
+        artistById.get(a.id)?.viewCount ??
+        (a as { viewCount?: number }).viewCount ??
+        0,
       languageCode: a.languageCode ?? null,
       savedAt: a.savedAt.toISOString(),
       visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),

@@ -80,6 +80,7 @@ export interface UseNewsDataResult {
     topic: string;
     articleIds: string[];
     confirmExisting?: boolean;
+    coverImage?: string | null;
   }) => Promise<{ merged: boolean; group: OgpNewsGroupCard; exists?: boolean }>;
   removeOgpNewsGroup: (id: string) => Promise<void>;
   updateOgpNewsGroup: (id: string, topic: string, customDescription?: string) => Promise<void>;
@@ -293,6 +294,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
               createdByCurrentUser: g.createdByCurrentUser === true,
               title: g.title,
               image: g.image,
+              coverImage: g.coverImage ?? null,
               description: g.description,
               url: g.url ?? '',
               siteName: g.siteName,
@@ -685,6 +687,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     createdByCurrentUser: g.createdByCurrentUser === true,
     title: g.title,
     image: g.image,
+    coverImage: g.coverImage ?? null,
     description: g.description,
     url: g.url ?? '',
     siteName: g.siteName,
@@ -708,6 +711,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       topic: string;
       articleIds: string[];
       confirmExisting?: boolean;
+      coverImage?: string | null;
     }) => {
       if (!effectiveUserId) throw new Error('Not authenticated');
       if (apiBase !== '/api/news') throw new Error('OGP News groups are only available for News');
@@ -720,6 +724,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           topic: payload.topic,
           articleIds: payload.articleIds,
           confirmExisting: payload.confirmExisting === true,
+          coverImage: payload.coverImage ?? null,
         }),
       });
       const data = await res.json().catch(() => ({}));

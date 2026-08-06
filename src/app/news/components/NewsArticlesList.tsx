@@ -18,6 +18,9 @@ import { getOgpGroupShareUrl } from '@/lib/ogpGroupShareUrl';
 
 type MusicLibraryNavKey = 'recent' | 'playlist' | 'songs' | 'albums' | 'favourites';
 
+/** Mutually exclusive poster filter (radio). `'none'` = no poster filter. */
+type PostedByFilter = 'none' | 'movesbook' | 'myCountry' | 'me';
+
 const MUSIC_LIBRARY_NAV: { key: MusicLibraryNavKey; label: string; icon: LucideIcon }[] = [
   { key: 'recent', label: 'Recent', icon: Clock },
   { key: 'playlist', label: 'Playlist', icon: List },
@@ -80,6 +83,8 @@ export type OgpNewsGroupCard = {
   createdByCurrentUser?: boolean;
   title?: string | null;
   image?: string | null;
+  /** Custom group cover when set; otherwise `image` falls back to 1st member. */
+  coverImage?: string | null;
   description?: string | null;
   url: string;
   siteName?: string | null;
@@ -285,7 +290,10 @@ interface NewsArticlesListProps {
     topic: string;
     articleIds: string[];
     confirmExisting?: boolean;
+    coverImage?: string | null;
   }) => Promise<{ merged: boolean; group: OgpNewsGroupCard }>;
+  /** Create a new topic from the create-group modal. */
+  onCreateTopic?: (name: string) => void | Promise<void>;
   /** Delete an OGP News group. */
   onRemoveOgpNewsGroup?: (id: string) => void | Promise<void>;
   /** Update group topic and/or description (pencil). */
@@ -327,6 +335,7 @@ export default function NewsArticlesList({
   onMusicalGenreSelect,
   ogpNewsGroups = EMPTY_GROUPS,
   onSaveOgpNewsGroup,
+  onCreateTopic,
   onRemoveOgpNewsGroup,
   onUpdateOgpNewsGroup,
   onUpdateOgpNewsGroupSettings,
@@ -414,11 +423,10 @@ export default function NewsArticlesList({
   const sortedLanguages = useMemo(() => [...ALL_LANGUAGES].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })), []);
   const [search, setSearch] = useState('');
   const [highlightMatches, setHighlightMatches] = useState(false);
-  const [showOnlyMyOgNews, setShowOnlyMyOgNews] = useState(false);
+  const [postedByFilter, setPostedByFilter] = useState<PostedByFilter>('none');
+  const [excludeExpiredAndDeleted, setExcludeExpiredAndDeleted] = useState(false);
   const [showExpired, setShowExpired] = useState(false);
   const [showDeletedTemporarily, setShowDeletedTemporarily] = useState(false);
-  const [showPostedByMovesbook, setShowPostedByMovesbook] = useState(false);
-  const [showPostedByMyCountry, setShowPostedByMyCountry] = useState(false);
   const [showOnlyLiked, setShowOnlyLiked] = useState(false);
   const [showSingleNews, setShowSingleNews] = useState(false);
   const [showGroupsOfNews, setShowGroupsOfNews] = useState(false);
@@ -580,17 +588,39 @@ export default function NewsArticlesList({
   }, [previewArticleId, adminContext, apiBase, ogpNewsGroups]);
 
   useEffect(() => {
-    if (settingsArticleId != null && !settingsOptions) {
-      fetch('/api/news/ogp-settings-options')
-        .then((r) => r.json())
-        .then((data) => setSettingsOptions(data))
-        .catch(() => setSettingsOptions({ userTypes: [], countries: [], languages: [], sports: [] }));
+    if (
+      settingsArticleId != null &&
+      (!settingsOptions || !Array.isArray(settingsOptions.sports))
+    ) {
+      const empty = { userTypes: [], countries: [], languages: [], sports: [] };
+      const token =
+        typeof window !== 'undefined'
+          ? adminContext
+            ? localStorage.getItem('adminToken')
+            : localStorage.getItem('token')
+          : null;
+      const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      fetch('/api/news/ogp-settings-options', { headers })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) {
+            setSettingsOptions(empty);
+            return;
+          }
+          setSettingsOptions({
+            userTypes: data.userTypes ?? [],
+            countries: data.countries ?? [],
+            languages: data.languages ?? [],
+            sports: data.sports ?? [],
+          });
+        })
+        .catch(() => setSettingsOptions(empty));
     }
-  }, [settingsArticleId, settingsOptions]);
+  }, [settingsArticleId, settingsOptions, adminContext]);
 
   useEffect(() => {
     setCurrentPage(1);
-    setShowOnlyMyOgNews(false);
+    setPostedByFilter('none');
     setViewingOgpGroup(null);
   }, [activeTopic, activeMusicalGenre]);
 
@@ -736,13 +766,11 @@ export default function NewsArticlesList({
   const filtered = useMemo(() => {
     const applyArticleFilters = (source: ArticlePasted[]) => {
       let list = source;
-      if (showOnlyMyOgNews && canFilterByMyOgNews) {
+      if (postedByFilter === 'me' && canFilterByMyOgNews) {
         list = list.filter(canEditAsCreator);
-      }
-      if (showPostedByMovesbook) {
+      } else if (postedByFilter === 'movesbook') {
         list = list.filter((a) => a.createdBySuperAdmin === true);
-      }
-      if (showPostedByMyCountry) {
+      } else if (postedByFilter === 'myCountry') {
         const myCountry = (currentUserCountry ?? '').trim().toLowerCase();
         list = list.filter((a) => {
           const creatorCountry = (a.creatorCountry ?? '').trim().toLowerCase();
@@ -750,14 +778,19 @@ export default function NewsArticlesList({
         });
       }
       if (isSuperAdmin) {
-        if (showExpired) {
-          list = list.filter(isExpiredOrNoExpiry);
-          if (!showDeletedTemporarily) {
-            list = list.filter((a) => !a.deletedAt);
+        if (excludeExpiredAndDeleted) {
+          // Hide soft-deleted and past-expiry OGPs (items with no expiry stay visible).
+          list = list.filter((a) => !a.deletedAt && isNotExpired(a));
+        } else {
+          if (showExpired) {
+            list = list.filter(isExpiredOrNoExpiry);
+            if (!showDeletedTemporarily) {
+              list = list.filter((a) => !a.deletedAt);
+            }
           }
-        }
-        if (showDeletedTemporarily) {
-          list = list.filter((a) => !!a.deletedAt);
+          if (showDeletedTemporarily) {
+            list = list.filter((a) => !!a.deletedAt);
+          }
         }
       } else {
         list = list.filter((a) => {
@@ -878,12 +911,14 @@ export default function NewsArticlesList({
         groupSource = groupSource.filter((g) => g.topic.toLowerCase() === selectedSport.toLowerCase());
       }
       groups = groupSource.map(groupToFeedItem);
-      if (showOnlyMyOgNews && canFilterByMyOgNews) {
+      if (postedByFilter === 'me' && canFilterByMyOgNews) {
         groups = groups.filter(canEditAsCreator);
       }
-      // Mirror article deleted visibility for groups.
+      // Mirror article deleted/expired visibility for groups.
       if (isSuperAdmin) {
-        if (showDeletedTemporarily) {
+        if (excludeExpiredAndDeleted) {
+          groups = groups.filter((a) => !a.deletedAt && isNotExpired(a));
+        } else if (showDeletedTemporarily) {
           groups = groups.filter((a) => !!a.deletedAt);
         } else {
           groups = groups.filter((a) => !a.deletedAt);
@@ -914,10 +949,9 @@ export default function NewsArticlesList({
     search,
     selectedSport,
     selectedLanguage,
-    showOnlyMyOgNews,
-    showPostedByMovesbook,
-    showPostedByMyCountry,
+    postedByFilter,
     currentUserCountry,
+    excludeExpiredAndDeleted,
     showExpired,
     showDeletedTemporarily,
     canFilterByMyOgNews,
@@ -1526,7 +1560,7 @@ export default function NewsArticlesList({
               </div>
             </div>
           ) : (
-            <div className="font-semibold inline-flex flex-wrap items-baseline gap-x-1.5 min-w-0 shrink-0">
+            <div className="font-semibold inline-flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 shrink-0">
               {viewingOgpGroup ? (
                 <>
                   <span className="text-white">GROUP of</span>
@@ -1537,9 +1571,57 @@ export default function NewsArticlesList({
               ) : (
                 renderActiveTopicHeading('dark')
               )}
+              {isSuperAdmin && !viewingOgpGroup && (
+                <label className="flex items-center gap-2 cursor-pointer select-none font-normal">
+                  <input
+                    type="radio"
+                    name="exclude-expired-deleted"
+                    checked={excludeExpiredAndDeleted}
+                    onChange={() => {
+                      setExcludeExpiredAndDeleted(true);
+                      setCurrentPage(1);
+                    }}
+                    onClick={() => {
+                      if (excludeExpiredAndDeleted) {
+                        setExcludeExpiredAndDeleted(false);
+                        setCurrentPage(1);
+                      }
+                    }}
+                    className="w-4 h-4 border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                    aria-label="Exclude expired & deleted"
+                  />
+                  <span className="text-white text-sm whitespace-nowrap">
+                    Exclude expired & deleted
+                  </span>
+                </label>
+              )}
             </div>
           )}
           <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0 ${apiBase === '/api/music' ? 'w-full justify-center' : 'ml-auto'}`}>
+            {apiBase === '/api/music' && isSuperAdmin && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="radio"
+                  name="exclude-expired-deleted"
+                  checked={excludeExpiredAndDeleted}
+                  onChange={() => {
+                    setExcludeExpiredAndDeleted(true);
+                    setCurrentPage(1);
+                  }}
+                  onClick={() => {
+                    if (excludeExpiredAndDeleted) {
+                      setExcludeExpiredAndDeleted(false);
+                      setCurrentPage(1);
+                    }
+                  }}
+                  className="w-4 h-4 border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                  aria-label="Exclude expired & deleted"
+                />
+                <span className="text-white text-sm whitespace-nowrap">
+                  Exclude expired & deleted
+                </span>
+              </label>
+            )}
             {apiBase !== '/api/music' && isAddingToGroup && !viewingOgpGroup && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
@@ -1559,13 +1641,21 @@ export default function NewsArticlesList({
             )}
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
-                type="checkbox"
-                checked={showPostedByMovesbook}
-                onChange={(e) => {
-                  setShowPostedByMovesbook(e.target.checked);
+                type="radio"
+                name="posted-by-filter"
+                checked={postedByFilter === 'movesbook'}
+                onChange={() => {
+                  setPostedByFilter('movesbook');
                   setCurrentPage(1);
                 }}
-                className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                onClick={() => {
+                  // Allow clearing the radio group (back to "show all").
+                  if (postedByFilter === 'movesbook') {
+                    setPostedByFilter('none');
+                    setCurrentPage(1);
+                  }
+                }}
+                className="w-4 h-4 border-gray-300 text-cyan-600 focus:ring-cyan-500"
                 aria-label="posted by Movesbook"
               />
               <span className="text-white text-sm whitespace-nowrap">
@@ -1574,13 +1664,20 @@ export default function NewsArticlesList({
             </label>
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
-                type="checkbox"
-                checked={showPostedByMyCountry}
-                onChange={(e) => {
-                  setShowPostedByMyCountry(e.target.checked);
+                type="radio"
+                name="posted-by-filter"
+                checked={postedByFilter === 'myCountry'}
+                onChange={() => {
+                  setPostedByFilter('myCountry');
                   setCurrentPage(1);
                 }}
-                className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                onClick={() => {
+                  if (postedByFilter === 'myCountry') {
+                    setPostedByFilter('none');
+                    setCurrentPage(1);
+                  }
+                }}
+                className="w-4 h-4 border-gray-300 text-cyan-600 focus:ring-cyan-500"
                 aria-label={postedByCountryLabel}
               />
               <span className="text-white text-sm whitespace-nowrap">
@@ -1590,13 +1687,20 @@ export default function NewsArticlesList({
             {canFilterByMyOgNews && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
-                  type="checkbox"
-                  checked={showOnlyMyOgNews}
-                  onChange={(e) => {
-                    setShowOnlyMyOgNews(e.target.checked);
+                  type="radio"
+                  name="posted-by-filter"
+                  checked={postedByFilter === 'me'}
+                  onChange={() => {
+                    setPostedByFilter('me');
                     setCurrentPage(1);
                   }}
-                  className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                  onClick={() => {
+                    if (postedByFilter === 'me') {
+                      setPostedByFilter('none');
+                      setCurrentPage(1);
+                    }
+                  }}
+                  className="w-4 h-4 border-gray-300 text-cyan-600 focus:ring-cyan-500"
                   aria-label={
                     showOnlyMyOgNewsLabelUsername
                       ? `only posted by ${showOnlyMyOgNewsLabelUsername}`
@@ -2036,7 +2140,7 @@ export default function NewsArticlesList({
                         title={a.isOgpGroup ? 'View creator of this group' : 'View creator of this article'}
                         aria-label="View creator"
                       >
-                        {apiBase === '/api/music' && isSuperAdmin && a.createdBySuperAdmin ? (
+                        {isSuperAdmin && a.createdBySuperAdmin ? (
                           <span
                             className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded bg-red-600 text-white border border-yellow-300 shrink-0 select-none"
                             style={{
@@ -2045,6 +2149,7 @@ export default function NewsArticlesList({
                               fontWeight: 700,
                               lineHeight: 1,
                             }}
+                            title="Posted by Movesbook (Super Admin)"
                           >
                             MB
                           </span>
@@ -2505,12 +2610,13 @@ export default function NewsArticlesList({
           saving={groupSaving}
           error={groupSaveError}
           existingNameConflict={groupNameConflict}
+          onCreateTopic={onCreateTopic}
           onCancel={() => {
             setShowCreateGroupModal(false);
             setGroupSaveError(null);
             setGroupNameConflict(false);
           }}
-          onSave={async ({ name, topic, confirmExisting }) => {
+          onSave={async ({ name, topic, confirmExisting, coverImage }) => {
             if (!onSaveOgpNewsGroup) {
               setGroupSaveError('Saving groups is not available');
               return;
@@ -2523,6 +2629,7 @@ export default function NewsArticlesList({
                 topic,
                 articleIds: selectedForGroupIds,
                 confirmExisting,
+                coverImage: coverImage ?? null,
               });
               setShowCreateGroupModal(false);
               setGroupNameConflict(false);

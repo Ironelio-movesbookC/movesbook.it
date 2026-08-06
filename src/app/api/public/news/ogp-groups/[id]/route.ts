@@ -78,6 +78,8 @@ export async function GET(
         name: group.name,
         topic: group.topic,
         customDescription: group.customDescription,
+        coverImage: group.coverImage,
+        image: group.coverImage ?? members[0]?.image ?? null,
         savedAt: group.savedAt.toISOString(),
         memberCount: members.length,
         creatorUsername: group.user?.username ?? null,

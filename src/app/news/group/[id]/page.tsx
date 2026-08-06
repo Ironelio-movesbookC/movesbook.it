@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
-import { ArrowDownAZ, Clock, ExternalLink, Share2, Tag, ThumbsUp } from 'lucide-react';
+import { ArrowDownAZ, Clock, ExternalLink, Share2, Tag, ThumbsUp, X } from 'lucide-react';
 import ModernNavbar from '@/components/ModernNavbar';
 import ModernFooter from '@/components/ModernFooter';
+import OgpShareModal from '@/app/news/components/OgpShareModal';
 import { getOgpGroupShareUrl } from '@/lib/ogpGroupShareUrl';
 
 type PublicMember = {
@@ -56,7 +57,13 @@ export default function PublicOgpNewsGroupPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('date-desc');
-  const [copied, setCopied] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [previewMemberId, setPreviewMemberId] = useState<string | null>(null);
+
+  const previewMember = useMemo(
+    () => (previewMemberId ? members.find((m) => m.id === previewMemberId) ?? null : null),
+    [members, previewMemberId]
+  );
 
   useEffect(() => {
     if (!groupId) return;
@@ -103,18 +110,11 @@ export default function PublicOgpNewsGroupPage() {
     return list;
   }, [members, sortMode]);
 
-  const handleCopyGroupLink = () => {
-    if (!groupId || typeof navigator?.clipboard?.writeText !== 'function') return;
-    const url = getOgpGroupShareUrl(groupId);
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    });
-  };
+  const groupShareUrl = groupId ? getOgpGroupShareUrl(groupId) : '';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <ModernNavbar />
+      <ModernNavbar hideContentNav />
       <main className="flex-1 w-full max-w-[1400px] mx-auto px-4 py-6">
         {loading ? (
           <p className="text-sm text-gray-500">Loading group…</p>
@@ -166,10 +166,10 @@ export default function PublicOgpNewsGroupPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleCopyGroupLink}
+                  onClick={() => setShareOpen(true)}
                   className="p-2 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
-                  title={copied ? 'Copied!' : 'Copy group link'}
-                  aria-label={copied ? 'Copied' : 'Copy group link'}
+                  title="Share this group"
+                  aria-label="Share this group"
                 >
                   <Share2 className="w-5 h-5" />
                 </button>
@@ -232,20 +232,21 @@ export default function PublicOgpNewsGroupPage() {
                           </span>
                         )}
                       </div>
-                      <a
-                        href={m.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium text-sm text-gray-900 line-clamp-2 hover:underline"
+                      <button
+                        type="button"
+                        className="text-left w-full group/text"
+                        onClick={() => setPreviewMemberId(m.id)}
                       >
-                        {m.title || m.url}
-                      </a>
-                      {(m.customDescription || m.description) && (
-                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                          {m.customDescription || m.description}
-                        </p>
-                      )}
-                      <p className="text-xs text-gray-400 mt-1">{formatDate(m.savedAt)}</p>
+                        <h4 className="font-medium text-sm text-gray-900 line-clamp-2 group-hover/text:underline">
+                          {m.title || m.url}
+                        </h4>
+                        {(m.customDescription || m.description) && (
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                            {m.customDescription || m.description}
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1">{formatDate(m.savedAt)}</p>
+                      </button>
                       <div className="mt-auto pt-2 border-t border-gray-100 flex items-center gap-2">
                         <span
                           className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-500"
@@ -273,6 +274,101 @@ export default function PublicOgpNewsGroupPage() {
         )}
       </main>
       <ModernFooter />
+
+      <OgpShareModal
+        isOpen={shareOpen && !!group}
+        onClose={() => setShareOpen(false)}
+        article={
+          group
+            ? {
+                url: groupShareUrl,
+                title: group.name,
+              }
+            : null
+        }
+      />
+
+      {previewMember && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+          onClick={() => setPreviewMemberId(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ogp-preview-modal-title"
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl border border-gray-300 max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gray-800 text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
+              <span className="font-semibold" id="ogp-preview-modal-title">
+                {previewMember.topic || 'News'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewMemberId(null)}
+                className="p-1 rounded text-gray-300 hover:text-white hover:bg-gray-700"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {previewMember.image && (
+                previewMember.url ? (
+                  <a
+                    href={previewMember.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset cursor-pointer"
+                    aria-label={`Open article: ${previewMember.title || previewMember.url}`}
+                  >
+                    <span className="relative block w-full h-64 max-h-64">
+                      <Image
+                        src={previewMember.image}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 512px) 100vw, 512px"
+                        unoptimized
+                      />
+                    </span>
+                  </a>
+                ) : (
+                  <span className="relative block w-full h-64 max-h-64">
+                    <Image
+                      src={previewMember.image}
+                      alt=""
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 512px) 100vw, 512px"
+                      unoptimized
+                    />
+                  </span>
+                )
+              )}
+              <div className="p-4">
+                <h3 className="text-lg font-bold text-gray-900">
+                  {previewMember.title || previewMember.url}
+                </h3>
+                <div className="text-sm text-gray-500 mt-1 w-full flex items-center justify-between gap-2 flex-nowrap">
+                  <span className="flex-shrink-0">{formatDate(previewMember.savedAt)}</span>
+                  {(previewMember.creatorUsername || previewMember.creatorName) && (
+                    <span className="text-blue-600 flex-shrink-0 ml-auto">
+                      by {previewMember.creatorUsername || previewMember.creatorName}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-3 text-sm text-gray-700 max-h-60 overflow-y-auto overflow-x-hidden pr-2 border border-gray-200 rounded-lg p-3">
+                  {previewMember.customDescription ||
+                    previewMember.description ||
+                    previewMember.url}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
