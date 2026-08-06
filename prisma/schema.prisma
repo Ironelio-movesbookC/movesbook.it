@@ -411,8 +411,11 @@ model UserMessageThread {
   realPath        String?               @db.VarChar(2048)
   errorMessage    String?               @db.VarChar(1000)
   supportCategory String?               @db.VarChar(32)
-  /// Legacy assistance status: S=Started, C=Completed, D=Decline
-  status          String?               @db.VarChar(8)
+  /// Workflow status for Suggestions/Problems (pending|progress|future|solved|unsolvable).
+  /// Legacy assistance also used: S=Started, C=Completed, D=Decline
+  status          String?               @db.VarChar(32)
+  /// JSON array of up to 3 public image URLs attached to the first post
+  imageUrls       String?               @db.Text
   likeCount       Int                   @default(0)
   dislikeCount    Int                   @default(0)
   isPublic        Boolean               @default(false)

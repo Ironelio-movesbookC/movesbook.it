@@ -32,6 +32,8 @@ export async function POST(request: NextRequest) {
     const text = typeof body?.body === 'string' ? body.body.trim() : '';
     if (!text) return NextResponse.json({ error: 'Message body required' }, { status: 400 });
 
+    const imageUrls = Array.isArray(body?.imageUrls) ? body.imageUrls : [];
+
     const thread = await createThreadWithFirstMessage({
       userId: auth.userId,
       kind: 'SUPPORT',
@@ -42,6 +44,7 @@ export async function POST(request: NextRequest) {
       realPath: typeof body?.realPath === 'string' ? body.realPath : undefined,
       errorMessage: typeof body?.errorMessage === 'string' ? body.errorMessage : undefined,
       supportCategory: 'bug_fixed',
+      imageUrls,
     });
 
     return NextResponse.json({ id: thread.id });

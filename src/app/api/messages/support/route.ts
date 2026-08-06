@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
     if (!text) return NextResponse.json({ error: 'Message body required' }, { status: 400 });
 
     const category = parseCategory(body?.supportCategory ?? 'feedback') || 'feedback';
+    const imageUrls = Array.isArray(body?.imageUrls) ? body.imageUrls : [];
 
     const thread = await createThreadWithFirstMessage({
       userId: auth.userId,
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
       realPath: typeof body?.realPath === 'string' ? body.realPath : undefined,
       errorMessage: typeof body?.errorMessage === 'string' ? body.errorMessage : undefined,
       supportCategory: category,
+      imageUrls,
     });
 
     return NextResponse.json({ id: thread.id });

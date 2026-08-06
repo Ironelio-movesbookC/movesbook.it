@@ -12,6 +12,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   ChevronDown,
+  ImagePlus,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getAuthToken } from '@/utils/auth.utils';
@@ -20,6 +23,13 @@ import VersionHistoryPanel, {
 } from '@/components/messages/VersionHistoryPanel';
 import ListPageSelector from '@/components/ui/ListPageSelector';
 import type { FeedbackScope } from '@/lib/messages/feedbackRoutes';
+import { MAX_SUPPORT_IMAGES } from '@/lib/messages/supportImages';
+import ThreadPathOpenLink from '@/components/messages/ThreadPathOpenLink';
+import {
+  SUPPORT_WORKFLOW_STATUS_CODES,
+  isSupportWorkflowCategory,
+  normalizeSupportWorkflowStatus,
+} from '@/lib/messages/supportStatus';
 
 export type MainTab = 'version' | 'review' | 'support';
 
@@ -38,6 +48,13 @@ type FeedItem = {
   dislikeCount?: number;
   myReaction?: 'L' | 'D' | null;
   status?: string | null;
+  imageUrls?: string[];
+};
+
+type ComposerImage = {
+  id: string;
+  url: string;
+  preview: string;
 };
 
 type ThreadDetail = {
@@ -50,8 +67,11 @@ type ThreadDetail = {
     isOwner: boolean;
     languageCode?: string | null;
     pathStaff?: string | null;
+    realPath?: string | null;
     supportCategory?: string | null;
     authorName?: string | null;
+    imageUrls?: string[];
+    status?: string | null;
   };
   messages: Array<{
     id: string;
@@ -85,6 +105,16 @@ const SUPPORT_CATS = [
   { id: 'problem', labelKey: 'staff_cat_problem' },
 ] as const;
 
+/** Default is Posted by me; only community scope starts unselected (all posts). */
+function resolveInitialPostByMe(
+  initialMineOnly?: boolean,
+  initialScope?: FeedbackScope,
+): boolean {
+  if (initialScope === 'community') return false;
+  if (initialScope === 'mine' || initialMineOnly) return true;
+  return true;
+}
+
 export default function StaffMessagesExperience({
   variant,
   initialMainTab = 'support',
@@ -109,17 +139,8 @@ export default function StaffMessagesExperience({
   const [subPage, setSubPage] = useState<string>(initialCategory);
   const [filterLang, setFilterLang] = useState('');
   const [recentOnly, setRecentOnly] = useState(initialRecentOnly);
-  const [postByMe, setPostByMe] = useState(
-    legacyMode ? false : initialMineOnly || initialScope === 'mine',
-  );
-  const [reviewScope, setReviewScope] = useState<FeedbackScope | 'own'>(
-    initialMainTab === 'review'
-      ? initialScope === 'community'
-        ? 'community'
-        : initialScope === 'mine'
-          ? 'mine'
-          : 'own'
-      : 'own',
+  const [postByMe, setPostByMe] = useState(() =>
+    resolveInitialPostByMe(initialMineOnly, initialScope),
   );
 
   const [searchInput, setSearchInput] = useState(initialSearchQuery);
@@ -152,6 +173,8 @@ export default function StaffMessagesExperience({
   const [composerRealPath, setComposerRealPath] = useState('');
   const [composerErrorMsg, setComposerErrorMsg] = useState('');
   const [composerBody, setComposerBody] = useState('');
+  const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   /** Your Supports (legacy): composer hidden until "Leave a new feedback"; hide again after successful post. */
@@ -159,9 +182,46 @@ export default function StaffMessagesExperience({
 
   const [replyBody, setReplyBody] = useState('');
   const [replySending, setReplySending] = useState(false);
+  const [pictureLightbox, setPictureLightbox] = useState<{
+    urls: string[];
+    index: number;
+  } | null>(null);
 
   const composerRef = useRef<HTMLDivElement>(null);
   const composerBodyRef = useRef<HTMLTextAreaElement>(null);
+  const composerFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!pictureLightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPictureLightbox(null);
+      if (e.key === 'ArrowLeft') {
+        setPictureLightbox((cur) => {
+          if (!cur || cur.urls.length < 2) return cur;
+          return { ...cur, index: (cur.index - 1 + cur.urls.length) % cur.urls.length };
+        });
+      }
+      if (e.key === 'ArrowRight') {
+        setPictureLightbox((cur) => {
+          if (!cur || cur.urls.length < 2) return cur;
+          return { ...cur, index: (cur.index + 1) % cur.urls.length };
+        });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pictureLightbox]);
+
+  const openPictureLightbox = useCallback((urls: string[], index: number, e?: MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    const clean = urls.filter(Boolean).slice(0, MAX_SUPPORT_IMAGES);
+    if (!clean.length) return;
+    setPictureLightbox({
+      urls: clean,
+      index: Math.max(0, Math.min(index, clean.length - 1)),
+    });
+  }, []);
 
   const authFetch = useCallback(async (path: string, init?: RequestInit) => {
     const token = typeof window !== 'undefined' ? getAuthToken() : null;
@@ -192,7 +252,7 @@ export default function StaffMessagesExperience({
 
   useEffect(() => {
     setSubPage(initialCategory);
-    setPostByMe(legacyMode ? false : initialMineOnly || initialScope === 'mine');
+    setPostByMe(resolveInitialPostByMe(initialMineOnly, initialScope));
     setRecentOnly(initialRecentOnly);
     setSearchInput(initialSearchQuery);
     setSearchQuery(initialSearchQuery);
@@ -206,7 +266,6 @@ export default function StaffMessagesExperience({
     initialSearchQuery,
     initialPage,
     initialPageSize,
-    legacyMode,
   ]);
 
   useEffect(() => {
@@ -265,7 +324,17 @@ export default function StaffMessagesExperience({
         pageSize: String(pageSize),
       });
       if (searchQuery) qs.set('q', searchQuery);
-      if (reviewScope === 'community') qs.set('community', '1');
+      // Default = Posted by me (mine); unselecting the button loads all posts
+      if (postByMe) qs.set('mine', '1');
+      else qs.set('community', '1');
+      if (filterLang) qs.set('lang', filterLang);
+      if (recentOnly) qs.set('recent', '1');
+      if (currentPageOnly && typeof window !== 'undefined') {
+        qs.set('currentPage', '1');
+        qs.set('path', window.location.pathname);
+      }
+      if (appliedFromDate) qs.set('from', appliedFromDate);
+      if (appliedToDate) qs.set('to', appliedToDate);
       const data = await authFetch(`/api/messages/reviews?${qs}`);
       setReviewItems(data.items || []);
       setFeedTotal(data.total ?? 0);
@@ -275,7 +344,18 @@ export default function StaffMessagesExperience({
     } finally {
       setLoading(false);
     }
-  }, [authFetch, page, pageSize, reviewScope, searchQuery]);
+  }, [
+    appliedFromDate,
+    appliedToDate,
+    authFetch,
+    currentPageOnly,
+    filterLang,
+    page,
+    pageSize,
+    postByMe,
+    recentOnly,
+    searchQuery,
+  ]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -296,7 +376,7 @@ export default function StaffMessagesExperience({
       setSendError(null);
       try {
         const communityQs =
-          mainTab === 'review' && reviewScope === 'community' ? '?communityReview=1' : '';
+          mainTab === 'review' && !postByMe ? '?communityReview=1' : '';
         const data = await authFetch(`/api/messages/threads/${id}${communityQs}`);
         setThreadDetail(data);
       } catch {
@@ -306,7 +386,7 @@ export default function StaffMessagesExperience({
         setDetailLoading(false);
       }
     },
-    [authFetch, mainTab, reviewScope, t],
+    [authFetch, mainTab, postByMe, t],
   );
 
   const totalPages = Math.max(1, Math.ceil(feedTotal / pageSize));
@@ -319,6 +399,8 @@ export default function StaffMessagesExperience({
   const navigateLegacyCategory = (categoryId: string) => {
     setSubPage(categoryId);
     setPage(1);
+    setFilterStatus('');
+    setAppliedStatus('');
     // When embedded in a dashboard, keep the current page shell (no full navigation).
     // Deep-link URL updates are optional and skipped here on purpose.
   };
@@ -337,11 +419,82 @@ export default function StaffMessagesExperience({
     setComposerPath('');
     setComposerErrorMsg('');
     setComposerBody('');
+    setComposerImages((prev) => {
+      prev.forEach((img) => {
+        if (img.preview.startsWith('blob:')) URL.revokeObjectURL(img.preview);
+      });
+      return [];
+    });
     setSendError(null);
     if (typeof window !== 'undefined') {
       setComposerRealPath(window.location.pathname);
     }
   }, []);
+
+  const removeComposerImage = useCallback((id: string) => {
+    setComposerImages((prev) => {
+      const target = prev.find((img) => img.id === id);
+      if (target?.preview.startsWith('blob:')) URL.revokeObjectURL(target.preview);
+      return prev.filter((img) => img.id !== id);
+    });
+  }, []);
+
+  const handleComposerImagesSelected = useCallback(
+    async (files: FileList | null) => {
+      if (!files?.length) return;
+      const remaining = MAX_SUPPORT_IMAGES - composerImages.length;
+      if (remaining <= 0) {
+        setSendError(t('staff_pictures_max'));
+        return;
+      }
+      const picked = Array.from(files).slice(0, remaining);
+      const token = getAuthToken();
+      if (!token) {
+        setSendError(t('messages_error_send'));
+        return;
+      }
+      setUploadingImages(true);
+      setSendError(null);
+      try {
+        for (const file of picked) {
+          if (!file.type.startsWith('image/')) continue;
+          const form = new FormData();
+          form.append('file', file);
+          const res = await fetch('/api/messages/support/upload-image', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: form,
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.path) {
+            setSendError(t('staff_picture_upload_failed'));
+            continue;
+          }
+          const preview = URL.createObjectURL(file);
+          setComposerImages((prev) => {
+            if (prev.length >= MAX_SUPPORT_IMAGES) {
+              URL.revokeObjectURL(preview);
+              return prev;
+            }
+            return [
+              ...prev,
+              {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                url: String(data.path),
+                preview,
+              },
+            ];
+          });
+        }
+      } catch {
+        setSendError(t('staff_picture_upload_failed'));
+      } finally {
+        setUploadingImages(false);
+        if (composerFileInputRef.current) composerFileInputRef.current.value = '';
+      }
+    },
+    [composerImages.length, t],
+  );
 
   const handlePostNew = useCallback(() => {
     resetComposer();
@@ -365,6 +518,7 @@ export default function StaffMessagesExperience({
         realPath: composerRealPath || undefined,
         errorMessage: composerCategory === 'problem' ? composerErrorMsg.trim() : undefined,
         supportCategory: mainTab === 'support' ? composerCategory : undefined,
+        imageUrls: composerImages.map((img) => img.url).slice(0, MAX_SUPPORT_IMAGES),
       };
       const path = mainTab === 'review' ? '/api/messages/reviews' : '/api/messages/support';
       await authFetch(path, { method: 'POST', body: JSON.stringify(payload) });
@@ -372,6 +526,12 @@ export default function StaffMessagesExperience({
       setComposerObject('');
       setComposerPath('');
       setComposerErrorMsg('');
+      setComposerImages((prev) => {
+        prev.forEach((img) => {
+          if (img.preview.startsWith('blob:')) URL.revokeObjectURL(img.preview);
+        });
+        return [];
+      });
       if (legacyMode) {
         setComposerVisible(false);
         resetComposer();
@@ -388,6 +548,7 @@ export default function StaffMessagesExperience({
     composerBody,
     composerCategory,
     composerErrorMsg,
+    composerImages,
     composerLang,
     composerObject,
     composerPath,
@@ -582,9 +743,9 @@ export default function StaffMessagesExperience({
                       ? postByMe
                         ? t('staff_my_contributions_list')
                         : t('staff_posted_by_users')
-                      : reviewScope === 'community'
-                        ? t('staff_community_reviews_list')
-                        : t('staff_my_reviews_list')}
+                      : postByMe
+                        ? t('staff_my_reviews_list')
+                        : t('staff_community_reviews_list')}
                   </span>
                   {mainTab === 'support' && legacyMode && (
                     <button
@@ -739,10 +900,20 @@ export default function StaffMessagesExperience({
                                 onChange={(e) => setFilterStatus(e.target.value)}
                                 className="mt-0.5 w-full border border-slate-300 rounded px-2 py-1 bg-white"
                               >
-                                <option value="">{t('staff_filter_status_all')}</option>
-                                <option value="S">{t('staff_filter_status_started')}</option>
-                                <option value="C">{t('staff_filter_status_completed')}</option>
-                                <option value="D">{t('staff_filter_status_decline')}</option>
+                                <option value="">{t('staff_filter_status_all_workflow')}</option>
+                                {isSupportWorkflowCategory(subPage) ? (
+                                  SUPPORT_WORKFLOW_STATUS_CODES.map((code) => (
+                                    <option key={code} value={code}>
+                                      {t(`staff_status_${code}`)}
+                                    </option>
+                                  ))
+                                ) : (
+                                  <>
+                                    <option value="S">{t('staff_filter_status_started')}</option>
+                                    <option value="C">{t('staff_filter_status_completed')}</option>
+                                    <option value="D">{t('staff_filter_status_decline')}</option>
+                                  </>
+                                )}
                               </select>
                             </label>
                             <div className="flex gap-2 justify-end">
@@ -779,7 +950,79 @@ export default function StaffMessagesExperience({
                 )}
                 {mainTab === 'review' && (
                   <>
-                    <div className="flex flex-wrap gap-2 items-center mt-2 text-xs">
+                    <div className="flex flex-wrap gap-2 items-center mt-3 text-xs">
+                      <select
+                        value={filterLang}
+                        onChange={(e) => {
+                          setFilterLang(e.target.value);
+                          setPage(1);
+                        }}
+                        className="border border-slate-300 rounded px-2 py-1 text-xs bg-white !text-black max-w-[140px]"
+                      >
+                        <option value="">{t('staff_all_languages')}</option>
+                        {langOptions.map((l) => (
+                          <option key={l.id} value={l.code}>
+                            {l.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRecentOnly(false);
+                          setCurrentPageOnly(false);
+                          setPage(1);
+                        }}
+                        className={`px-2 py-1 rounded font-medium ${
+                          !recentOnly && !currentPageOnly
+                            ? 'bg-[#c43c54] text-white'
+                            : 'bg-white border border-slate-300 text-black'
+                        }`}
+                      >
+                        {t('staff_all')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRecentOnly(true);
+                          setCurrentPageOnly(false);
+                          setPage(1);
+                        }}
+                        className={`px-2 py-1 rounded font-medium ${
+                          recentOnly ? 'bg-[#c43c54] text-white' : 'bg-white border border-slate-300 text-black'
+                        }`}
+                      >
+                        {t('staff_recent')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCurrentPageOnly((v) => !v);
+                          setRecentOnly(false);
+                          setPage(1);
+                        }}
+                        className={`px-2 py-1 rounded font-medium ${
+                          currentPageOnly
+                            ? 'bg-[#c43c54] text-white'
+                            : 'bg-white border border-slate-300 text-black'
+                        }`}
+                      >
+                        {t('staff_current_page')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPostByMe((v) => !v);
+                          setPage(1);
+                        }}
+                        className={`px-2 py-1 rounded font-medium ${
+                          postByMe ? 'bg-[#c43c54] text-white' : 'bg-white border border-slate-300 text-black'
+                        }`}
+                      >
+                        {t('staff_post_by_me')}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center mt-2 text-xs relative">
                       <span className="text-red-700 font-medium">{t('staff_search_label')}</span>
                       <input
                         type="search"
@@ -797,6 +1040,57 @@ export default function StaffMessagesExperience({
                       >
                         {t('staff_search_proceed')}
                       </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setSectionFilterOpen((v) => !v)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded font-medium bg-[#292929] text-white"
+                        >
+                          {t('staff_section_filter')}
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                        {sectionFilterOpen && (
+                          <div className="absolute right-0 top-full mt-1 z-30 w-72 rounded border border-slate-300 bg-white shadow-xl p-3 text-xs text-black">
+                            <div className="font-semibold text-sm mb-2 border-b border-slate-200 pb-1">
+                              {t('staff_section_filter')}
+                            </div>
+                            <label className="block mb-2">
+                              <span className="text-slate-600">{t('staff_filter_from')}</span>
+                              <input
+                                type="date"
+                                value={filterFromDate}
+                                onChange={(e) => setFilterFromDate(e.target.value)}
+                                className="mt-0.5 w-full border border-slate-300 rounded px-2 py-1"
+                              />
+                            </label>
+                            <label className="block mb-3">
+                              <span className="text-slate-600">{t('staff_filter_to')}</span>
+                              <input
+                                type="date"
+                                value={filterToDate}
+                                onChange={(e) => setFilterToDate(e.target.value)}
+                                className="mt-0.5 w-full border border-slate-300 rounded px-2 py-1"
+                              />
+                            </label>
+                            <div className="flex gap-2 justify-end">
+                              <button
+                                type="button"
+                                onClick={applySectionFilter}
+                                className="px-3 py-1 rounded bg-slate-600 text-white"
+                              >
+                                {t('staff_filter_apply')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSectionFilterOpen(false)}
+                                className="px-3 py-1 rounded bg-slate-300 text-slate-800"
+                              >
+                                {t('staff_filter_exit')}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <ListPageSelector
                       page={page}
@@ -825,38 +1119,48 @@ export default function StaffMessagesExperience({
                     {(mainTab === 'support' ? supportItems : reviewItems).map((item) => (
                       <li key={item.id}>
                         <div className="w-full flex gap-2 p-2 rounded border border-slate-200 hover:bg-amber-50/50">
-                          <button
-                            type="button"
-                            onClick={() => void openThread(item.id)}
-                            className="flex flex-1 min-w-0 gap-2 text-left"
-                          >
-                            {item.authorImage ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={item.authorImage}
-                                alt=""
-                                className="w-10 h-10 rounded object-cover shrink-0 bg-slate-200"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded bg-slate-200 shrink-0" />
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <div className="font-semibold text-slate-900 text-[13px] leading-snug bg-sky-50 border border-sky-100 px-1.5 py-0.5 inline-block max-w-full">
-                                {item.title}
+                          <div className="flex flex-1 min-w-0 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void openThread(item.id)}
+                              className="flex flex-1 min-w-0 gap-2 text-left"
+                            >
+                              {item.authorImage ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={item.authorImage}
+                                  alt=""
+                                  className="w-10 h-10 rounded object-cover shrink-0 bg-slate-200"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded bg-slate-200 shrink-0" />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="font-semibold text-slate-900 text-[13px] leading-snug bg-sky-50 border border-sky-100 px-1.5 py-0.5 inline-block max-w-full">
+                                  {item.title}
+                                </div>
+                                {item.excerpt ? (
+                                  <p className="text-slate-600 text-xs mt-1 line-clamp-2">{item.excerpt}</p>
+                                ) : null}
+                                <div className="text-[11px] text-slate-500 mt-1">
+                                  {t('staff_posted_by_label')}{' '}
+                                  <span className="font-medium text-slate-700">{item.author || '—'}</span> —{' '}
+                                  {new Date(item.updatedAt).toLocaleString()}
+                                </div>
+                                {mainTab === 'support' && isSupportWorkflowCategory(subPage) ? (
+                                  <div className="mt-1">
+                                    <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                      {t('staff_status_label')}:{' '}
+                                      {t(`staff_status_${normalizeSupportWorkflowStatus(item.status)}`)}
+                                    </span>
+                                  </div>
+                                ) : null}
+                                <div className="mt-1 text-[11px] text-[#c43c54] font-medium">
+                                  {t('staff_reply')} · {t('staff_mark_spam')}
+                                </div>
                               </div>
-                              {item.excerpt ? (
-                                <p className="text-slate-600 text-xs mt-1 line-clamp-2">{item.excerpt}</p>
-                              ) : null}
-                              <div className="text-[11px] text-slate-500 mt-1">
-                                {t('staff_posted_by_label')}{' '}
-                                <span className="font-medium text-slate-700">{item.author || '—'}</span> —{' '}
-                                {new Date(item.updatedAt).toLocaleString()}
-                              </div>
-                              <div className="mt-1 text-[11px] text-[#c43c54] font-medium">
-                                {t('staff_reply')} · {t('staff_mark_spam')}
-                              </div>
-                            </div>
-                          </button>
+                            </button>
+                          </div>
                           {mainTab === 'support' && (
                             <div className="flex flex-col gap-1.5 shrink-0 items-end justify-start pt-0.5">
                               <button
@@ -890,6 +1194,26 @@ export default function StaffMessagesExperience({
                             </div>
                           )}
                         </div>
+                        {mainTab === 'support' && item.imageUrls && item.imageUrls.length > 0 ? (
+                          <div className="px-2 pb-2 -mt-1 flex gap-1.5 flex-wrap border border-t-0 border-slate-200 rounded-b bg-white">
+                            {item.imageUrls.slice(0, MAX_SUPPORT_IMAGES).map((src, imgIdx) => (
+                              <button
+                                key={src}
+                                type="button"
+                                title={t('staff_view_picture')}
+                                onClick={(e) => openPictureLightbox(item.imageUrls || [], imgIdx, e)}
+                                className="p-0 rounded border border-slate-200 overflow-hidden bg-slate-100 hover:ring-2 hover:ring-[#c43c54]/40 focus:outline-none focus:ring-2 focus:ring-[#c43c54]"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={src}
+                                  alt=""
+                                  className="h-16 w-16 object-cover pointer-events-none"
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
                       </li>
                     ))}
                   </ul>
@@ -913,6 +1237,47 @@ export default function StaffMessagesExperience({
                             {threadDetail.thread.authorName} ·{' '}
                             {new Date(threadDetail.thread.updatedAt).toLocaleString()}
                           </p>
+                          {mainTab === 'support' &&
+                          isSupportWorkflowCategory(
+                            threadDetail.thread.supportCategory || subPage,
+                          ) ? (
+                            <p className="mt-1.5">
+                              <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
+                                {t('staff_status_label')}:{' '}
+                                {t(
+                                  `staff_status_${normalizeSupportWorkflowStatus(threadDetail.thread.status)}`,
+                                )}
+                              </span>
+                            </p>
+                          ) : null}
+                          <ThreadPathOpenLink
+                            pathStaff={threadDetail.thread.pathStaff}
+                            realPath={threadDetail.thread.realPath}
+                            pathLabel={t('staff_path_label')}
+                            openLabel={t('staff_open_link')}
+                          />
+                          {threadDetail.thread.imageUrls && threadDetail.thread.imageUrls.length > 0 ? (
+                            <div className="mt-2 flex gap-1.5 flex-wrap">
+                              {threadDetail.thread.imageUrls.slice(0, MAX_SUPPORT_IMAGES).map((src, imgIdx) => (
+                                <button
+                                  key={src}
+                                  type="button"
+                                  title={t('staff_view_picture')}
+                                  onClick={(e) =>
+                                    openPictureLightbox(threadDetail.thread.imageUrls || [], imgIdx, e)
+                                  }
+                                  className="p-0 rounded border border-slate-200 overflow-hidden bg-slate-100 hover:ring-2 hover:ring-[#c43c54]/40 focus:outline-none focus:ring-2 focus:ring-[#c43c54]"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={src}
+                                    alt=""
+                                    className="h-20 w-20 object-cover pointer-events-none"
+                                  />
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                         <ul className="space-y-2">
                           {threadDetail.messages.map((m) => (
@@ -1047,12 +1412,61 @@ export default function StaffMessagesExperience({
                 onChange={(e) => setComposerBody(e.target.value)}
                 rows={6}
                 placeholder={t('staff_communicate_placeholder')}
-                className={`${fieldClass} mb-4 [caret-color:#000]`}
+                className={`${fieldClass} mb-3 [caret-color:#000]`}
               />
+
+              {mainTab === 'support' ? (
+                <div className="mb-4">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <button
+                      type="button"
+                      disabled={uploadingImages || composerImages.length >= MAX_SUPPORT_IMAGES}
+                      onClick={() => composerFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-slate-400 rounded bg-white text-black hover:bg-slate-100 disabled:opacity-50"
+                    >
+                      <ImagePlus className="w-4 h-4" />
+                      {uploadingImages ? t('messages_panel_loading') : t('staff_add_pictures')}
+                    </button>
+                    <span className="text-[11px] text-slate-600">
+                      {t('staff_add_pictures_hint')} ({composerImages.length}/{MAX_SUPPORT_IMAGES})
+                    </span>
+                    <input
+                      ref={composerFileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => void handleComposerImagesSelected(e.target.files)}
+                    />
+                  </div>
+                  {composerImages.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {composerImages.map((img) => (
+                        <div
+                          key={img.id}
+                          className="relative h-20 w-20 rounded border border-slate-300 overflow-hidden bg-white"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={img.preview || img.url} alt="" className="h-full w-full object-cover" />
+                          <button
+                            type="button"
+                            title={t('staff_remove_picture')}
+                            aria-label={t('staff_remove_picture')}
+                            onClick={() => removeComposerImage(img.id)}
+                            className="absolute top-0.5 right-0.5 rounded-full bg-black/70 p-0.5 text-white hover:bg-black"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               <button
                 type="button"
-                disabled={sending || !composerBody.trim()}
+                disabled={sending || uploadingImages || !composerBody.trim()}
                 onClick={() => void submitComposer()}
                 className="w-full py-2.5 rounded font-semibold text-white bg-[#c43c54] hover:bg-[#a83249] disabled:opacity-50"
               >
@@ -1063,6 +1477,81 @@ export default function StaffMessagesExperience({
           </div>
         )}
       </div>
+
+      {pictureLightbox ? (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('staff_view_picture')}
+          onClick={() => setPictureLightbox(null)}
+        >
+          <button
+            type="button"
+            className="absolute top-4 right-4 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+            aria-label={t('messages_panel_close')}
+            onClick={() => setPictureLightbox(null)}
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {pictureLightbox.urls.length > 1 ? (
+            <>
+              <button
+                type="button"
+                className="absolute left-3 sm:left-6 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+                aria-label={t('staff_picture_prev')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPictureLightbox((cur) => {
+                    if (!cur) return cur;
+                    return {
+                      ...cur,
+                      index: (cur.index - 1 + cur.urls.length) % cur.urls.length,
+                    };
+                  });
+                }}
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button
+                type="button"
+                className="absolute right-3 sm:right-6 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+                aria-label={t('staff_picture_next')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPictureLightbox((cur) => {
+                    if (!cur) return cur;
+                    return {
+                      ...cur,
+                      index: (cur.index + 1) % cur.urls.length,
+                    };
+                  });
+                }}
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            </>
+          ) : null}
+
+          <div
+            className="relative max-h-[90vh] max-w-[min(96vw,56rem)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={pictureLightbox.urls[pictureLightbox.index]}
+              alt=""
+              className="max-h-[85vh] max-w-full rounded object-contain shadow-2xl"
+            />
+            {pictureLightbox.urls.length > 1 ? (
+              <p className="mt-2 text-center text-sm text-white/90">
+                {pictureLightbox.index + 1} / {pictureLightbox.urls.length}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,7 +1,19 @@
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
+import {
+  normalizeSupportImageUrls,
+  parseSupportImageUrlsJson,
+} from '@/lib/messages/supportImages';
+import {
+  defaultStatusForSupportCategory,
+  isSupportWorkflowCategory,
+  isSupportWorkflowStatus,
+  type SupportWorkflowStatus,
+} from '@/lib/messages/supportStatus';
+
 export type UserThreadKind = 'REVIEW' | 'SUPPORT';
 export type SupportCategory = 'feedback' | 'question' | 'suggestion' | 'problem' | 'bug_fixed';
+export { MAX_SUPPORT_IMAGES, normalizeSupportImageUrls, parseSupportImageUrlsJson } from '@/lib/messages/supportImages';
 
 const EXCERPT_LEN = 160;
 
@@ -16,6 +28,20 @@ function wrapAngle(s: string): string {
   if (!t) return '< Feedback >';
   if (t.startsWith('<')) return t;
   return `< ${t} >`;
+}
+
+/** Map filter status to DB values (workflow + legacy S/C/D). */
+function buildStatusWhere(status: string): Prisma.UserMessageThreadWhereInput {
+  if (status === 'pending') {
+    return { OR: [{ status: 'pending' }, { status: 'S' }, { status: null }] };
+  }
+  if (status === 'solved') {
+    return { OR: [{ status: 'solved' }, { status: 'C' }] };
+  }
+  if (status === 'unsolvable') {
+    return { OR: [{ status: 'unsolvable' }, { status: 'D' }] };
+  }
+  return { status };
 }
 
 const SA_USERNAME_PREFIX = /^sa-/;
@@ -103,6 +129,7 @@ export type PaginatedFeedResult = {
     dislikeCount: number;
     myReaction: 'L' | 'D' | null;
     status: string | null;
+    imageUrls: string[];
   }>;
   total: number;
   page: number;
@@ -141,6 +168,7 @@ function mapSupportThreads(
     likeCount?: number;
     dislikeCount?: number;
     status?: string | null;
+    imageUrls?: string[] | string | null;
     user: AuthorFields & { superAdminId: string | null; image?: string | null };
     _count: { messages: number };
     messages: Array<{ body: string }>;
@@ -166,6 +194,9 @@ function mapSupportThreads(
       ? th.likes[0].reaction
       : null) as 'L' | 'D' | null,
     status: th.status ?? null,
+    imageUrls: Array.isArray(th.imageUrls)
+      ? normalizeSupportImageUrls(th.imageUrls)
+      : parseSupportImageUrlsJson(typeof th.imageUrls === 'string' ? th.imageUrls : null),
   }));
 }
 
@@ -226,7 +257,9 @@ export async function listSupportFeed(
         : {}),
     ...(filters.languageCode ? { languageCode: filters.languageCode } : {}),
     ...(Object.keys(createdAt).length ? { createdAt } : {}),
-    ...(filters.status ? ({ status: filters.status } as Prisma.UserMessageThreadWhereInput) : {}),
+    ...(filters.status
+      ? (buildStatusWhere(filters.status) as Prisma.UserMessageThreadWhereInput)
+      : {}),
     ...(searchWhere.OR || pathWhere
       ? {
           AND: [
@@ -269,16 +302,28 @@ export async function listSupportFeed(
   const threadIds = threads.map((th) => th.id);
   const extrasById = new Map<
     string,
-    { likeCount: number; dislikeCount: number; status: string | null; myReaction: 'L' | 'D' | null }
+    {
+      likeCount: number;
+      dislikeCount: number;
+      status: string | null;
+      myReaction: 'L' | 'D' | null;
+      imageUrls: string[];
+    }
   >();
 
   if (threadIds.length) {
     const placeholders = threadIds.map(() => '?').join(',');
     try {
       const extras = await prisma.$queryRawUnsafe<
-        Array<{ id: string; likeCount: number | null; dislikeCount: number | null; status: string | null }>
+        Array<{
+          id: string;
+          likeCount: number | null;
+          dislikeCount: number | null;
+          status: string | null;
+          imageUrls?: string | null;
+        }>
       >(
-        `SELECT id, likeCount, dislikeCount, status FROM user_message_threads WHERE id IN (${placeholders})`,
+        `SELECT id, likeCount, dislikeCount, status, imageUrls FROM user_message_threads WHERE id IN (${placeholders})`,
         ...threadIds,
       );
       for (const row of extras) {
@@ -287,6 +332,7 @@ export async function listSupportFeed(
           dislikeCount: Number(row.dislikeCount ?? 0),
           status: row.status ?? null,
           myReaction: null,
+          imageUrls: parseSupportImageUrlsJson(row.imageUrls ?? null),
         });
       }
       const myLikes = await prisma.$queryRawUnsafe<Array<{ threadId: string; reaction: string }>>(
@@ -302,7 +348,26 @@ export async function listSupportFeed(
         }
       }
     } catch {
-      /* columns/table may still be creating */
+      /* columns/table may still be creating — retry without imageUrls */
+      try {
+        const extras = await prisma.$queryRawUnsafe<
+          Array<{ id: string; likeCount: number | null; dislikeCount: number | null; status: string | null }>
+        >(
+          `SELECT id, likeCount, dislikeCount, status FROM user_message_threads WHERE id IN (${placeholders})`,
+          ...threadIds,
+        );
+        for (const row of extras) {
+          extrasById.set(String(row.id), {
+            likeCount: Number(row.likeCount ?? 0),
+            dislikeCount: Number(row.dislikeCount ?? 0),
+            status: row.status ?? null,
+            myReaction: null,
+            imageUrls: [],
+          });
+        }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -318,6 +383,7 @@ export async function listSupportFeed(
           dislikeCount: extra?.dislikeCount ?? 0,
           status: extra?.status ?? null,
           likes: extra?.myReaction ? [{ reaction: extra.myReaction }] : [],
+          imageUrls: extra?.imageUrls ?? [],
         };
       }),
       viewerId,
@@ -378,6 +444,23 @@ export async function listBugFixedMemos(filters: {
     }),
   ]);
 
+  const threadIds = threads.map((th) => th.id);
+  const imageUrlsById = new Map<string, string[]>();
+  if (threadIds.length) {
+    const placeholders = threadIds.map(() => '?').join(',');
+    try {
+      const rows = await prisma.$queryRawUnsafe<Array<{ id: string; imageUrls: string | null }>>(
+        `SELECT id, imageUrls FROM user_message_threads WHERE id IN (${placeholders})`,
+        ...threadIds,
+      );
+      for (const row of rows) {
+        imageUrlsById.set(String(row.id), parseSupportImageUrlsJson(row.imageUrls ?? null));
+      }
+    } catch {
+      /* imageUrls column may not exist yet */
+    }
+  }
+
   const superAdminNames = await loadSuperAdminNames(threads.map((th) => th.user.superAdminId));
 
   return {
@@ -396,6 +479,7 @@ export async function listBugFixedMemos(filters: {
       dislikeCount: 0,
       myReaction: null as 'L' | 'D' | null,
       status: null,
+      imageUrls: imageUrlsById.get(th.id) ?? [],
     })),
     total,
     page,
@@ -408,14 +492,58 @@ export async function listAllReviews(filters?: {
   page?: number;
   pageSize?: number;
   userId?: string;
+  viewerId?: string;
+  fromDate?: string;
+  toDate?: string;
+  languageCode?: string;
+  recentOnly?: boolean;
+  currentPageOnly?: boolean;
+  currentPath?: string;
 }): Promise<PaginatedFeedResult> {
   const page = Math.max(1, filters?.page ?? 1);
   const pageSize = Math.min(50, Math.max(5, filters?.pageSize ?? 5));
 
+  const from = filters?.fromDate?.trim() ? new Date(filters.fromDate) : null;
+  const to = filters?.toDate?.trim() ? new Date(filters.toDate) : null;
+  if (to && !Number.isNaN(to.getTime())) {
+    to.setHours(23, 59, 59, 999);
+  }
+
+  const createdAt: Prisma.DateTimeFilter = {};
+  if (filters?.recentOnly) {
+    createdAt.gte = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  }
+  if (from && !Number.isNaN(from.getTime())) {
+    createdAt.gte = from;
+  }
+  if (to && !Number.isNaN(to.getTime())) {
+    createdAt.lte = to;
+  }
+
+  const searchWhere = buildSearchWhere(filters?.searchQuery || '');
+  const pathWhere: Prisma.UserMessageThreadWhereInput | null =
+    filters?.currentPageOnly && filters.currentPath
+      ? {
+          OR: [
+            { realPath: { contains: filters.currentPath } },
+            { pathStaff: { contains: filters.currentPath } },
+          ],
+        }
+      : null;
+
   const where: Prisma.UserMessageThreadWhereInput = {
     kind: 'REVIEW',
     ...(filters?.userId ? { userId: filters.userId } : {}),
-    ...buildSearchWhere(filters?.searchQuery || ''),
+    ...(filters?.languageCode ? { languageCode: filters.languageCode } : {}),
+    ...(Object.keys(createdAt).length ? { createdAt } : {}),
+    ...(searchWhere.OR || pathWhere
+      ? {
+          AND: [
+            ...(searchWhere.OR ? [searchWhere] : []),
+            ...(pathWhere ? [pathWhere] : []),
+          ],
+        }
+      : {}),
   };
 
   const [total, threads] = await Promise.all([
@@ -427,7 +555,14 @@ export async function listAllReviews(filters?: {
       take: pageSize,
       include: {
         user: {
-          select: { firstName: true, surname: true, name: true, username: true, superAdminId: true },
+          select: {
+            id: true,
+            firstName: true,
+            surname: true,
+            name: true,
+            username: true,
+            superAdminId: true,
+          },
         },
         _count: { select: { messages: true } },
         messages: {
@@ -439,6 +574,7 @@ export async function listAllReviews(filters?: {
     }),
   ]);
 
+  const viewerId = filters?.viewerId || filters?.userId || '';
   const superAdminNames = await loadSuperAdminNames(threads.map((th) => th.user.superAdminId));
 
   return {
@@ -452,11 +588,12 @@ export async function listAllReviews(filters?: {
       languageCode: th.languageCode,
       author: formatAuthor(th.user, superAdminNames),
       authorImage: null,
-      isMine: false,
+      isMine: viewerId ? th.userId === viewerId : false,
       likeCount: 0,
       dislikeCount: 0,
       myReaction: null as 'L' | 'D' | null,
       status: null,
+      imageUrls: [] as string[],
     })),
     total,
     page,
@@ -505,9 +642,11 @@ export async function createThreadWithFirstMessage(params: {
   realPath?: string;
   errorMessage?: string;
   supportCategory?: string;
+  imageUrls?: string[];
 }) {
   await ensureSupportThreadExtras();
   const isSupport = params.kind === 'SUPPORT';
+  const imageUrls = normalizeSupportImageUrls(params.imageUrls);
   return prisma.userMessageThread.create({
     data: {
       userId: params.userId,
@@ -530,13 +669,28 @@ export async function createThreadWithFirstMessage(params: {
     include: { messages: true },
   }).then(async (created) => {
     if (isSupport) {
+      const initialStatus = defaultStatusForSupportCategory(params.supportCategory);
+      if (initialStatus) {
+        try {
+          await prisma.$executeRawUnsafe(
+            `UPDATE user_message_threads SET status = ? WHERE id = ?`,
+            initialStatus,
+            created.id,
+          );
+        } catch {
+          /* optional until column exists */
+        }
+      }
+    }
+    if (imageUrls.length) {
       try {
         await prisma.$executeRawUnsafe(
-          `UPDATE user_message_threads SET status = 'S' WHERE id = ?`,
+          `UPDATE user_message_threads SET imageUrls = ? WHERE id = ?`,
+          JSON.stringify(imageUrls),
           created.id,
         );
-      } catch {
-        /* optional until column exists */
+      } catch (err) {
+        console.error('Failed to save support imageUrls:', err);
       }
     }
     return created;
@@ -585,6 +739,27 @@ export async function getThreadForUser(
   const superAdminNames = await loadSuperAdminNames(superAdminIds);
   const authorName = formatAuthor(thread.user, superAdminNames);
 
+  let imageUrls: string[] = [];
+  let status: string | null = thread.status ?? null;
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ imageUrls: string | null; status: string | null }>>(
+      `SELECT imageUrls, status FROM user_message_threads WHERE id = ? LIMIT 1`,
+      threadId,
+    );
+    imageUrls = parseSupportImageUrlsJson(rows[0]?.imageUrls ?? null);
+    if (rows[0]?.status != null) status = rows[0].status;
+  } catch {
+    try {
+      const rows = await prisma.$queryRawUnsafe<Array<{ imageUrls: string | null }>>(
+        `SELECT imageUrls FROM user_message_threads WHERE id = ? LIMIT 1`,
+        threadId,
+      );
+      imageUrls = parseSupportImageUrlsJson(rows[0]?.imageUrls ?? null);
+    } catch {
+      imageUrls = [];
+    }
+  }
+
   return {
     thread: {
       id: thread.id,
@@ -595,9 +770,12 @@ export async function getThreadForUser(
       isOwner,
       languageCode: thread.languageCode,
       pathStaff: thread.pathStaff,
+      realPath: thread.realPath,
       supportCategory: thread.supportCategory,
       errorMessage: thread.errorMessage,
       authorName,
+      imageUrls,
+      status,
     },
     messages: thread.messages.map((m) => ({
       id: m.id,
@@ -613,6 +791,33 @@ export async function getThreadForUser(
         : null,
     })),
   };
+}
+
+/** Staff-only: update Suggestions/Problems workflow status. */
+export async function updateSupportThreadStatus(
+  threadId: string,
+  status: SupportWorkflowStatus,
+): Promise<{ id: string; status: string } | null> {
+  await ensureSupportThreadExtras();
+  const thread = await prisma.userMessageThread.findUnique({ where: { id: threadId } });
+  if (!thread || thread.kind !== 'SUPPORT') return null;
+  if (!isSupportWorkflowCategory(thread.supportCategory)) return null;
+  if (!isSupportWorkflowStatus(status)) return null;
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `UPDATE user_message_threads SET status = ?, updatedAt = CURRENT_TIMESTAMP(3) WHERE id = ?`,
+      status,
+      threadId,
+    );
+  } catch {
+    await prisma.userMessageThread.update({
+      where: { id: threadId },
+      data: { status },
+    });
+  }
+
+  return { id: threadId, status };
 }
 
 export async function addReplyToThread(params: {
@@ -669,8 +874,16 @@ export async function ensureSupportThreadExtras(): Promise<void> {
     const names = new Set(cols.map((c) => c.COLUMN_NAME));
     if (!names.has('status')) {
       await prisma.$executeRawUnsafe(
-        `ALTER TABLE user_message_threads ADD COLUMN status VARCHAR(8) NULL`,
+        `ALTER TABLE user_message_threads ADD COLUMN status VARCHAR(32) NULL`,
       );
+    } else {
+      try {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE user_message_threads MODIFY COLUMN status VARCHAR(32) NULL`,
+        );
+      } catch {
+        /* already wide enough or no permission */
+      }
     }
     if (!names.has('likeCount')) {
       await prisma.$executeRawUnsafe(
@@ -680,6 +893,11 @@ export async function ensureSupportThreadExtras(): Promise<void> {
     if (!names.has('dislikeCount')) {
       await prisma.$executeRawUnsafe(
         `ALTER TABLE user_message_threads ADD COLUMN dislikeCount INT NOT NULL DEFAULT 0`,
+      );
+    }
+    if (!names.has('imageUrls')) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE user_message_threads ADD COLUMN imageUrls TEXT NULL`,
       );
     }
 

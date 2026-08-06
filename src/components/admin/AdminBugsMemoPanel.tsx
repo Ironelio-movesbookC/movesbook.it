@@ -1,8 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bug, Lightbulb } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import {
+  ArrowLeft,
+  Bug,
+  ChevronLeft,
+  ChevronRight,
+  ImagePlus,
+  Lightbulb,
+  X,
+} from 'lucide-react';
 import ListPageSelector from '@/components/ui/ListPageSelector';
+import { MAX_SUPPORT_IMAGES } from '@/lib/messages/supportImages';
+import ThreadPathOpenLink from '@/components/messages/ThreadPathOpenLink';
 
 type FeedItem = {
   id: string;
@@ -10,6 +20,7 @@ type FeedItem = {
   excerpt: string;
   updatedAt: string;
   author?: string;
+  imageUrls?: string[];
 };
 
 type ThreadDetail = {
@@ -19,6 +30,9 @@ type ThreadDetail = {
     updatedAt: string;
     errorMessage?: string | null;
     authorName?: string | null;
+    pathStaff?: string | null;
+    realPath?: string | null;
+    imageUrls?: string[];
   };
   messages: Array<{
     id: string;
@@ -27,6 +41,12 @@ type ThreadDetail = {
     isStaff: boolean;
     sender: { name: string; username: string } | null;
   }>;
+};
+
+type ComposerImage = {
+  id: string;
+  url: string;
+  preview: string;
 };
 
 export default function AdminBugsMemoPanel() {
@@ -47,14 +67,22 @@ export default function AdminBugsMemoPanel() {
   const [composerPath, setComposerPath] = useState('');
   const [composerErrorMsg, setComposerErrorMsg] = useState('');
   const [composerBody, setComposerBody] = useState('');
+  const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
   const [replyBody, setReplyBody] = useState('');
   const [replySending, setReplySending] = useState(false);
 
+  const [pictureLightbox, setPictureLightbox] = useState<{
+    urls: string[];
+    index: number;
+  } | null>(null);
+
   const composerRef = useRef<HTMLDivElement>(null);
   const composerBodyRef = useRef<HTMLTextAreaElement>(null);
+  const composerFileInputRef = useRef<HTMLInputElement>(null);
 
   const authFetch = useCallback(async (path: string, init?: RequestInit) => {
     const token = localStorage.getItem('adminToken');
@@ -92,6 +120,38 @@ export default function AdminBugsMemoPanel() {
     void loadItems();
   }, [loadItems]);
 
+  useEffect(() => {
+    if (!pictureLightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPictureLightbox(null);
+      if (e.key === 'ArrowLeft') {
+        setPictureLightbox((cur) => {
+          if (!cur || cur.urls.length < 2) return cur;
+          return { ...cur, index: (cur.index - 1 + cur.urls.length) % cur.urls.length };
+        });
+      }
+      if (e.key === 'ArrowRight') {
+        setPictureLightbox((cur) => {
+          if (!cur || cur.urls.length < 2) return cur;
+          return { ...cur, index: (cur.index + 1) % cur.urls.length };
+        });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pictureLightbox]);
+
+  const openPictureLightbox = useCallback((urls: string[], index: number, e?: MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    const clean = urls.filter(Boolean).slice(0, MAX_SUPPORT_IMAGES);
+    if (!clean.length) return;
+    setPictureLightbox({
+      urls: clean,
+      index: Math.max(0, Math.min(index, clean.length - 1)),
+    });
+  }, []);
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const openThread = useCallback(
@@ -111,13 +171,88 @@ export default function AdminBugsMemoPanel() {
     [authFetch],
   );
 
-  const resetComposer = () => {
+  const clearComposerImages = useCallback(() => {
+    setComposerImages((prev) => {
+      prev.forEach((img) => {
+        if (img.preview.startsWith('blob:')) URL.revokeObjectURL(img.preview);
+      });
+      return [];
+    });
+  }, []);
+
+  const resetComposer = useCallback(() => {
     setComposerObject('');
     setComposerPath('');
     setComposerErrorMsg('');
     setComposerBody('');
+    clearComposerImages();
     setSendError(null);
-  };
+  }, [clearComposerImages]);
+
+  const removeComposerImage = useCallback((id: string) => {
+    setComposerImages((prev) => {
+      const target = prev.find((img) => img.id === id);
+      if (target?.preview.startsWith('blob:')) URL.revokeObjectURL(target.preview);
+      return prev.filter((img) => img.id !== id);
+    });
+  }, []);
+
+  const handleComposerImagesSelected = useCallback(
+    async (files: FileList | null) => {
+      if (!files?.length) return;
+      const remaining = MAX_SUPPORT_IMAGES - composerImages.length;
+      if (remaining <= 0) {
+        setSendError(`You can attach up to ${MAX_SUPPORT_IMAGES} pictures.`);
+        return;
+      }
+      const picked = Array.from(files).slice(0, remaining);
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        setSendError('Admin session not found.');
+        return;
+      }
+      setUploadingImages(true);
+      setSendError(null);
+      try {
+        for (const file of picked) {
+          if (!file.type.startsWith('image/')) continue;
+          const form = new FormData();
+          form.append('file', file);
+          const res = await fetch('/api/messages/support/upload-image', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: form,
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.path) {
+            setSendError('Failed to upload picture.');
+            continue;
+          }
+          const preview = URL.createObjectURL(file);
+          setComposerImages((prev) => {
+            if (prev.length >= MAX_SUPPORT_IMAGES) {
+              URL.revokeObjectURL(preview);
+              return prev;
+            }
+            return [
+              ...prev,
+              {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                url: String(data.path),
+                preview,
+              },
+            ];
+          });
+        }
+      } catch {
+        setSendError('Failed to upload picture.');
+      } finally {
+        setUploadingImages(false);
+        if (composerFileInputRef.current) composerFileInputRef.current.value = '';
+      }
+    },
+    [composerImages.length],
+  );
 
   const submitComposer = async () => {
     if (!composerBody.trim()) return;
@@ -131,6 +266,7 @@ export default function AdminBugsMemoPanel() {
           body: composerBody.trim(),
           pathStaff: composerPath.trim() || undefined,
           errorMessage: composerErrorMsg.trim() || undefined,
+          imageUrls: composerImages.map((img) => img.url).slice(0, MAX_SUPPORT_IMAGES),
         }),
       });
       resetComposer();
@@ -218,19 +354,41 @@ export default function AdminBugsMemoPanel() {
                   ) : null}
                   {items.map((item) => (
                     <li key={item.id}>
-                      <button
-                        type="button"
-                        onClick={() => void openThread(item.id)}
-                        className="w-full text-left p-2 rounded border border-slate-200 hover:bg-amber-50/50 bg-white"
-                      >
-                        <div className="font-semibold text-sm !text-slate-900">{item.title}</div>
-                        {item.excerpt ? (
-                          <p className="text-xs !text-slate-600 mt-1 line-clamp-2">{item.excerpt}</p>
+                      <div className="rounded border border-slate-200 bg-white overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => void openThread(item.id)}
+                          className="w-full text-left p-2 hover:bg-amber-50/50"
+                        >
+                          <div className="font-semibold text-sm !text-slate-900">{item.title}</div>
+                          {item.excerpt ? (
+                            <p className="text-xs !text-slate-600 mt-1 line-clamp-2">{item.excerpt}</p>
+                          ) : null}
+                          <p className="text-[11px] !text-slate-500 mt-1">
+                            {item.author} · {new Date(item.updatedAt).toLocaleString()}
+                          </p>
+                        </button>
+                        {item.imageUrls && item.imageUrls.length > 0 ? (
+                          <div className="px-2 pb-2 flex gap-1.5 flex-wrap border-t border-slate-100 bg-white">
+                            {item.imageUrls.slice(0, MAX_SUPPORT_IMAGES).map((src, imgIdx) => (
+                              <button
+                                key={src}
+                                type="button"
+                                title="View picture"
+                                onClick={(e) => openPictureLightbox(item.imageUrls || [], imgIdx, e)}
+                                className="p-0 rounded border border-slate-200 overflow-hidden bg-slate-100 hover:ring-2 hover:ring-[#c43c54]/40 focus:outline-none focus:ring-2 focus:ring-[#c43c54]"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={src}
+                                  alt=""
+                                  className="h-14 w-14 object-cover pointer-events-none"
+                                />
+                              </button>
+                            ))}
+                          </div>
                         ) : null}
-                        <p className="text-[11px] !text-slate-500 mt-1">
-                          {item.author} · {new Date(item.updatedAt).toLocaleString()}
-                        </p>
-                      </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -257,6 +415,36 @@ export default function AdminBugsMemoPanel() {
                         <p className="text-xs text-amber-800 bg-amber-50 rounded px-2 py-1">
                           Error: {threadDetail.thread.errorMessage}
                         </p>
+                      ) : null}
+                      <ThreadPathOpenLink
+                        pathStaff={threadDetail.thread.pathStaff}
+                        realPath={threadDetail.thread.realPath}
+                        pathLabel="Path"
+                        openLabel="Open link"
+                      />
+                      {threadDetail.thread.imageUrls && threadDetail.thread.imageUrls.length > 0 ? (
+                        <div className="flex gap-1.5 flex-wrap">
+                          {threadDetail.thread.imageUrls
+                            .slice(0, MAX_SUPPORT_IMAGES)
+                            .map((src, imgIdx) => (
+                              <button
+                                key={src}
+                                type="button"
+                                title="View picture"
+                                onClick={(e) =>
+                                  openPictureLightbox(threadDetail.thread.imageUrls || [], imgIdx, e)
+                                }
+                                className="p-0 rounded border border-slate-200 overflow-hidden bg-slate-100 hover:ring-2 hover:ring-[#c43c54]/40 focus:outline-none focus:ring-2 focus:ring-[#c43c54]"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={src}
+                                  alt=""
+                                  className="h-20 w-20 object-cover pointer-events-none"
+                                />
+                              </button>
+                            ))}
+                        </div>
                       ) : null}
                       <ul className="space-y-2">
                         {threadDetail.messages.map((m) => (
@@ -342,13 +530,61 @@ export default function AdminBugsMemoPanel() {
               value={composerBody}
               onChange={(e) => setComposerBody(e.target.value)}
               rows={6}
-              className={`${fieldClass} mb-4`}
+              className={`${fieldClass} mb-3`}
               placeholder="Describe the bug and how it was fixed…"
             />
+
+            <div className="mb-4">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <button
+                  type="button"
+                  disabled={uploadingImages || composerImages.length >= MAX_SUPPORT_IMAGES}
+                  onClick={() => composerFileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-slate-400 rounded bg-white text-black hover:bg-slate-100 disabled:opacity-50"
+                >
+                  <ImagePlus className="w-4 h-4" />
+                  {uploadingImages ? 'Uploading…' : 'Add pictures'}
+                </button>
+                <span className="text-[11px] text-slate-600">
+                  Up to {MAX_SUPPORT_IMAGES} pictures ({composerImages.length}/{MAX_SUPPORT_IMAGES})
+                </span>
+                <input
+                  ref={composerFileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => void handleComposerImagesSelected(e.target.files)}
+                />
+              </div>
+              {composerImages.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {composerImages.map((img) => (
+                    <div
+                      key={img.id}
+                      className="relative h-20 w-20 rounded border border-slate-300 overflow-hidden bg-white"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.preview || img.url} alt="" className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        title="Remove picture"
+                        aria-label="Remove picture"
+                        onClick={() => removeComposerImage(img.id)}
+                        className="absolute top-0.5 right-0.5 rounded-full bg-black/70 p-0.5 text-white hover:bg-black"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
             {sendError ? <p className="text-xs text-red-600 mb-2">{sendError}</p> : null}
             <button
               type="button"
-              disabled={sending || !composerBody.trim()}
+              disabled={sending || uploadingImages || !composerBody.trim()}
               onClick={() => void submitComposer()}
               className="w-full py-2.5 rounded font-semibold text-white bg-[#c43c54] hover:bg-[#a83249] disabled:opacity-50"
             >
@@ -357,6 +593,81 @@ export default function AdminBugsMemoPanel() {
           </div>
         </div>
       </div>
+
+      {pictureLightbox ? (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="View picture"
+          onClick={() => setPictureLightbox(null)}
+        >
+          <button
+            type="button"
+            className="absolute top-4 right-4 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+            aria-label="Close"
+            onClick={() => setPictureLightbox(null)}
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {pictureLightbox.urls.length > 1 ? (
+            <>
+              <button
+                type="button"
+                className="absolute left-3 sm:left-6 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+                aria-label="Previous picture"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPictureLightbox((cur) => {
+                    if (!cur) return cur;
+                    return {
+                      ...cur,
+                      index: (cur.index - 1 + cur.urls.length) % cur.urls.length,
+                    };
+                  });
+                }}
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button
+                type="button"
+                className="absolute right-3 sm:right-6 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+                aria-label="Next picture"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPictureLightbox((cur) => {
+                    if (!cur) return cur;
+                    return {
+                      ...cur,
+                      index: (cur.index + 1) % cur.urls.length,
+                    };
+                  });
+                }}
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            </>
+          ) : null}
+
+          <div
+            className="relative max-h-[90vh] max-w-[min(96vw,56rem)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={pictureLightbox.urls[pictureLightbox.index]}
+              alt=""
+              className="max-h-[85vh] max-w-full rounded object-contain shadow-2xl"
+            />
+            {pictureLightbox.urls.length > 1 ? (
+              <p className="mt-2 text-center text-sm text-white/90">
+                {pictureLightbox.index + 1} / {pictureLightbox.urls.length}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

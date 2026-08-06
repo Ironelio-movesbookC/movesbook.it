@@ -66,7 +66,7 @@ function Inner({ params, legacyUserId }: Props) {
           initialCategory={params.category || 'feedback'}
           initialMineOnly={params.mine}
           initialRecentOnly={params.recent}
-          initialScope={params.scope ?? 'community'}
+          initialScope={params.scope ?? 'mine'}
           initialSearchQuery={params.q}
           initialPage={params.page}
           initialPageSize={params.pageSize}

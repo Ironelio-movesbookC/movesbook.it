@@ -31,7 +31,7 @@ export default function MyStaffFeedbacksPanel({ onClose, initialCategory = 'feed
         variant="page"
         initialMainTab="support"
         initialCategory={initialCategory}
-        initialScope="community"
+        initialScope="mine"
         hideMainTabs
         legacyMode
         legacyUserId={legacyUserId}
