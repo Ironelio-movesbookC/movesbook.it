@@ -17,11 +17,37 @@ import {
   getFlagImageSrc,
 } from '@/constants/language.constants';
 import {
+  fetchLongTextTranslations,
   hasRichTextContent,
   plainTextToRichHtml,
   richTextToPlainText,
 } from '@/utils/richTextTranslation';
 import { langIdFromCode } from '@/lib/messages/versionHistoryLang';
+import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
+
+function getAdminAuthHeaders(includeJsonContentType = true): HeadersInit {
+  const headers: Record<string, string> = {};
+  if (includeJsonContentType) headers['Content-Type'] = 'application/json';
+  const token = getAdminBearerToken() || localStorage.getItem('token');
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+function getAdminUsernameHint(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('adminUser');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      username?: string;
+      email?: string;
+      name?: string;
+    };
+    return parsed.username || parsed.email || null;
+  } catch {
+    return null;
+  }
+}
 
 export type VersionHistoryPanelHandle = {
   promptUnlock: () => void;
@@ -69,6 +95,9 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  /** After unlock: open Post new editor or continue editing an article. */
+  const [pendingUnlockAction, setPendingUnlockAction] = useState<'post' | 'edit' | null>(null);
+  const [pendingEditId, setPendingEditId] = useState<string | null>(null);
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [sourceLangCode, setSourceLangCode] = useState('en');
@@ -81,6 +110,7 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
     Object.fromEntries(ALL_LANGUAGES.map((l) => [l.code, ''])),
   );
   const [isTranslating, setIsTranslating] = useState(false);
+  const [translationRevision, setTranslationRevision] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [verifiedPassword, setVerifiedPassword] = useState('');
@@ -92,19 +122,24 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
     return () => window.clearTimeout(t);
   }, [searchQ]);
 
-  const loadArticles = useCallback(async () => {
+  const loadArticles = useCallback(async (overrideLangId?: string | null) => {
     setLoading(true);
     try {
       const qs = new URLSearchParams();
-      if (filterLangId) qs.set('langId', filterLangId);
+      const effectiveLangId =
+        overrideLangId !== undefined ? overrideLangId ?? '' : filterLangId;
+      if (effectiveLangId) qs.set('langId', effectiveLangId);
       if (debouncedQ.trim()) qs.set('q', debouncedQ.trim());
       qs.set('lang', currentLanguage);
-      const res = await fetch(`/api/messages/version-history?${qs}`);
+      const res = await fetch(`/api/messages/version-history?${qs}`, {
+        headers: getAdminAuthHeaders(false),
+        cache: 'no-store',
+      });
       if (!res.ok) throw new Error('load_failed');
       const data = await res.json();
       setArticles(data.articles || []);
       setLanguages(data.languages || []);
-      if (!filterLangId && data.languages?.length) {
+      if (!filterLangId && !overrideLangId && data.languages?.length) {
         const defaultId = langIdFromCode(currentLanguage);
         const has = data.languages.some((l: LangOption) => l.id === defaultId);
         if (has) setFilterLangId(defaultId);
@@ -121,10 +156,11 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
   }, [loadArticles]);
 
   const verifyPassword = useCallback(async (password: string): Promise<boolean> => {
+    const username = getAdminUsernameHint();
     const res = await fetch('/api/admin/super-admin/verify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      headers: getAdminAuthHeaders(),
+      body: JSON.stringify({ password, ...(username ? { username } : {}) }),
     });
     if (!res.ok) return false;
     const data = await res.json();
@@ -139,37 +175,12 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
   }, []);
 
   useImperativeHandle(ref, () => ({
-    promptUnlock: () => openPasswordModal('unlock'),
+    promptUnlock: () => {
+      setPendingUnlockAction(null);
+      setPendingEditId(null);
+      openPasswordModal('unlock');
+    },
   }));
-
-  const handlePasswordSubmit = async () => {
-    setPasswordError(null);
-    const ok = await verifyPassword(passwordInput);
-    if (!ok) {
-      setPasswordError(t('version_history_password_invalid'));
-      return;
-    }
-    setVerifiedPassword(passwordInput);
-    if (passwordModal === 'unlock') {
-      setEditUnlocked(true);
-      setPasswordModal(null);
-      return;
-    }
-    if (passwordModal === 'delete' && pendingDeleteId) {
-      const res = await fetch(`/api/messages/version-history/${pendingDeleteId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passwordInput }),
-      });
-      if (!res.ok) {
-        setPasswordError(t('version_history_delete_failed'));
-        return;
-      }
-      setPendingDeleteId(null);
-      setPasswordModal(null);
-      await loadArticles();
-    }
-  };
 
   const resetEditor = useCallback((langCode?: string) => {
     const code = langCode ?? sourceLangCode;
@@ -181,23 +192,14 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
     setSaveError(null);
   }, [sourceLangCode]);
 
-  const handlePostNew = () => {
-    if (!editUnlocked) {
-      openPasswordModal('unlock');
-      return;
-    }
-    resetEditor(sourceLangCode);
-    setEditorOpen(true);
-  };
-
-  const openEdit = async (id: string) => {
-    if (!editUnlocked) {
-      openPasswordModal('unlock');
-      return;
-    }
+  const loadArticleIntoEditor = useCallback(async (id: string) => {
     setLoading(true);
+    setSaveError(null);
     try {
-      const res = await fetch(`/api/messages/version-history?id=${encodeURIComponent(id)}`);
+      const res = await fetch(`/api/messages/version-history?id=${encodeURIComponent(id)}`, {
+        headers: getAdminAuthHeaders(false),
+        cache: 'no-store',
+      });
       if (!res.ok) throw new Error('load_article');
       const data = await res.json();
       setArticleGroup(data.articleGroup ?? null);
@@ -216,17 +218,79 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
       }
       setTitles(nextTitles);
       setBodies(nextBodies);
+      setTranslationRevision((r) => r + 1);
       setEditorOpen(true);
     } catch {
       setSaveError(t('version_history_load_article_failed'));
     } finally {
       setLoading(false);
     }
+  }, [t]);
+
+  const handlePasswordSubmit = async () => {
+    setPasswordError(null);
+    const ok = await verifyPassword(passwordInput);
+    if (!ok) {
+      setPasswordError(t('version_history_password_invalid'));
+      return;
+    }
+    setVerifiedPassword(passwordInput);
+    if (passwordModal === 'unlock') {
+      setEditUnlocked(true);
+      setPasswordModal(null);
+      const action = pendingUnlockAction;
+      const editId = pendingEditId;
+      setPendingUnlockAction(null);
+      setPendingEditId(null);
+      if (action === 'post') {
+        resetEditor(sourceLangCode);
+        setEditorOpen(true);
+      } else if (action === 'edit' && editId) {
+        await loadArticleIntoEditor(editId);
+      }
+      return;
+    }
+    if (passwordModal === 'delete' && pendingDeleteId) {
+      const res = await fetch(`/api/messages/version-history/${pendingDeleteId}`, {
+        method: 'DELETE',
+        headers: getAdminAuthHeaders(),
+        body: JSON.stringify({ password: passwordInput }),
+      });
+      if (!res.ok) {
+        setPasswordError(t('version_history_delete_failed'));
+        return;
+      }
+      setPendingDeleteId(null);
+      setPasswordModal(null);
+      await loadArticles();
+    }
+  };
+
+  const handlePostNew = () => {
+    if (!editUnlocked) {
+      setPendingUnlockAction('post');
+      setPendingEditId(null);
+      openPasswordModal('unlock');
+      return;
+    }
+    resetEditor(sourceLangCode);
+    setEditorOpen(true);
+  };
+
+  const openEdit = async (id: string) => {
+    if (!editUnlocked) {
+      setPendingUnlockAction('edit');
+      setPendingEditId(id);
+      openPasswordModal('unlock');
+      return;
+    }
+    await loadArticleIntoEditor(id);
   };
 
   const handleTranslate = async () => {
     const titleSource = titles[sourceLangCode]?.trim() ?? '';
-    const bodyPlain = richTextToPlainText(bodies[sourceLangCode] ?? '');
+    const bodyHtml = bodies[sourceLangCode] ?? '';
+    const bodyPlain = richTextToPlainText(bodyHtml);
     if (!titleSource && !bodyPlain.trim()) {
       setSaveError(t('version_history_enter_source'));
       return;
@@ -235,41 +299,47 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
     setSaveError(null);
     try {
       const targets = ALL_LANGUAGES.filter((l) => l.code !== sourceLangCode).map((l) => l.code);
-      if (bodyPlain.trim()) {
-        const res = await fetch('/api/translate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: bodyPlain, targetLanguages: targets }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const trans = (data.translations || {}) as Record<string, string>;
-          setBodies((prev) => {
-            const next = { ...prev };
-            for (const code of targets) {
-              if (trans[code]) next[code] = plainTextToRichHtml(trans[code]);
-            }
-            return next;
-          });
-        }
-      }
+      const failed = new Set<string>();
+
+      // Titles first so other-language title fields fill even if body translation is slow/fails.
       if (titleSource) {
-        const res = await fetch('/api/translate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: titleSource, targetLanguages: targets }),
+        const { translations: trans, failedLanguages } = await fetchLongTextTranslations(
+          titleSource,
+          targets,
+        );
+        failedLanguages.forEach((code) => failed.add(code));
+        setTitles((prev) => {
+          const next = { ...prev, [sourceLangCode]: titleSource };
+          for (const code of targets) {
+            const translated = trans[code]?.trim();
+            if (translated) next[code] = translated;
+          }
+          return next;
         });
-        if (res.ok) {
-          const data = await res.json();
-          const trans = (data.translations || {}) as Record<string, string>;
-          setTitles((prev) => {
-            const next = { ...prev };
-            for (const code of targets) {
-              if (trans[code]) next[code] = trans[code];
-            }
-            return next;
-          });
-        }
+      }
+
+      if (bodyPlain.trim()) {
+        const { translations: trans, failedLanguages } = await fetchLongTextTranslations(
+          bodyPlain,
+          targets,
+        );
+        failedLanguages.forEach((code) => failed.add(code));
+        setBodies((prev) => {
+          const next = { ...prev };
+          for (const code of targets) {
+            if (trans[code]?.trim()) next[code] = plainTextToRichHtml(trans[code]);
+          }
+          return next;
+        });
+        setTranslationRevision((r) => r + 1);
+      } else if (titleSource) {
+        setTranslationRevision((r) => r + 1);
+      }
+
+      if (failed.size > 0) {
+        setSaveError(
+          `${t('version_history_translate_failed')} (${[...failed].join(', ')})`,
+        );
       }
     } catch {
       setSaveError(t('version_history_translate_failed'));
@@ -295,7 +365,7 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
       );
       const res = await fetch('/api/messages/version-history', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({
           password,
           sourceLangCode,
@@ -315,10 +385,12 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
         throw new Error(msg);
       }
       const data = await res.json();
+      const savedLangId = langIdFromCode(sourceLangCode);
       setArticleGroup(data.articleGroup ?? articleGroup);
       setEditorOpen(false);
       resetEditor();
-      await loadArticles();
+      setFilterLangId(savedLangId);
+      await loadArticles(savedLangId);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : t('version_history_save_failed'));
     } finally {
@@ -336,7 +408,8 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
   };
 
   const filterOptions = useMemo(() => {
-    if (languages.length) return languages;
+    if (languages.length >= ALL_LANGUAGES.length) return languages;
+    // Prefer full catalog with display names when API returns a partial/legacy list
     return ALL_LANGUAGES.map((l) => ({ id: l.id, name: l.name, code: l.code }));
   }, [languages]);
 
@@ -514,6 +587,7 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
                 onChange={(v) => setBodies((prev) => ({ ...prev, [sourceLangCode]: v }))}
                 minHeight="160px"
                 language={sourceMeta.name}
+                revision={translationRevision}
               />
               <div className="flex flex-wrap gap-2 mt-3">
                 <button
@@ -561,6 +635,7 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
                       onChange={(v) => setBodies((prev) => ({ ...prev, [lang.code]: v }))}
                       minHeight="120px"
                       language={lang.name}
+                      revision={translationRevision}
                     />
                   </div>
                 </div>
@@ -580,6 +655,9 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
               type="password"
               value={passwordInput}
               onChange={(e) => setPasswordInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handlePasswordSubmit();
+              }}
               className={fieldClass}
               autoFocus
             />
@@ -590,6 +668,8 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
                 onClick={() => {
                   setPasswordModal(null);
                   setPendingDeleteId(null);
+                  setPendingUnlockAction(null);
+                  setPendingEditId(null);
                 }}
                 className="px-3 py-1.5 text-sm border border-slate-300 rounded"
               >

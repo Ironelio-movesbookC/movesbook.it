@@ -36,9 +36,14 @@ export async function GET(request: NextRequest) {
         languageCode: searchParams.get('lang') || '',
         mineOnly: searchParams.get('mine') === '1',
         recentOnly: searchParams.get('recent') === '1',
+        currentPageOnly: searchParams.get('currentPage') === '1',
+        currentPath: searchParams.get('path') || '',
         bugsOnly: searchParams.get('bugs') === '1',
         excludeBugs: searchParams.get('excludeBugs') === '1',
         searchQuery: searchParams.get('q') || '',
+        status: searchParams.get('status') || '',
+        fromDate: searchParams.get('from') || '',
+        toDate: searchParams.get('to') || '',
         page: Number(searchParams.get('page') || '1'),
         pageSize: Number(searchParams.get('pageSize') || '5'),
       });
@@ -66,6 +71,7 @@ export async function POST(request: NextRequest) {
     if (!text) return NextResponse.json({ error: 'Message body required' }, { status: 400 });
 
     const category = parseCategory(body?.supportCategory ?? 'feedback') || 'feedback';
+    const imageUrls = Array.isArray(body?.imageUrls) ? body.imageUrls : [];
 
     const thread = await createThreadWithFirstMessage({
       userId: auth.userId,
@@ -77,6 +83,7 @@ export async function POST(request: NextRequest) {
       realPath: typeof body?.realPath === 'string' ? body.realPath : undefined,
       errorMessage: typeof body?.errorMessage === 'string' ? body.errorMessage : undefined,
       supportCategory: category,
+      imageUrls,
     });
 
     return NextResponse.json({ id: thread.id });

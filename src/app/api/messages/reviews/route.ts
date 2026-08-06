@@ -12,12 +12,24 @@ export async function GET(request: NextRequest) {
 
   try {
     const community = searchParams.get('community') === '1';
+    const mine = searchParams.get('mine') === '1';
     const adminAll = auth.isStaff && searchParams.get('admin') === '1';
     const result = await listAllReviews({
       searchQuery: searchParams.get('q') || '',
       page: Number(searchParams.get('page') || '1'),
       pageSize: Number(searchParams.get('pageSize') || '5'),
-      userId: community || adminAll ? undefined : auth.userId,
+      userId: mine
+        ? auth.userId
+        : community || adminAll
+          ? undefined
+          : auth.userId,
+      viewerId: auth.userId,
+      fromDate: searchParams.get('from') || '',
+      toDate: searchParams.get('to') || '',
+      languageCode: searchParams.get('lang') || '',
+      recentOnly: searchParams.get('recent') === '1',
+      currentPageOnly: searchParams.get('currentPage') === '1',
+      currentPath: searchParams.get('path') || '',
     });
     return NextResponse.json(result);
   } catch (e) {

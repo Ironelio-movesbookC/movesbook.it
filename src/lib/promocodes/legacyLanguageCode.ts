@@ -10,6 +10,8 @@ export const LEGACY_LANG_CODE_BY_ID: Record<number, string> = {
   8: 'ind',
   9: 'chin',
   10: 'arab',
+  11: 'jap',
+  12: 'id',
 };
 
 const LABEL_TO_LEGACY_CODE: Record<string, string> = {

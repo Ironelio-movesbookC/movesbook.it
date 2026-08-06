@@ -231,7 +231,7 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
           hasSubmenu: true,
           id: 'system_general',
           subItems: [
-            { label: 'Frame settings' },
+            { label: 'Frame settings', href: '/admin/global-settings/frame-settings' },
             { label: 'Links settings' }
           ]
         },
