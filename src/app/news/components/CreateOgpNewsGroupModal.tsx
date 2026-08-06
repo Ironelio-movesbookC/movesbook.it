@@ -5,6 +5,8 @@ import { ImagePlus, X } from 'lucide-react';
 import NewTopicModal from './NewTopicModal';
 
 interface CreateOgpNewsGroupModalProps {
+  /** Defaults to news wording; music uses OGP Music labels. */
+  variant?: 'news' | 'music';
   topics: string[];
   defaultTopic?: string | null;
   selectedCount: number;
@@ -46,6 +48,7 @@ async function uploadCoverImage(file: File): Promise<string> {
 }
 
 export default function CreateOgpNewsGroupModal({
+  variant = 'news',
   topics,
   defaultTopic,
   selectedCount,
@@ -56,6 +59,7 @@ export default function CreateOgpNewsGroupModal({
   onSave,
   onCreateTopic,
 }: CreateOgpNewsGroupModalProps) {
+  const ogpLabel = variant === 'music' ? 'OGP Music' : 'OGP News';
   const [name, setName] = useState('');
   const [topic, setTopic] = useState(
     () => (defaultTopic && topics.includes(defaultTopic) ? defaultTopic : topics[0] ?? '')
@@ -161,7 +165,7 @@ export default function CreateOgpNewsGroupModal({
         >
           <div className="bg-slate-800 text-white text-center py-3 px-4">
             <h2 id="create-ogp-group-title" className="text-base font-semibold">
-              Create a new group of OG News
+              Create a new group of {variant === 'music' ? 'OG Music' : 'OG News'}
             </h2>
           </div>
 
@@ -223,7 +227,7 @@ export default function CreateOgpNewsGroupModal({
             <div>
               <p className="block text-sm text-gray-800 mb-1">Group picture</p>
               <p className="text-xs text-gray-500 mb-2">
-                Optional. If not selected, the first OGP News picture/video of this group will be
+                Optional. If not selected, the first {ogpLabel} picture/video of this group will be
                 displayed.
               </p>
               <input
@@ -267,14 +271,14 @@ export default function CreateOgpNewsGroupModal({
             </div>
 
             <p className="text-xs text-gray-500">
-              {selectedCount} OGP News selected
+              {selectedCount} {ogpLabel} selected
               {topic ? ` · will be saved under “${topic}”` : ''}
             </p>
 
             {existingNameConflict && (
               <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
                 A group with this name already exists. Change the name, or press Save again to add the
-                selected OGP News to the existing group (duplicates will be updated).
+                selected {ogpLabel} to the existing group (duplicates will be updated).
               </p>
             )}
 

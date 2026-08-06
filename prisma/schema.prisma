@@ -73,6 +73,8 @@ model User {
   musicOgpArticlesDeleted  MusicOgpArticle[]  @relation("MusicOgpDeletedBy")
   musicOgpArticleLikes     MusicOgpArticleLike[]
   musicOgpListenHistory    MusicOgpListenHistory[]
+  musicOgpGroups           MusicOgpGroup[]
+  musicOgpGroupLikes       MusicOgpGroupLike[]
   musicTypedArticles       MusicTypedArticle[]
   plannedActionTemplates  PlannedActionTemplate[]
   workoutDayPlannedActions WorkoutDayPlannedAction[]
@@ -332,12 +334,71 @@ model MusicOgpArticle {
   deletedBy             User?     @relation("MusicOgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   likes                 MusicOgpArticleLike[]
   listenHistory         MusicOgpListenHistory[]
+  groupItems            MusicOgpGroupItem[]
 
   @@index([userId])
   @@index([userId, topic])
   @@index([deletedAt])
   @@index([viewCount])
   @@map("music_ogp_articles")
+}
+
+/// Named collection of OGP Music articles (mirrors OgpNewsGroup).
+model MusicOgpGroup {
+  id                    String    @id @default(cuid())
+  userId                String
+  name                  String
+  topic                 String
+  customDescription     String?   @db.Text
+  /// Optional custom cover; when null, UI uses the 1st member OGP's image/video.
+  coverImage            String?   @db.Text
+  savedAt               DateTime  @default(now())
+  expiresAt             DateTime?
+  deletedAt             DateTime?
+  deletedByUserId       String?
+  visibilityUserTypes   String?   @db.Text
+  visibilityCountries   String?   @db.Text
+  visibilityLanguages   String?   @db.Text
+  visibilitySports      String?   @db.Text
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items                 MusicOgpGroupItem[]
+  likes                 MusicOgpGroupLike[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([userId, topic])
+  @@index([topic])
+  @@index([deletedAt])
+  @@map("music_ogp_groups")
+}
+
+model MusicOgpGroupItem {
+  id                String          @id @default(cuid())
+  groupId           String
+  musicOgpArticleId String
+  sortOrder         Int             @default(0)
+  addedAt           DateTime        @default(now())
+  group             MusicOgpGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  musicOgpArticle   MusicOgpArticle @relation(fields: [musicOgpArticleId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, musicOgpArticleId])
+  @@index([groupId])
+  @@index([musicOgpArticleId])
+  @@map("music_ogp_group_items")
+}
+
+model MusicOgpGroupLike {
+  id        String        @id @default(cuid())
+  groupId   String
+  userId    String
+  createdAt DateTime      @default(now())
+  group     MusicOgpGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+  @@map("music_ogp_group_likes")
 }
 
 model MusicOgpArticleLike {

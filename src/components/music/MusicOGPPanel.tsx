@@ -87,6 +87,7 @@ export default function MusicOGPPanel({
     customTopics,
     topicNamesCreatedBySuperAdmin,
     pastedArticles,
+    ogpNewsGroups,
     typedArticles,
     loading,
     error,
@@ -102,6 +103,10 @@ export default function MusicOGPPanel({
     updatePastedArticleSettings,
     updatePastedArticleTopic,
     updatePastedArticle,
+    saveOgpNewsGroup,
+    removeOgpNewsGroup,
+    updateOgpNewsGroup,
+    updateOgpNewsGroupSettings,
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData({
@@ -581,6 +586,12 @@ export default function MusicOGPPanel({
           musicalGenresForFilter={genresForActiveTopic}
           activeMusicalGenre={activeMusicalGenre}
           onMusicalGenreSelect={handleMusicalGenreSelect}
+          ogpNewsGroups={ogpNewsGroups}
+          onSaveOgpNewsGroup={saveOgpNewsGroup}
+          onCreateTopic={addTopic}
+          onRemoveOgpNewsGroup={removeOgpNewsGroup}
+          onUpdateOgpNewsGroup={updateOgpNewsGroup}
+          onUpdateOgpNewsGroupSettings={updateOgpNewsGroupSettings}
         />
       </div>
 

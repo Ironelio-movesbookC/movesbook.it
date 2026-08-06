@@ -173,7 +173,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         viewAsUsername != null && viewAsUsername.trim() !== ''
           ? `${apiBase}/ogp?${new URLSearchParams({ viewAsUsername: viewAsUsername.trim() })}`
           : `${apiBase}/ogp`;
-      const fetchGroups = apiBase === '/api/news';
+      const fetchGroups = apiBase === '/api/news' || apiBase === '/api/music';
       const [topicsRes, ogpRes, typedRes, orderRes, groupsRes] = await Promise.all([
         fetch(`${apiBase}/topics`, { headers }),
         fetch(ogpUrl, { headers }),
@@ -714,7 +714,9 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       coverImage?: string | null;
     }) => {
       if (!effectiveUserId) throw new Error('Not authenticated');
-      if (apiBase !== '/api/news') throw new Error('OGP News groups are only available for News');
+      if (apiBase !== '/api/news' && apiBase !== '/api/music') {
+        throw new Error('OGP groups are only available for News and Music');
+      }
       const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch(`${apiBase}/ogp-groups`, {
         method: 'POST',
@@ -753,7 +755,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const removeOgpNewsGroup = useCallback(
     async (id: string) => {
       if (!effectiveUserId) return;
-      if (apiBase !== '/api/news') return;
+      if (apiBase !== '/api/news' && apiBase !== '/api/music') return;
       const headers = getHeaders();
       const res = await fetch(`${apiBase}/ogp-groups/${id}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error('Failed to delete group');
@@ -765,7 +767,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const updateOgpNewsGroup = useCallback(
     async (id: string, topic: string, customDescription?: string) => {
       if (!effectiveUserId) return;
-      if (apiBase !== '/api/news') return;
+      if (apiBase !== '/api/news' && apiBase !== '/api/music') return;
       const trimmed = topic.trim();
       if (!trimmed) return;
       const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
@@ -799,7 +801,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const updateOgpNewsGroupSettings = useCallback(
     async (id: string, settings: OgpVisibilitySettingsExport) => {
       if (!effectiveUserId) return;
-      if (apiBase !== '/api/news') return;
+      if (apiBase !== '/api/news' && apiBase !== '/api/music') return;
       const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch(`${apiBase}/ogp-groups/${id}`, {
         method: 'PATCH',
