@@ -54,6 +54,7 @@ import SportMachinesSection from '@/components/settings/SportMachinesSection';
 import SuperAdminCompaniesSection from '@/components/settings/SuperAdminCompaniesSection';
 import ExerciseBankTab from '@/components/settings/ExerciseBankTab';
 import ExercisePathologiesCatalogSection from '@/components/settings/ExercisePathologiesCatalogSection';
+import ExerciseOGPPanel from '@/components/settings/ExerciseOGPPanel';
 import SectionExerciseDialog from '@/components/settings/SectionExerciseDialog';
 import { useCanManageSportMachineCompanies } from '@/hooks/useCanManageSportMachineCompanies';
 
@@ -107,6 +108,19 @@ function getAllowedTabs(isAdmin: boolean, mode: 'tools' | 'technical'): ToolsTab
   ];
 }
 
+/** Category chips for Technical Settings → My Library of Exercises. */
+const MY_LIBRARY_CATEGORY_BUTTONS = [
+  'Isotonic\\weights',
+  'Stretching',
+  'Pilates',
+  'Gymnastic',
+  'Calistenic',
+  'Spartan',
+  'Crossfit',
+  'Aerobic sports',
+  'Martial arts',
+] as const;
+
 export default function ToolsSettings({
   isAdmin = false,
   userType = 'ATHLETE',
@@ -152,6 +166,7 @@ export default function ToolsSettings({
     // Keep server + first client paint identical — never read localStorage here (hydration crash).
     return mode === 'technical' ? 'equipmentFactories' : 'periods';
   });
+  const [myLibraryCategory, setMyLibraryCategory] = useState<string>(MY_LIBRARY_CATEGORY_BUTTONS[0]);
 
   useEffect(() => {
     if (activeTab !== 'exercises') {
@@ -1668,6 +1683,30 @@ export default function ToolsSettings({
       {/* Language selector + load (hidden in Periodization — language follows profile) */}
       {!periodizationOnly && (
       <div className="grid grid-cols-1 gap-3">
+
+        {activeTab === 'myLibrary' && (
+          <div className="w-full rounded border border-gray-300 bg-white px-2.5 py-2">
+            <div className="flex w-full flex-nowrap items-center gap-2">
+              {MY_LIBRARY_CATEGORY_BUTTONS.map((label) => {
+                const isActive = myLibraryCategory === label;
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setMyLibraryCategory(label)}
+                    className={`flex h-8 min-w-0 flex-1 items-center justify-center whitespace-nowrap rounded-[3px] border px-2 text-[13px] leading-5 text-black ${
+                      isActive
+                        ? 'border-[#5f6658] bg-[#e6f5cc]'
+                        : 'border-[#7a8172] bg-[#F4FEE5] hover:bg-[#eef9db]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         
         {/* Instructions Banner - HIDDEN (code preserved for future use) */}
         <div className="hidden bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
@@ -2364,6 +2403,12 @@ export default function ToolsSettings({
 
       {activeTab === 'sportMachines' && <SportMachinesSection />}
 
+      {activeTab === 'myLibrary' && (
+        <div className="mt-2">
+          <ExerciseOGPPanel category={myLibraryCategory} adminContext={isAdmin} />
+        </div>
+      )}
+
       {activeTab === 'pathologies' && (
         <ExercisePathologiesCatalogSection
           pathologies={exercisePathologyCatalog}
@@ -2393,36 +2438,6 @@ export default function ToolsSettings({
               setShowExerciseDialog(true);
             }}
           />
-        </div>
-      )}
-
-      {/* My Library of Exercises Tab */}
-      {activeTab === 'myLibrary' && (
-        <div className="space-y-6">
-          {/* Info Banner */}
-          <div className="bg-gradient-to-r from-green-50 to-teal-50 rounded-xl border border-green-200 p-6">
-            <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-              <span className="text-2xl">📚</span>
-              My Library of Exercises
-            </h3>
-            <p className="text-gray-600 text-sm">
-              Your personal collection of custom exercises and workout routines. This section is available for{' '}
-              <span className="font-semibold text-green-600">all users</span>.
-            </p>
-          </div>
-
-          {/* Placeholder Content */}
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-            <div className="text-6xl mb-4">📚</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">My Library of Exercises</h3>
-            <p className="text-gray-600 mb-4">
-              Create and save your own custom exercises, workout templates, and training programs.
-            </p>
-            <button className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
-              <Plus className="w-4 h-4 inline-block mr-2" />
-              Add Custom Exercise
-            </button>
-          </div>
         </div>
       )}
 
@@ -3723,7 +3738,6 @@ export default function ToolsSettings({
                   <li><strong>Sports:</strong> Managed in Favourite - Favourite Sports</li>
                   <li><strong>Equipment:</strong> All equipment from Personal Equipment tab</li>
                   <li><strong>Exercises:</strong> All exercises from Exercise Bank tab</li>
-                  <li><strong>Library:</strong> All exercises from My Library tab</li>
                   <li><strong>Devices:</strong> All devices from Device Enabled tab</li>
                 </ul>
                 <p className="pt-2 font-semibold"><strong>👥 For users:</strong> All these settings will be available when they click "Load Admin Defaults" button.</p>

@@ -15,6 +15,10 @@ import OgpShareModal from './OgpShareModal';
 import CreateOgpNewsGroupModal from './CreateOgpNewsGroupModal';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getOgpGroupShareUrl } from '@/lib/ogpGroupShareUrl';
+import OgpRichDescription, {
+  ogpDescriptionPlainText,
+} from '@/components/shared/OgpRichDescription';
+import RichTextEditor from '@/components/settings/RichTextEditor';
 
 type MusicLibraryNavKey = 'recent' | 'playlist' | 'songs' | 'albums' | 'favourites';
 
@@ -342,9 +346,10 @@ export default function NewsArticlesList({
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
   const isMusic = apiBase === '/api/music';
-  const ogpLabel = isMusic ? 'OGP Music' : 'OGP News';
-  const singleLabel = isMusic ? 'Single Music' : 'Single News';
-  const groupsLabel = isMusic ? 'Groups of Music' : 'Groups of News';
+  const isExercise = apiBase === '/api/exercises';
+  const ogpLabel = isMusic ? 'OGP Music' : isExercise ? 'OGP Exercises' : 'OGP News';
+  const singleLabel = isMusic ? 'Single Music' : isExercise ? 'Single Exercise' : 'Single News';
+  const groupsLabel = isMusic ? 'Groups of Music' : isExercise ? 'Groups of Exercises' : 'Groups of News';
   const topicsList = useMemo(
     () => (topicsProp.length > 0 ? topicsProp : [...FALLBACK_NEWS_TOPICS_LIST]),
     [topicsProp]
@@ -833,9 +838,9 @@ export default function NewsArticlesList({
         list = list.filter(
           (a) =>
             (a.title || '').toLowerCase().includes(q) ||
-            (a.description || '').toLowerCase().includes(q) ||
+            ogpDescriptionPlainText(null, a.description).toLowerCase().includes(q) ||
             (a.url || '').toLowerCase().includes(q) ||
-            (a.customDescription || '').toLowerCase().includes(q) ||
+            ogpDescriptionPlainText(a.customDescription).toLowerCase().includes(q) ||
             (a.groupName || '').toLowerCase().includes(q)
         );
       }
@@ -937,8 +942,8 @@ export default function NewsArticlesList({
           (a) =>
             (a.groupName || '').toLowerCase().includes(q) ||
             (a.title || '').toLowerCase().includes(q) ||
-            (a.description || '').toLowerCase().includes(q) ||
-            (a.customDescription || '').toLowerCase().includes(q)
+            ogpDescriptionPlainText(null, a.description).toLowerCase().includes(q) ||
+            ogpDescriptionPlainText(a.customDescription).toLowerCase().includes(q)
         );
       }
     }
@@ -1926,7 +1931,7 @@ export default function NewsArticlesList({
                           {a.artist}
                         </p>
                       ) : null}
-                      <p
+                      <div
                         className={`text-xs text-gray-600 mt-1 flex-1 min-h-0 ${
                           expandedArticleIds.has(a.id)
                             ? 'max-h-28 overflow-y-auto overflow-x-hidden pointer-events-auto'
@@ -1949,11 +1954,28 @@ export default function NewsArticlesList({
                       >
                         {highlightMatches && search.trim()
                           ? highlightText(
-                              a.customDescription || a.description || a.url,
+                              ogpDescriptionPlainText(
+                                a.customDescription,
+                                a.description,
+                                a.url
+                              ),
                               search
                             )
-                          : a.customDescription || a.description || a.url}
-                      </p>
+                          : expandedArticleIds.has(a.id)
+                            ? (
+                              <OgpRichDescription
+                                html={
+                                  a.customDescription || a.description || a.url || ''
+                                }
+                                className="text-xs text-gray-600"
+                              />
+                              )
+                            : ogpDescriptionPlainText(
+                                a.customDescription,
+                                a.description,
+                                a.url
+                              )}
+                      </div>
                     </button>
                     <div className="relative z-10 text-sm text-gray-600 mt-2 flex items-center gap-2 flex-shrink-0">
                       <span className="flex-1 min-w-0">
@@ -2280,7 +2302,7 @@ export default function NewsArticlesList({
           >
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
               <h2 id="creator-modal-title" className="text-lg font-semibold text-gray-900">
-                {apiBase === '/api/music' ? 'Music creator' : 'OGP creator'}
+                {apiBase === '/api/music' ? 'Music creator' : apiBase === '/api/exercises' ? 'Exercise creator' : 'OGP creator'}
               </h2>
               <button
                 type="button"
@@ -2451,7 +2473,12 @@ export default function NewsArticlesList({
                     )}
                   </div>
                   <div className="mt-3 text-sm text-gray-700 max-h-60 overflow-y-auto overflow-x-hidden pr-2 border border-gray-200 rounded-lg p-3">
-                    {article.customDescription || article.description || article.url}
+                    <OgpRichDescription
+                      html={
+                        article.customDescription || article.description || article.url || ''
+                      }
+                      className="text-sm text-gray-700"
+                    />
                   </div>
                 </div>
               </div>
@@ -2551,14 +2578,14 @@ export default function NewsArticlesList({
             <label htmlFor="edit-topic-description" className="block text-sm font-medium text-gray-700 mb-1">
               Type here a brief description...
             </label>
-            <textarea
-              id="edit-topic-description"
-              value={editTopicDescription}
-              onChange={(e) => setEditTopicDescription(e.target.value)}
-              placeholder="Brief description..."
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 resize-y min-h-[80px] mb-4 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
-            />
+            <div className="mb-4">
+              <RichTextEditor
+                value={editTopicDescription}
+                onChange={setEditTopicDescription}
+                placeholder="Brief description..."
+                minHeight="80px"
+              />
+            </div>
             <div className="flex gap-2 justify-end">
               <button
                 type="button"
@@ -2599,7 +2626,7 @@ export default function NewsArticlesList({
             activeTopic !== ALL_USER_SECTORS &&
             activeTopic !== ALL_SUPER_ADMIN
               ? activeTopic
-              : topicsList[0] ?? (isMusic ? 'Music' : 'News')
+              : topicsList[0] ?? (isMusic ? 'Music' : isExercise ? 'Exercise' : 'News')
           }
           selectedCount={selectedForGroupIds.length}
           saving={groupSaving}

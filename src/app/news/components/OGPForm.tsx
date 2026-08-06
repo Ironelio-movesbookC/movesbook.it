@@ -11,6 +11,8 @@ import {
   MUSICAL_GENRES,
   MUSIC_REGISTRATION_TYPES,
 } from '@/constants/musicGenres.constants';
+import RichTextEditor from '@/components/settings/RichTextEditor';
+import { hasRichTextContent } from '@/utils/richTextTranslation';
 
 export interface OGPData {
   title: string | null;
@@ -191,10 +193,11 @@ export default function OGPForm({
     const musicTitleToSave = isMusic && musicTitle.trim() ? musicTitle.trim() : null;
     const registrationTypeToSave =
       isMusic && registrationType.trim() ? registrationType.trim() : null;
+    const descriptionToSave = hasRichTextContent(description) ? description.trim() : '';
     if (fetchedOg) {
       onPastedArticle({
         ...fetchedOg,
-        customDescription: description.trim() || undefined,
+        customDescription: descriptionToSave || undefined,
         visibility,
         languageCode: languageCode || undefined,
         musicalGenre: genreToSave,
@@ -210,8 +213,8 @@ export default function OGPForm({
       setError(null);
       setVisibility(defaultSettings);
       if (isMusic) resetMusicFields();
-    } else if (description.trim() && onSaveTyped) {
-      onSaveTyped(description.trim(), genreToSave, {
+    } else if (descriptionToSave && onSaveTyped) {
+      onSaveTyped(descriptionToSave, genreToSave, {
         artist: artistToSave,
         musicTitle: musicTitleToSave,
         musicalGenre: genreToSave,
@@ -391,12 +394,11 @@ export default function OGPForm({
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Type here a brief description...
         </label>
-        <textarea
+        <RichTextEditor
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           placeholder="Brief description..."
-          rows={6}
-          className="w-full min-h-[120px] px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-gray-900 placeholder-gray-400 resize-y"
+          minHeight="120px"
         />
       </div>
 

@@ -8,6 +8,9 @@ import ModernNavbar from '@/components/ModernNavbar';
 import ModernFooter from '@/components/ModernFooter';
 import OgpShareModal from '@/app/news/components/OgpShareModal';
 import { getOgpGroupShareUrl } from '@/lib/ogpGroupShareUrl';
+import OgpRichDescription, {
+  ogpDescriptionPlainText,
+} from '@/components/shared/OgpRichDescription';
 
 type PublicMember = {
   id: string;
@@ -242,7 +245,7 @@ export default function PublicOgpNewsGroupPage() {
                         </h4>
                         {(m.customDescription || m.description) && (
                           <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                            {m.customDescription || m.description}
+                            {ogpDescriptionPlainText(m.customDescription, m.description)}
                           </p>
                         )}
                         <p className="text-xs text-gray-400 mt-1">{formatDate(m.savedAt)}</p>
@@ -360,9 +363,15 @@ export default function PublicOgpNewsGroupPage() {
                   )}
                 </div>
                 <div className="mt-3 text-sm text-gray-700 max-h-60 overflow-y-auto overflow-x-hidden pr-2 border border-gray-200 rounded-lg p-3">
-                  {previewMember.customDescription ||
-                    previewMember.description ||
-                    previewMember.url}
+                  <OgpRichDescription
+                    html={
+                      previewMember.customDescription ||
+                      previewMember.description ||
+                      previewMember.url ||
+                      ''
+                    }
+                    className="text-sm text-gray-700"
+                  />
                 </div>
               </div>
             </div>

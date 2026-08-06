@@ -38,6 +38,8 @@ import NewsSettingModal, {
 } from '@/app/news/components/NewsSettingModal';
 import { useAuth } from '@/hooks/useAuth';
 import { getMyMusicShareUrl } from '@/lib/myMusicShareUrl';
+import OgpRichDescription from '@/components/shared/OgpRichDescription';
+import RichTextEditor from '@/components/settings/RichTextEditor';
 
 type MusicNavKey =
   | 'home'
@@ -507,7 +509,9 @@ function MusicOgpSuggestedTile({
         >
           <p className="text-sm text-gray-600 mb-2">{formatDate(article.savedAt)}</p>
           {expanded ? (
-            <p className="text-xs text-gray-600 mb-2 max-h-28 overflow-y-auto">{description}</p>
+            <div className="text-xs text-gray-600 mb-2 max-h-28 overflow-y-auto">
+              <OgpRichDescription html={description} className="text-xs text-gray-600" />
+            </div>
           ) : null}
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <button
@@ -1445,14 +1449,14 @@ function MusicSuggestedSection({
             <label htmlFor="suggested-edit-topic-description" className="block text-sm font-medium text-gray-700 mb-1">
               Type here a brief description...
             </label>
-            <textarea
-              id="suggested-edit-topic-description"
-              value={editTopicDescription}
-              onChange={(e) => setEditTopicDescription(e.target.value)}
-              placeholder="Brief description..."
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 resize-y min-h-[80px] mb-4 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
-            />
+            <div className="mb-4">
+              <RichTextEditor
+                value={editTopicDescription}
+                onChange={setEditTopicDescription}
+                placeholder="Brief description..."
+                minHeight="80px"
+              />
+            </div>
             <div className="flex gap-2 justify-end">
               <button
                 type="button"

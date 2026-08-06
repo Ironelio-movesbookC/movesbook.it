@@ -41,6 +41,8 @@ interface NewsTopicSortModalProps {
   onAfterDeleteOgNews?: () => void | Promise<void>;
   /** API prefix for delete-by-topics. Defaults to `/api/news`; Music uses `/api/music`. */
   apiBase?: string;
+  /** My Library of Exercises: library category for scoped delete-by-topics. */
+  category?: string | null;
   /** Music: genres grouped by topic (from articles). Enables nested genre sorting. */
   topicGenres?: Record<string, string[]>;
   /** Music: saved genre order per topic from user settings. */
@@ -327,6 +329,7 @@ export default function NewsTopicSortModal({
   isSuperAdmin = false,
   onAfterDeleteOgNews,
   apiBase = '/api/news',
+  category = null,
   topicGenres,
   savedGenreOrder,
   savedHiddenTopics = EMPTY_HIDDEN_TOPICS,
@@ -488,10 +491,11 @@ export default function NewsTopicSortModal({
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const body: { topics: string[]; toDate: string } = {
+      const body: { topics: string[]; toDate: string; category?: string } = {
         topics,
         toDate,
       };
+      if (category) body.category = category;
 
       const res = await fetch(`${apiBase}/ogp/delete-by-topics`, {
         method: 'POST',
@@ -549,9 +553,12 @@ export default function NewsTopicSortModal({
       const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const body: { topics: string[]; fromDate?: string; toDate?: string } = { topics: selectedTopics };
+      const body: { topics: string[]; fromDate?: string; toDate?: string; category?: string } = {
+        topics: selectedTopics,
+      };
       if (fromDate.trim()) body.fromDate = fromDate.trim();
       if (toDate.trim()) body.toDate = toDate.trim();
+      if (category) body.category = category;
       const res = await fetch(`${apiBase}/ogp/delete-by-topics`, {
         method: 'POST',
         headers,

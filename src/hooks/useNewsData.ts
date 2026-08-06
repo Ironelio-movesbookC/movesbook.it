@@ -103,10 +103,26 @@ export interface UseNewsDataOptions {
   adminContext?: boolean;
   /** Super admin: load OGPs visible to this username (all topics). */
   viewAsUsername?: string | null;
-  /** API prefix. Defaults to `/api/news`; Music section uses `/api/music`. */
+  /** API prefix. Defaults to `/api/news`; Music section uses `/api/music`; My Library uses `/api/exercises`. */
   apiBase?: string;
   /** Fallback default topic names when topics API has not loaded yet. */
   defaultTopics?: readonly string[];
+  /** My Library of Exercises: one of the 9 category chips (required for `/api/exercises`). */
+  category?: string | null;
+}
+
+function supportsOgpGroups(apiBase: string): boolean {
+  return apiBase === '/api/news' || apiBase === '/api/music' || apiBase === '/api/exercises';
+}
+
+function appendQuery(url: string, params: Record<string, string | null | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') sp.set(k, v);
+  }
+  const qs = sp.toString();
+  if (!qs) return url;
+  return url.includes('?') ? `${url}&${qs}` : `${url}?${qs}`;
 }
 
 export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
@@ -115,6 +131,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const viewAsUsername = options?.viewAsUsername ?? null;
   const apiBase = options?.apiBase ?? '/api/news';
   const defaultTopics = options?.defaultTopics ?? NEWS_TOPICS;
+  const category = options?.category?.trim() || null;
   const [adminUserId, setAdminUserId] = useState<string | null>(null);
   const [viewAsUserId, setViewAsUserId] = useState<string | null>(null);
   const [viewAsUserCountry, setViewAsUserCountry] = useState<string | null>(null);
@@ -169,17 +186,22 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     setError(null);
     const headers = getHeaders();
     try {
-      const ogpUrl =
-        viewAsUsername != null && viewAsUsername.trim() !== ''
-          ? `${apiBase}/ogp?${new URLSearchParams({ viewAsUsername: viewAsUsername.trim() })}`
-          : `${apiBase}/ogp`;
-      const fetchGroups = apiBase === '/api/news' || apiBase === '/api/music';
+      const cat = category ? { category } : {};
+      const ogpUrl = appendQuery(`${apiBase}/ogp`, {
+        ...cat,
+        ...(viewAsUsername != null && viewAsUsername.trim() !== ''
+          ? { viewAsUsername: viewAsUsername.trim() }
+          : {}),
+      });
+      const fetchGroups = supportsOgpGroups(apiBase);
       const [topicsRes, ogpRes, typedRes, orderRes, groupsRes] = await Promise.all([
-        fetch(`${apiBase}/topics`, { headers }),
+        fetch(appendQuery(`${apiBase}/topics`, cat), { headers }),
         fetch(ogpUrl, { headers }),
-        fetch(`${apiBase}/typed`, { headers }),
-        fetch(`${apiBase}/topic-order`, { headers }),
-        fetchGroups ? fetch(`${apiBase}/ogp-groups`, { headers }) : Promise.resolve(null),
+        fetch(appendQuery(`${apiBase}/typed`, cat), { headers }),
+        fetch(appendQuery(`${apiBase}/topic-order`, cat), { headers }),
+        fetchGroups
+          ? fetch(appendQuery(`${apiBase}/ogp-groups`, cat), { headers })
+          : Promise.resolve(null),
       ]);
 
       if (!topicsRes.ok || !ogpRes.ok || !typedRes.ok) {
@@ -342,7 +364,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     } finally {
       setLoading(false);
     }
-  }, [effectiveUserId, getHeaders, viewAsUsername, apiBase, defaultTopics]);
+  }, [effectiveUserId, getHeaders, viewAsUsername, apiBase, defaultTopics, category]);
 
   useEffect(() => {
     fetchAll();
@@ -361,10 +383,12 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         genreOrder?: Record<string, string[]>;
         hiddenTopics?: string[];
         hiddenGenres?: Record<string, string[]>;
+        category?: string;
       } = { order };
       if (genreOrder != null) body.genreOrder = genreOrder;
       if (hidden?.topics != null) body.hiddenTopics = hidden.topics;
       if (hidden?.genres != null) body.hiddenGenres = hidden.genres;
+      if (category) body.category = category;
       const res = await fetch(`${apiBase}/topic-order`, {
         method: 'PUT',
         headers,
@@ -373,7 +397,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       if (!res.ok) throw new Error('Failed to save topic order');
       await fetchAll();
     },
-    [effectiveUserId, fetchAll, getHeaders, apiBase]
+    [effectiveUserId, fetchAll, getHeaders, apiBase, category]
   );
 
   const addTopic = useCallback(
@@ -383,7 +407,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       const res = await fetch(`${apiBase}/topics`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({ name: name.trim(), ...(category ? { category } : {}) }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -393,7 +417,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       setCustomTopics((prev) => [...prev, { id: created.id, name: created.name }]);
       setTopics((prev) => [...prev, created.name]);
     },
-    [effectiveUserId, getHeaders, apiBase]
+    [effectiveUserId, getHeaders, apiBase, category]
   );
 
   const updateTopic = useCallback(
@@ -473,6 +497,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           visibilityCountries: vis?.countries ?? [],
           visibilityLanguages: vis?.languages ?? [],
           visibilitySports: vis?.sports ?? [],
+          ...(category ? { category } : {}),
         }),
       });
       if (!res.ok) {
@@ -511,7 +536,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         },
       ]);
     },
-    [effectiveUserId, getHeaders, user?.country, apiBase, defaultTopics]
+    [effectiveUserId, getHeaders, user?.country, apiBase, defaultTopics, category]
   );
 
   const removePastedArticle = useCallback(
@@ -714,8 +739,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       coverImage?: string | null;
     }) => {
       if (!effectiveUserId) throw new Error('Not authenticated');
-      if (apiBase !== '/api/news' && apiBase !== '/api/music') {
-        throw new Error('OGP groups are only available for News and Music');
+      if (!supportsOgpGroups(apiBase)) {
+        throw new Error('OGP groups are only available for News, Music, and Exercises');
       }
       const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch(`${apiBase}/ogp-groups`, {
@@ -727,6 +752,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           articleIds: payload.articleIds,
           confirmExisting: payload.confirmExisting === true,
           coverImage: payload.coverImage ?? null,
+          ...(category ? { category } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -749,13 +775,13 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       });
       return { merged: data.merged === true, group };
     },
-    [effectiveUserId, getHeaders, apiBase]
+    [effectiveUserId, getHeaders, apiBase, category]
   );
 
   const removeOgpNewsGroup = useCallback(
     async (id: string) => {
       if (!effectiveUserId) return;
-      if (apiBase !== '/api/news' && apiBase !== '/api/music') return;
+      if (!supportsOgpGroups(apiBase)) return;
       const headers = getHeaders();
       const res = await fetch(`${apiBase}/ogp-groups/${id}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error('Failed to delete group');
@@ -767,7 +793,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const updateOgpNewsGroup = useCallback(
     async (id: string, topic: string, customDescription?: string) => {
       if (!effectiveUserId) return;
-      if (apiBase !== '/api/news' && apiBase !== '/api/music') return;
+      if (!supportsOgpGroups(apiBase)) return;
       const trimmed = topic.trim();
       if (!trimmed) return;
       const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
@@ -801,7 +827,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const updateOgpNewsGroupSettings = useCallback(
     async (id: string, settings: OgpVisibilitySettingsExport) => {
       if (!effectiveUserId) return;
-      if (apiBase !== '/api/news' && apiBase !== '/api/music') return;
+      if (!supportsOgpGroups(apiBase)) return;
       const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch(`${apiBase}/ogp-groups/${id}`, {
         method: 'PATCH',
@@ -857,6 +883,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           title: meta?.musicTitle ?? meta?.title ?? null,
           registrationType: meta?.registrationType ?? null,
           isFavourite: meta?.isFavourite ?? false,
+          ...(category ? { category } : {}),
         }),
       });
       if (!res.ok) throw new Error('Failed to save');
@@ -873,7 +900,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         },
       ]);
     },
-    [effectiveUserId, getHeaders, apiBase]
+    [effectiveUserId, getHeaders, apiBase, category]
   );
 
   const removeTypedArticle = useCallback(
