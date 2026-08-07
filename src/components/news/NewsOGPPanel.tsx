@@ -292,6 +292,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           addButtonDisabled={activeTopic === ALL_TOPICS}
           ogpNewsGroups={ogpNewsGroups}
           onSaveOgpNewsGroup={saveOgpNewsGroup}
+          onCreateTopic={addTopic}
           onRemoveOgpNewsGroup={removeOgpNewsGroup}
           onUpdateOgpNewsGroup={updateOgpNewsGroup}
           onUpdateOgpNewsGroupSettings={updateOgpNewsGroupSettings}

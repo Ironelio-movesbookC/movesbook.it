@@ -54,6 +54,7 @@ export default function ChatSettingsUsersModal({
     setCountries(nextCountries);
     setEnableSports((s.sports?.length ?? 0) > 0);
     setEnableUserTypes((s.userTypes?.length ?? 0) > 0);
+    // Country master = "all selected"; partial/manual picks keep it off.
     setEnableCountries(
       !!options?.countries.length &&
         nextCountries.length === options.countries.length &&
@@ -90,6 +91,7 @@ export default function ChatSettingsUsersModal({
     onSave({
       sports: enableSports ? sports : [],
       userTypes: enableUserTypes ? userTypes : [],
+      // Persist whatever countries are checked (including manual picks while master is off).
       countries,
     });
     onClose();
@@ -112,25 +114,26 @@ export default function ChatSettingsUsersModal({
       aria-labelledby="chat-settings-users-title"
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-md border border-[#c8c8c8] bg-white shadow-2xl"
+        className="flex h-[min(82vh,720px)] max-h-[90vh] w-full max-w-[420px] flex-col overflow-hidden rounded-sm border border-[#bdbdbd] bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#ddd] px-4 py-3">
-          <h2 id="chat-settings-users-title" className="text-base font-semibold text-[#222]">
+        {/* Header — light lime like legacy Settings users */}
+        <div className="flex shrink-0 items-center justify-between border-b border-[#c8c8c8] bg-[#e8f0b0] px-3 py-2.5">
+          <h2 id="chat-settings-users-title" className="text-[15px] font-semibold text-[#222]">
             Settings users
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={handleDeleteSettings}
-              className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50"
+              className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50/80"
             >
               Delete Settings
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded p-1 text-gray-500 hover:bg-gray-100"
+              className="rounded p-1 text-gray-500 hover:bg-black/5"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
@@ -138,77 +141,84 @@ export default function ChatSettingsUsersModal({
           </div>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          <p className="text-sm font-medium text-gray-700">Who can see it?</p>
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+          <p className="text-sm font-medium text-gray-800">Who can see it?</p>
+
+          {!options && (
+            <p className="text-sm text-gray-500">Loading filter options…</p>
+          )}
 
           {options && (
             <>
+              {/* Users Sports — master selects all; children editable only when enabled */}
               <div>
-                <label className="mb-2 flex items-center gap-2">
+                <label className="mb-1.5 flex items-center gap-2">
                   <input
                     type="checkbox"
                     checked={enableSports}
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableSports(checked);
-                      if (checked) setSports(options.sports.map((s) => s.value));
+                      setSports(checked ? options.sports.map((s) => s.value) : []);
                     }}
-                    className="rounded border-gray-300"
+                    className="rounded border-gray-400"
                   />
-                  <span className="text-sm font-medium">Users Sports</span>
+                  <span className="text-sm font-medium text-gray-800">Users Sports</span>
                 </label>
-                <div className="max-h-32 overflow-y-auto rounded border border-gray-200 p-3">
-                  <div className="flex flex-wrap gap-2">
+                <div className="max-h-[140px] overflow-y-auto rounded-sm border border-[#d0d0d0] bg-[#ececec] p-2.5">
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 sm:grid-cols-3">
                     {options.sports.map((s) => (
-                      <label key={s.value} className="flex items-center gap-1.5 text-sm">
+                      <label key={s.value} className="flex items-center gap-1.5 text-[13px] text-gray-800">
                         <input
                           type="checkbox"
                           checked={sports.includes(s.value)}
                           onChange={() => toggle(sports, s.value, setSports)}
                           disabled={!enableSports}
-                          className="rounded border-gray-300"
+                          className="rounded border-gray-400"
                         />
-                        {s.label}
+                        <span className={!enableSports ? 'text-gray-400' : undefined}>{s.label}</span>
                       </label>
                     ))}
                   </div>
                 </div>
               </div>
 
+              {/* Users Type */}
               <div>
-                <label className="mb-2 flex items-center gap-2">
+                <label className="mb-1.5 flex items-center gap-2">
                   <input
                     type="checkbox"
                     checked={enableUserTypes}
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableUserTypes(checked);
-                      if (checked) setUserTypes(options.userTypes.map((t) => t.value));
+                      setUserTypes(checked ? options.userTypes.map((t) => t.value) : []);
                     }}
-                    className="rounded border-gray-300"
+                    className="rounded border-gray-400"
                   />
-                  <span className="text-sm font-medium">Users Type</span>
+                  <span className="text-sm font-medium text-gray-800">Users Type</span>
                 </label>
-                <div className="max-h-32 overflow-y-auto rounded border border-gray-200 p-3">
-                  <div className="flex flex-wrap gap-2">
+                <div className="max-h-[100px] overflow-y-auto rounded-sm border border-[#d0d0d0] bg-[#ececec] p-2.5">
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
                     {options.userTypes.map((t) => (
-                      <label key={t.value} className="flex items-center gap-1.5 text-sm">
+                      <label key={t.value} className="flex items-center gap-1.5 text-[13px] text-gray-800">
                         <input
                           type="checkbox"
                           checked={userTypes.includes(t.value)}
                           onChange={() => toggle(userTypes, t.value, setUserTypes)}
                           disabled={!enableUserTypes}
-                          className="rounded border-gray-300"
+                          className="rounded border-gray-400"
                         />
-                        {t.label}
+                        <span className={!enableUserTypes ? 'text-gray-400' : undefined}>{t.label}</span>
                       </label>
                     ))}
                   </div>
                 </div>
               </div>
 
+              {/* Country: master selects/clears all; individuals stay editable when master is off */}
               <div>
-                <label className="mb-2 flex items-center gap-2">
+                <label className="mb-1.5 flex items-center gap-2">
                   <input
                     type="checkbox"
                     checked={enableCountries}
@@ -217,23 +227,26 @@ export default function ChatSettingsUsersModal({
                       setEnableCountries(checked);
                       setCountries(checked ? options.countries.slice() : []);
                     }}
-                    className="rounded border-gray-300"
+                    className="rounded border-gray-400"
                   />
-                  <span className="text-sm font-medium">Country</span>
+                  <span className="text-sm font-medium text-gray-800">Country</span>
                 </label>
-                <div className="max-h-48 overflow-y-auto rounded border border-gray-200 p-3">
-                  <div className="flex flex-col gap-1.5">
+                <div className="max-h-[220px] overflow-y-auto rounded-sm border border-[#d0d0d0] bg-[#ececec] p-2.5">
+                  <div className="flex flex-col gap-1">
                     {options.countries.map((c) => (
-                      <label key={c} className="flex items-center gap-1.5 text-sm">
+                      <label key={c} className="flex items-center gap-1.5 text-[13px] text-gray-800">
                         <input
                           type="checkbox"
                           checked={countries.includes(c)}
                           onChange={() => toggleCountry(c)}
-                          className="rounded border-gray-300"
+                          className="rounded border-gray-400"
                         />
                         {c}
                       </label>
                     ))}
+                    {options.countries.length === 0 && (
+                      <p className="text-xs text-gray-500">No countries available.</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -241,18 +254,18 @@ export default function ChatSettingsUsersModal({
           )}
         </div>
 
-        <div className="flex gap-2 border-t border-gray-200 p-4">
+        <div className="flex shrink-0 gap-2 border-t border-[#d0d0d0] p-3">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded border border-gray-300 bg-[#e8e8e8] px-4 py-2 font-medium text-gray-700 hover:bg-gray-200"
+            className="flex-1 rounded-sm border border-[#bdbdbd] bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
           >
             Back as before
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="flex-1 rounded bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
+            className="flex-1 rounded-sm bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
           >
             Save
           </button>

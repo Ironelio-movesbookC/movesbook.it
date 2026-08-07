@@ -27,6 +27,7 @@ import ChatSettingsUsersModal, {
   defaultChatUserFilterSettings,
   type ChatUserFilterSettings,
 } from './ChatSettingsUsersModal';
+import ChatPanel from './ChatPanel';
 
 type BroadcastMode = 'all' | 'group' | 'subscribers' | 'favourites';
 
@@ -105,6 +106,8 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
   const [showQrModal, setShowQrModal] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  /** Toolbar section: Broadcast chat vs Chat users (1:1). Null = neither open yet. */
+  const [mainView, setMainView] = useState<'broadcast' | 'chatUsers' | null>(null);
   const [showBroadcastPanel, setShowBroadcastPanel] = useState(false);
   const [broadcastPanelView, setBroadcastPanelView] = useState<
     'invite' | 'edit' | 'subscribers' | 'administrators'
@@ -194,7 +197,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
   }, [pingPresence, loadStats]);
 
   useEffect(() => {
-    fetch('/api/news/ogp-settings-options')
+    fetch('/api/news/ogp-settings-options', { headers: getAuthHeaders() })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data) {
@@ -206,7 +209,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
         }
       })
       .catch(() => {});
-  }, []);
+  }, [getAuthHeaders]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -224,6 +227,11 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   };
 
+  const deleteUserSettings = () => {
+    setUserSettings(defaultChatUserFilterSettings);
+    localStorage.removeItem(SETTINGS_KEY);
+  };
+
   const setMute = (value: boolean) => {
     setMuted(value);
     localStorage.setItem(MUTE_KEY, value ? '1' : '0');
@@ -236,7 +244,28 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     setShowMuteSubmenu(false);
   };
 
+  const openBroadcastView = () => {
+    if (mainView === 'broadcast') {
+      setMainView(null);
+      setShowBroadcastPanel(false);
+      setBroadcastPanelView('invite');
+      setSubscriberSearchOpen(false);
+      setSubscriberSearch('');
+      return;
+    }
+    setMainView('broadcast');
+  };
+
+  const openChatUsersView = () => {
+    setMainView(mainView === 'chatUsers' ? null : 'chatUsers');
+    setShowBroadcastPanel(false);
+    setBroadcastPanelView('invite');
+    setSubscriberSearchOpen(false);
+    setSubscriberSearch('');
+  };
+
   const openBroadcastPanel = () => {
+    setMainView('broadcast');
     setBroadcastPanelView('invite');
     setSubscriberSearchOpen(false);
     setSubscriberSearch('');
@@ -334,8 +363,30 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
             <Link2 className="h-4 w-4" />
             Invite via Link
           </button>
-          <span className="mx-2 font-bold text-white">Broadcast</span>
-          <span className="text-[12px] text-[#7ec8e3]">Chat users ({chatUsersCount})</span>
+          <button
+            type="button"
+            onClick={openBroadcastView}
+            className={`mx-2 rounded px-1.5 py-1 text-[12px] transition hover:bg-white/10 ${
+              mainView === 'broadcast'
+                ? 'font-bold text-white'
+                : 'font-medium text-[#7ec8e3]'
+            }`}
+            aria-pressed={mainView === 'broadcast'}
+          >
+            Broadcast
+          </button>
+          <button
+            type="button"
+            onClick={openChatUsersView}
+            className={`rounded px-1.5 py-1 text-[12px] transition hover:bg-white/10 ${
+              mainView === 'chatUsers'
+                ? 'font-bold text-white'
+                : 'font-medium text-[#7ec8e3]'
+            }`}
+            aria-pressed={mainView === 'chatUsers'}
+          >
+            Chat users ({chatUsersCount})
+          </button>
           <div className="ml-auto">
             <button type="button" className="rounded p-1.5 text-[#7ec8e3] hover:bg-white/10" title="Notifications">
               <Bell className="h-4 w-4" />
@@ -344,6 +395,12 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
         </div>
 
         <div className="flex min-h-0 w-full flex-1">
+          {mainView === 'chatUsers' ? (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <ChatPanel embedded getAuthHeaders={getAuthHeaders} />
+            </div>
+          ) : mainView === 'broadcast' ? (
+            <>
           {/* Broadcast invite / settings panel (MB button) — left */}
           {showBroadcastPanel && (
             <aside className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-[#15202b] bg-[#1c242f] text-white">
@@ -995,6 +1052,13 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
               </div>
             </div>
           </section>
+            </>
+          ) : (
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-[#f7f7f7] text-sm text-gray-500">
+              Click <span className="mx-1 font-semibold text-[#2a6db0]">Broadcast</span> or{' '}
+              <span className="mx-1 font-semibold text-[#2a6db0]">Chat users</span> to open
+            </div>
+          )}
         </div>
       </div>
 
@@ -1003,6 +1067,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
         onClose={() => setShowSettingsUsers(false)}
         initialSettings={userSettings}
         onSave={saveUserSettings}
+        onDeleteSettings={deleteUserSettings}
         options={options}
       />
 

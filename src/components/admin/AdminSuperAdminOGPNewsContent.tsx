@@ -440,6 +440,7 @@ export default function AdminSuperAdminOGPNewsContent({
             viewerScopedOgpList={!!viewAsUsername}
             ogpNewsGroups={ogpNewsGroups}
             onSaveOgpNewsGroup={viewAsUsername ? undefined : saveOgpNewsGroup}
+            onCreateTopic={viewAsUsername ? undefined : addTopic}
             onRemoveOgpNewsGroup={viewAsUsername ? undefined : removeOgpNewsGroup}
             onUpdateOgpNewsGroup={viewAsUsername ? undefined : updateOgpNewsGroup}
             onUpdateOgpNewsGroupSettings={viewAsUsername ? undefined : updateOgpNewsGroupSettings}

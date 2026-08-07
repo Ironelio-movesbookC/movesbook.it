@@ -221,7 +221,7 @@ export default function NewsSettingModal({
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableSports(checked);
-                      if (checked) setSports(options.sports.map((s) => s.value));
+                      if (checked) setSports((options.sports ?? []).map((s) => s.value));
                     }}
                     className="rounded border-gray-300"
                   />
@@ -229,7 +229,7 @@ export default function NewsSettingModal({
                 </label>
                 <div className="border border-gray-200 rounded-lg p-3 max-h-32 overflow-y-auto">
                   <div className="flex flex-wrap gap-2">
-                    {options.sports.map((s) => (
+                    {(options.sports ?? []).map((s) => (
                       <label key={s.value} className="flex items-center gap-1.5 text-sm">
                         <input
                           type="checkbox"
@@ -254,7 +254,7 @@ export default function NewsSettingModal({
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableUserTypes(checked);
-                      if (checked) setUserTypes(options.userTypes.map((t) => t.value));
+                      if (checked) setUserTypes((options.userTypes ?? []).map((t) => t.value));
                     }}
                     className="rounded border-gray-300"
                   />
@@ -262,7 +262,7 @@ export default function NewsSettingModal({
                 </label>
                 <div className="border border-gray-200 rounded-lg p-3 max-h-32 overflow-y-auto">
                   <div className="flex flex-wrap gap-2">
-                    {options.userTypes.map((t) => (
+                    {(options.userTypes ?? []).map((t) => (
                       <label key={t.value} className="flex items-center gap-1.5 text-sm">
                         <input
                           type="checkbox"
@@ -287,7 +287,7 @@ export default function NewsSettingModal({
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableLanguages(checked);
-                      if (checked) setLanguages(options.languages.map((l) => l.value));
+                      if (checked) setLanguages((options.languages ?? []).map((l) => l.value));
                     }}
                     className="rounded border-gray-300"
                   />
@@ -295,7 +295,7 @@ export default function NewsSettingModal({
                 </label>
                 <div className="border border-gray-200 rounded-lg p-3 max-h-32 overflow-y-auto">
                   <div className="flex flex-wrap gap-2">
-                    {options.languages.map((l) => (
+                    {(options.languages ?? []).map((l) => (
                       <label key={l.value} className="flex items-center gap-1.5 text-sm">
                         <input
                           type="checkbox"
@@ -320,7 +320,7 @@ export default function NewsSettingModal({
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableCountries(checked);
-                      setCountries(checked ? options.countries.slice() : []);
+                      setCountries(checked ? (options.countries ?? []).slice() : []);
                     }}
                     className="rounded border-gray-300"
                   />
@@ -328,7 +328,7 @@ export default function NewsSettingModal({
                 </label>
                 <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto">
                   <div className="flex flex-col gap-1.5">
-                    {options.countries.map((c) => (
+                    {(options.countries ?? []).map((c) => (
                       <label key={c} className="flex items-center gap-1.5 text-sm">
                         <input
                           type="checkbox"
@@ -339,7 +339,7 @@ export default function NewsSettingModal({
                         {c}
                       </label>
                     ))}
-                    {options.countries.length === 0 && (
+                    {(options.countries ?? []).length === 0 && (
                       <p className="text-xs text-gray-500">No countries available.</p>
                     )}
                   </div>
