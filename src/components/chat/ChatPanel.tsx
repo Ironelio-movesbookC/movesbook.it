@@ -1,12 +1,17 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MessageSquare, Send, Search, Menu, Users, X, Trash2, Settings, ChevronDown, Reply, Copy, Forward } from 'lucide-react';
+import { MessageSquare, Send, Search, Menu, UserPlus, X, Trash2, Settings, ChevronDown, Reply, Copy, Forward } from 'lucide-react';
 import ChatSettingsModal, {
   loadChatTheme,
   saveChatTheme,
   type ChatTheme,
 } from './ChatSettingsModal';
+import MovesbookChannel, {
+  ChannelAvatar,
+  loadChannelLeft,
+  rejoinMovesbookChannel,
+} from './MovesbookChannel';
 
 /** Turn URLs in text into clickable links (http/https only). Returns array of React nodes. */
 function linkify(text: string, isOwn: boolean): (string | React.ReactNode)[] {
@@ -109,6 +114,8 @@ type ChatPanelProps = {
   onClose?: () => void;
   /** Auth token provider - if not given, uses localStorage token */
   getAuthHeaders?: () => Record<string, string>;
+  /** Show Movesbook broadcast channel (normal users). Default true. */
+  showMovesbookChannel?: boolean;
 };
 
 const defaultGetAuthHeaders = (): Record<string, string> => {
@@ -117,11 +124,18 @@ const defaultGetAuthHeaders = (): Record<string, string> => {
   return { Authorization: `Bearer ${token}` };
 };
 
-export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHeadersProp }: ChatPanelProps) {
+export default function ChatPanel({
+  embedded,
+  onClose,
+  getAuthHeaders: getAuthHeadersProp,
+  showMovesbookChannel = true,
+}: ChatPanelProps) {
   const getAuthHeaders = getAuthHeadersProp ?? defaultGetAuthHeaders;
 
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [selectedOtherUser, setSelectedOtherUser] = useState<{ id: string; name: string } | null>(null);
+  const [channelSelected, setChannelSelected] = useState(false);
+  const [channelLeft, setChannelLeft] = useState(false);
   const [message, setMessage] = useState('');
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [users, setUsers] = useState<ChatUser[]>([]);
@@ -153,6 +167,43 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
   useEffect(() => {
     setChatTheme(loadChatTheme());
   }, []);
+
+  useEffect(() => {
+    if (!showMovesbookChannel) return;
+    setChannelLeft(loadChannelLeft());
+    const onLeft = () => {
+      setChannelLeft(true);
+      setChannelSelected(false);
+    };
+    const onRejoined = () => {
+      setChannelLeft(false);
+      setChannelSelected(true);
+      setSelectedConversationId(null);
+      setSelectedOtherUser(null);
+      setSelectedMessageIds(new Set());
+      setReplyingTo(null);
+    };
+    window.addEventListener('movesbook-channel-left', onLeft);
+    window.addEventListener('movesbook-channel-rejoined', onRejoined);
+    return () => {
+      window.removeEventListener('movesbook-channel-left', onLeft);
+      window.removeEventListener('movesbook-channel-rejoined', onRejoined);
+    };
+  }, [showMovesbookChannel]);
+
+  const selectChannel = () => {
+    setChannelSelected(true);
+    setSelectedConversationId(null);
+    setSelectedOtherUser(null);
+    setSelectedMessageIds(new Set());
+    setReplyingTo(null);
+  };
+
+  const selectConversation = (c: ConversationItem) => {
+    setChannelSelected(false);
+    setSelectedConversationId(c.id);
+    setSelectedOtherUser({ id: c.otherUser.id, name: c.otherUser.name });
+  };
 
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true);
@@ -295,6 +346,7 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
       });
       if (res.ok) {
         const data = await res.json();
+        setChannelSelected(false);
         setSelectedConversationId(data.id);
         setSelectedOtherUser({ id: data.otherUser.id, name: data.otherUser.name });
         setShowUserList(false);
@@ -530,8 +582,36 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
 
   return (
     <div className={containerClass}>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1">
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col min-h-0 flex-shrink-0">
-        <div className="p-4 border-b border-gray-200 flex-shrink-0">
+        {showMovesbookChannel && !channelLeft && (
+          <MovesbookChannel
+            variant="header"
+            getAuthHeaders={getAuthHeaders}
+            selected={channelSelected}
+            onSelect={selectChannel}
+          />
+        )}
+        {showMovesbookChannel && channelLeft && (
+          <button
+            type="button"
+            onClick={() => rejoinMovesbookChannel()}
+            className="flex w-full shrink-0 items-center gap-2.5 border-b border-[#15202b] bg-[#1a2332] px-3 py-2.5 text-left transition hover:bg-[#222b38]"
+          >
+            <ChannelAvatar size={36} className="shadow-sm" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] font-semibold text-white">
+                Rejoin Movesbook channel
+              </span>
+              <span className="mt-0.5 block text-[11px] text-[#8ab4d9]">
+                Tap to see broadcasts again
+              </span>
+            </span>
+          </button>
+        )}
+
+        <div className="p-3 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-2">
             <Menu className="w-5 h-5 text-gray-400 cursor-pointer" />
             <div className="flex-1 relative">
@@ -551,7 +631,7 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
               onClick={() => setShowUserList(!showUserList)}
               className="flex-1 flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"
             >
-              <Users className="w-4 h-4" />
+              <UserPlus className="w-4 h-4" />
               {showUserList ? 'Hide users' : 'Start chat with user'}
             </button>
             <button
@@ -608,12 +688,9 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
                   <button
                     key={c.id}
                     type="button"
-                    onClick={() => {
-                      setSelectedConversationId(c.id);
-                      setSelectedOtherUser({ id: c.otherUser.id, name: c.otherUser.name });
-                    }}
+                    onClick={() => selectConversation(c)}
                     className={`w-full p-4 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors ${
-                      selectedConversationId === c.id ? 'bg-blue-50' : ''
+                      selectedConversationId === c.id && !channelSelected ? 'bg-blue-50' : ''
                     }`}
                   >
                     <div className="flex items-start gap-3">
@@ -688,7 +765,15 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
           />
         )}
         <div className="relative z-10 flex flex-col flex-1 min-h-0">
-        {selectedConversationId ? (
+        {channelSelected && showMovesbookChannel && !channelLeft ? (
+          <MovesbookChannel
+            variant="pane"
+            getAuthHeaders={getAuthHeaders}
+            selected={channelSelected}
+            onSelect={selectChannel}
+            onCloseEmbedded={embedded ? onClose : undefined}
+          />
+        ) : selectedConversationId ? (
           <>
             <div className="p-4 border-b border-gray-200 bg-gray-50 flex-shrink-0 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">{displayName}</h2>
@@ -897,6 +982,8 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
             </div>
           </div>
         )}
+        </div>
+      </div>
         </div>
       </div>
 
