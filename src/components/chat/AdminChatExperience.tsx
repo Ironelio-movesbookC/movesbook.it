@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'reac
 import {
   Bell,
   Link2,
-  Paperclip,
   QrCode,
   Settings,
   UserPlus,
@@ -22,24 +21,74 @@ import {
   Check,
   ArrowLeft,
   ShieldPlus,
+  Copy,
+  Forward,
+  Pin,
 } from 'lucide-react';
 import ChatSettingsUsersModal, {
   defaultChatUserFilterSettings,
   type ChatUserFilterSettings,
 } from './ChatSettingsUsersModal';
-import ChatPanel from './ChatPanel';
+import AdminChatUsersPanel from './AdminChatUsersPanel';
 
 type BroadcastMode = 'all' | 'group' | 'subscribers' | 'favourites';
 
-type BroadcastMessage = { id: string; content: string; createdAt: string; mode: BroadcastMode };
+/** Owner-sent channel broadcasts only (never replies / Chat-users channel posts). */
+const OWNER_BROADCAST_MODES = new Set<string>(['all', 'group', 'subscribers', 'favourites']);
+
+type BroadcastMessage = {
+  id: string;
+  content: string;
+  createdAt: string;
+  mode: BroadcastMode;
+  senderName?: string;
+};
+
+type ConversationOption = {
+  id: string;
+  otherUser: { id: string; name: string };
+};
+
+type ContextMenuState = {
+  x: number;
+  y: number;
+  message: BroadcastMessage;
+};
+
+function isImageContent(content: string): boolean {
+  return content.startsWith('data:image/');
+}
+
+function previewText(content: string, max = 80): string {
+  if (isImageContent(content)) return '[Image]';
+  const text = content.trim();
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
 
 type ChannelSubscriber = {
   id: number | string;
   name: string;
+  telegramAccount: string | null;
   image: string | null;
   isOnline: boolean;
   lastSeenAt: string | null;
+  createdAt?: string | null;
 };
+
+function formatTelegramId(telegramAccount: string | null | undefined): string {
+  const raw = (telegramAccount || '').trim();
+  if (!raw) return '';
+  return raw.startsWith('@') ? raw : `@${raw}`;
+}
+
+function formatJoinedAt(iso: string | null | undefined): string {
+  if (!iso) return 'joined recently';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'joined recently';
+  const datePart = d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+  const timePart = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `joined ${datePart} at ${timePart}`;
+}
 
 type OptionsPayload = {
   sports: { value: string; label: string }[];
@@ -53,12 +102,112 @@ const MUTE_KEY = 'adminChatMute';
 const PHOTO_KEY = 'adminChatChannelPhoto';
 const SIGN_MESSAGES_KEY = 'adminChatSignMessages';
 const SHOW_AUTHORS_KEY = 'adminChatShowAuthorsProfiles';
+const PIN_KEY = 'adminChatBroadcastPinnedId';
+const HIDDEN_KEY = 'adminChatBroadcastHiddenIds';
+/** Persisted user IDs that belong to this broadcast channel (not all platform users). */
+const SUBSCRIBERS_KEY = 'adminChatChannelSubscriberIds';
+/** Persisted channel admin user IDs (in addition to the owner). */
+const ADMINS_KEY = 'adminChatChannelAdminIds';
+
+function loadPinnedId(): string | null {
+  try {
+    return localStorage.getItem(PIN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function savePinnedId(id: string | null) {
+  try {
+    if (id) localStorage.setItem(PIN_KEY, id);
+    else localStorage.removeItem(PIN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadHiddenIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDDEN_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.map(String).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveHiddenIds(ids: Set<string>) {
+  try {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify([...ids]));
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadIdList(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((id) => String(id)).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function saveIdList(key: string, ids: string[]) {
+  localStorage.setItem(key, JSON.stringify([...new Set(ids)]));
+}
+
+function loadSubscriberIds(): string[] {
+  return loadIdList(SUBSCRIBERS_KEY);
+}
+
+function saveSubscriberIds(ids: string[]) {
+  saveIdList(SUBSCRIBERS_KEY, ids);
+}
+
+function loadAdminIds(): string[] {
+  return loadIdList(ADMINS_KEY);
+}
+
+function saveAdminIds(ids: string[]) {
+  saveIdList(ADMINS_KEY, ids);
+}
+
+function loadUserSettingsFromStorage(): ChatUserFilterSettings {
+  try {
+    if (typeof window === 'undefined') return defaultChatUserFilterSettings;
+    const saved = localStorage.getItem(SETTINGS_KEY);
+    if (!saved) return defaultChatUserFilterSettings;
+    const parsed = JSON.parse(saved) as Partial<ChatUserFilterSettings> | null;
+    if (!parsed || typeof parsed !== 'object') return defaultChatUserFilterSettings;
+    return {
+      sports: Array.isArray(parsed.sports) ? parsed.sports.map(String) : [],
+      userTypes: Array.isArray(parsed.userTypes) ? parsed.userTypes.map(String) : [],
+      countries: Array.isArray(parsed.countries) ? parsed.countries.map(String) : [],
+    };
+  } catch {
+    return defaultChatUserFilterSettings;
+  }
+}
 
 const MODE_LABELS: Record<BroadcastMode, string> = {
   all: 'Start chat with all users',
   group: 'Start chat with group selected',
   subscribers: 'Start chat with subscribers',
   favourites: 'Start chat with favourites',
+};
+
+/** Audience label shown on each owner broadcast bubble. */
+const BROADCAST_SENT_LABELS: Record<BroadcastMode, string> = {
+  all: 'Sent to all users',
+  group: 'Sent to only group selected',
+  subscribers: 'Sent to only subscribers',
+  favourites: 'Sent to only favourites',
 };
 
 const AVATAR_COLORS = [
@@ -93,10 +242,17 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
   const [mode, setMode] = useState<BroadcastMode>('all');
   const [message, setMessage] = useState('');
   const [history, setHistory] = useState<BroadcastMessage[]>([]);
+  /** Users with Telegram who replied to Movesbook broadcasts (Chat users inbox). */
   const [chatUsersCount, setChatUsersCount] = useState(0);
+  const [modeCounts, setModeCounts] = useState<Record<BroadcastMode, number>>({
+    all: 0,
+    group: 0,
+    subscribers: 0,
+    favourites: 0,
+  });
 
   const [showSettingsUsers, setShowSettingsUsers] = useState(false);
-  const [userSettings, setUserSettings] = useState<ChatUserFilterSettings>(defaultChatUserFilterSettings);
+  const [userSettings, setUserSettings] = useState<ChatUserFilterSettings>(loadUserSettingsFromStorage);
   const [options, setOptions] = useState<OptionsPayload | null>(null);
 
   const [showComposerMenu, setShowComposerMenu] = useState(false);
@@ -110,21 +266,36 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
   const [mainView, setMainView] = useState<'broadcast' | 'chatUsers' | null>(null);
   const [showBroadcastPanel, setShowBroadcastPanel] = useState(false);
   const [broadcastPanelView, setBroadcastPanelView] = useState<
-    'invite' | 'edit' | 'subscribers' | 'administrators'
+    'invite' | 'edit' | 'subscribers' | 'administrators' | 'addSubscribers' | 'addAdministrators'
   >('invite');
   const [channelPhoto, setChannelPhoto] = useState<string | null>(null);
   const [channelName, setChannelName] = useState('movesbook');
   const [channelDescription, setChannelDescription] = useState('');
+  const [subscriberIds, setSubscriberIds] = useState<string[]>([]);
   const [subscribers, setSubscribers] = useState<ChannelSubscriber[]>([]);
   const [subscriberSearchOpen, setSubscriberSearchOpen] = useState(false);
   const [subscriberSearch, setSubscriberSearch] = useState('');
+  const [adminIds, setAdminIds] = useState<string[]>([]);
+  const [channelAdmins, setChannelAdmins] = useState<ChannelSubscriber[]>([]);
+  const [addCandidates, setAddCandidates] = useState<ChannelSubscriber[]>([]);
+  const [addSearch, setAddSearch] = useState('');
+  const [addLoading, setAddLoading] = useState(false);
+  const [addAdminSearchOpen, setAddAdminSearchOpen] = useState(false);
   const [ownerName, setOwnerName] = useState('Admin');
   const [signMessages, setSignMessages] = useState(false);
   const [showAuthorsProfiles, setShowAuthorsProfiles] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
+  const [forwardingMessage, setForwardingMessage] = useState<BroadcastMessage | null>(null);
+  const [conversations, setConversations] = useState<ConversationOption[]>([]);
+  const [forwarding, setForwarding] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<BroadcastMessage | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const composerMenuRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inviteUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}/register?invite=movesbook-admin`
@@ -133,15 +304,31 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(SETTINGS_KEY);
-      if (saved) setUserSettings(JSON.parse(saved));
+      // Settings are initialized from localStorage; refresh other persisted UI state here.
       const hist = localStorage.getItem(HISTORY_KEY);
-      if (hist) setHistory(JSON.parse(hist));
+      if (hist) {
+        const parsed = JSON.parse(hist) as unknown;
+        if (Array.isArray(parsed)) {
+          setHistory(
+            parsed.filter(
+              (m): m is BroadcastMessage =>
+                !!m &&
+                typeof m === 'object' &&
+                typeof (m as BroadcastMessage).content === 'string' &&
+                OWNER_BROADCAST_MODES.has(String((m as BroadcastMessage).mode))
+            ) as BroadcastMessage[]
+          );
+        }
+      }
       setMuted(localStorage.getItem(MUTE_KEY) === '1');
+      setPinnedId(loadPinnedId());
+      setHiddenIds(loadHiddenIds());
       const photo = localStorage.getItem(PHOTO_KEY);
       if (photo) setChannelPhoto(photo);
       setSignMessages(localStorage.getItem(SIGN_MESSAGES_KEY) === '1');
       setShowAuthorsProfiles(localStorage.getItem(SHOW_AUTHORS_KEY) === '1');
+      setSubscriberIds(loadSubscriberIds());
+      setAdminIds(loadAdminIds());
       const adminData = localStorage.getItem('adminUser');
       if (adminData) {
         const parsed = JSON.parse(adminData) as { name?: string; username?: string };
@@ -150,7 +337,111 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     } catch {
       /* ignore */
     }
-  }, []);
+
+    // Prefer server-persisted channel photo so users see the same icon.
+    void (async () => {
+      try {
+        const res = await fetch('/api/chat/channel-settings', { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (typeof data.channelPhoto === 'string' && data.channelPhoto.trim()) {
+          setChannelPhoto(data.channelPhoto);
+          try {
+            localStorage.setItem(PHOTO_KEY, data.channelPhoto);
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+        // Migrate legacy localStorage-only photo to the server once.
+        const legacy = localStorage.getItem(PHOTO_KEY);
+        if (legacy && legacy.startsWith('data:image/')) {
+          const uploadRes = await fetch('/api/chat/channel-settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ photoDataUrl: legacy }),
+          });
+          if (uploadRes.ok) {
+            const uploaded = await uploadRes.json();
+            if (typeof uploaded.channelPhoto === 'string' && uploaded.channelPhoto.trim()) {
+              setChannelPhoto(uploaded.channelPhoto);
+              try {
+                localStorage.setItem(PHOTO_KEY, uploaded.channelPhoto);
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+
+    // Load broadcast history from DB; migrate any legacy localStorage-only posts.
+    void (async () => {
+      try {
+        let legacy: BroadcastMessage[] = [];
+        try {
+          const raw = localStorage.getItem(HISTORY_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as unknown;
+            if (Array.isArray(parsed)) {
+              legacy = parsed.filter(
+                (m): m is BroadcastMessage =>
+                  !!m &&
+                  typeof m === 'object' &&
+                  typeof (m as BroadcastMessage).content === 'string' &&
+                  typeof (m as BroadcastMessage).mode === 'string'
+              );
+            }
+          }
+        } catch {
+          legacy = [];
+        }
+
+        if (legacy.length > 0) {
+          await fetch('/api/chat/broadcast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({
+              messages: legacy.map((m) => ({
+                content: m.content,
+                mode: m.mode,
+                createdAt: m.createdAt,
+                senderName: 'Movesbook admin',
+              })),
+            }),
+          });
+        }
+
+        const res = await fetch('/api/chat/broadcast?all=1', { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = Array.isArray(data.messages) ? (data.messages as BroadcastMessage[]) : [];
+        const normalized: BroadcastMessage[] = list
+          .filter((m) => OWNER_BROADCAST_MODES.has(String(m.mode)))
+          .map((m) => ({
+            id: String(m.id),
+            content: String(m.content),
+            createdAt: String(m.createdAt),
+            mode: m.mode as BroadcastMode,
+            senderName:
+              typeof (m as { senderName?: string }).senderName === 'string'
+                ? (m as { senderName?: string }).senderName
+                : 'Movesbook admin',
+          }));
+        setHistory(normalized);
+        try {
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(normalized));
+        } catch {
+          /* ignore */
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [getAuthHeaders]);
 
   const pingPresence = useCallback(async () => {
     try {
@@ -163,38 +454,161 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     }
   }, [getAuthHeaders]);
 
+  const mapChannelUser = (s: ChannelSubscriber): ChannelSubscriber => ({
+    id: s.id,
+    name: s.name,
+    telegramAccount: s.telegramAccount ?? null,
+    image: s.image ?? null,
+    isOnline: Boolean(s.isOnline),
+    lastSeenAt: s.lastSeenAt ?? null,
+    createdAt: s.createdAt ?? null,
+  });
+
   const loadStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/chat/admin-stats', { headers: getAuthHeaders() });
+      const subIds = loadSubscriberIds();
+      const admIds = loadAdminIds();
+      // POST body carries group filters — a GET query with ~193 countries is too large and fails after refresh.
+      const res = await fetch('/api/chat/admin-stats', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subscriberIds: subIds,
+          adminIds: admIds,
+          sports: userSettings.sports,
+          userTypes: userSettings.userTypes,
+          countries: userSettings.countries,
+        }),
+      });
       if (!res.ok) return;
       const data = await res.json();
-      setChatUsersCount(data.chatUsersCount ?? 0);
+      const counts = data.modeCounts as Partial<Record<BroadcastMode, number>> | undefined;
+      setModeCounts({
+        all: counts?.all ?? 0,
+        group: counts?.group ?? 0,
+        subscribers: counts?.subscribers ?? data.subscriberCount ?? subIds.length,
+        favourites: counts?.favourites ?? 0,
+      });
       if (Array.isArray(data.subscribers)) {
-        setSubscribers(
-          data.subscribers.map((s: ChannelSubscriber) => ({
-            id: s.id,
-            name: s.name,
-            image: s.image ?? null,
-            isOnline: Boolean(s.isOnline),
-            lastSeenAt: s.lastSeenAt ?? null,
-          }))
-        );
+        setSubscribers(data.subscribers.map(mapChannelUser));
+      } else {
+        setSubscribers([]);
       }
+      if (Array.isArray(data.admins)) {
+        setChannelAdmins(data.admins.map(mapChannelUser));
+      } else {
+        setChannelAdmins([]);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [getAuthHeaders, userSettings]);
+
+  const loadRepliersCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/chat/broadcast/repliers', { headers: getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (typeof data.count === 'number') setChatUsersCount(data.count);
+      else if (Array.isArray(data.users)) setChatUsersCount(data.users.length);
     } catch {
       /* ignore */
     }
   }, [getAuthHeaders]);
 
+  const loadAddCandidates = useCallback(
+    async (search: string, mode: 'subscribers' | 'admins' = 'subscribers') => {
+      setAddLoading(true);
+      try {
+        const subIds = loadSubscriberIds();
+        const admIds = loadAdminIds();
+        const params = new URLSearchParams({ candidates: '1', candidateMode: mode });
+        if (subIds.length > 0) params.set('subscriberIds', subIds.join(','));
+        if (admIds.length > 0) params.set('adminIds', admIds.join(','));
+        if (search.trim()) params.set('candidateSearch', search.trim());
+        const res = await fetch(`/api/chat/admin-stats?${params}`, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.candidates)) {
+          setAddCandidates(data.candidates.map(mapChannelUser));
+        } else {
+          setAddCandidates([]);
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        setAddLoading(false);
+      }
+    },
+    [getAuthHeaders]
+  );
+
+  const addSubscriber = (user: ChannelSubscriber) => {
+    const id = String(user.id);
+    setSubscriberIds((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      saveSubscriberIds(next);
+      return next;
+    });
+    setSubscribers((prev) => (prev.some((s) => String(s.id) === id) ? prev : [...prev, user]));
+    setAddCandidates((prev) => prev.filter((c) => String(c.id) !== id));
+  };
+
+  const removeSubscriber = (userId: string | number) => {
+    const id = String(userId);
+    setSubscriberIds((prev) => {
+      const next = prev.filter((x) => x !== id);
+      saveSubscriberIds(next);
+      return next;
+    });
+    setSubscribers((prev) => prev.filter((s) => String(s.id) !== id));
+  };
+
+  const addChannelAdmin = (user: ChannelSubscriber) => {
+    const id = String(user.id);
+    setAdminIds((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      saveAdminIds(next);
+      return next;
+    });
+    setChannelAdmins((prev) => (prev.some((s) => String(s.id) === id) ? prev : [...prev, user]));
+    setAddCandidates((prev) => prev.filter((c) => String(c.id) !== id));
+  };
+
+  const removeChannelAdmin = (userId: string | number) => {
+    const id = String(userId);
+    setAdminIds((prev) => {
+      const next = prev.filter((x) => x !== id);
+      saveAdminIds(next);
+      return next;
+    });
+    setChannelAdmins((prev) => prev.filter((s) => String(s.id) !== id));
+  };
+
   useEffect(() => {
     pingPresence();
     loadStats();
+    void loadRepliersCount();
     const presenceTimer = setInterval(pingPresence, 30_000);
     const statsTimer = setInterval(loadStats, 60_000);
+    const repliersTimer = setInterval(() => void loadRepliersCount(), 60_000);
     return () => {
       clearInterval(presenceTimer);
       clearInterval(statsTimer);
+      clearInterval(repliersTimer);
     };
-  }, [pingPresence, loadStats]);
+  }, [pingPresence, loadStats, loadRepliersCount]);
+
+  useEffect(() => {
+    if (broadcastPanelView !== 'addSubscribers' && broadcastPanelView !== 'addAdministrators') return;
+    const mode = broadcastPanelView === 'addAdministrators' ? 'admins' : 'subscribers';
+    const t = setTimeout(() => {
+      void loadAddCandidates(addSearch, mode);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [broadcastPanelView, addSearch, loadAddCandidates]);
 
   useEffect(() => {
     fetch('/api/news/ogp-settings-options', { headers: getAuthHeaders() })
@@ -222,6 +636,22 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('click', close);
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', close, true);
+    };
+  }, [contextMenu]);
+
   const saveUserSettings = (settings: ChatUserFilterSettings) => {
     setUserSettings(settings);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -231,6 +661,13 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     setUserSettings(defaultChatUserFilterSettings);
     localStorage.removeItem(SETTINGS_KEY);
   };
+
+  // Keep subscriber mode count in sync when channel subscribers are added/removed locally.
+  useEffect(() => {
+    setModeCounts((prev) =>
+      prev.subscribers === subscriberIds.length ? prev : { ...prev, subscribers: subscriberIds.length }
+    );
+  }, [subscriberIds]);
 
   const setMute = (value: boolean) => {
     setMuted(value);
@@ -242,6 +679,10 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     localStorage.removeItem(HISTORY_KEY);
     setShowComposerMenu(false);
     setShowMuteSubmenu(false);
+    void fetch(`/api/chat/broadcast?mode=${encodeURIComponent(mode)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    }).catch(() => {});
   };
 
   const openBroadcastView = () => {
@@ -251,6 +692,9 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
       setBroadcastPanelView('invite');
       setSubscriberSearchOpen(false);
       setSubscriberSearch('');
+      setAddSearch('');
+      setAddCandidates([]);
+      setAddAdminSearchOpen(false);
       return;
     }
     setMainView('broadcast');
@@ -277,6 +721,9 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     setBroadcastPanelView('invite');
     setSubscriberSearchOpen(false);
     setSubscriberSearch('');
+    setAddSearch('');
+    setAddCandidates([]);
+    setAddAdminSearchOpen(false);
   };
 
   const onChannelPhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -284,14 +731,35 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setChannelPhoto(reader.result);
-        try {
-          localStorage.setItem(PHOTO_KEY, reader.result);
-        } catch {
-          /* ignore quota */
-        }
+      if (typeof reader.result !== 'string') return;
+      const dataUrl = reader.result;
+      setChannelPhoto(dataUrl);
+      try {
+        localStorage.setItem(PHOTO_KEY, dataUrl);
+      } catch {
+        /* ignore quota */
       }
+      void (async () => {
+        try {
+          const res = await fetch('/api/chat/channel-settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ photoDataUrl: dataUrl }),
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (typeof data.channelPhoto === 'string' && data.channelPhoto.trim()) {
+            setChannelPhoto(data.channelPhoto);
+            try {
+              localStorage.setItem(PHOTO_KEY, data.channelPhoto);
+            } catch {
+              /* ignore */
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      })();
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -299,28 +767,241 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
 
   const filteredSubscribers =
     subscriberSearch.trim().length > 0
-      ? subscribers.filter((s) => s.name.toLowerCase().includes(subscriberSearch.trim().toLowerCase()))
+      ? subscribers.filter((s) => {
+          const q = subscriberSearch.trim().toLowerCase().replace(/^@+/, '');
+          const tg = (s.telegramAccount || '').toLowerCase().replace(/^@+/, '');
+          return tg.includes(q) || s.name.toLowerCase().includes(q);
+        })
       : subscribers;
 
-  const sendBroadcast = () => {
-    const content = message.trim();
+  const sendBroadcast = async (rawContent?: string) => {
+    const content = (rawContent ?? message).trim();
     if (!content) return;
-    const entry: BroadcastMessage = {
-      id: `${Date.now()}`,
-      content,
-      createdAt: new Date().toISOString(),
-      mode,
-    };
-    const next = [...history, entry];
-    setHistory(next);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-    setMessage('');
+    try {
+      const res = await fetch('/api/chat/broadcast', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content,
+          mode,
+          senderName: ownerName || 'Movesbook admin',
+          subscriberIds: mode === 'subscribers' ? loadSubscriberIds() : [],
+          sports: mode === 'group' ? userSettings.sports : [],
+          userTypes: mode === 'group' ? userSettings.userTypes : [],
+          countries: mode === 'group' ? userSettings.countries : [],
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.alert(typeof data.error === 'string' ? data.error : 'Failed to send broadcast');
+        return;
+      }
+      const created = data.message as
+        | { id?: string; content?: string; createdAt?: string; mode?: BroadcastMode; senderName?: string }
+        | undefined;
+      const entry: BroadcastMessage = {
+        id: created?.id || `${Date.now()}`,
+        content: created?.content || content,
+        createdAt: created?.createdAt || new Date().toISOString(),
+        mode: (created?.mode as BroadcastMode) || mode,
+        senderName: created?.senderName || ownerName || 'Movesbook admin',
+      };
+      const next = [...history, entry];
+      setHistory(next);
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      setMessage('');
+    } catch {
+      window.alert('Failed to send broadcast');
+    }
   };
 
-  const filteredHistory =
-    searchOpen && searchQuery.trim()
-      ? history.filter((m) => m.content.toLowerCase().includes(searchQuery.trim().toLowerCase()))
-      : history;
+  const sendImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 4 * 1024 * 1024) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string' && reader.result.startsWith('data:image/')) {
+        void sendBroadcast(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        e.preventDefault();
+        const file = items[i].getAsFile();
+        if (file) sendImageFile(file);
+        return;
+      }
+    }
+  };
+
+  const hideMessageLocally = (messageId: string) => {
+    setHiddenIds((prev) => {
+      const next = new Set(prev);
+      next.add(messageId);
+      saveHiddenIds(next);
+      return next;
+    });
+    if (pinnedId === messageId) {
+      setPinnedId(null);
+      savePinnedId(null);
+    }
+  };
+
+  const handleMessageContextMenu = (e: React.MouseEvent, msg: BroadcastMessage) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const pad = 8;
+    const menuW = 200;
+    const menuH = 220;
+    const x = Math.min(e.clientX, window.innerWidth - menuW - pad);
+    const y = Math.min(e.clientY, window.innerHeight - menuH - pad);
+    setContextMenu({ x: Math.max(pad, x), y: Math.max(pad, y), message: msg });
+  };
+
+  const handleContextCopy = async () => {
+    if (!contextMenu) return;
+    const msg = contextMenu.message;
+    setContextMenu(null);
+    try {
+      if (isImageContent(msg.content)) {
+        const res = await fetch(msg.content);
+        const blob = await res.blob();
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+      } else {
+        await navigator.clipboard.writeText(msg.content);
+      }
+    } catch {
+      try {
+        await navigator.clipboard.writeText(isImageContent(msg.content) ? '[Image]' : msg.content);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  const handleContextPin = () => {
+    if (!contextMenu) return;
+    const id = contextMenu.message.id;
+    setContextMenu(null);
+    const next = pinnedId === id ? null : id;
+    setPinnedId(next);
+    savePinnedId(next);
+  };
+
+  const handleContextForward = async () => {
+    if (!contextMenu) return;
+    const msg = contextMenu.message;
+    setContextMenu(null);
+    setForwardingMessage(msg);
+    try {
+      const res = await fetch('/api/chat/conversations', { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setConversations(
+          Array.isArray(data.conversations)
+            ? data.conversations.map((c: ConversationOption) => ({
+                id: c.id,
+                otherUser: { id: c.otherUser.id, name: c.otherUser.name },
+              }))
+            : []
+        );
+      } else {
+        setConversations([]);
+      }
+    } catch {
+      setConversations([]);
+    }
+  };
+
+  const handleForwardTo = async (targetConversationId: string) => {
+    if (!forwardingMessage || forwarding) return;
+    setForwarding(true);
+    try {
+      const sender = forwardingMessage.senderName || ownerName || 'Movesbook admin';
+      const content = isImageContent(forwardingMessage.content)
+        ? forwardingMessage.content
+        : `Forwarded from ${sender}: ${forwardingMessage.content}`;
+      const res = await fetch(`/api/chat/conversations/${targetConversationId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ content }),
+      });
+      if (res.ok) setForwardingMessage(null);
+    } catch {
+      /* ignore */
+    } finally {
+      setForwarding(false);
+    }
+  };
+
+  const handleContextDelete = () => {
+    if (!contextMenu) return;
+    setDeleteTarget(contextMenu.message);
+    setContextMenu(null);
+  };
+
+  const deleteForMe = () => {
+    if (!deleteTarget) return;
+    hideMessageLocally(deleteTarget.id);
+    setDeleteTarget(null);
+  };
+
+  const deleteForEveryone = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(
+        `/api/chat/broadcast?messageId=${encodeURIComponent(deleteTarget.id)}`,
+        { method: 'DELETE', headers: getAuthHeaders() }
+      );
+      if (res.ok) {
+        setHistory((prev) => {
+          const next = prev.filter((m) => m.id !== deleteTarget.id);
+          try {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+          } catch {
+            /* ignore */
+          }
+          return next;
+        });
+        hideMessageLocally(deleteTarget.id);
+        setDeleteTarget(null);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const filteredHistory = history.filter((m) => {
+    if (!OWNER_BROADCAST_MODES.has(m.mode)) return false;
+    if (m.mode !== mode) return false;
+    if (hiddenIds.has(m.id)) return false;
+    if (searchOpen && searchQuery.trim()) {
+      if (isImageContent(m.content)) return '[image]'.includes(searchQuery.trim().toLowerCase());
+      return m.content.toLowerCase().includes(searchQuery.trim().toLowerCase());
+    }
+    return true;
+  });
+
+  const pinnedMessage = pinnedId
+    ? filteredHistory.find((m) => m.id === pinnedId) ?? null
+    : null;
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [filteredHistory.length, mode]);
 
   const toolbarBtn =
     'inline-flex items-center gap-1.5 px-2 py-1.5 text-[12px] text-[#7ec8e3] hover:bg-white/10 rounded transition';
@@ -355,7 +1036,17 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
             {muted ? <VolumeX className="h-4 w-4 text-red-400" /> : <Bell className="h-4 w-4" />}
             Mute
           </button>
-          <button type="button" className={toolbarBtn} title="Add subscribers">
+          <button
+            type="button"
+            className={toolbarBtn}
+            title="Add subscribers"
+            onClick={() => {
+              setMainView('broadcast');
+              setShowBroadcastPanel(true);
+              setAddSearch('');
+              setBroadcastPanelView('addSubscribers');
+            }}
+          >
             <UserPlus className="h-4 w-4" />
             Add subscribers
           </button>
@@ -397,7 +1088,10 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
         <div className="flex min-h-0 w-full flex-1">
           {mainView === 'chatUsers' ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <ChatPanel embedded getAuthHeaders={getAuthHeaders} />
+              <AdminChatUsersPanel
+                getAuthHeaders={getAuthHeaders}
+                onCountChange={setChatUsersCount}
+              />
             </div>
           ) : mainView === 'broadcast' ? (
             <>
@@ -513,19 +1207,12 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                       type="button"
                       className="flex w-full items-center gap-4 px-4 py-3.5 text-left hover:bg-white/5"
                       onClick={() => {
-                        /* add subscribers */
+                        setAddSearch('');
+                        setBroadcastPanelView('addSubscribers');
                       }}
                     >
                       <UserPlus className="h-5 w-5 shrink-0 text-[#64b5f6]" />
                       <span className="text-[16px] text-[#64b5f6]">Add subscribers</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-4 px-4 py-3.5 text-left hover:bg-white/5"
-                      onClick={() => setShowInviteLink(true)}
-                    >
-                      <Link2 className="h-5 w-5 shrink-0 text-[#64b5f6]" />
-                      <span className="text-[16px] text-[#64b5f6]">Invite via Link</span>
                     </button>
 
                     <div className="mx-4 border-t border-white/10" />
@@ -535,44 +1222,133 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                     {filteredSubscribers.length === 0 ? (
                       <p className="px-4 py-6 text-center text-[13px] text-[#8a94a0]">No subscribers found</p>
                     ) : (
-                      filteredSubscribers.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-white/5"
-                        >
-                          {s.image ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={s.image}
-                              alt=""
-                              className="h-11 w-11 shrink-0 rounded-full object-cover"
-                            />
-                          ) : (
-                            <span
-                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
-                              style={{ backgroundColor: subscriberAvatarColor(s.name) }}
-                            >
-                              {subscriberInitials(s.name)}
+                      filteredSubscribers.map((s) => {
+                        const label = formatTelegramId(s.telegramAccount) || s.name;
+                        return (
+                          <div
+                            key={String(s.id)}
+                            className="flex w-full items-center gap-3 px-4 py-2.5"
+                          >
+                            {s.image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={s.image}
+                                alt=""
+                                className="h-11 w-11 shrink-0 rounded-full object-cover"
+                              />
+                            ) : (
+                              <span
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
+                                style={{ backgroundColor: subscriberAvatarColor(label) }}
+                              >
+                                {subscriberInitials(label)}
+                              </span>
+                            )}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[16px] text-white">{label}</span>
+                              <span
+                                className={`block text-[13px] ${
+                                  s.isOnline ? 'text-[#64b5f6]' : 'text-[#8a94a0]'
+                                }`}
+                              >
+                                {s.isOnline ? 'online' : 'last seen recently'}
+                              </span>
                             </span>
-                          )}
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[16px] text-white">{s.name}</span>
-                            <span
-                              className={`block text-[13px] ${
-                                s.isOnline ? 'text-[#64b5f6]' : 'text-[#8a94a0]'
-                              }`}
+                            <button
+                              type="button"
+                              className="rounded px-2 py-1 text-[12px] text-[#e17076] hover:bg-white/5"
+                              title="Remove subscriber"
+                              onClick={() => removeSubscriber(s.id)}
                             >
-                              {s.isOnline ? 'online' : 'last seen recently'}
-                            </span>
-                          </span>
-                        </button>
-                      ))
+                              Remove
+                            </button>
+                          </div>
+                        );
+                      })
                     )}
 
                     <p className="px-4 py-4 text-center text-[12px] leading-snug text-[#6b7580]">
                       Only channel admins can see this list.
                     </p>
+                  </div>
+                </>
+              ) : broadcastPanelView === 'addSubscribers' ? (
+                <>
+                  <div className="flex shrink-0 items-center gap-1 px-2 py-2.5">
+                    <button
+                      type="button"
+                      className="rounded p-1.5 text-white hover:bg-white/10"
+                      onClick={() => {
+                        setBroadcastPanelView('subscribers');
+                        setAddSearch('');
+                        setAddCandidates([]);
+                      }}
+                      title="Back"
+                    >
+                      <ArrowLeft className="h-5 w-5" />
+                    </button>
+                    <input
+                      value={addSearch}
+                      onChange={(e) => setAddSearch(e.target.value)}
+                      placeholder="Search Telegram ID"
+                      autoFocus
+                      className="min-w-0 flex-1 border-0 bg-transparent px-1 text-[16px] text-white outline-none placeholder:text-white/40"
+                    />
+                    <button
+                      type="button"
+                      className="rounded p-1.5 text-white hover:bg-white/10"
+                      onClick={() => {
+                        setBroadcastPanelView('subscribers');
+                        setAddSearch('');
+                        setAddCandidates([]);
+                      }}
+                      title="Done"
+                    >
+                      <Check className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                    <p className="px-4 pb-2 pt-1 text-[13px] text-[#8a94a0]">
+                      Select Telegram users to add as channel subscribers
+                    </p>
+                    {addLoading && addCandidates.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-[13px] text-[#8a94a0]">Loading…</p>
+                    ) : addCandidates.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-[13px] text-[#8a94a0]">
+                        No Telegram users found
+                      </p>
+                    ) : (
+                      addCandidates.map((s) => {
+                        const telegramId = formatTelegramId(s.telegramAccount);
+                        return (
+                          <button
+                            key={String(s.id)}
+                            type="button"
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-white/5"
+                            onClick={() => addSubscriber(s)}
+                          >
+                            <span
+                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
+                              style={{ backgroundColor: subscriberAvatarColor(telegramId || s.name) }}
+                            >
+                              {subscriberInitials(telegramId || s.name)}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[16px] text-white">{telegramId}</span>
+                              <span
+                                className={`block text-[13px] ${
+                                  s.isOnline ? 'text-[#64b5f6]' : 'text-[#8a94a0]'
+                                }`}
+                              >
+                                {s.isOnline ? 'online' : 'last seen recently'}
+                              </span>
+                            </span>
+                            <UserPlus className="h-4 w-4 shrink-0 text-[#64b5f6]" />
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 </>
               ) : broadcastPanelView === 'administrators' ? (
@@ -602,6 +1378,12 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                       <button
                         type="button"
                         className="flex w-full items-center gap-4 px-4 py-3.5 text-left hover:bg-white/5"
+                        onClick={() => {
+                          setAddSearch('');
+                          setAddAdminSearchOpen(false);
+                          setAddCandidates([]);
+                          setBroadcastPanelView('addAdministrators');
+                        }}
                       >
                         <span className="relative flex h-6 w-6 shrink-0 items-center justify-center text-[#64b5f6]">
                           <ShieldPlus className="h-6 w-6" strokeWidth={1.75} />
@@ -623,6 +1405,35 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                           <span className="block text-[13px] text-[#8a94a0]">Owner</span>
                         </span>
                       </div>
+
+                      {channelAdmins.map((a) => {
+                        const label = formatTelegramId(a.telegramAccount) || a.name;
+                        return (
+                          <div
+                            key={String(a.id)}
+                            className="flex w-full items-center gap-3 px-4 py-2.5"
+                          >
+                            <span
+                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
+                              style={{ backgroundColor: subscriberAvatarColor(label) }}
+                            >
+                              {subscriberInitials(label)}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[16px] text-white">{label}</span>
+                              <span className="block text-[13px] text-[#8a94a0]">Admin</span>
+                            </span>
+                            <button
+                              type="button"
+                              className="rounded px-2 py-1 text-[12px] text-[#e17076] hover:bg-white/5"
+                              title="Remove admin"
+                              onClick={() => removeChannelAdmin(a.id)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
 
                     <p className="px-4 py-3 text-[13px] leading-snug text-[#708499]">
@@ -695,6 +1506,89 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                         ? "Allow admins to post as their channel or personal account, linking to their profile."
                         : 'Add the names of admins to messages they post.'}
                     </p>
+                  </div>
+                </>
+              ) : broadcastPanelView === 'addAdministrators' ? (
+                <>
+                  <div className="flex shrink-0 items-center gap-1 px-2 py-2.5">
+                    <button
+                      type="button"
+                      className="rounded p-1.5 text-white hover:bg-white/10"
+                      onClick={() => {
+                        setBroadcastPanelView('administrators');
+                        setAddSearch('');
+                        setAddCandidates([]);
+                        setAddAdminSearchOpen(false);
+                      }}
+                      title="Back"
+                    >
+                      <ArrowLeft className="h-5 w-5" />
+                    </button>
+                    {addAdminSearchOpen ? (
+                      <input
+                        value={addSearch}
+                        onChange={(e) => setAddSearch(e.target.value)}
+                        placeholder="Search"
+                        autoFocus
+                        className="min-w-0 flex-1 border-0 bg-transparent px-1 text-[16px] text-white outline-none placeholder:text-white/40"
+                      />
+                    ) : (
+                      <span className="flex-1 text-center text-[17px] font-medium text-white">
+                        Add Admin
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="rounded p-1.5 text-white hover:bg-white/10"
+                      onClick={() => {
+                        if (addAdminSearchOpen) {
+                          setAddAdminSearchOpen(false);
+                          setAddSearch('');
+                        } else {
+                          setAddAdminSearchOpen(true);
+                        }
+                      }}
+                      title={addAdminSearchOpen ? 'Close search' : 'Search'}
+                    >
+                      {addAdminSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+                    </button>
+                  </div>
+
+                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                    <p className="px-4 pb-2 pt-3 text-[13px] text-[#8a94a0]">Contacts in this channel</p>
+
+                    {addLoading && addCandidates.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-[13px] text-[#8a94a0]">Loading…</p>
+                    ) : addCandidates.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-[13px] text-[#8a94a0]">
+                        No Telegram users found
+                      </p>
+                    ) : (
+                      addCandidates.map((s) => {
+                        const telegramId = formatTelegramId(s.telegramAccount);
+                        return (
+                          <button
+                            key={String(s.id)}
+                            type="button"
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-white/5"
+                            onClick={() => addChannelAdmin(s)}
+                          >
+                            <span
+                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
+                              style={{ backgroundColor: subscriberAvatarColor(telegramId || s.name) }}
+                            >
+                              {subscriberInitials(telegramId || s.name)}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[16px] text-white">{telegramId}</span>
+                              <span className="block text-[13px] text-[#8a94a0]">
+                                {formatJoinedAt(s.createdAt)}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 </>
               ) : (
@@ -790,7 +1684,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                     >
                       <Users className="h-[18px] w-[18px] shrink-0 text-[#8ab4d9]" />
                       <span className="flex-1 text-[15px] text-white">Subscribers</span>
-                      <span className="text-[15px] text-[#50a2e9]">{chatUsersCount || subscribers.length}</span>
+                      <span className="text-[15px] text-[#50a2e9]">{subscriberIds.length}</span>
                     </button>
                     <div className="mx-3.5 border-t border-white/10" />
                     <button
@@ -800,7 +1694,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                     >
                       <Shield className="h-[18px] w-[18px] shrink-0 text-[#8ab4d9]" />
                       <span className="flex-1 text-[15px] text-white">Administrators</span>
-                      <span className="text-[15px] text-[#50a2e9]">1</span>
+                      <span className="text-[15px] text-[#50a2e9]">{1 + adminIds.length}</span>
                     </button>
                     <div className="mx-3.5 border-t border-white/10" />
                     <button
@@ -837,12 +1731,15 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                 <button
                   type="button"
                   onClick={() => setMode(key)}
-                  className="flex flex-1 items-center gap-2 px-3 py-2.5 text-left text-[12px] font-medium text-[#2a6db0] hover:underline"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left text-[12px] font-medium text-[#2a6db0] hover:underline"
                 >
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#c5d8ea] bg-[#e8f4fc] text-[#2a6db0]">
                     <User className="h-3.5 w-3.5" />
                   </span>
-                  {MODE_LABELS[key]}
+                  <span className="min-w-0 flex-1 leading-snug">
+                    {MODE_LABELS[key]}
+                    <span className="ml-1 font-semibold text-[#1a5a9a]">({modeCounts[key]})</span>
+                  </span>
                 </button>
                 {key === 'group' && (
                   <button
@@ -856,16 +1753,6 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                 )}
               </div>
             ))}
-            {(userSettings.sports.length > 0 ||
-              userSettings.userTypes.length > 0 ||
-              userSettings.countries.length > 0) && (
-              <div className="m-2 rounded border border-[#dde] bg-[#f8f8fc] p-2 text-[10px] text-[#555]">
-                <div className="mb-1 font-semibold text-[#333]">Group filters active</div>
-                {userSettings.sports.length > 0 && <div>Sports: {userSettings.sports.length}</div>}
-                {userSettings.userTypes.length > 0 && <div>Types: {userSettings.userTypes.length}</div>}
-                {userSettings.countries.length > 0 && <div>Countries: {userSettings.countries.length}</div>}
-              </div>
-            )}
           </aside>
 
           {/* Main broadcast pane */}
@@ -893,6 +1780,26 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
               </div>
             )}
 
+            {pinnedMessage && (
+              <div className="flex shrink-0 items-start gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+                <Pin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold">Pinned</div>
+                  <div className="truncate">{previewText(pinnedMessage.content, 100)}</div>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 text-amber-700 hover:underline"
+                  onClick={() => {
+                    setPinnedId(null);
+                    savePinnedId(null);
+                  }}
+                >
+                  Unpin
+                </button>
+              </div>
+            )}
+
             <div className="relative min-h-0 flex-1 overflow-y-auto">
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-[0.09]">
                 <div className="relative text-[#9a9a9a]">
@@ -913,18 +1820,30 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                   filteredHistory.map((m) => (
                     <div
                       key={m.id}
-                      className="ml-auto max-w-[85%] rounded-lg bg-[#dcf8c6] px-3 py-2 text-sm text-[#222] shadow-sm"
+                      onContextMenu={(e) => handleMessageContextMenu(e, m)}
+                      className="ml-auto max-w-[85%] cursor-context-menu rounded-lg bg-[#dcf8c6] px-3 py-2 text-sm text-[#222] shadow-sm"
                     >
                       <div className="mb-0.5 text-[10px] font-semibold uppercase text-[#5a7a3a]">
-                        {MODE_LABELS[m.mode]}
+                        {BROADCAST_SENT_LABELS[m.mode]}
                       </div>
-                      <div className="whitespace-pre-wrap break-words">{m.content}</div>
-                      <div className="mt-1 text-right text-[10px] text-gray-500">
-                        {new Date(m.createdAt).toLocaleString()}
+                      {isImageContent(m.content) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={m.content}
+                          alt="Broadcast"
+                          className="max-h-56 max-w-full rounded object-contain"
+                        />
+                      ) : (
+                        <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                      )}
+                      <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-gray-500">
+                        {pinnedId === m.id && <Pin className="h-3 w-3 text-amber-600" />}
+                        <span>{new Date(m.createdAt).toLocaleString()}</span>
                       </div>
                     </div>
                   ))
                 )}
+                <div ref={messagesEndRef} />
               </div>
             </div>
 
@@ -1019,13 +1938,14 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                 <input
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
+                  onPaste={handlePaste}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      sendBroadcast();
+                      void sendBroadcast();
                     }
                   }}
-                  placeholder="Broadcast"
+                  placeholder="Broadcast (paste image to send)"
                   className="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none placeholder:text-gray-400"
                 />
                 <button type="button" className="rounded p-1.5 text-[#555] hover:bg-[#e8e8e8]" title="Notifications">
@@ -1033,22 +1953,13 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                 </button>
                 <button
                   type="button"
-                  className="rounded p-1.5 text-[#555] hover:bg-[#e8e8e8]"
-                  title="Attach"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Paperclip className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={sendBroadcast}
+                  onClick={() => void sendBroadcast()}
                   disabled={!message.trim()}
                   className="rounded bg-[#8b1a1a] p-1.5 text-white hover:bg-[#6e1414] disabled:opacity-40"
                   title="Send broadcast"
                 >
                   <Send className="h-4 w-4" />
                 </button>
-                <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.doc,.docx" />
               </div>
             </div>
           </section>
@@ -1135,6 +2046,133 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
               onClick={() => setShowQrModal(false)}
             >
               Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {contextMenu && (
+        <div
+          className="fixed z-[80] min-w-[200px] overflow-hidden rounded-xl border border-[#2a3544] bg-[#1e2733] py-1 text-white shadow-xl"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            type="button"
+            onClick={() => void handleContextCopy()}
+            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] hover:bg-white/10"
+          >
+            <Copy className="h-4 w-4 shrink-0 opacity-90" />
+            Copy
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleContextForward()}
+            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] hover:bg-white/10"
+          >
+            <Forward className="h-4 w-4 shrink-0 opacity-90" />
+            Forward
+          </button>
+          <button
+            type="button"
+            onClick={handleContextPin}
+            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] hover:bg-white/10"
+          >
+            <Pin className="h-4 w-4 shrink-0 opacity-90" />
+            {pinnedId === contextMenu.message.id ? 'Unpin' : 'Pin'}
+          </button>
+          <button
+            type="button"
+            onClick={handleContextDelete}
+            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] text-red-300 hover:bg-white/10"
+          >
+            <Trash2 className="h-4 w-4 shrink-0 opacity-90" />
+            Delete
+          </button>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-[85] flex items-center justify-center bg-black/45 p-4"
+          onClick={() => !deleting && setDeleteTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-md border border-[#ccc] bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-2 text-base font-semibold text-gray-900">Delete message</h3>
+            <p className="mb-4 text-sm text-gray-600">
+              Remove this message only for you, or also for everyone who can see the channel?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                className="rounded border border-[#ccc] px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+                onClick={deleteForMe}
+              >
+                Delete for me
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                className="rounded bg-[#8b1a1a] px-3 py-2 text-sm text-white hover:bg-[#6e1414] disabled:opacity-50"
+                onClick={() => void deleteForEveryone()}
+              >
+                {deleting ? 'Deleting…' : 'Delete for everyone'}
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                className="rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                onClick={() => setDeleteTarget(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {forwardingMessage && (
+        <div
+          className="fixed inset-0 z-[85] flex items-center justify-center bg-black/45 p-4"
+          onClick={() => !forwarding && setForwardingMessage(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-md border border-[#ccc] bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-2 text-base font-semibold text-gray-900">Forward message</h3>
+            <p className="mb-3 truncate text-sm text-gray-600">
+              {previewText(forwardingMessage.content, 100)}
+            </p>
+            <div className="mb-3 max-h-56 overflow-y-auto rounded border border-[#e5e5e5]">
+              {conversations.length === 0 ? (
+                <p className="px-3 py-4 text-center text-sm text-gray-500">No conversations found</p>
+              ) : (
+                conversations.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={forwarding}
+                    className="flex w-full items-center px-3 py-2.5 text-left text-sm hover:bg-gray-50 disabled:opacity-50"
+                    onClick={() => void handleForwardTo(c.id)}
+                  >
+                    {c.otherUser.name}
+                  </button>
+                ))
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={forwarding}
+              className="rounded border border-[#ccc] px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+              onClick={() => setForwardingMessage(null)}
+            >
+              Cancel
             </button>
           </div>
         </div>

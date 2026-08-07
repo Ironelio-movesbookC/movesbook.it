@@ -629,6 +629,23 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+/// Admin → users broadcast messages for the Movesbook channel in user chat.
+model ChatBroadcastMessage {
+  id           String   @id @default(cuid())
+  content      String   @db.LongText
+  mode         String   // all | group | subscribers | favourites | repliers | reply
+  senderName   String   @default("Movesbook admin")
+  /// JSON string[] of target user IDs. Null = all Telegram-linked users (mode=all).
+  /// For mode=reply: JSON { parentId, senderUserId }.
+  /// For mode=repliers: JSON string[] of users who replied to broadcasts (Chat users → All).
+  recipientIds String?  @db.LongText
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([mode])
+  @@map("chat_broadcast_messages")
+}
+
 /// User-owned threads: REVIEW (private) and SUPPORT (community feed)
 model UserMessageThread {
   id              String                @id @default(cuid())
