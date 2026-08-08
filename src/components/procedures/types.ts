@@ -6,7 +6,10 @@ export type { Member, Column };
 export type ProcedureTab = {
   id: string;
   label: string;
-  href: string;
+  href?: string;
+  /** When set, renders as a button (e.g. Pay deadlines selected). */
+  onClick?: () => void;
+  disabled?: boolean;
 };
 
 export type ProcedureArchiveShellProps = {
@@ -14,6 +17,8 @@ export type ProcedureArchiveShellProps = {
   activeTab: string;
   tabs: ProcedureTab[];
   headerAction?: React.ReactNode;
+  /** Extra content on the right of the tabs row (e.g. Display also paid). */
+  tabsTrailing?: React.ReactNode;
   error?: string;
   footerHint?: string;
   children: React.ReactNode;

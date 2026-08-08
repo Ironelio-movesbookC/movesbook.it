@@ -4,7 +4,10 @@ import {
   listVersionHistoryArticles,
   saveVersionHistoryArticles,
 } from '@/lib/messages/versionHistory';
-import { verifySuperAdminPassword } from '@/lib/messages/verifySuperAdminPassword';
+import {
+  verifyOptionsFromRequest,
+  verifySuperAdminPassword,
+} from '@/lib/messages/verifySuperAdminPassword';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +39,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const password = String(body.password ?? '');
-    if (!(await verifySuperAdminPassword(password))) {
+    if (!(await verifySuperAdminPassword(password, verifyOptionsFromRequest(request)))) {
       return NextResponse.json({ error: 'invalid_password' }, { status: 401 });
     }
 

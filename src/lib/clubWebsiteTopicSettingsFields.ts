@@ -64,6 +64,8 @@ export type ClubWebsiteTopicSettingsFormItem = {
   id: string;
   name: string;
   activated: boolean;
+  bannerColor: string;
+  titleColor: string;
 } & ClubWebsiteTopicSettingsFields;
 
 export type ClubWebsiteTopicSettingsVariant = 'root' | 'topic' | 'subtopic';

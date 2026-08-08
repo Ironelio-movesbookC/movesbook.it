@@ -44,6 +44,7 @@ export default function ExpensePaymentDetailPage() {
       sectorName: r.secondaryLabel || '-',
       serviceName: r.primaryLabel,
       paydate: r.paydate,
+      createdAt: null,
       value: r.value,
       pay: r.pay,
       rest: r.rest,
@@ -100,6 +101,15 @@ export default function ExpensePaymentDetailPage() {
   useEffect(() => {
     load().catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
   }, [load]);
+
+  async function handleAddToRecordTotal(additionalAmount: number): Promise<void> {
+    if (!purchase) return;
+    const newTotal = purchase.value + additionalAmount;
+    await client.updateRecord(id, { totalAmount: newTotal });
+    setPurchase((prev) =>
+      prev ? { ...prev, value: newTotal, rest: prev.rest + additionalAmount } : prev
+    );
+  }
 
   async function handleSubmit(values: ServicePaymentSubmitValues) {
     setError('');
@@ -160,6 +170,7 @@ export default function ExpensePaymentDetailPage() {
             success={success}
             onSubmit={handleSubmit}
             onCancel={() => router.push('/clubs/expense_dead_line')}
+            onAddToRecordTotal={handleAddToRecordTotal}
             operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
           />
         )}

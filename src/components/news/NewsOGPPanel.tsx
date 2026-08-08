@@ -23,6 +23,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
     customTopics,
     topicNamesCreatedBySuperAdmin,
     pastedArticles,
+    ogpNewsGroups,
     typedArticles,
     loading,
     error,
@@ -30,10 +31,15 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
     updateTopic,
     deleteTopic,
     saveTopicOrder,
+    hiddenTopics,
     addPastedArticle,
     removePastedArticle,
     updatePastedArticleSettings,
     updatePastedArticleTopic,
+    saveOgpNewsGroup,
+    removeOgpNewsGroup,
+    updateOgpNewsGroup,
+    updateOgpNewsGroupSettings,
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData();
@@ -201,7 +207,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           <p className="text-sm text-red-600 mb-4">{error}</p>
         )}
         <NewsTopicBar
-          topics={topics}
+          topics={topics.filter((t) => !hiddenTopics.includes(t))}
           activeTopic={activeTopic}
           onTopicSelect={setActiveTopic}
           onAddNewTopic={handleOpenTopicModal}
@@ -229,8 +235,9 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           isOpen={showTopicSortModal}
           onClose={() => setShowTopicSortModal(false)}
           topics={topics}
-          onSave={async (ordered) => {
-            await saveTopicOrder(ordered);
+          savedHiddenTopics={hiddenTopics}
+          onSave={async (ordered, _genreOrder, hidden) => {
+            await saveTopicOrder(ordered, undefined, hidden);
           }}
         />
 
@@ -278,10 +285,17 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           onRemoveTyped={handleRemoveTyped}
           canDeleteOgp={user?.userType === 'ADMIN'}
           currentUserId={user?.id ?? null}
+          currentUserCountry={user?.country ?? null}
           onUpdatePastedSettings={handleUpdatePastedSettings}
           onUpdatePastedTopic={handleUpdatePastedTopic}
           onAddClick={() => setShowOgpForm((prev) => !prev)}
           addButtonDisabled={activeTopic === ALL_TOPICS}
+          ogpNewsGroups={ogpNewsGroups}
+          onSaveOgpNewsGroup={saveOgpNewsGroup}
+          onCreateTopic={addTopic}
+          onRemoveOgpNewsGroup={removeOgpNewsGroup}
+          onUpdateOgpNewsGroup={updateOgpNewsGroup}
+          onUpdateOgpNewsGroupSettings={updateOgpNewsGroupSettings}
         />
       </div>
     </div>

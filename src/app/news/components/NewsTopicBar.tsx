@@ -72,6 +72,17 @@ interface NewsTopicBarProps {
   hideUserInsertedDropdown?: boolean;
   /** When true, disable Add topic, pencil, expand/reduce, and topic-sort gear (still visible where applicable). */
   disableTopicManagement?: boolean;
+  /**
+   * Built-in topic names that use gray chips and cannot be edited/deleted.
+   * Defaults to NEWS_TOPICS. Music passes an empty list so all user topics get cyan chips.
+   */
+  defaultTopicNames?: readonly string[];
+  /** Music: musical genres shown as grey chips after topic chips. */
+  musicalGenres?: string[];
+  /** Music: currently selected musical genre chip (optional). */
+  activeMusicalGenre?: string | null;
+  /** Music: called when a musical genre chip is clicked. */
+  onMusicalGenreSelect?: (genre: string) => void;
 }
 
 export default function NewsTopicBar({
@@ -90,22 +101,35 @@ export default function NewsTopicBar({
   showSuperAdminAllButton = false,
   hideUserInsertedDropdown = false,
   disableTopicManagement = false,
+  defaultTopicNames = NEWS_TOPICS,
+  musicalGenres = [],
+  activeMusicalGenre = null,
+  onMusicalGenreSelect,
 }: NewsTopicBarProps) {
   const userTopicRows =
-    userInsertedTopics != null && userInsertedTopics.length > 0
+    userInsertedTopics != null
       ? userInsertedTopics
       : topicNamesCreatedByNormalUsers.map((name) => ({ name, creatorUsername: null as string | null }));
   const topicNamesFromUserInserted = userTopicRows.map((r) => r.name);
+  /** Superadmin shells pass `userInsertedTopics` (even empty) so the dropdown always shows. */
+  const showUserInsertedDropdown =
+    !hideUserInsertedDropdown &&
+    (userInsertedTopics != null || topicNamesFromUserInserted.length > 0);
 
   /** Topics to show as buttons (exclude normal-user-created when dropdown is used; “see as user” passes merged list and hides dropdown). */
   const topicsForBar =
-    topicNamesFromUserInserted.length > 0 && !hideUserInsertedDropdown
+    topicNamesFromUserInserted.length > 0 && showUserInsertedDropdown
       ? topics.filter((t) => !topicNamesFromUserInserted.includes(t))
       : topics;
   const { t } = useLanguage();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const topicIsDefault = useCallback(
+    (topic: string | null) => topic != null && defaultTopicNames.includes(topic),
+    [defaultTopicNames]
+  );
 
   const translateTopic = useCallback((topic: string) => {
     const key = NEWS_TOPIC_KEYS[topic];
@@ -130,7 +154,7 @@ export default function NewsTopicBar({
       el.removeEventListener('scroll', updateScrollState);
       ro.disconnect();
     };
-  }, [updateScrollState, topicsForBar.length]);
+  }, [updateScrollState, topicsForBar.length, musicalGenres.length]);
 
   const scrollLeft = useCallback(() => {
     scrollRef.current?.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' });
@@ -141,13 +165,27 @@ export default function NewsTopicBar({
   }, []);
 
   /** Default topics (Nutrition, Sport, etc.) cannot be deleted; disable Pencil when one is selected. Also disable when "All" is selected or when a topic created by super admin is selected (normal users cannot edit those). */
-  const isDefaultTopicSelected = activeTopic != null && activeTopic !== ALL_TOPICS && isDefaultTopic(activeTopic);
+  const isDefaultTopicSelected = activeTopic != null && activeTopic !== ALL_TOPICS && topicIsDefault(activeTopic);
   const isAllSelected = activeTopic === ALL_TOPICS || activeTopic === ALL_SUPER_ADMIN;
   const isSuperAdminTopicSelected = activeTopic != null && topicNamesCreatedBySuperAdmin.includes(activeTopic);
-  const isPencilDisabled = disableTopicManagement || isAllSelected || isDefaultTopicSelected || isSuperAdminTopicSelected;
+  const isMusicalGenreSelected =
+    activeMusicalGenre != null && String(activeMusicalGenre).trim() !== '';
+  const isPencilDisabled =
+    disableTopicManagement ||
+    isAllSelected ||
+    isDefaultTopicSelected ||
+    isSuperAdminTopicSelected ||
+    isMusicalGenreSelected;
+  const pencilDisabledReason = isMusicalGenreSelected
+    ? 'Deselect musical genre to edit topic'
+    : isAllSelected
+      ? 'Select a topic to edit'
+      : isSuperAdminTopicSelected
+        ? 'Cannot edit topic created by admin'
+        : 'Cannot edit default topic';
 
   return (
-    <div className="flex items-end gap-2 mb-4 flex-nowrap overflow-hidden">
+    <div className="flex items-end gap-2 mb-4 flex-nowrap min-w-0">
       {/* Add new topic button */}
       {onAddTopic && (
         <button
@@ -176,8 +214,8 @@ export default function NewsTopicBar({
             ? 'border-amber-200 bg-amber-50/50 text-amber-400 cursor-not-allowed'
             : 'border-amber-400 bg-amber-50 text-amber-600 hover:bg-amber-100'
         }`}
-        title={isPencilDisabled ? (isAllSelected ? 'Select a topic to edit' : isSuperAdminTopicSelected ? 'Cannot edit topic created by admin' : 'Cannot edit default topic') : 'Edit topic'}
-        aria-label={isPencilDisabled ? (isAllSelected ? 'Select a topic to edit' : isSuperAdminTopicSelected ? 'Cannot edit topic created by admin' : 'Cannot edit default topic') : 'Edit topic'}
+        title={isPencilDisabled ? pencilDisabledReason : 'Edit topic'}
+        aria-label={isPencilDisabled ? pencilDisabledReason : 'Edit topic'}
       >
         <Pencil className="w-5 h-5" />
       </button>
@@ -241,7 +279,7 @@ export default function NewsTopicBar({
           {topicsForBar.map((topic) => {
             const isActive = activeTopic === topic;
             const isOgpTopicByCurrentUser =
-              !isDefaultTopic(topic) && !topicNamesCreatedBySuperAdmin.includes(topic);
+              !topicIsDefault(topic) && !topicNamesCreatedBySuperAdmin.includes(topic);
             return (
               <button
                 key={topic}
@@ -256,6 +294,26 @@ export default function NewsTopicBar({
                 }`}
               >
                 {translateTopic(topic)}
+              </button>
+            );
+          })}
+          {musicalGenres.map((genre) => {
+            const isActive = activeMusicalGenre === genre;
+            return (
+              <button
+                key={`genre-${genre}`}
+                type="button"
+                onClick={() => onMusicalGenreSelect?.(genre)}
+                className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200 ${
+                  isActive
+                    ? 'bg-gray-800 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+                title={`Musical genre: ${genre}`}
+                aria-label={`Musical genre ${genre}`}
+                aria-pressed={isActive}
+              >
+                {genre}
               </button>
             );
           })}
@@ -278,8 +336,8 @@ export default function NewsTopicBar({
         <ChevronRight className="w-5 h-5" />
       </button>
 
-      {/* Sectors inserted by users (super admin only) */}
-      {topicNamesFromUserInserted.length > 0 && !hideUserInsertedDropdown && (
+      {/* Topics inserted by users (super admin only — shown even when empty) */}
+      {showUserInsertedDropdown && (
         <div className="flex-shrink-0 flex flex-col justify-end gap-1 ml-2">
           <label htmlFor="user-sectors-select" className="text-xs font-medium text-gray-600 whitespace-nowrap">
             Topics inserted by users

@@ -20,29 +20,46 @@ export async function POST(request: NextRequest) {
       language
     } = await request.json();
 
-    console.log('Registration attempt:', { name, firstName, surname, username, email, userType, country });
+    const normalizedUsername = typeof username === 'string' ? username.trim() : '';
+    const normalizedEmail = typeof email === 'string' ? email.trim() : '';
+
+    console.log('Registration attempt:', {
+      name,
+      firstName,
+      surname,
+      username: normalizedUsername,
+      email: normalizedEmail,
+      userType,
+      country,
+    });
 
     // Validate required fields
-    if (!name || !username || !email || !password || !userType || !country) {
+    if (!name || !normalizedUsername || !normalizedEmail || !password || !userType || !country) {
       return NextResponse.json(
         { error: 'All required fields must be filled' },
         { status: 400 }
       );
     }
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email },
-          { username }
-        ]
-      }
+    // Check if user already exists (report which field conflicts)
+    const existingByEmail = await prisma.user.findFirst({
+      where: { email: normalizedEmail },
+      select: { id: true, email: true, username: true },
+    });
+    const existingByUsername = await prisma.user.findFirst({
+      where: { username: normalizedUsername },
+      select: { id: true, email: true, username: true },
     });
 
-    if (existingUser) {
+    if (existingByEmail || existingByUsername) {
+      const conflicts: string[] = [];
+      if (existingByEmail) conflicts.push('email');
+      if (existingByUsername) conflicts.push('username');
       return NextResponse.json(
-        { error: 'User with this email or username already exists' },
+        {
+          error: `User with this ${conflicts.join(' and ')} already exists`,
+          conflicts,
+        },
         { status: 409 }
       );
     }
@@ -55,40 +72,15 @@ export async function POST(request: NextRequest) {
 
     console.log('Creating user with type:', dbUserType);
 
-    // Create user with new profile fields
-    const user = await prisma.user.create({
-      data: {
-        name,
-        firstName: firstName || undefined,
-        surname: surname || undefined,
-        username,
-        email,
-        password: hashedPassword,
-        userType: dbUserType,
-        gender: gender || undefined,
-        birthdate: birthdate ? new Date(birthdate) : undefined,
-        country: country || undefined,
-      },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        email: true,
-        userType: true,
-        createdAt: true,
-      }
-    });
-
-    console.log('User created:', user.id);
-
     // Load admin defaults for user's language (fallback to 'en')
-    const userLanguage = typeof language === 'string' && language.trim() ? language.trim().toLowerCase() : 'en';
+    const userLanguage =
+      typeof language === 'string' && language.trim() ? language.trim().toLowerCase() : 'en';
     console.log(`Loading admin defaults for language: ${userLanguage}`);
 
     const [colorDefaults, toolsDefaults, favouritesDefaults] = await Promise.all([
       prisma.colorDefaults.findUnique({ where: { language: userLanguage } }),
       prisma.toolsDefaults.findUnique({ where: { language: userLanguage } }),
-      prisma.favouritesDefaults.findUnique({ where: { language: userLanguage } })
+      prisma.favouritesDefaults.findUnique({ where: { language: userLanguage } }),
     ]);
 
     // Fallback defaults if admin hasn't set them yet
@@ -103,87 +95,109 @@ export async function POST(request: NextRequest) {
       buttonEdit: '#f59e0b',
       buttonDelete: '#ef4444',
       buttonPrint: '#6b7280',
-      alternateRow: '#f9fafc'
+      alternateRow: '#f9fafc',
     };
 
-    // Create default settings for user with admin defaults
-    await prisma.userSettings.create({
-      data: {
-        userId: user.id,
-        colorSettings: colorDefaults?.data ? JSON.stringify(colorDefaults.data) : JSON.stringify(defaultColorSettings),
-        toolsSettings: toolsDefaults?.data ? JSON.stringify(toolsDefaults.data) : '{}',
-        favouritesSettings: favouritesDefaults?.data ? JSON.stringify(favouritesDefaults.data) : '{}',
-        myBestSettings: '{}',
-        adminSettings: '{}',
-        workoutPreferences: '{}',
-        socialSettings: '{}',
-        notificationSettings: '{}',
-        widgetArrangement: '[]',
-        language: userLanguage
-      }
-    });
-
-    console.log('User settings created with admin defaults');
-
-    // Create default main sports
     const defaultSports = [
       { sport: SportType.SWIM, order: 0 },
       { sport: SportType.BIKE, order: 1 },
       { sport: SportType.RUN, order: 2 },
-      { sport: SportType.BODY_BUILDING, order: 3 }
+      { sport: SportType.BODY_BUILDING, order: 3 },
     ];
 
-    for (const sportData of defaultSports) {
-      await prisma.userMainSport.create({
-        data: {
-          userId: user.id,
-          sport: sportData.sport,
-          order: sportData.order
-        }
-      });
-    }
-
-    console.log('Default sports created');
-
-    // Create default periods
     const defaultPeriods = [
       { name: 'Preparation', description: 'Initial training phase', color: '#3b82f6' },
       { name: 'Competition', description: 'Main competition phase', color: '#ef4444' },
-      { name: 'Recovery', description: 'Active recovery phase', color: '#10b981' }
+      { name: 'Recovery', description: 'Active recovery phase', color: '#10b981' },
     ];
 
-    for (const period of defaultPeriods) {
-      await prisma.period.create({
-        data: {
-          userId: user.id,
-          name: period.name,
-          description: period.description,
-          color: period.color
-        }
-      });
-    }
-
-    console.log('Default periods created');
-
-    // Create default workout sections
     const defaultSections = [
       { name: 'Warm-up', description: 'Pre-workout activation', color: '#f59e0b' },
       { name: 'Main Set', description: 'Primary workout component', color: '#ef4444' },
-      { name: 'Cool-down', description: 'Post-workout recovery', color: '#10b981' }
+      { name: 'Cool-down', description: 'Post-workout recovery', color: '#10b981' },
     ];
 
-    for (const section of defaultSections) {
-      await prisma.workoutSection.create({
+    // Atomic create: if settings/sports/etc fail, do not leave a half-registered user
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
         data: {
-          userId: user.id,
-          name: section.name,
-          description: section.description,
-          color: section.color
-        }
+          name,
+          firstName: firstName || undefined,
+          surname: surname || undefined,
+          username: normalizedUsername,
+          email: normalizedEmail,
+          password: hashedPassword,
+          userType: dbUserType,
+          gender: gender || undefined,
+          birthdate: birthdate ? new Date(birthdate) : undefined,
+          country: country || undefined,
+        },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          email: true,
+          userType: true,
+          createdAt: true,
+        },
       });
-    }
 
-    console.log('Default sections created');
+      await tx.userSettings.create({
+        data: {
+          userId: created.id,
+          colorSettings: colorDefaults?.data
+            ? JSON.stringify(colorDefaults.data)
+            : JSON.stringify(defaultColorSettings),
+          toolsSettings: toolsDefaults?.data ? JSON.stringify(toolsDefaults.data) : '{}',
+          favouritesSettings: favouritesDefaults?.data
+            ? JSON.stringify(favouritesDefaults.data)
+            : '{}',
+          myBestSettings: '{}',
+          adminSettings: '{}',
+          workoutPreferences: '{}',
+          socialSettings: '{}',
+          notificationSettings: '{}',
+          widgetArrangement: '[]',
+          language: userLanguage,
+        },
+      });
+
+      for (const sportData of defaultSports) {
+        await tx.userMainSport.create({
+          data: {
+            userId: created.id,
+            sport: sportData.sport,
+            order: sportData.order,
+          },
+        });
+      }
+
+      for (const period of defaultPeriods) {
+        await tx.period.create({
+          data: {
+            userId: created.id,
+            name: period.name,
+            description: period.description,
+            color: period.color,
+          },
+        });
+      }
+
+      for (const section of defaultSections) {
+        await tx.workoutSection.create({
+          data: {
+            userId: created.id,
+            name: section.name,
+            description: section.description,
+            color: section.color,
+          },
+        });
+      }
+
+      return created;
+    });
+
+    console.log('User created:', user.id);
 
     // Generate JWT token with RSA signing
     const token = require('@/lib/auth').generateToken(
@@ -196,18 +210,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       token,
-      user
+      user,
     });
-
   } catch (error: any) {
     console.error('Registration error:', error);
-    
+
     // More detailed error logging
     if (error.code) {
       console.error('Error code:', error.code);
       console.error('Error meta:', error.meta);
     }
-    
+
+    // Unique constraint race (email/username taken between check and insert)
+    if (error.code === 'P2002') {
+      const target = Array.isArray(error.meta?.target)
+        ? error.meta.target.join(', ')
+        : error.meta?.target || 'email or username';
+      return NextResponse.json(
+        { error: `User with this ${target} already exists` },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       { error: 'Internal server error: ' + error.message },
       { status: 500 }

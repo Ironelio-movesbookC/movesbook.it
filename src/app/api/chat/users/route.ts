@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,10 @@ export async function GET(request: NextRequest) {
     if (!decoded?.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
-    const myId = decoded.userId;
+    const myId = await resolveMessageDatabaseUserId(decoded.userId, decoded.userType);
+    if (!myId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
 
     const searchRaw = request.nextUrl.searchParams.get('search')?.trim() ?? '';
     const searchNorm = searchRaw.replace(/^@+/, ''); // strip leading @ like Telegram

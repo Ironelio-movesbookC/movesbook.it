@@ -15,6 +15,7 @@ import RightSidebar from '@/components/dashboard/RightSidebar';
 import TeamGrid from './components/TeamGrid';
 import { useTeamDashboard } from './hooks/useTeamDashboard';
 import { useManagedEntityCreation } from '@/hooks/useManagedEntityCreation';
+import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 
 export default function TeamDashboard() {
   const router = useRouter();
@@ -39,6 +40,7 @@ export default function TeamDashboard() {
   const [showToolbar, setShowToolbar] = useState(true);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
+  const [showStaffFeedbacks, setShowStaffFeedbacks] = useState(false);
   /** My Team tab visible only after opening a team from the sidebar (hidden on My Page). */
   const [myEntityTabVisible, setMyEntityTabVisible] = useState(false);
 
@@ -317,11 +319,19 @@ export default function TeamDashboard() {
                 }}
                 onCreateTeamClick={entityCreation.openCreateFlow}
                 onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
+                onMyFeedbacksStaffClick={() => {
+                  setActiveTab('my-page');
+                  setShowStaffFeedbacks(true);
+                }}
               />
             </div>
           )}
 
           <div className="flex-1 min-w-0 flex flex-col px-4">
+            {showStaffFeedbacks ? (
+              <MyStaffFeedbacksPanel onClose={() => setShowStaffFeedbacks(false)} />
+            ) : (
+              <>
             {activeTab === 'my-page' && (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">My Page</h2>
@@ -375,6 +385,8 @@ export default function TeamDashboard() {
                 onTeamSelect={handleTeamSelectWithTab}
                 onCreateTeam={entityCreation.openCreateFlow}
               />
+            )}
+              </>
             )}
           </div>
 

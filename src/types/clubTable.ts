@@ -2,9 +2,13 @@ import React from "react";
 
 export type Member = {
   id?: string;
+  /** Member/user id for same-member multi-deadline pay validation */
+  userId?: string;
 
   // selection
   checked?: boolean;
+  /** Club member user id (for same-member multi-pay validation). */
+  memberId?: string;
 
   // member list
   surname?: string;
@@ -42,6 +46,9 @@ export type Member = {
   payed?: number;
   description?: string;
   operator?: string;
+  /** Parent procedure record id (cash movement drill-down). */
+  procedureRecordId?: string;
+  procedureType?: string;
 
   // credit
   cost?: number;

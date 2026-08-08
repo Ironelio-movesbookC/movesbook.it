@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
 
 /** DELETE - Delete a message. Only the sender can delete their own message. */
 export async function DELETE(
@@ -16,7 +17,10 @@ export async function DELETE(
     if (!decoded?.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
-    const myId = decoded.userId;
+    const myId = await resolveMessageDatabaseUserId(decoded.userId, decoded.userType);
+    if (!myId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
     const { id: conversationId, messageId } = await params;
 
     const conv = await prisma.chatConversation.findUnique({

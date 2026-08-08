@@ -16,7 +16,10 @@ import {
   listPollsArchive,
   listReservationsArchive,
   listStaffQueriesArchive,
+  listUnifiedDeadlines,
+  listUnifiedPayments,
   listUnifiedProductSales,
+  listUnifiedReceipts,
   type ArchiveQueryParams,
 } from '@/lib/club/archives/clubArchiveService';
 
@@ -24,7 +27,7 @@ export const dynamic = 'force-dynamic';
 
 type RouteContext = { params: { type: string } };
 
-function parseArchiveParams(request: NextRequest): ArchiveQueryParams {
+function parseArchiveParams(request: NextRequest): ArchiveQueryParams & { includePaid?: boolean } {
   const sp = request.nextUrl.searchParams;
   return {
     page: Number(sp.get('page') ?? 1),
@@ -33,6 +36,7 @@ function parseArchiveParams(request: NextRequest): ArchiveQueryParams {
     fromDate: sp.get('fromDate') ?? undefined,
     toDate: sp.get('toDate') ?? undefined,
     orderBy: (sp.get('orderBy') as 'recent' | 'old') ?? undefined,
+    includePaid: sp.get('includePaid') === '1' || sp.get('includePaid') === 'true',
   };
 }
 
@@ -66,6 +70,15 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
         break;
       case 'cash-movements':
         result = await listCashMovements(auth.ctx, direction, archiveParams);
+        break;
+      case 'deadlines':
+        result = await listUnifiedDeadlines(auth.ctx, archiveParams);
+        break;
+      case 'payments':
+        result = await listUnifiedPayments(auth.ctx, archiveParams);
+        break;
+      case 'receipts':
+        result = await listUnifiedReceipts(auth.ctx, archiveParams);
         break;
       case 'accesses':
         result = await listAccessesArchive(auth.ctx, archiveParams);

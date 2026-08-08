@@ -1,5 +1,6 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getClubAuthContext, procedureService } from '@/lib/procedures';
+import { isKnownProcedureType } from '@/lib/procedures/validators';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,10 +11,20 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const auth = await getClubAuthContext(request);
     if ('error' in auth) return auth.error;
 
+    if (!isKnownProcedureType(params.type)) {
+      return NextResponse.json({ error: `Unknown procedure type: ${params.type}` }, { status: 400 });
+    }
+
+    const idsRaw = request.nextUrl.searchParams.get('ids');
+    const recordIds = idsRaw
+      ? idsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+
     const result = await procedureService.listPayments(auth.ctx, params.type, {
       page: Number(request.nextUrl.searchParams.get('page') ?? 1),
       pageSize: Number(request.nextUrl.searchParams.get('pageSize') ?? 10),
       recordId: request.nextUrl.searchParams.get('recordId') ?? undefined,
+      recordIds,
     });
 
     return NextResponse.json(result);

@@ -31,11 +31,14 @@ import {
   ShoppingCart,
   Megaphone,
   ShoppingBag,
-  Search
+  Search,
+  Music,
+  ListMusic
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
+import { clearClubWorkspaceSessionOnLogout } from '@/lib/club/clearClubWorkspaceSession';
 
 // Map language codes to flag file names
 const getFlagFileName = (code: string): string => {
@@ -59,6 +62,8 @@ const getFlagFileName = (code: string): string => {
 interface ModernNavbarProps {
   onLoginClick?: () => void;
   onAdminClick?: () => void;
+  /** Hide content nav, network search, and login/user actions (e.g. public OGP group share page). */
+  hideContentNav?: boolean;
 }
 
 type NetworkSearchResultItem = {
@@ -83,7 +88,7 @@ function networkSearchVisitorHref(
   return source === 'mainpage' ? `${base}?source=mainpage` : base;
 }
 
-export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavbarProps) {
+export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNav = false }: ModernNavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout, isAuthenticated, requireAuth, login } = useAuth();
@@ -196,6 +201,24 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
   const isOpenNewsNavHref = (href: string) =>
     href === '/athlete/dashboard?open=news' || href === '/club/dashboard?open=news';
 
+  /** Open My Music in the athlete dashboard middle area (same pattern as News). */
+  const navMusicHref =
+    user && isClubAccountUserType(user.userType)
+      ? '/music-panel'
+      : '/athlete/dashboard?open=music';
+
+  const isOpenMusicNavHref = (href: string) =>
+    href === '/athlete/dashboard?open=music' || href === '/music-panel';
+
+  /** Open Music OGP editor (same as "Add/edit my music" on My Music panel). */
+  const navAddSongsHref =
+    user && isClubAccountUserType(user.userType)
+      ? '/add-songs'
+      : '/athlete/dashboard?open=add-songs';
+
+  const isOpenAddSongsNavHref = (href: string) =>
+    href === '/athlete/dashboard?open=add-songs' || href === '/add-songs';
+
   const menuItems = useMemo(
     () => [
       { href: '/', label: t('nav_home'), icon: Home },
@@ -208,8 +231,10 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
       { href: '/job-offers', label: 'Jobs', icon: Briefcase },
       { href: '/promote-yourself', label: 'Promote', icon: Megaphone },
       { href: '/our-shop', label: 'Shop', icon: ShoppingBag },
+      { href: navAddSongsHref, label: 'Add Songs', icon: ListMusic },
+      { href: navMusicHref, label: 'Music Panel', icon: Music },
     ],
-    [navNewsHref, t]
+    [navNewsHref, navAddSongsHref, navMusicHref, t]
   );
 
   const socialLinks = [
@@ -539,6 +564,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     localStorage.removeItem('user');
     localStorage.removeItem('adminUser');
     localStorage.removeItem('adminToken');
+    clearClubWorkspaceSessionOnLogout();
 
     setIsLoggingIn(true);
     setLoginError('');
@@ -824,6 +850,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
             </div>
 
             {/* Desktop: nav links + network search (legacy “Search in …”) */}
+            {!hideContentNav && (
             <div className="hidden lg:flex min-w-0 flex-1 items-center gap-3 overflow-visible mx-2 lg:mx-4">
               <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-hide lg:gap-2">
                 {menuItems.map((item, index) => {
@@ -837,7 +864,9 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                     item.href === '/job-offers' ||
                     item.href === '/promote-yourself' ||
                     item.href === '/our-shop' ||
-                    item.href === '/news-by-movesbook';
+                    item.href === '/news-by-movesbook' ||
+                    isOpenAddSongsNavHref(item.href) ||
+                    isOpenMusicNavHref(item.href);
                   const canAccess = isPublicRoute || isAuthenticated;
                   
                   return (
@@ -922,8 +951,10 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                 </div>
               </form>
             </div>
+            )}
 
             {/* User Actions */}
+            {!hideContentNav && (
             <div className="hidden lg:flex items-center space-x-4 flex-shrink-0" style={{ overflow: 'visible', position: 'relative', zIndex: 100 }}>
               {isAdmin ? (
                 /* Admin Logged In - Show Admin Button and Logout */
@@ -1061,8 +1092,10 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                 </div>
               )}
             </div>
+            )}
 
             {/* Mobile Menu Button */}
+            {!hideContentNav && (
             <div className="lg:hidden flex-shrink-0">
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -1075,10 +1108,11 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                 )}
               </button>
             </div>
+            )}
           </div>
 
           {/* Mobile Menu */}
-          {isMobileMenuOpen && (
+          {!hideContentNav && isMobileMenuOpen && (
             <div className="lg:hidden py-6 border-t border-cyan-500 border-opacity-30">
               <div className="flex flex-col space-y-3">
                 {menuItems.map((item) => {
@@ -1092,7 +1126,9 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                     item.href === '/job-offers' ||
                     item.href === '/promote-yourself' ||
                     item.href === '/our-shop' ||
-                    item.href === '/news-by-movesbook';
+                    item.href === '/news-by-movesbook' ||
+                    isOpenAddSongsNavHref(item.href) ||
+                    isOpenMusicNavHref(item.href);
                   const canAccess = isPublicRoute || isAuthenticated;
                   
                   return (

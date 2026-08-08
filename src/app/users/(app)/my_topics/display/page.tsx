@@ -12,17 +12,23 @@ import {
   type ClubWebsiteFriendItem,
 } from '@/lib/clubWebsiteFriendList';
 import { isTopicAudienceAllowed } from '@/lib/clubWebsiteTopicSettingsFields';
+import { languagesWithTopicHtmlContent } from '@/lib/clubWebsiteDisplayContent';
 import { useAuth } from '@/hooks/useAuth';
+import TopicDisplayLanguageSelect, {
+  pickInitialTopicDisplayLang,
+} from '@/components/club/websiteSettings/TopicDisplayLanguageSelect';
 
 function PersonalTopicDisplayContent() {
-  const { t } = useLanguage();
+  const { t, currentLanguage } = useLanguage();
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const friendId = searchParams?.get('id') ?? null;
   const langParam = searchParams?.get('lang');
-  const lang = (
-    CLUB_WEBSITE_LANGUAGE_TABS.some((l) => l.code === langParam) ? langParam : 'en'
-  ) as ClubWebsiteLanguageCode;
+  const preferredLang = (
+    CLUB_WEBSITE_LANGUAGE_TABS.some((l) => l.code === langParam)
+      ? langParam
+      : currentLanguage
+  ) as string;
   const [items, setItems] = useState<ClubWebsiteFriendItem[]>([]);
 
   useEffect(() => {
@@ -37,6 +43,21 @@ function PersonalTopicDisplayContent() {
     }
     return found;
   }, [items, friendId]);
+
+  const availableLanguages = useMemo(
+    () => (item ? languagesWithTopicHtmlContent(item) : []),
+    [item]
+  );
+
+  const [displayLang, setDisplayLang] = useState<ClubWebsiteLanguageCode>('en');
+
+  useEffect(() => {
+    setDisplayLang(pickInitialTopicDisplayLang(availableLanguages, preferredLang));
+  }, [item?.id, availableLanguages, preferredLang]);
+
+  const lang = availableLanguages.includes(displayLang)
+    ? displayLang
+    : pickInitialTopicDisplayLang(availableLanguages, preferredLang);
 
   if (!user) {
     return (
@@ -57,20 +78,20 @@ function PersonalTopicDisplayContent() {
   if (item.contentDisplayMode === 'link' && item.externalUrl.trim()) {
     if (item.openInSamePage) {
       return (
-        <div className="min-h-screen bg-zinc-100">
+        <div className="min-h-0 bg-zinc-100">
           <div className="border-b border-zinc-300 bg-zinc-200 px-4 py-1.5 text-center text-[11px] text-zinc-600">
             {t('club_topic_display_readonly_banner')}
           </div>
           <iframe
             title={item.title}
             src={item.externalUrl}
-            className="h-[calc(100vh-2rem)] w-full border-0 bg-white"
+            className="h-[calc(100vh-8rem)] w-full border-0 bg-white"
           />
         </div>
       );
     }
     return (
-      <div className="min-h-screen bg-zinc-100">
+      <div className="min-h-0 bg-zinc-100">
         <div className="border-b border-zinc-300 bg-zinc-200 px-4 py-1.5 text-center text-[11px] text-zinc-600">
           {t('club_topic_display_readonly_banner')}
         </div>
@@ -89,19 +110,25 @@ function PersonalTopicDisplayContent() {
     );
   }
 
-  const html = item.contentsByLang[lang] || item.contentsByLang.en || '';
-  const keywords = item.keywordsByLang[lang] || item.keywordsByLang.en || '';
+  const html = item.contentsByLang[lang] ?? '';
+  const keywords = item.keywordsByLang[lang] ?? '';
 
   return (
-    <div className="min-h-screen bg-zinc-100">
+    <div className="min-h-0 bg-zinc-100">
       <div className="border-b border-zinc-300 bg-zinc-200 px-4 py-1.5 text-center text-[11px] text-zinc-600">
         {t('club_topic_display_readonly_banner')}
       </div>
       <div
-        className="px-4 py-3 text-lg font-semibold"
+        className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-lg font-semibold"
         style={{ backgroundColor: item.bannerColor, color: item.titleColor }}
       >
-        {item.title}
+        <span className="min-w-0 truncate">{item.title}</span>
+        <TopicDisplayLanguageSelect
+          availableLanguages={availableLanguages}
+          value={lang}
+          onChange={setDisplayLang}
+          titleColor={item.titleColor}
+        />
       </div>
       <div className="mx-auto max-w-4xl bg-white p-6 shadow-sm">
         {item.sectionName ? (

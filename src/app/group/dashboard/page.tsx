@@ -42,6 +42,7 @@ import {
   filterFormCreatedEntities,
   useManagedEntityCreation,
 } from '@/hooks/useManagedEntityCreation';
+import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getDashboardPathForUserType, isGroupAccountUserType } from '@/utils/dashboardRouting';
@@ -64,6 +65,7 @@ export default function GroupDashboard() {
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
+  const [showStaffFeedbacks, setShowStaffFeedbacks] = useState(false);
   /** My Group tab visible only after opening a group from the sidebar (hidden on My Page). */
   const [myEntityTabVisible, setMyEntityTabVisible] = useState(false);
 
@@ -389,11 +391,19 @@ export default function GroupDashboard() {
                 }}
                 onCreateGroupClick={entityCreation.openCreateFlow}
                 onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
+                onMyFeedbacksStaffClick={() => {
+                  setActiveTab('my-page');
+                  setShowStaffFeedbacks(true);
+                }}
               />
             </div>
           )}
 
           <div className="flex-1 min-w-0 flex flex-col px-4">
+            {showStaffFeedbacks ? (
+              <MyStaffFeedbacksPanel onClose={() => setShowStaffFeedbacks(false)} />
+            ) : (
+              <>
             {activeTab === 'my-page' && (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">My Page</h2>
@@ -495,6 +505,8 @@ export default function GroupDashboard() {
                   </div>
                 )}
               </div>
+            )}
+              </>
             )}
           </div>
 

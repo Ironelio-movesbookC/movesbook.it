@@ -1,10 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Pencil, Trash2 } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import DisplayAllArchivesCheckbox, {
+  scopedArchiveQuery,
+  useEffectiveScopedRecordIds,
+  useScopedRecordIds,
+} from '@/components/procedures/DisplayAllArchivesCheckbox';
 import {
   getServiceSaleTabs,
   SERVICE_SALE_PAGE_SIZE,
@@ -65,7 +71,12 @@ function mapPayment(
   };
 }
 
-export default function ServicePaymentsPage() {
+function ServicePaymentsInner() {
+  const searchParams = useSearchParams();
+  const scopedIds = useScopedRecordIds();
+  const effectiveIds = useEffectiveScopedRecordIds();
+  const scopeQuery = scopedArchiveQuery(searchParams);
+
   const [data, setData] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -81,7 +92,11 @@ export default function ServicePaymentsPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetchPayments({ page, pageSize: SERVICE_SALE_PAGE_SIZE });
+      const res = await fetchPayments({
+        page,
+        pageSize: SERVICE_SALE_PAGE_SIZE,
+        recordIds: effectiveIds.length > 0 ? effectiveIds : undefined,
+      });
       setTotal(res.total);
       setData(
         res.items.map((p) =>
@@ -103,27 +118,45 @@ export default function ServicePaymentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, effectiveIds]);
 
-  const performDelete = useCallback(async (id: string) => {
-    try {
-      await deletePayment(id);
-      load();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Delete failed');
-    }
-  }, [load]);
+  const performDelete = useCallback(
+    async (id: string) => {
+      try {
+        await deletePayment(id);
+        load();
+      } catch (e) {
+        alert(e instanceof Error ? e.message : 'Delete failed');
+      }
+    },
+    [load]
+  );
 
   useEffect(() => {
     load();
   }, [load]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [effectiveIds.join(',')]);
+
   return (
     <ProcedureArchiveShell
-      title="Archive of Payments"
+      title="Archive of Payments (Services)"
       activeTab="payments"
-      tabs={getServiceSaleTabs('payments')}
+      tabs={getServiceSaleTabs(
+        'payments',
+        null,
+        scopedIds.length > 0 ? scopedIds : null,
+        scopeQuery || null
+      )}
+      tabsTrailing={<DisplayAllArchivesCheckbox archiveLabel="payments" />}
       error={error}
+      footerHint={
+        effectiveIds.length > 0
+          ? `Showing payments for ${effectiveIds.length} selected deadline(s) only. Check “Display all payments” for the full list.`
+          : undefined
+      }
       pagination={
         <ProcedurePagination
           page={page}
@@ -137,7 +170,10 @@ export default function ServicePaymentsPage() {
 
       <AdminPasswordConfirmModal
         isOpen={showPasswordModal}
-        onClose={() => { setShowPasswordModal(false); setEditTarget(null); }}
+        onClose={() => {
+          setShowPasswordModal(false);
+          setEditTarget(null);
+        }}
         onVerified={() => {
           setShowPasswordModal(false);
           setShowEditModal(true);
@@ -147,7 +183,10 @@ export default function ServicePaymentsPage() {
       {editTarget && (
         <EditServicePaymentModal
           isOpen={showEditModal}
-          onClose={() => { setShowEditModal(false); setEditTarget(null); }}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditTarget(null);
+          }}
           onSaved={() => load()}
           payment={{
             id: editTarget.id,
@@ -160,7 +199,10 @@ export default function ServicePaymentsPage() {
 
       <AdminPasswordConfirmModal
         isOpen={showDeletePasswordModal}
-        onClose={() => { setShowDeletePasswordModal(false); setDeleteTargetId(null); }}
+        onClose={() => {
+          setShowDeletePasswordModal(false);
+          setDeleteTargetId(null);
+        }}
         onVerified={() => {
           setShowDeletePasswordModal(false);
           if (deleteTargetId) performDelete(deleteTargetId);
@@ -168,5 +210,13 @@ export default function ServicePaymentsPage() {
         }}
       />
     </ProcedureArchiveShell>
+  );
+}
+
+export default function ServicePaymentsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-500">Loading...</div>}>
+      <ServicePaymentsInner />
+    </Suspense>
   );
 }

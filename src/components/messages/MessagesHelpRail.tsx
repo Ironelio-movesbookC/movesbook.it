@@ -8,7 +8,7 @@ import styles from './MessagesHelpRail.module.css';
 
 export default function MessagesHelpRail() {
   const { t } = useLanguage();
-  const [stripOpen, setStripOpen] = useState(true);
+  const [stripOpen, setStripOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<MainTab>('support');
 

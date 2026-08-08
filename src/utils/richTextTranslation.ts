@@ -63,6 +63,16 @@ export function longTextDisplayHtml(text: string): string {
   return plainTextToRichHtml(text);
 }
 
+function translateAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (typeof window === 'undefined') return headers;
+  const token =
+    localStorage.getItem('adminToken')?.trim() ||
+    localStorage.getItem('token')?.trim();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 /** Client helper: POST plain source → per-language plain strings from `/api/translate`. */
 export async function fetchLongTextTranslations(
   plainSource: string,
@@ -71,7 +81,7 @@ export async function fetchLongTextTranslations(
   const response = await fetch('/api/translate', {
     method: 'POST',
     cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
+    headers: translateAuthHeaders(),
     body: JSON.stringify({ text: plainSource, targetLanguages }),
   });
   if (!response.ok) {

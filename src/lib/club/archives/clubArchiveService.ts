@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
 import { procedureService } from '@/lib/procedures';
+import { getProcedureTypology } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import type { ClubAuthContext } from '@/lib/procedures/types';
 import {
@@ -542,39 +543,28 @@ export async function listCashMovements(
   const pageSize = params.pageSize ?? 25;
   const items: Record<string, unknown>[] = [];
 
-  if (direction === 'all' || direction === 'IN') {
-    const servicePayments = await procedureService.listPayments(ctx, PROCEDURE_TYPE_CODES.SERVICE_SALE, {
-      page: 1,
-      pageSize: 500,
-    });
-    for (const p of servicePayments.items) {
+  async function pushPayments(
+    procedureType: string,
+    idPrefix: string,
+    cashDirection: 'IN' | 'OUT'
+  ) {
+    const payments = await procedureService
+      .listPayments(ctx, procedureType, { page: 1, pageSize: 500 })
+      .catch(() => ({ items: [] as Awaited<ReturnType<typeof procedureService.listPayments>>['items'] }));
+    for (const p of payments.items) {
       items.push({
-        id: `in-${p.id}`,
+        id: `${idPrefix}${p.id}`,
+        paymentId: p.id,
+        procedureRecordId: p.procedureRecordId,
+        procedureType,
         name: p.memberName,
         typology: p.typology,
         service: p.serviceName,
         insertDate: p.paymentDate,
         paid: p.amount,
-        direction: 'IN',
-        payMod: p.payMode,
-        casual: p.notes,
-        operator: p.operatorName,
-      });
-    }
-
-    const productPayments = await procedureService.listPayments(ctx, PROCEDURE_TYPE_CODES.PRODUCT_SALE, {
-      page: 1,
-      pageSize: 500,
-    }).catch(() => ({ items: [] as typeof servicePayments.items }));
-    for (const p of productPayments.items) {
-      items.push({
-        id: `pin-${p.id}`,
-        name: p.memberName,
-        typology: p.typology,
-        service: p.serviceName,
-        insertDate: p.paymentDate,
-        paid: p.amount,
-        direction: 'IN',
+        rest: p.residualDebt,
+        value: p.originalDebt,
+        direction: cashDirection,
         payMod: p.payMode,
         casual: p.notes,
         operator: p.operatorName,
@@ -582,25 +572,14 @@ export async function listCashMovements(
     }
   }
 
+  if (direction === 'all' || direction === 'IN') {
+    await pushPayments(PROCEDURE_TYPE_CODES.SERVICE_SALE, 'in-', 'IN');
+    await pushPayments(PROCEDURE_TYPE_CODES.PRODUCT_SALE, 'pin-', 'IN');
+    await pushPayments(PROCEDURE_TYPE_CODES.MEMBER_DEBT, 'mdin-', 'IN');
+  }
+
   if (direction === 'all' || direction === 'OUT') {
-    const expensePayments = await procedureService.listPayments(ctx, PROCEDURE_TYPE_CODES.EXPENSE, {
-      page: 1,
-      pageSize: 500,
-    });
-    for (const p of expensePayments.items) {
-      items.push({
-        id: `out-${p.id}`,
-        name: p.memberName,
-        typology: p.typology,
-        service: p.serviceName,
-        insertDate: p.paymentDate,
-        paid: p.amount,
-        direction: 'OUT',
-        payMod: p.payMode,
-        casual: p.notes,
-        operator: p.operatorName,
-      });
-    }
+    await pushPayments(PROCEDURE_TYPE_CODES.EXPENSE, 'out-', 'OUT');
   }
 
   items.sort((a, b) => String(b.insertDate).localeCompare(String(a.insertDate)));
@@ -655,6 +634,139 @@ export async function listInsertCredits(
     }
   }
 
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+const UNIFIED_PROCEDURE_TYPES = [
+  PROCEDURE_TYPE_CODES.SERVICE_SALE,
+  PROCEDURE_TYPE_CODES.PRODUCT_SALE,
+  PROCEDURE_TYPE_CODES.EXPENSE,
+  PROCEDURE_TYPE_CODES.MEMBER_DEBT,
+] as const;
+
+/** Archives menu: all typologies in one Deadlines list. */
+export async function listUnifiedDeadlines(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams & { includePaid?: boolean } = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const items: Record<string, unknown>[] = [];
+
+  for (const procedureType of UNIFIED_PROCEDURE_TYPES) {
+    const res = await procedureService
+      .listRecords(
+        ctx,
+        procedureType,
+        { page: 1, pageSize: 500 },
+        { onlyWithBalance: !params.includePaid }
+      )
+      .catch(() => ({ items: [] as Awaited<ReturnType<typeof procedureService.listRecords>>['items'] }));
+
+    for (const r of res.items) {
+      const meta = r.metadata ?? {};
+      const primary =
+        String(meta.serviceName ?? meta.productName ?? meta.expenseName ?? meta.debtLabel ?? '').trim() ||
+        '-';
+      const secondary = String(meta.sectorName ?? meta.typologyName ?? '').trim() || '';
+      items.push({
+        id: r.id,
+        userId: r.memberId,
+        memberId: r.memberId,
+        name: r.memberName,
+        image: r.memberImage,
+        typology: getProcedureTypology(procedureType),
+        procedureType,
+        service: primary,
+        course: secondary || undefined,
+        insertDate: r.dueDate ?? r.recordDate,
+        value: r.totalAmount,
+        paid: r.paidAmount,
+        rest: r.balanceAmount,
+        casual: r.notes ?? '',
+        operator: r.operatorName,
+        dateEnd: r.lastPaymentDate,
+      });
+    }
+  }
+
+  items.sort((a, b) => String(b.insertDate).localeCompare(String(a.insertDate)));
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+/** Archives menu: all typologies in one Payments list. */
+export async function listUnifiedPayments(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const items: Record<string, unknown>[] = [];
+
+  for (const procedureType of UNIFIED_PROCEDURE_TYPES) {
+    const res = await procedureService
+      .listPayments(ctx, procedureType, { page: 1, pageSize: 500 })
+      .catch(() => ({ items: [] as Awaited<ReturnType<typeof procedureService.listPayments>>['items'] }));
+
+    for (const p of res.items) {
+      items.push({
+        id: p.id,
+        procedureRecordId: p.procedureRecordId,
+        procedureType,
+        name: p.memberName,
+        typology: getProcedureTypology(procedureType),
+        service: p.serviceName ?? '-',
+        insertDate: p.paymentDate,
+        paid: p.amount,
+        originalDebt: p.originalDebt,
+        residualDebt: p.residualDebt,
+        rest: p.balanceAfter ?? p.residualDebt,
+        casual: p.notes ?? '',
+        operator: p.operatorName,
+        payMod: p.payMode,
+      });
+    }
+  }
+
+  items.sort((a, b) => String(b.insertDate).localeCompare(String(a.insertDate)));
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+/** Archives menu: all typologies in one Receipts list. */
+export async function listUnifiedReceipts(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const items: Record<string, unknown>[] = [];
+
+  for (const procedureType of UNIFIED_PROCEDURE_TYPES) {
+    const res = await procedureService
+      .listReceipts(ctx, procedureType, { page: 1, pageSize: 500 })
+      .catch(() => ({ items: [] as Awaited<ReturnType<typeof procedureService.listReceipts>>['items'] }));
+
+    for (const r of res.items) {
+      items.push({
+        id: r.id,
+        procedureRecordId: r.procedureRecordId,
+        procedureType,
+        name: r.memberName,
+        typology: getProcedureTypology(procedureType),
+        service: r.serviceName ?? '-',
+        insertDate: r.receiptDate,
+        category: r.documentType,
+        contract: r.documentNumber,
+        value: r.amount,
+        paid: r.paymentAmount,
+        residualDebt: r.residualDebt ?? Math.max(0, r.amount - r.paymentAmount),
+        casual: r.annotations ?? '',
+        operator: r.operatorName,
+      });
+    }
+  }
+
+  items.sort((a, b) => String(b.insertDate).localeCompare(String(a.insertDate)));
   return paginate(applyFilters(items, params), page, pageSize);
 }
 

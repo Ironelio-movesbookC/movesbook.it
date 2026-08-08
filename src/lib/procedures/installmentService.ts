@@ -9,6 +9,8 @@ export type InstallmentDto = {
   balance: number;
   paymentDate: string;
   expireDate: string | null;
+  /** ISO timestamp — used to order same-day deadlines (oldest first). */
+  createdAt: string;
   description: string | null;
 };
 
@@ -23,6 +25,7 @@ function mapRow(row: {
   balance: unknown;
   paymentDate: Date;
   expireDate: Date | null;
+  createdAt: Date;
   description: string | null;
 }): InstallmentDto {
   return {
@@ -32,14 +35,19 @@ function mapRow(row: {
     balance: decimalToNumber(row.balance as never),
     paymentDate: row.paymentDate.toISOString().slice(0, 10),
     expireDate: row.expireDate ? row.expireDate.toISOString().slice(0, 10) : null,
+    createdAt: row.createdAt.toISOString(),
     description: row.description,
   };
 }
 
 export async function listInstallments(recordId: string): Promise<InstallmentDto[]> {
+  // Heal stale installment rests left by older payment paths.
+  await reconcileInstallmentsWithRecord(recordId);
+
   const rows = await prisma.procedureInstallment.findMany({
     where: { procedureRecordId: recordId },
-    orderBy: { paymentDate: 'desc' },
+    // Oldest expire first; same day → oldest createdAt first.
+    orderBy: [{ expireDate: 'asc' }, { paymentDate: 'asc' }, { createdAt: 'asc' }],
   });
   return rows.map(mapRow);
 }
@@ -105,6 +113,89 @@ export async function deleteInstallment(id: string, recordId: string): Promise<b
     where: { id, procedureRecordId: recordId },
   });
   return result.count > 0;
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Apply a payment amount oldest-first across open installments (expire → createdAt).
+ */
+export async function applyPaymentToInstallments(
+  recordId: string,
+  amount: number,
+  tx?: Prisma.TransactionClient
+): Promise<void> {
+  const client = tx ?? prisma;
+  let remaining = roundMoney(amount);
+  if (remaining <= 0) return;
+
+  const rows = await client.procedureInstallment.findMany({
+    where: { procedureRecordId: recordId, balance: { gt: 0 } },
+    orderBy: [{ expireDate: 'asc' }, { paymentDate: 'asc' }, { createdAt: 'asc' }],
+  });
+
+  for (const row of rows) {
+    if (remaining <= 0) break;
+    const bal = decimalToNumber(row.balance as never);
+    const paid = decimalToNumber(row.paid as never);
+    const apply = Math.min(bal, remaining);
+    if (apply <= 0) continue;
+    await client.procedureInstallment.update({
+      where: { id: row.id },
+      data: {
+        balance: roundMoney(bal - apply),
+        paid: roundMoney(paid + apply),
+      },
+    });
+    remaining = roundMoney(remaining - apply);
+  }
+}
+
+/**
+ * If installment rests drifted from the parent record (e.g. older payments),
+ * bring them in line so a fully paid service never shows Rest > 0 on deadlines.
+ */
+export async function reconcileInstallmentsWithRecord(
+  recordId: string,
+  tx?: Prisma.TransactionClient
+): Promise<void> {
+  const client = tx ?? prisma;
+  const record = await client.procedureRecord.findUnique({
+    where: { id: recordId },
+    select: { balanceAmount: true },
+  });
+  if (!record) return;
+
+  const recordBalance = roundMoney(decimalToNumber(record.balanceAmount as never));
+  const rows = await client.procedureInstallment.findMany({
+    where: { procedureRecordId: recordId },
+    orderBy: [{ expireDate: 'asc' }, { paymentDate: 'asc' }, { createdAt: 'asc' }],
+  });
+  if (rows.length === 0) return;
+
+  const sumBalance = roundMoney(
+    rows.reduce((s, r) => s + decimalToNumber(r.balance as never), 0)
+  );
+  const excess = roundMoney(sumBalance - recordBalance);
+  if (excess > 0.005) {
+    await applyPaymentToInstallments(recordId, excess, client);
+    return;
+  }
+
+  if (recordBalance <= 0.005) {
+    for (const row of rows) {
+      const bal = decimalToNumber(row.balance as never);
+      const paid = decimalToNumber(row.paid as never);
+      if (bal > 0.005) {
+        await client.procedureInstallment.update({
+          where: { id: row.id },
+          data: { balance: 0, paid: roundMoney(paid + bal) },
+        });
+      }
+    }
+  }
 }
 
 /** Ensure at least one installment exists for a record (mirrors PHP ServicePurchasesDetail on create). */
