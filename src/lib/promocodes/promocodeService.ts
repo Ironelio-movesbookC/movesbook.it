@@ -20,6 +20,7 @@ import {
   fetchFlagImageByCountryId,
   fetchLegacyUsersByIds,
   fetchLegacyUserByEmail,
+  fetchLegacyUserByUsername,
   filterLegacyUsersByUsernameOrFirstname,
   findLegacyUsersByKeyword,
   findLegacyUsersByUsernameOrFirstname,
@@ -90,6 +91,10 @@ async function loadSubscriptionNameByIdMap(): Promise<Record<number, string>> {
   return map;
 }
 
+function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 function buildPromocodeInviteEntries(
   applyRows: PromocodeApplyRow[],
   subscriptionNames: Record<number, string>,
@@ -98,10 +103,13 @@ function buildPromocodeInviteEntries(
   const entries: PromocodeInviteEntry[] = [];
 
   for (const row of applyRows) {
-    const email = row.receiverEmail?.trim() ?? '';
-    if (!email) continue;
+    const rawReceiver = row.receiverEmail?.trim() ?? '';
+    if (!rawReceiver) continue;
 
-    const resolvedReceiver = row.receiver ?? receiversByEmail.get(email.toLowerCase()) ?? null;
+    const resolvedReceiver =
+      row.receiver ??
+      receiversByEmail.get(rawReceiver.toLowerCase()) ??
+      null;
 
     const registered =
       (row.receiverId != null && row.receiverId > 0) ||
@@ -109,9 +117,19 @@ function buildPromocodeInviteEntries(
       row.isRegistered === '1' ||
       Boolean(String(row.registrationDate ?? '').trim());
 
+    const username =
+      resolvedReceiver?.username?.trim() ||
+      (!looksLikeEmail(rawReceiver) ? rawReceiver : null) ||
+      null;
+    const email =
+      resolvedReceiver?.email?.trim() ||
+      (looksLikeEmail(rawReceiver) ? rawReceiver : '') ||
+      '';
+
     if (!registered) {
       entries.push({
-        email,
+        email: email || rawReceiver,
+        username: null,
         registered: false,
         registrationDate: null,
         subscriptionName: null,
@@ -133,7 +151,8 @@ function buildPromocodeInviteEntries(
     );
 
     entries.push({
-      email,
+      email: email || rawReceiver,
+      username,
       registered: true,
       registrationDate: registrationDate || null,
       subscriptionName,
@@ -448,14 +467,35 @@ export async function listPromocodeApplies(
   }
 
   if (filters.search?.trim()) {
-    const matchingIds = await findLegacyUsersByKeyword(filters.search);
+    const keyword = filters.search.trim();
+    const like = `%${keyword}%`;
+    const matchingIds = await findLegacyUsersByKeyword(keyword);
     const orParts: string[] = ['receiver_email LIKE ?'];
-    params.push(`%${filters.search.trim()}%`);
+    params.push(like);
     if (matchingIds.length > 0) {
       const placeholders = matchingIds.map(() => '?').join(',');
       orParts.push(`sender_id IN (${placeholders})`, `receiver_id IN (${placeholders})`);
       params.push(...matchingIds, ...matchingIds);
     }
+
+    // Also match by promocode code (e.g. searching "gvvl44ccg" in Username/email box)
+    const settingsTable = await getPromocodeSettingsTable();
+    if (settingsTable) {
+      const codeRows = await prisma.$queryRawUnsafe<{ id: number | bigint }[]>(
+        `SELECT id FROM \`${settingsTable}\`
+         WHERE delete_status = 2 AND LOWER(\`code\`) LIKE LOWER(?)`,
+        like
+      );
+      const promoIds = codeRows
+        .map((r) => Number(r.id))
+        .filter((id) => Number.isFinite(id) && id > 0);
+      if (promoIds.length > 0) {
+        const promoPlaceholders = promoIds.map(() => '?').join(',');
+        orParts.push(`promocode_id IN (${promoPlaceholders})`);
+        params.push(...promoIds);
+      }
+    }
+
     where.push(`(${orParts.join(' OR ')})`);
   }
 
@@ -556,6 +596,19 @@ async function resolvePromocodeSettingIdsForUserSearch(
         const id = Number(row.promocode_id);
         if (Number.isFinite(id) && id > 0) promoIdSet.add(id);
       }
+    }
+  }
+
+  // Direct match on promocode code (search box may contain a code, not only a username).
+  {
+    const codeRows = await prisma.$queryRawUnsafe<{ id: number | bigint }[]>(
+      `SELECT id FROM \`${settingsTable}\`
+       WHERE delete_status = 2 AND LOWER(\`code\`) LIKE LOWER(?)`,
+      like
+    );
+    for (const row of codeRows) {
+      const id = Number(row.id);
+      if (Number.isFinite(id) && id > 0) promoIdSet.add(id);
     }
   }
 
@@ -736,6 +789,17 @@ export async function listPromocodeSettings(
         .map((row) => row.receiverEmail?.trim() ?? '')
         .filter(Boolean);
       const receiversByEmail = await loadReceiversByEmail(inviteEmailsList);
+      // After registration, receiver_email is often changed to username — resolve those too.
+      for (const applyRow of applyRows) {
+        const raw = applyRow.receiverEmail?.trim() ?? '';
+        if (!raw || raw.includes('@') || receiversByEmail.has(raw.toLowerCase())) continue;
+        if (applyRow.receiver) {
+          receiversByEmail.set(raw.toLowerCase(), applyRow.receiver);
+          continue;
+        }
+        const byUsername = await fetchLegacyUserByUsername(raw).catch(() => null);
+        if (byUsername) receiversByEmail.set(raw.toLowerCase(), byUsername);
+      }
       inviteEntries = buildPromocodeInviteEntries(applyRows, subscriptionNames, receiversByEmail);
       inviteEmails = inviteEntries.map((entry) => entry.email);
 

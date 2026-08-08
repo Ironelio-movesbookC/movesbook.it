@@ -15,9 +15,20 @@ function num(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function normalizeServiceImagePath(value: unknown): string | null {
+  const image = text(value);
+  if (!image) return null;
+  if (/^https?:\/\//i.test(image)) return image;
+  if (image.startsWith('/api/media/img/services/')) return image;
+  if (image.startsWith('/img/services/')) return `/api/media${image}`;
+  if (image.startsWith('img/services/')) return `/api/media/${image}`;
+  if (image.startsWith('/')) return image;
+  return `/api/media/img/services/${image.replace(/^\/+/, '')}`;
+}
+
 export type ServiceSaleFormOptions = {
   sectors: { id: string; name: string }[];
-  services: { id: string; name: string; sectorId: string; cost: number }[];
+  services: { id: string; name: string; sectorId: string; cost: number; imageUrl: string | null }[];
   members: { id: string; name: string }[];
   operators: { id: string; name: string }[];
   currentOperatorId: string | null;
@@ -31,7 +42,7 @@ export async function fetchServiceSaleFormOptions(
   const sectorTable = await findExistingTable(SECTOR_TABLE_CANDIDATES);
 
   const sectors: { id: string; name: string }[] = [];
-  const services: { id: string; name: string; sectorId: string; cost: number }[] = [];
+  const services: { id: string; name: string; sectorId: string; cost: number; imageUrl: string | null }[] = [];
   if (sectorTable) {
     const sectorRows = await prisma.$queryRawUnsafe<{ id: bigint | number; sector_name: string }[]>(
       `SELECT id, sector_name FROM \`${sectorTable}\` ORDER BY sector_name ASC`
@@ -48,9 +59,10 @@ export async function fetchServiceSaleFormOptions(
         service_name: string;
         sector_id: string | number | null;
         club_currency_cost: string | number | null;
+        service_img: string | null;
       }[]
     >(
-      `SELECT id, service_name, sector_id, club_currency_cost FROM \`${serviceTable}\` ORDER BY service_name ASC`
+      `SELECT id, service_name, sector_id, club_currency_cost, service_img FROM \`${serviceTable}\` ORDER BY service_name ASC`
     );
     for (const s of serviceRows) {
       services.push({
@@ -58,6 +70,7 @@ export async function fetchServiceSaleFormOptions(
         name: text(s.service_name),
         sectorId: s.sector_id != null ? String(s.sector_id) : '',
         cost: num(s.club_currency_cost),
+        imageUrl: normalizeServiceImagePath(s.service_img),
       });
     }
   }

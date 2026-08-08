@@ -1,5 +1,107 @@
 /** Circuit movelap label: Circuit-Station-Serie (e.g. B-2-3 = circuit B, station 2, serie 3). */
 
+export function extractCircuitMetaFromNotes(notes: unknown): Record<string, unknown> | null {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[CIRCUIT_META\](.*?)\[\/CIRCUIT_META\]/);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+export function upsertCircuitMetaInNotes(notes: unknown, circuitMeta: Record<string, unknown>): string {
+  const base = typeof notes === 'string' ? notes : '';
+  const cleaned = base.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '').trim();
+  const metaString = `[CIRCUIT_META]${JSON.stringify(circuitMeta)}[/CIRCUIT_META]`;
+  return cleaned ? `${cleaned}\n${metaString}` : metaString;
+}
+
+export type CircuitRenumberConfig = {
+  seriesPerCircuitByLetter?: Record<string, number>;
+  defaultSeriesPerCircuit?: number;
+  circuitIndexByLetter?: Record<string, number>;
+};
+
+type CircuitRenumberMovelapLike = {
+  id: string;
+  notes?: string;
+  circuitLetter?: string | null;
+};
+
+function inferSeriesPerStationFromMetas(laps: CircuitRenumberMovelapLike[]): number {
+  let maxLocal = 0;
+  for (const lap of laps) {
+    const meta = extractCircuitMetaFromNotes(lap.notes);
+    const local = meta?.localSeriesNumber ?? meta?.seriesNumber;
+    if (typeof local === 'number' && local > maxLocal) maxLocal = local;
+  }
+  return maxLocal > 0 ? maxLocal : 1;
+}
+
+/** Reassign Circuit-Station-Serie metadata from scratch following the given row order. */
+export function buildCircuitRenumberUpdatesFromOrder<T extends CircuitRenumberMovelapLike>(
+  orderedMovelaps: T[],
+  config?: CircuitRenumberConfig
+): Array<{ id: string; meta: Record<string, unknown>; notes: string }> {
+  const circuitOrder: string[] = [];
+  const byCircuit = new Map<string, T[]>();
+
+  for (const ml of orderedMovelaps) {
+    const meta = extractCircuitMetaFromNotes(ml.notes);
+    const letter = String(meta?.circuitLetter ?? ml.circuitLetter ?? '')
+      .trim()
+      .toUpperCase();
+    if (!letter) continue;
+    if (!byCircuit.has(letter)) {
+      byCircuit.set(letter, []);
+      circuitOrder.push(letter);
+    }
+    byCircuit.get(letter)!.push(ml);
+  }
+
+  let workoutSeriesBase = 1;
+  const updates: Array<{ id: string; meta: Record<string, unknown>; notes: string }> = [];
+
+  for (const letter of circuitOrder) {
+    const laps = byCircuit.get(letter)!;
+    const firstMeta = extractCircuitMetaFromNotes(laps[0]?.notes) || {};
+    const nSer =
+      config?.seriesPerCircuitByLetter?.[letter] ??
+      config?.defaultSeriesPerCircuit ??
+      inferSeriesPerStationFromMetas(laps);
+    const circuitIndex =
+      config?.circuitIndexByLetter?.[letter] ??
+      (typeof firstMeta.circuitIndex === 'number'
+        ? firstMeta.circuitIndex
+        : circuitOrder.indexOf(letter) + 1);
+
+    laps.forEach((lap, i) => {
+      const prevMeta = extractCircuitMetaFromNotes(lap.notes) || {};
+      const stationNumber = Math.floor(i / nSer) + 1;
+      const localSeriesNumber = (i % nSer) + 1;
+      const seriesNumber = workoutSeriesBase + (localSeriesNumber - 1);
+      const nextMeta: Record<string, unknown> = {
+        ...prevMeta,
+        circuitLetter: letter,
+        circuitIndex,
+        stationNumber,
+        localSeriesNumber,
+        seriesNumber,
+      };
+      updates.push({
+        id: lap.id,
+        meta: nextMeta,
+        notes: upsertCircuitMetaInNotes(lap.notes ?? '', nextMeta),
+      });
+    });
+    workoutSeriesBase += nSer;
+  }
+
+  return updates;
+}
+
 export type CircuitMovelapLike = {
   circuitLetter?: string | null;
   stationNumber?: number | null;

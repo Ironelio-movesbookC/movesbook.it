@@ -21,6 +21,7 @@ import {
   isAerobicFastPlannerContext,
   resolveAerobicMoveframeDistanceDescription
 } from '@/utils/aerobicFastPlannerDescription';
+import { doneButtonClassName } from '@/utils/exportToDoneClient';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
@@ -68,7 +69,9 @@ interface SortableMoveframeRowProps {
   setShowInfoPanel: (show: boolean) => void;
   setSelectedMoveframe: (moveframe: any) => void;
   orderedVisibleColumns?: string[];
-  onNavigateToMoveframe?: (moveframeId: string) => void; // For navigation between moveframes
+  onNavigateToMoveframe?: (moveframeId: string) => void;
+  activeSection?: 'A' | 'B' | 'C' | 'D';
+  onMarkMoveframeDone?: (moveframe: any) => void;
 }
 
 export default function SortableMoveframeRow({
@@ -101,7 +104,9 @@ export default function SortableMoveframeRow({
   setShowInfoPanel,
   setSelectedMoveframe,
   orderedVisibleColumns,
-  onNavigateToMoveframe
+  onNavigateToMoveframe,
+  activeSection,
+  onMarkMoveframeDone,
 }: SortableMoveframeRowProps) {
   // Disable sorting for annotation moveframes
   const isAnnotation = moveframe.type === 'ANNOTATION';
@@ -1089,6 +1094,19 @@ export default function SortableMoveframeRow({
                     Options
                     <span className="text-[10px]">{showOptionsDropdown ? '▲' : '▼'}</span>
                   </button>
+                  {activeSection === 'B' && onMarkMoveframeDone && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMarkMoveframeDone(moveframe);
+                      }}
+                      className={doneButtonClassName(Boolean(moveframe.markedDoneAt))}
+                      title="Mark moveframe done (does not change workout/day colors)"
+                    >
+                      Done
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -1135,7 +1153,7 @@ export default function SortableMoveframeRow({
       {isMovelapsExpanded && (
         <tr>
           <td colSpan={visibleColumns.length} className="border border-gray-200 p-0" style={{ backgroundColor: 'rgb(250, 255, 214)', overflow: 'visible', maxWidth: 0 }}>
-            <div className="pl-8">
+            <div className="pl-2 pr-1">
               <MovelapDetailTable 
                 moveframe={moveframe}
                 onEditMovelap={(movelap) => {

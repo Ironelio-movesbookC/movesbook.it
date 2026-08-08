@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import ModernNavbar from '@/components/ModernNavbar';
 import SimpleFooter from '@/components/SimpleFooter';
 import StaffMessagesExperience, { type MainTab } from '@/components/messages/StaffMessagesExperience';
+import { parseFeedbackSearchParams } from '@/lib/messages/feedbackRoutes';
 import { getAuthToken } from '@/utils/auth.utils';
 
 function AssistanceFeedbackInner() {
@@ -21,9 +22,7 @@ function AssistanceFeedbackInner() {
     setReady(true);
   }, [router]);
 
-  const tab = searchParams?.get('tab');
-  const initialMainTab: MainTab =
-    tab === 'reviews' ? 'review' : tab === 'version' ? 'version' : 'support';
+  const parsed = parseFeedbackSearchParams(searchParams ?? new URLSearchParams());
 
   if (!ready) {
     return (
@@ -35,7 +34,17 @@ function AssistanceFeedbackInner() {
     <div className="bg-slate-100 min-h-screen flex flex-col">
       <ModernNavbar />
       <main className="flex-1">
-        <StaffMessagesExperience variant="page" initialMainTab={initialMainTab} />
+        <StaffMessagesExperience
+          variant="page"
+          initialMainTab={parsed.tab as MainTab}
+          initialCategory={parsed.category}
+          initialMineOnly={parsed.mine}
+          initialRecentOnly={parsed.recent}
+          initialScope={parsed.scope}
+          initialSearchQuery={parsed.q}
+          initialPage={parsed.page}
+          initialPageSize={parsed.pageSize}
+        />
       </main>
       <SimpleFooter />
     </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
@@ -16,6 +17,8 @@ type Props = {
   footerHint?: string;
   emptyMessage?: string;
   showFilters?: boolean;
+  onEditItem?: (item: Member) => void;
+  onDeleteItem?: (item: Member) => void;
 };
 
 export default function ClubArchivePage({
@@ -27,6 +30,8 @@ export default function ClubArchivePage({
   footerHint,
   emptyMessage = 'No records found.',
   showFilters = true,
+  onEditItem,
+  onDeleteItem,
 }: Props) {
   const [data, setData] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,13 +55,42 @@ export default function ClubArchivePage({
         ...appliedFilters,
       });
       setTotal(res.total);
-      setData(res.items as Member[]);
+      const items = res.items as Member[];
+      if (onEditItem || onDeleteItem) {
+        setData(
+          items.map((item) => ({
+            ...item,
+            edit: onEditItem ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onEditItem(item); }}
+                className="text-blue-600 hover:text-blue-800"
+                title="Edit"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            ) : undefined,
+            delete: onDeleteItem ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onDeleteItem(item); }}
+                className="text-red-500 hover:text-red-700"
+                title="Delete"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            ) : undefined,
+          }))
+        );
+      } else {
+        setData(items);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
-  }, [archiveType, appliedFilters, direction, page, pageSize]);
+  }, [archiveType, appliedFilters, direction, page, pageSize, onEditItem, onDeleteItem]);
 
   useEffect(() => {
     load();

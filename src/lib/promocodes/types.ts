@@ -74,6 +74,7 @@ export type PromocodeSettingRow = {
 
 export type PromocodeInviteEntry = {
   email: string;
+  username: string | null;
   registered: boolean;
   registrationDate: string | null;
   subscriptionName: string | null;

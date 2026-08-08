@@ -324,6 +324,23 @@ export async function fetchLegacyUsersByIds(ids: number[]): Promise<Map<number, 
   return map;
 }
 
+export async function fetchLegacyUserByUsername(username: string): Promise<LegacyUserSnippet | null> {
+  await ensureLegacyPromocodeUserTables();
+
+  const usersTable = await getLegacyUsersTable();
+  if (!usersTable || !username.trim()) return null;
+
+  const selectClause = await legacyUserSelectClause(usersTable);
+  const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+    `SELECT ${selectClause}
+     FROM \`${usersTable}\`
+     WHERE LOWER(username) = ? AND delete_status = 'N'
+     LIMIT 1`,
+    username.trim().toLowerCase()
+  ).catch(() => [] as Record<string, unknown>[]);
+  return mapLegacyUser(rows[0]);
+}
+
 export async function fetchLegacyUserByEmail(email: string): Promise<LegacyUserSnippet | null> {
   await ensureLegacyPromocodeUserTables();
 

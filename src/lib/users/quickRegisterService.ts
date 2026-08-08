@@ -82,6 +82,16 @@ function rowNumber(row: Record<string, unknown>, ...keys: string[]): number | nu
   return null;
 }
 
+/** Normalize Dashboard-Version credit/credit1/credit2 values for apply rows. */
+function parseSubscriptionCredit(row: Record<string, unknown>, key: string): string {
+  const raw = row[key];
+  if (raw === undefined || raw === null || raw === '') return '';
+  const n = Number(raw);
+  if (Number.isFinite(n)) return String(n);
+  const asText = String(raw).trim();
+  return asText;
+}
+
 function rowCreatorId(row: Record<string, unknown>): string | number | null {
   const val = row.creater_id ?? row.creator_id;
   if (val === undefined || val === null) return null;
@@ -1035,7 +1045,7 @@ export async function quickRegisterUser(
     subscription_end_date: endDate,
     subscription_status: 'S',
     subscription_mail_status: 'SM',
-    credits: rowString(subSettings, 'credit2') || rowNumber(subSettings, 'credit2') || 0,
+    credits: parseSubscriptionCredit(subSettings, 'credit2') || 0,
     delete_status: 'N',
     modified: new Date(),
   };
@@ -1139,9 +1149,10 @@ export async function quickRegisterUser(
     const receiverApply = receiverApplyRows[0];
     if (receiverApply?.id) {
       const applyColumns = await getTableColumns(appliesTable);
-      const credit = rowString(subSettings, 'credit2') || rowNumber(subSettings, 'credit2') || '';
-      const creditSender = rowString(subSettings, 'credit') || rowNumber(subSettings, 'credit') || '';
-      const creditSecondarySender = rowString(subSettings, 'credit1') || rowNumber(subSettings, 'credit1') || '';
+      // Dashboard-Version settings: credit=direct sender, credit1=friend-of-friend (secondary), credit2=new user
+      const credit = parseSubscriptionCredit(subSettings, 'credit2');
+      const creditSender = parseSubscriptionCredit(subSettings, 'credit');
+      const creditSecondarySender = parseSubscriptionCredit(subSettings, 'credit1');
       const registrationDate = new Date();
       const updates: Record<string, unknown> = {
         sender_credit: creditSender,
@@ -1186,34 +1197,43 @@ export async function quickRegisterUser(
       }
 
       const senderId = rowNumber(updates, 'sender_id') || rowNumber(receiverApply, 'sender_id');
-      const senderCredit = Number(creditSender);
+      const senderCredit = Number(creditSender) || 0;
       let senderEmail = rowString(receiverApply, 'sender_email');
       let senderUsername = '';
-      if (senderId && senderCredit > 0 && userColumns.has('credits')) {
+      if (senderId) {
+        const userSelectCols = userColumns.has('credits')
+          ? 'id, email, username, credits'
+          : 'id, email, username';
         const senderRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-          `SELECT id, email, username, credits FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
+          `SELECT ${userSelectCols} FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
           senderId
         );
         senderEmail = senderEmail || rowString(senderRows[0] ?? {}, 'email');
         senderUsername = rowString(senderRows[0] ?? {}, 'username');
-        const currentCredits = Number(senderRows[0]?.credits ?? 0);
-        await prisma.$executeRawUnsafe(
-          `UPDATE \`${usersTable}\` SET credits = ? WHERE id = ?`,
-          currentCredits + senderCredit,
-          senderId
-        );
-      } else if (senderId) {
+        if (senderCredit > 0 && userColumns.has('credits')) {
+          const currentCredits = Number(senderRows[0]?.credits ?? 0);
+          await prisma.$executeRawUnsafe(
+            `UPDATE \`${usersTable}\` SET credits = ? WHERE id = ?`,
+            currentCredits + senderCredit,
+            senderId
+          );
+        }
+      } else if (senderEmail) {
         const senderRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-          `SELECT id, email, username FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
-          senderId
+          `SELECT id, email, username FROM \`${usersTable}\`
+           WHERE LOWER(email) = ? AND delete_status = 'N' LIMIT 1`,
+          senderEmail.toLowerCase()
         );
-        senderEmail = senderEmail || rowString(senderRows[0] ?? {}, 'email');
         senderUsername = rowString(senderRows[0] ?? {}, 'username');
       }
 
-      const secondaryCredit = Number(creditSecondarySender);
-      if (applyColumns.has('secondary_sender_credit') && (senderId || senderEmail || senderUsername)) {
-        const secondaryConditions = ['delete_status = 2', 'receiver_id > 0'];
+      // Friend-of-a-friend: assign secondary_sender_* from the person who invited the direct sender
+      const secondaryCredit = Number(creditSecondarySender) || 0;
+      const canWriteSecondary =
+        applyColumns.has('secondary_sender_id') ||
+        applyColumns.has('secondary_sender_credit') ||
+        applyColumns.has('secondary_sender_username');
+      if (canWriteSecondary && (senderId || senderEmail || senderUsername)) {
         const secondaryOr: string[] = [];
         const secondaryParams: unknown[] = [];
         if (senderId) {
@@ -1232,7 +1252,8 @@ export async function quickRegisterUser(
         if (secondaryOr.length > 0) {
           const secondaryRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
             `SELECT id, sender_id, sender_email FROM \`${appliesTable}\`
-             WHERE ${secondaryConditions.join(' AND ')} AND (${secondaryOr.join(' OR ')})
+             WHERE delete_status = 2 AND receiver_id > 0
+               AND (${secondaryOr.join(' OR ')})
              ORDER BY id DESC LIMIT 1`,
             ...secondaryParams
           );
@@ -1260,7 +1281,7 @@ export async function quickRegisterUser(
               if (secondaryApplySenderEmail) {
                 const secondaryUserRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
                   `SELECT ${userSelectCols} FROM \`${usersTable}\`
-                   WHERE LOWER(email) = ? LIMIT 1`,
+                   WHERE LOWER(email) = ? AND delete_status = 'N' LIMIT 1`,
                   secondaryApplySenderEmail.toLowerCase()
                 );
                 const secondaryUser = secondaryUserRows[0] ?? {};
@@ -1274,10 +1295,11 @@ export async function quickRegisterUser(
 
           if (secondarySenderId || secondarySenderEmail || secondarySenderUsername) {
             const secondaryUpdates: Record<string, unknown> = {
-              secondary_sender_id: secondarySenderId,
+              secondary_sender_id: secondarySenderId || null,
               secondary_sender_email: secondarySenderEmail,
               secondary_sender_username: secondarySenderUsername,
-              secondary_sender_credit: creditSecondarySender,
+              // Always write credit1 (friend-of-a-friend) from Dashboard-Version settings
+              secondary_sender_credit: creditSecondarySender === '' ? 0 : creditSecondarySender,
             };
             const secondarySetParts = Object.keys(secondaryUpdates)
               .filter((k) => applyColumns.has(k))

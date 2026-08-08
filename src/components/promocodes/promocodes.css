@@ -368,6 +368,60 @@
   min-height: 120px;
 }
 
+.promo-invite-emails-body--scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.promo-invite-emails-body--scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.promo-invite-emails-body--scroll::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 6px;
+}
+
+.promo-invite-emails-body--scroll::-webkit-scrollbar-track {
+  background: #e5e7eb;
+}
+
+.promo-invite-emails-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 16px 0;
+  flex-wrap: wrap;
+}
+
+.promo-invite-emails-pager-label {
+  font-size: 14px;
+  color: #333;
+}
+
+.promo-invite-emails-pager-label select {
+  margin: 0 4px;
+  padding: 2px 6px;
+  border: 1px solid #999;
+  font-size: 14px;
+}
+
+.promo-invite-emails-pager-btn {
+  padding: 4px 12px;
+  border: 1px solid #777;
+  background: #f3f4f6;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.promo-invite-emails-pager-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .promo-invite-emails-empty {
   margin: 0;
   color: #555;
@@ -381,9 +435,24 @@
   padding: 8px 0;
 }
 
-.promo-invite-emails-address {
-  color: #333;
+.promo-invite-emails-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.promo-invite-emails-username {
+  color: #0047cc;
   font-size: 16px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.promo-invite-emails-address {
+  color: #cc0000;
+  font-size: 16px;
+  word-break: break-word;
 }
 
 .promo-invite-emails-registration {

@@ -24,7 +24,13 @@ export async function POST(request: NextRequest) {
       name,
       code,
       time,
+      weather,
       location,
+      surface,
+      heartRateMax,
+      heartRateAvg,
+      calories,
+      feelingStatus,
       notes,
       status,
       sports,
@@ -185,6 +191,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create workout session with sports (if any) and moveframes (if provided)
+    // Workouts Done (Section C) may also send weather / surface / HR / calories / feeling
     const session = await prisma.workoutSession.create({
       data: {
         workoutDayId: actualDayId,
@@ -192,13 +199,34 @@ export async function POST(request: NextRequest) {
         name: (typeof name === 'string' && name.trim()) || `Workout ${finalSessionNumber}`,
         code: typeof code === 'string' ? code : '',
         time: typeof time === 'string' ? time : '',
+        weather: typeof weather === 'string' ? weather : null,
         location: location || '',
-        notes: notes || (includeStretching ? `${symbol || ''} Includes stretching` : symbol || ''),
+        surface: typeof surface === 'string' ? surface : null,
+        heartRateMax:
+          heartRateMax !== undefined && heartRateMax !== null && heartRateMax !== ''
+            ? parseInt(String(heartRateMax), 10)
+            : null,
+        heartRateAvg:
+          heartRateAvg !== undefined && heartRateAvg !== null && heartRateAvg !== ''
+            ? parseInt(String(heartRateAvg), 10)
+            : null,
+        calories:
+          calories !== undefined && calories !== null && calories !== ''
+            ? parseInt(String(calories), 10)
+            : null,
+        feelingStatus: typeof feelingStatus === 'string' ? feelingStatus : null,
+        notes:
+          notes !== undefined && notes !== null
+            ? String(notes)
+            : includeStretching
+              ? `${symbol || ''} Includes stretching`
+              : symbol || '',
         status: status as any || 'PLANNED_FUTURE',
         mainSport: mainSport || null,
         mainGoal: mainGoal || null,
         intensity: intensity || 'Medium',
         tags: tags || null,
+        includeStretching: includeStretching !== undefined ? Boolean(includeStretching) : true,
         ...(sportsList.length > 0 && {
           sports: {
             create: sportsList.map((sport: string) => ({

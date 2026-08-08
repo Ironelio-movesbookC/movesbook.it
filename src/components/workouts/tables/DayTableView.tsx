@@ -8,6 +8,8 @@ import { getContrastTextColor } from '@/utils/colorUtils';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import DayRowTable from './DayRowTable';
 import WorkoutHierarchyView from './WorkoutHierarchyView';
+import ShowPlannedDayPanel from './ShowPlannedDayPanel';
+import ShowWorkoutsDonePanel from './ShowWorkoutsDonePanel';
 import WeeklyInfoModal from '../WeeklyInfoModal';
 import WeekTotalsModal from '../modals/WeekTotalsModal';
 import CopyWeekModal from '../modals/CopyWeekModal';
@@ -50,6 +52,8 @@ interface DayTableViewProps {
   onExpandOnlyThisWorkout?: (workout: any, day: any) => void;
   onExpandDayWithAllWorkouts?: (dayId: string, workouts: any[]) => void;
   onCycleWorkoutExpansion?: (workout: any, day: any) => void; // 3-state cycle for workout numbers
+  onWorkoutStatusChange?: (workoutId: string, status: import('@/utils/workoutSessionStatus').YearlyWorkoutStatus, day: any) => void;
+  onMatchDoneStatusChange?: (day: any, status: import('@/utils/workoutSessionStatus').YearlyWorkoutStatus) => void;
   onEditDay?: (day: any) => void;
   onAddWorkout?: (day: any) => void;
   onCopyDayToClipboard?: (day: any) => void;
@@ -59,6 +63,8 @@ interface DayTableViewProps {
   onPasteDay?: (day: any) => void;
   onShareDay?: (day: any) => void;
   onExportDayToTemplate?: (day: any) => void;
+  onExportDayToDone?: (day: any) => void;
+  onShowWorkoutsDone?: (day: any) => void;
   onExportPdfDay?: (day: any) => void;
   onPrintDay?: (day: any) => void;
   onShowDayOverview?: (day: any) => void;
@@ -78,6 +84,8 @@ interface DayTableViewProps {
   onExportPdfWorkout?: (workout: any, day: any) => void;
   onExportWorkoutToArchive?: (workout: any, day: any) => void;
   onExportWorkoutToDone?: (workout: any, day: any) => void;
+  onMarkWorkoutDone?: (workout: any, day: any) => void;
+  onMarkMoveframeDone?: (moveframe: any) => void;
   onExportWorkoutToYearly?: (workout: any, day: any) => void;
   onPrintWorkout?: (workout: any, day: any) => void;
   onShowWorkoutOverview?: (workout: any, day: any) => void;
@@ -146,6 +154,8 @@ export default function DayTableView({
   onExpandOnlyThisWorkout,
   onExpandDayWithAllWorkouts,
   onCycleWorkoutExpansion,
+  onWorkoutStatusChange,
+  onMatchDoneStatusChange,
   onEditDay,
   onAddWorkout,
   onCopyDayToClipboard,
@@ -155,6 +165,8 @@ export default function DayTableView({
   onPasteDay,
   onShareDay,
   onExportDayToTemplate,
+  onExportDayToDone,
+  onShowWorkoutsDone,
   onExportPdfDay,
   onPrintDay,
   onShowDayOverview,
@@ -176,6 +188,8 @@ export default function DayTableView({
   onExportPdfWorkout,
   onExportWorkoutToArchive,
   onExportWorkoutToDone,
+  onMarkWorkoutDone,
+  onMarkMoveframeDone,
   onExportWorkoutToYearly,
   onPrintWorkout,
   onShowWorkoutOverview,
@@ -242,6 +256,10 @@ export default function DayTableView({
   const [showSaveTemplateWeeklyPlanModal, setShowSaveTemplateWeeklyPlanModal] = useState(false);
   const [saveTemplateWeekSource, setSaveTemplateWeekSource] = useState<any>(null);
   const [showUnshareWeeklyPlanModal, setShowUnshareWeeklyPlanModal] = useState(false);
+  /** Section C: which Done day is showing the Yearly Plan "planned" panel underneath. */
+  const [showPlannedForDoneDayId, setShowPlannedForDoneDayId] = useState<string | null>(null);
+  /** Section B: which Yearly Plan day is showing the Workouts Done matching panel underneath. */
+  const [showDoneForPlannedDayId, setShowDoneForPlannedDayId] = useState<string | null>(null);
   const [shareSourcePlanType, setShareSourcePlanType] =
     useState<WeeklyPlanShareSourceType>('YEARLY_PLAN');
   const [mySharedGlobalEntries, setMySharedGlobalEntries] = useState<
@@ -252,6 +270,7 @@ export default function DayTableView({
   >([]);
   const [unshareTarget, setUnshareTarget] = useState<{ id: string; title: string } | null>(null);
   const [unshareItemKind, setUnshareItemKind] = useState<'weekly plan' | 'workout'>('weekly plan');
+  const [repairingWeekId, setRepairingWeekId] = useState<string | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const scrollbarRef = useRef<HTMLDivElement>(null);
   const tableWrapperRef = useRef<HTMLDivElement>(null);
@@ -293,6 +312,37 @@ export default function DayTableView({
     
     loadPeriods();
   }, []);
+
+  const handleEnsureWeekDays = useCallback(
+    async (week: { id: string; weekNumber?: number }) => {
+      if (!week?.id) return;
+      setRepairingWeekId(week.id);
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/workouts/weeks/${week.id}/ensure-days`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token ?? ''}` },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to create days for this week');
+        }
+        if (reloadWorkouts) {
+          await reloadWorkouts();
+        }
+      } catch (error) {
+        console.error('Error ensuring week days:', error);
+        alert(
+          error instanceof Error
+            ? error.message
+            : 'Could not create days for this week. Try Set Start Date or Copy from Templates.'
+        );
+      } finally {
+        setRepairingWeekId(null);
+      }
+    },
+    [reloadWorkouts]
+  );
 
   // Reset expand state when week changes
   useEffect(() => {
@@ -371,7 +421,7 @@ export default function DayTableView({
     distTime: 100,      // "Dist & Time" column
     mainWork: 200,      // "Main work" column
     secondaryWork: 200, // "Secondary work" column
-    options: 320
+    options: 320,
   };
   
   // Calculate minimum table width dynamically based on column widths
@@ -2443,8 +2493,45 @@ export default function DayTableView({
                         <tbody>
                           {sortedWeekDays.length === 0 && (
                             <tr>
-                              <td colSpan={15} className="text-center py-8 text-red-600 font-bold">
-                                ⚠️ No days in this week! sortedWeekDays is empty for week {week.weekNumber}
+                              <td colSpan={15} className="px-6 py-8 text-center">
+                                <div className="mx-auto max-w-lg space-y-3 text-left">
+                                  <p className="text-base font-semibold text-gray-900">
+                                    Week {week.weekNumber} has no days yet
+                                  </p>
+                                  <p className="text-sm text-gray-600">
+                                    This week slot exists in your Yearly Plan, but Monday–Sunday were
+                                    not created (or were disconnected). You cannot plan workouts here
+                                    until the 7 days exist.
+                                  </p>
+                                  <p className="text-sm font-medium text-gray-800">What you can do:</p>
+                                  <ul className="list-disc space-y-1 pl-5 text-sm text-gray-600">
+                                    <li>
+                                      Click <strong>Create days for this week</strong> below to
+                                      generate Mon–Sun for Week {week.weekNumber}.
+                                    </li>
+                                    <li>
+                                      Use <strong>Set Start Date</strong> to rebuild the full 52-week
+                                      plan (replaces the current yearly plan).
+                                    </li>
+                                    <li>
+                                      Use <strong>Copy from Templates</strong> or{' '}
+                                      <strong>Import</strong> to paste workouts into this week after
+                                      days are created.
+                                    </li>
+                                  </ul>
+                                  {activeSection === 'B' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleEnsureWeekDays(week)}
+                                      disabled={repairingWeekId === week.id}
+                                      className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                                    >
+                                      {repairingWeekId === week.id
+                                        ? 'Creating days…'
+                                        : `Create days for Week ${week.weekNumber}`}
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           )}
@@ -2461,6 +2548,7 @@ export default function DayTableView({
                                   isSelected={selectedDays.has(day.id)}
                                   activeSection={activeSection}
                                   iconType={iconType}
+                                  optionsColWidth={COL_WIDTHS.options}
                                   onToggleDay={onToggleDay!}
                                   onToggleDaySelection={(dayId) => {
                                     setSelectedDays(prev => {
@@ -2477,6 +2565,8 @@ export default function DayTableView({
                                   onExpandOnlyThisWorkout={onExpandOnlyThisWorkout}
                                   onExpandDayWithAllWorkouts={onExpandDayWithAllWorkouts}
                                   onCycleWorkoutExpansion={onCycleWorkoutExpansion}
+                                  onWorkoutStatusChange={onWorkoutStatusChange}
+                                  onMatchDoneStatusChange={onMatchDoneStatusChange}
                                   onEditDay={onEditDay}
                                   onAddWorkout={onAddWorkout}
                                   onShowDayInfo={handleShowDayInfo}
@@ -2488,6 +2578,17 @@ export default function DayTableView({
                                   onPasteDay={onPasteDay}
                                   onShareDay={onShareDay}
                                   onExportDayToTemplate={onExportDayToTemplate}
+                                  onExportDayToDone={onExportDayToDone}
+                                  onShowWorkoutsDone={(d) => {
+                                    setShowDoneForPlannedDayId((prev) =>
+                                      prev === d.id ? null : d.id,
+                                    );
+                                    // Ensure the day row is expanded so the panel is visible
+                                    if (!expandedDaysSet.has(d.id)) {
+                                      onToggleDay?.(d.id);
+                                    }
+                                    onShowWorkoutsDone?.(d);
+                                  }}
                                   onExportPdfDay={onExportPdfDay}
                                   onPrintDay={onPrintDay}
                                   onDeleteDay={onDeleteDay}
@@ -2528,6 +2629,8 @@ export default function DayTableView({
                                         onExportPdfWorkout={onExportPdfWorkout}
                                         onExportWorkoutToArchive={onExportWorkoutToArchive}
                                         onExportWorkoutToDone={onExportWorkoutToDone}
+                                        onMarkWorkoutDone={onMarkWorkoutDone}
+                                        onMarkMoveframeDone={onMarkMoveframeDone}
                                         onExportWorkoutToYearly={onExportWorkoutToYearly}
                                         onPrintWorkout={onPrintWorkout}
                                         onShowWorkoutOverview={onShowWorkoutOverview}
@@ -2567,6 +2670,40 @@ export default function DayTableView({
                                           </button>
                                         </div>
                                       )}
+
+                                      {activeSection === 'B' && (
+                                        <div className="mt-3 flex items-center gap-3" style={{ paddingLeft: '60px' }}>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setShowDoneForPlannedDayId((prev) =>
+                                                prev === day.id ? null : day.id,
+                                              );
+                                            }}
+                                            className={`px-4 py-2 text-sm font-semibold rounded-md shadow-md transition-all ${
+                                              showDoneForPlannedDayId === day.id
+                                                ? 'bg-red-700 text-white'
+                                                : 'bg-red-600 hover:bg-red-700 text-white'
+                                            }`}
+                                            title="Show Workouts Done underneath to match / apply to this Yearly Plan day"
+                                          >
+                                            {showDoneForPlannedDayId === day.id
+                                              ? 'Hide workouts DONE'
+                                              : 'Show workouts DONE'}
+                                          </button>
+                                        </div>
+                                      )}
+
+                                      {activeSection === 'B' &&
+                                        showDoneForPlannedDayId === day.id && (
+                                          <ShowWorkoutsDonePanel
+                                            plannedDay={day}
+                                            iconType={iconType}
+                                            onClose={() => setShowDoneForPlannedDayId(null)}
+                                            onRefreshPlan={reloadWorkouts}
+                                          />
+                                        )}
                                         </div>
                                       </div>
                                     </td>
@@ -2867,6 +3004,7 @@ export default function DayTableView({
                         isSelected={selectedDays.has(day.id)}
                         activeSection={activeSection}
                         iconType={iconType}
+                      optionsColWidth={COL_WIDTHS.options}
                       onToggleDay={onToggleDay!}
                         onToggleDaySelection={(dayId) => {
                           setSelectedDays(prev => {
@@ -2883,6 +3021,8 @@ export default function DayTableView({
                       onExpandOnlyThisWorkout={onExpandOnlyThisWorkout}
                       onExpandDayWithAllWorkouts={onExpandDayWithAllWorkouts}
                       onCycleWorkoutExpansion={onCycleWorkoutExpansion}
+                      onWorkoutStatusChange={onWorkoutStatusChange}
+                      onMatchDoneStatusChange={onMatchDoneStatusChange}
                       onEditDay={onEditDay}
                       onAddWorkout={onAddWorkout}
                       onShowDayInfo={handleShowDayInfo}
@@ -2894,6 +3034,16 @@ export default function DayTableView({
                       onPasteDay={onPasteDay}
                       onShareDay={onShareDay}
                       onExportDayToTemplate={onExportDayToTemplate}
+                      onExportDayToDone={onExportDayToDone}
+                      onShowWorkoutsDone={(d) => {
+                        setShowDoneForPlannedDayId((prev) =>
+                          prev === d.id ? null : d.id,
+                        );
+                        if (!expandedDaysSet.has(d.id)) {
+                          onToggleDay?.(d.id);
+                        }
+                        onShowWorkoutsDone?.(d);
+                      }}
                       onExportPdfDay={onExportPdfDay}
                       onPrintDay={onPrintDay}
                       onDeleteDay={onDeleteDay}
@@ -2950,6 +3100,8 @@ export default function DayTableView({
                               onExportPdfWorkout={onExportPdfWorkout}
                               onExportWorkoutToArchive={onExportWorkoutToArchive}
                               onExportWorkoutToDone={onExportWorkoutToDone}
+                              onMarkWorkoutDone={onMarkWorkoutDone}
+                              onMarkMoveframeDone={onMarkMoveframeDone}
                               onExportWorkoutToYearly={onExportWorkoutToYearly}
                               onPrintWorkout={onPrintWorkout}
                               onShowWorkoutOverview={onShowWorkoutOverview}
@@ -2993,6 +3145,37 @@ export default function DayTableView({
                               Add a workout
                             </button>
                            </div>
+                           )}
+
+                           {activeSection === 'C' && (
+                             <div className="mt-3 flex items-center gap-3" style={{ paddingLeft: '60px' }}>
+                               <button
+                                 type="button"
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   setShowPlannedForDoneDayId((prev) =>
+                                     prev === day.id ? null : day.id,
+                                   );
+                                 }}
+                                 className={`px-4 py-2 text-sm font-semibold rounded-md shadow-md transition-all ${
+                                   showPlannedForDoneDayId === day.id
+                                     ? 'bg-red-700 text-white'
+                                     : 'bg-red-600 hover:bg-red-700 text-white'
+                                 }`}
+                                 title="Show matching Yearly Plan day underneath"
+                               >
+                                 {showPlannedForDoneDayId === day.id ? 'Hide planned' : 'Show planned'}
+                               </button>
+                             </div>
+                           )}
+
+                           {activeSection === 'C' && showPlannedForDoneDayId === day.id && (
+                             <ShowPlannedDayPanel
+                               doneDay={day}
+                               iconType={iconType}
+                               onClose={() => setShowPlannedForDoneDayId(null)}
+                               onRefreshDone={reloadWorkouts}
+                             />
                            )}
                           </div>
                         </div>

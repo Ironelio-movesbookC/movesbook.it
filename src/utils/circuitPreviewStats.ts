@@ -3,9 +3,13 @@
  * pause averages from effective slots in the grid (not Pause Settings dropdowns alone).
  */
 
+import { circuitStationProducesMovelap, readOptionalStationPauseSeconds } from '@/utils/circuitMovelapPause';
+
 export type CircuitPreviewStation = {
   stationNumber?: number;
-  pause?: number;
+  sector?: string;
+  exercise?: string;
+  pause?: number | string;
 };
 
 export type CircuitPreviewCircuit = {
@@ -49,6 +53,30 @@ function seriesPauseGapCount(nSeries: number, mode: 'count' | 'time'): number {
   return mode === 'time' ? nSeries : Math.max(0, nSeries - 1);
 }
 
+/** Last station of last serie of last circuit — Macro pause source in the grid. */
+export function getLastStationPauseSeconds(circuits: CircuitPreviewCircuit[]): number | null {
+  if (!circuits.length) return null;
+  const lastCircuit = circuits[circuits.length - 1];
+  const rows = lastCircuit.stationsBySeries ?? [];
+  if (!rows.length) return null;
+  const lastRow = rows[rows.length - 1];
+  if (!lastRow?.length) return null;
+  const lastStation = lastRow[lastRow.length - 1];
+  return readOptionalStationPauseSeconds(lastStation);
+}
+
+/** Macro seconds for preview / movelaps — Macro Pause footer (loadOfWork) only, never station.pause. */
+export function resolveCircuitPreviewMacroSec(input: {
+  circuits: CircuitPreviewCircuit[];
+  seriesMode: 'count' | 'time';
+  loadOfWorkMacroSec: number;
+  pauseCircuitsDefault: number;
+}): number {
+  const { loadOfWorkMacroSec } = input;
+  if (loadOfWorkMacroSec > 0) return loadOfWorkMacroSec;
+  return 0;
+}
+
 /** Inter-station pause slots (excludes end-of-serie / series / circuit bar rows). */
 function accumulateStationPauseSlots(
   circuits: CircuitPreviewCircuit[],
@@ -63,7 +91,14 @@ function accumulateStationPauseSlots(
     const rows = circuit.stationsBySeries ?? [];
     rows.forEach((seriesStations, seriesIdx) => {
       const lastIdx = seriesStations.length - 1;
+      const producingIndexes = seriesStations
+        .map((st, idx) => (circuitStationProducesMovelap(st) ? idx : -1))
+        .filter((idx) => idx >= 0);
+      const firstProducingIdx = producingIndexes.length > 0 ? producingIndexes[0] : -1;
+
       seriesStations.forEach((station, stationIdx) => {
+        if (!circuitStationProducesMovelap(station)) return;
+
         const isLastStation = stationIdx === lastIdx;
         const isLastSeriesRow = seriesIdx === rows.length - 1;
 
@@ -71,12 +106,14 @@ function accumulateStationPauseSlots(
           if (isLastStation) return;
         } else if (executionMode === 'horizontal') {
           if (!isLastSeriesRow || isLastStation) return;
-        } else if (isLastStation) {
-          return;
+        } else {
+          if (isLastStation) return;
+          if (seriesIdx > 0 && stationIdx === firstProducingIdx) return;
         }
 
         count += 1;
-        sum += typeof station.pause === 'number' ? station.pause : pauseAmongDefault;
+        const cellPause = readOptionalStationPauseSeconds(station);
+        sum += cellPause != null ? cellPause : pauseAmongDefault;
       });
     });
   }
@@ -120,9 +157,12 @@ function accumulateCircuitPauseSlots(
 ): { sum: number; count: number } {
   const n = circuits.length;
   if (n === 0) return { sum: 0, count: 0 };
-  let sum = macroSec;
-  for (const circuit of circuits) {
-    sum += circuit.pauseAfterCircuit ?? pauseCircuitsDefault;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const isLastCircuit = i === n - 1;
+    sum += isLastCircuit
+      ? macroSec
+      : (circuits[i].pauseAfterCircuit ?? pauseCircuitsDefault);
   }
   return { sum, count: n };
 }
@@ -251,7 +291,9 @@ export function computeCircuitPreviewStats(input: CircuitPreviewStatsInput): {
         : 0;
     circCount = slots.circuitEnds;
     circSum =
-      slots.circuitEnds * pauseCircuitsDefault + macroSec;
+      slots.circuitEnds > 1
+        ? (slots.circuitEnds - 1) * pauseCircuitsDefault + macroSec
+        : macroSec;
   }
 
   const avgStationSec =
@@ -263,14 +305,13 @@ export function computeCircuitPreviewStats(input: CircuitPreviewStatsInput): {
   const avgCircSec =
     circCount > 0 ? circSum / circCount : pauseCircuitsDefault;
 
-  const mMinutes =
-    macroSec > 0 ? String(Math.max(1, Math.round(macroSec / 60))) : '0';
+  const macroLabel = formatCircuitPreviewPauseSeconds(macroSec);
 
   const line =
     `Circuit: ${structureLine} ` +
     `Pause circ. ${formatCircuitPreviewPauseSeconds(avgCircSec)} - ` +
     `stations ${formatCircuitPreviewPauseSeconds(avgStationSec)} - ` +
-    `series ${formatCircuitPreviewPauseSeconds(avgSeriesSec)} M${mMinutes}'`;
+    `series ${formatCircuitPreviewPauseSeconds(avgSeriesSec)} M${macroLabel}`;
 
   return {
     line,

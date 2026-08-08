@@ -321,7 +321,12 @@ export default function PromocodeAddForm({
   const openPreview = () => {
     const page = meta?.helpHtmlPages.find((p) => p.id === helpHtmlPagesId);
     if (!page?.title) return;
-    window.open(`/users/htmlpage/${encodeURIComponent(page.title)}`, '_blank');
+    const lang = Number(languageId) > 0 ? Number(languageId) : 1;
+    const params = new URLSearchParams({ language_id: String(lang) });
+    window.open(
+      `/users/htmlpage/${encodeURIComponent(page.title)}?${params.toString()}`,
+      '_blank'
+    );
   };
 
   const openInviteModal = () => {

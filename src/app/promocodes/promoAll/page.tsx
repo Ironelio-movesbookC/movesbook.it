@@ -66,7 +66,7 @@ export default function PromocodesPromoAllPage() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Username or email"
+          placeholder="Username, email or promocode"
           className="px-3 py-2 border text-sm min-w-[200px]"
         />
         <button type="submit" className="px-4 py-2 bg-[#7b0a26] text-white text-sm rounded">

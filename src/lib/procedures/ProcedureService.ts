@@ -1,5 +1,6 @@
 ﻿import { Prisma, ProcedureRecordStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { findExistingTable } from '@/lib/club/legacyTableLookup';
 import { getProcedureDefinition, getProcedureTypology } from './registry';
 import { paginated, parsePagination } from './pagination';
 import { verifyOperatorPassword } from './operatorAuth';
@@ -80,16 +81,94 @@ async function loadUserNames(ids: string[]): Promise<Map<string, string>> {
   return new Map(users.map((u) => [u.id, formatUserName(u)]));
 }
 
+async function getLegacyUserId(userId: string): Promise<string | null> {
+  const fromId = userId.match(/^legacy_(\d+)(?:_|$)/);
+  if (fromId?.[1]) return fromId[1];
+
+  const mappingTable = await findExistingTable(['legacy_id_mappings']);
+  if (!mappingTable) return null;
+
+  const rows = await prisma.$queryRawUnsafe<{ legacy_id: number | string }[]>(
+    `SELECT legacy_id
+     FROM \`${mappingTable}\`
+     WHERE new_id = ?
+       AND legacy_table = 'users'
+     ORDER BY legacy_id DESC
+     LIMIT 1`,
+    userId
+  );
+
+  return rows[0]?.legacy_id != null ? String(rows[0].legacy_id) : null;
+}
+
+async function getOtherSetting(clubId: string, key: string, userId?: string): Promise<string> {
+  const TABLE_NAME = 'club_reader_other_settings';
+  const JSON_TABLE_NAME = 'club_other_settings';
+
+  try {
+    const tableName = await findExistingTable([TABLE_NAME]);
+    if (tableName && userId) {
+      const legacyUserId = await getLegacyUserId(userId);
+      const userIds = Array.from(new Set([userId, legacyUserId].filter(Boolean) as string[]));
+      const userPlaceholders = userIds.map(() => '?').join(',');
+
+      const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+        `SELECT \`${key}\` AS val
+         FROM \`${tableName}\`
+         WHERE club_user_id IN (${userPlaceholders})
+           AND club_id = ?
+         ORDER BY id DESC LIMIT 1`,
+        ...userIds, clubId
+      );
+      const val = rows?.[0]?.val != null ? String(rows[0].val) : '';
+      if (val) return val;
+    }
+  } catch {
+    /* table may not exist */
+  }
+  try {
+    const jsonTable = await findExistingTable([JSON_TABLE_NAME]);
+    if (jsonTable) {
+      const rows = await prisma.$queryRawUnsafe<{ settings_json: string }[]>(
+        `SELECT settings_json FROM \`${jsonTable}\` ORDER BY id DESC LIMIT 1`
+      );
+      if (rows?.[0]?.settings_json) {
+        const json = JSON.parse(rows[0].settings_json);
+        const mapping: Record<string, string> = {
+          operator_pass_status: 'operatorPassStatus',
+          form_pay_deadline_status: 'formPayDeadlineStatus',
+        };
+        const jsKey = mapping[key];
+        if (jsKey && json[jsKey] != null) return String(json[jsKey]);
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+  return '';
+}
+
+function isPasswordEnabledSetting(value: string): boolean {
+  const normalised = value.trim().toLowerCase();
+  return normalised === 'yes' || normalised === 'y' || normalised === '1' || normalised === 't' || normalised === 'true';
+}
+
 async function assertOperatorPassword(
   procedureTypeCode: string,
   operatorId: string,
-  password: string | null | undefined
+  password: string | null | undefined,
+  clubId?: string,
+  userId?: string
 ): Promise<void> {
   const requiresPassword =
     procedureTypeCode === PROCEDURE_TYPE_CODES.SERVICE_SALE ||
     procedureTypeCode === PROCEDURE_TYPE_CODES.PRODUCT_SALE ||
     procedureTypeCode === PROCEDURE_TYPE_CODES.EXPENSE;
   if (!requiresPassword) return;
+  if (clubId) {
+    const setting = await getOtherSetting(clubId, 'operator_pass_status', userId);
+    if (!setting || !isPasswordEnabledSetting(setting)) return;
+  }
   const trimmed = password?.trim();
   if (!trimmed) throw new Error('Operator password is required');
   const ok = await verifyOperatorPassword(operatorId, trimmed);
@@ -126,13 +205,16 @@ export class ProcedureService {
     const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
     if (!procedureType) throw new Error('Unknown procedure type');
 
-    const totalAmount = roundMoney(input.totalAmount);
-    const initialPayment = roundMoney(input.initialPayment ?? 0);
+    const deadlineStatus = await getOtherSetting(ctx.club.id, 'form_pay_deadline_status', ctx.userId);
+    const skipDeadlines = deadlineStatus === 'No';
+
+    const totalAmount = skipDeadlines ? 0 : roundMoney(input.totalAmount);
+    const initialPayment = skipDeadlines ? 0 : roundMoney(input.initialPayment ?? 0);
     if (initialPayment > totalAmount) throw new Error('Initial payment exceeds total amount');
 
     const balanceAmount = roundMoney(totalAmount - initialPayment);
     const operatorId = input.operatorId ?? ctx.userId;
-    await assertOperatorPassword(procedureTypeCode, operatorId, input.operatorPassword);
+    await assertOperatorPassword(procedureTypeCode, operatorId, input.operatorPassword, ctx.club.id, ctx.userId);
 
     const recordDate = toDateOnly(input.recordDate);
     const paymentDate = input.paymentDate ? toDateOnly(input.paymentDate) : recordDate;
@@ -200,15 +282,17 @@ export class ProcedureService {
         receiptId = receipt.id;
       }
 
-      await ensureDefaultInstallment(
-        record.id,
-        totalAmount,
-        initialPayment,
-        paymentDate.toISOString().slice(0, 10),
-        dueDate?.toISOString().slice(0, 10) ?? null,
-        input.notes ?? null,
-        tx
-      );
+      if (!skipDeadlines) {
+        await ensureDefaultInstallment(
+          record.id,
+          totalAmount,
+          initialPayment,
+          paymentDate.toISOString().slice(0, 10),
+          dueDate?.toISOString().slice(0, 10) ?? null,
+          input.notes ?? null,
+          tx
+        );
+      }
 
       if (initialPayment > 0 && input.payMode === 'card') {
         await applyCardCreditPayment(ctx.club.id, input.memberId, initialPayment, operatorId);
@@ -244,7 +328,7 @@ export class ProcedureService {
     if (amount > currentBalance) throw new Error('Payment exceeds remaining balance');
 
     const operatorId = input.operatorId ?? ctx.userId;
-    await assertOperatorPassword(procedureTypeCode, operatorId, input.operatorPassword);
+    await assertOperatorPassword(procedureTypeCode, operatorId, input.operatorPassword, ctx.club.id, ctx.userId);
 
     const paymentDate = toDateOnly(input.paymentDate);
     const newPaid = roundMoney(decimalToNumber(record.paidAmount) + amount);

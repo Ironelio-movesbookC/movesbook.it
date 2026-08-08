@@ -176,7 +176,7 @@ export default function PromocodesIndexPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Username or email"
+            placeholder="Username, email or promocode"
             className="px-3 py-2 border text-sm min-w-[220px]"
           />
           <button

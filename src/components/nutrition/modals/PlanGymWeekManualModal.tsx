@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import Image from 'next/image';
-import { X, ChevronUp, ChevronDown, ChevronsDown, Trash2, Settings, ChevronLeft, GripVertical } from 'lucide-react';
+import { X, ChevronUp, ChevronDown, ChevronsDown, Trash2, Settings, ChevronLeft, GripVertical, AlertTriangle } from 'lucide-react';
 import {
   GOAL_OPTIONS,
   type GoalId,
@@ -29,6 +29,7 @@ import {
   computePyramidalRepsSeries,
   type PyramidalMode
 } from '@/utils/pyramidalReps';
+import { UI_EM_DASH } from '@/utils/fixUtf8Mojibake';
 import {
   percentOf1RmFromReps,
   repsFromPercentOf1Rm,
@@ -740,9 +741,9 @@ export function ensureManualSectorShape(sec: ManualDaySector): ManualDaySector {
     seriesRowAlerts = resizeSeriesRowStrings(sec.seriesRowAlerts, series);
   }
   let exercises = Math.max(0, Math.min(20, sec.exercises ?? 0));
-  if (series > 0) {
-    exercises = Math.max(1, Math.min(series, exercises || 1));
-  } else {
+  if (series > 0 && exercises <= 0) {
+    exercises = 1;
+  } else if (series <= 0) {
     exercises = 0;
   }
   return {
@@ -753,14 +754,12 @@ export function ensureManualSectorShape(sec: ManualDaySector): ManualDaySector {
   };
 }
 
-/** Effective exercise count for display/stats (manual value or distribution-table default). */
+/** Exercise count from the series distribution table (training level × total series). */
 function sectorExercisesCount(
   sec: ManualDaySector,
   trainingLevel: TrainingLevel | null | undefined,
 ): number {
   if (sec.series <= 0) return 0;
-  const manual = sec.exercises ?? 0;
-  if (manual > 0) return Math.min(manual, sec.series);
   return exercisesFromLevelTable(sec.series, trainingLevel);
 }
 
@@ -778,7 +777,7 @@ function syncSectorExercisesFromLevelTable(
   sec: ManualDaySector,
   trainingLevel: TrainingLevel | null | undefined
 ): ManualDaySector {
-  if ((sec.exercises ?? 0) > 0) return sec;
+  if (sec.series <= 0) return { ...sec, exercises: 0 };
   const ex = exercisesFromLevelTable(sec.series, trainingLevel);
   return { ...sec, exercises: ex };
 }
@@ -883,18 +882,9 @@ function applySectorScalarUpdate(
       };
     }
     const oldSeries = Math.max(0, Math.min(20, sec.series ?? 0));
-    const exercises = Math.max(0, Math.min(20, sec.exercises ?? 0));
-    const minSeries = Math.max(1, exercises > 0 ? exercises : 1);
-    const series = Math.max(minSeries, Math.min(20, parsed));
-    let exercisesOut = exercises;
-    if (series > 0) {
-      if (exercisesOut <= 0) {
-        exercisesOut = exercisesFromLevelTable(series, trainingLevel);
-      }
-      exercisesOut = Math.max(1, Math.min(series, exercisesOut));
-    } else {
-      exercisesOut = 0;
-    }
+    const series = Math.max(1, Math.min(20, parsed));
+    const exercisesOut =
+      series > 0 ? exercisesFromLevelTable(series, trainingLevel) : 0;
     let merged: ManualDaySector = {
       ...sec,
       series,
@@ -1378,7 +1368,7 @@ export function PieChart({ slices }: { slices: PieSlice[] }) {
     start = end;
   });
   return (
-    <svg width={150} height={150} viewBox="0 0 150 150">
+    <svg width={190} height={190} viewBox="0 0 150 150" className="block">
       {paths}
       {slices.every(s => s.pct === 0) && (
         <circle cx={cx} cy={cy} r={r} fill="#e5e7eb" />
@@ -1529,13 +1519,13 @@ function SectorRow({ sec, pct, series, color, isConstant, orderNum, stepPct, onC
     <div className={`flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-2 shadow-sm transition-colors ${
       delta > 0 ? 'bg-red-50/90 border-red-200' : delta < 0 ? 'bg-emerald-50/90 border-emerald-200' : ''
     }`}>
-      <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-sm font-bold text-gray-900 shadow-sm ${
-        isConstant ? 'bg-yellow-300' : 'bg-yellow-400'
+      <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-sm font-bold shadow-sm ${
+        isConstant ? 'bg-red-600 text-white' : 'bg-yellow-400 text-gray-900'
       }`}>
         {orderNum}
       </div>
-      <div className={`flex min-h-9 min-w-0 max-w-[8.5rem] flex-shrink-0 items-center rounded-md px-2.5 py-1.5 text-sm font-bold text-gray-900 shadow-sm ${
-        isConstant ? 'bg-yellow-300' : 'bg-yellow-400'
+      <div className={`flex min-h-9 min-w-0 max-w-[8.5rem] flex-shrink-0 items-center rounded-md px-2.5 py-1.5 text-sm font-bold shadow-sm ${
+        isConstant ? 'bg-red-600 text-white' : 'bg-yellow-400 text-gray-900'
       }`}>
         <span className="truncate">{sec.sectorLabel}</span>
       </div>
@@ -1713,7 +1703,7 @@ export function SeriesDistDialog({
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
 
           <div className="sticky top-0 z-10 -mx-4 border-b border-gray-200/80 bg-stone-100 px-4 pb-3 shadow-sm">
-            <div className="flex justify-center rounded-xl bg-white py-2 shadow-sm ring-1 ring-gray-200/80">
+            <div className="flex justify-center rounded-xl bg-white py-1 shadow-sm ring-1 ring-gray-200/80">
               <PieChart slices={pieSectors} />
             </div>
           </div>
@@ -2871,62 +2861,8 @@ export default function PlanGymWeekManualModal({
       Math.max(PLAN_YEAR_TOTAL_PERIODS_MIN, Math.floor(s.totalPeriods))
     );
     const cp = Math.min(tp, Math.max(1, Math.floor(s.currentPeriod)));
-
-    const pauseLab = (from: string, to: string): string => {
-      const a = String(from ?? '').trim();
-      const b = String(to ?? '').trim();
-      if (!a || !b) return '—';
-      return interpolatedPauseForPeriod(a, b, cp, tp, PAUSE_OPTIONS);
-    };
-
-    const sf = String(s.seriesProgressionFrom ?? '').trim();
-    const st = String(s.seriesProgressionTo ?? '').trim();
-    const sFrom = parseInt(sf, 10);
-    const sTo = parseInt(st, 10);
-    const series =
-      sf !== '' && st !== '' && !Number.isNaN(sFrom) && !Number.isNaN(sTo) && sFrom > 0 && sTo > 0
-        ? String(interpolatePeriodIntRounded(sFrom, sTo, cp, tp))
-        : '—';
-
-    const rf = String(s.repsProgressionFrom ?? '').trim();
-    const rt = String(s.repsProgressionTo ?? '').trim();
-    const rFrom = parseInt(rf, 10);
-    const rTo = parseInt(rt, 10);
-    const reps =
-      rf !== '' && rt !== '' && !Number.isNaN(rFrom) && !Number.isNaN(rTo)
-        ? String(interpolatePeriodIntRounded(rFrom, rTo, cp, tp))
-        : '—';
-
-    const mwf = String(s.minutesOfWorkProgressionFrom ?? '').trim();
-    const mwt = String(s.minutesOfWorkProgressionTo ?? '').trim();
-    const mwFrom = parseInt(mwf, 10);
-    const mwTo = parseInt(mwt, 10);
-    let minutesOfWork = '—';
-    if (
-      mwf !== '' &&
-      mwt !== '' &&
-      !Number.isNaN(mwFrom) &&
-      !Number.isNaN(mwTo) &&
-      mwFrom >= 1 &&
-      mwFrom <= 9 &&
-      mwTo >= 1 &&
-      mwTo <= 9
-    ) {
-      const raw = interpolatePeriodIntRounded(mwFrom, mwTo, cp, tp);
-      minutesOfWork = String(Math.min(9, Math.max(1, raw)));
-    }
-
-    return {
-      tp,
-      cp,
-      sectorPause: pauseLab(s.sectorPauseFrom, s.sectorPauseTo),
-      macroEx: pauseLab(s.macroExercisePauseFrom, s.macroExercisePauseTo),
-      macroEnd: pauseLab(s.macroEndSectorPauseFrom, s.macroEndSectorPauseTo),
-      series,
-      reps,
-      minutesOfWork,
-    };
-  }, [yearlyPeriodSettings]);
+    return { tp, cp };
+  }, [yearlyPeriodSettings.totalPeriods, yearlyPeriodSettings.currentPeriod]);
 
   /** Interpolated reps + pauses + routine series total from `wp_goalParams` (level, period, sessions %). */
   const workoutParamsPeriodPreview = useMemo(() => {
@@ -3246,9 +3182,8 @@ export default function PlanGymWeekManualModal({
                   ).map((row) => (
                       <div key={row.key} className="rounded border border-sky-100 bg-white p-3 space-y-2">
                         <div className="text-xs font-semibold text-gray-900">{row.title}</div>
-                        <div className="flex flex-wrap items-end gap-3">
+                        <div className="flex flex-wrap items-start gap-3">
                           <div className="flex min-w-0 flex-col gap-1">
-                            <span className="text-[11px] font-semibold text-sky-900">1th period</span>
                             <input
                               type="text"
                               placeholder={'e.g. 1\'30"'}
@@ -3259,9 +3194,9 @@ export default function PlanGymWeekManualModal({
                                 setYearlyPeriodSettings((p) => ({ ...p, [row.fromK]: e.target.value }))
                               }
                             />
+                            <span className="text-center text-[11px] font-semibold text-sky-900">1th period</span>
                           </div>
                           <div className="flex min-w-0 flex-col gap-1">
-                            <span className="text-[11px] font-semibold text-sky-900">last period</span>
                             <input
                               type="text"
                               placeholder={'e.g. 2\'00"'}
@@ -3272,6 +3207,7 @@ export default function PlanGymWeekManualModal({
                                 setYearlyPeriodSettings((p) => ({ ...p, [row.toK]: e.target.value }))
                               }
                             />
+                            <span className="text-center text-[11px] font-semibold text-sky-900">last period</span>
                           </div>
                         </div>
                       </div>
@@ -3280,24 +3216,8 @@ export default function PlanGymWeekManualModal({
 
                 <div className="flex flex-wrap gap-6">
                   <div className="flex flex-col gap-2 text-xs text-gray-700">
-                    <span className="font-medium text-gray-900">Series From → To</span>
-                    <p className="max-w-md text-[10px] leading-snug text-gray-500">
-                      {yearlyManualRangesActive ? (
-                        <>
-                          When you apply with <strong>My typed ranges</strong> selected, interpolated series are
-                          written to <strong>each sector</strong> (then use Series distribution settings if you want to
-                          rebalance totals).
-                        </>
-                      ) : (
-                        <>
-                          Preview only while <strong>Workout parameters</strong> is selected for apply. Switch to
-                          typed ranges and fill all cells to drive series from this row.
-                        </>
-                      )}
-                    </p>
-                    <div className="flex flex-wrap items-end gap-3">
+                    <div className="flex flex-wrap items-start gap-3">
                       <div className="flex flex-col gap-1">
-                        <span className="text-[11px] font-semibold text-sky-900">1th period</span>
                         <input
                           type="number"
                           min={1}
@@ -3313,12 +3233,12 @@ export default function PlanGymWeekManualModal({
                             }))
                           }
                         />
+                        <span className="text-center text-[11px] font-semibold text-sky-900">1th period</span>
                       </div>
-                      <span className="pb-1 text-gray-500" aria-hidden>
+                      <span className="pt-1.5 text-gray-500" aria-hidden>
                         →
                       </span>
                       <div className="flex flex-col gap-1">
-                        <span className="text-[11px] font-semibold text-sky-900">last period</span>
                         <input
                           type="number"
                           min={1}
@@ -3334,14 +3254,28 @@ export default function PlanGymWeekManualModal({
                             }))
                           }
                         />
+                        <span className="text-center text-[11px] font-semibold text-sky-900">last period</span>
                       </div>
                     </div>
+                    <span className="font-medium text-gray-900">Series From → To</span>
+                    <p className="max-w-md text-[10px] leading-snug text-gray-500">
+                      {yearlyManualRangesActive ? (
+                        <>
+                          When you apply with <strong>My typed ranges</strong> selected, interpolated series are
+                          written to <strong>each sector</strong> (then use Series distribution settings if you want to
+                          rebalance totals).
+                        </>
+                      ) : (
+                        <>
+                          Preview only while <strong>Workout parameters</strong> is selected for apply. Switch to
+                          typed ranges and fill all cells to drive series from this row.
+                        </>
+                      )}
+                    </p>
                   </div>
                   <div className="flex flex-col gap-2 text-xs text-gray-700">
-                    <span className="font-medium text-gray-900">Reps From → To</span>
-                    <div className="flex flex-wrap items-end gap-3">
+                    <div className="flex flex-wrap items-start gap-3">
                       <div className="flex flex-col gap-1">
-                        <span className="text-[11px] font-semibold text-sky-900">1th period</span>
                         <input
                           type="number"
                           min={0}
@@ -3357,12 +3291,12 @@ export default function PlanGymWeekManualModal({
                             }))
                           }
                         />
+                        <span className="text-center text-[11px] font-semibold text-sky-900">1th period</span>
                       </div>
-                      <span className="pb-1 text-gray-500" aria-hidden>
+                      <span className="pt-1.5 text-gray-500" aria-hidden>
                         →
                       </span>
                       <div className="flex flex-col gap-1">
-                        <span className="text-[11px] font-semibold text-sky-900">last period</span>
                         <input
                           type="number"
                           min={0}
@@ -3378,52 +3312,14 @@ export default function PlanGymWeekManualModal({
                             }))
                           }
                         />
+                        <span className="text-center text-[11px] font-semibold text-sky-900">last period</span>
                       </div>
                     </div>
+                    <span className="font-medium text-gray-900">Reps From → To</span>
                   </div>
                 </div>
               </div>
             ) : null}
-
-            <label className="flex w-full min-w-0 flex-col gap-1 text-xs text-gray-700">
-              <span className="font-medium text-gray-900">
-                Minutes of work per serie — Continuous Time only (optional)
-              </span>
-              <span className="text-[11px] text-gray-600">
-                Matches circuit planner when Series Mode = Continuous Time — enter the same targets in &quot;Minutes of work&quot; there (1–9), not in Macro.
-              </span>
-              <span className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={9}
-                  placeholder="—"
-                  className="w-16 rounded border border-gray-300 px-1 py-0.5 text-sm"
-                  value={yearlyPeriodSettings.minutesOfWorkProgressionFrom}
-                  onChange={(e) =>
-                    setYearlyPeriodSettings((p) => ({
-                      ...p,
-                      minutesOfWorkProgressionFrom: e.target.value,
-                    }))
-                  }
-                />
-                <span aria-hidden>→</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={9}
-                  placeholder="—"
-                  className="w-16 rounded border border-gray-300 px-1 py-0.5 text-sm"
-                  value={yearlyPeriodSettings.minutesOfWorkProgressionTo}
-                  onChange={(e) =>
-                    setYearlyPeriodSettings((p) => ({
-                      ...p,
-                      minutesOfWorkProgressionTo: e.target.value,
-                    }))
-                  }
-                />
-              </span>
-            </label>
 
             <div className="rounded border border-sky-200 bg-white px-3 py-2 text-xs text-gray-800 space-y-2">
               <div className="font-semibold text-sky-900">
@@ -3445,47 +3341,17 @@ export default function PlanGymWeekManualModal({
                   </span>
                 </div>
                 <div className="text-[11px] leading-snug">
-                  Series / Reps:{' '}
                   <span className="font-mono tabular-nums text-gray-900">
-                    {workoutParamsPeriodPreview.totalSeries} / {workoutParamsPeriodPreview.reps}
+                    Series {workoutParamsPeriodPreview.totalSeries}
+                    {workoutParamsPeriodPreview.sessionDeltaPct !== 0 ? (
+                      <> ({workoutParamsPeriodPreview.baseVolume} + {workoutParamsPeriodPreview.sessionDeltaPct}%)</>
+                    ) : null}{' '}
+                    Repetitions {workoutParamsPeriodPreview.reps}
                   </span>
-                  {workoutParamsPeriodPreview.sessionDeltaPct !== 0 ? (
-                    <span className="ml-1 text-gray-600">
-                      ({workoutParamsPeriodPreview.baseVolume} + {workoutParamsPeriodPreview.sessionDeltaPct}% sessions)
-                    </span>
-                  ) : null}
                   {!workoutParamsPeriodPreview.hasGoalParams ? (
                     <span className="ml-1 text-rose-800">(defaults — save Hypertrophy under Workouts parameters)</span>
                   ) : null}
                 </div>
-              </div>
-              <div className="text-[11px] text-gray-500 space-y-1 border-t border-sky-100 pt-1.5">
-                <div className="font-medium text-gray-700">
-                  Typed first → last preview (expanded section — when filled)
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  Apply uses this preview only if you choose <strong>My typed ranges</strong> and every cell is filled.
-                </div>
-                <div>
-                  Manual ranges — Between series · Between exercises · Between areas:{' '}
-                  <span className="font-mono tabular-nums text-gray-800">
-                    {yearlyPeriodPreview.sectorPause} · {yearlyPeriodPreview.macroEx} · {yearlyPeriodPreview.macroEnd}
-                  </span>
-                </div>
-                <div>
-                  Series / Reps (if ranges set):{' '}
-                  <span className="font-mono tabular-nums text-gray-800">
-                    {yearlyPeriodPreview.series} / {yearlyPeriodPreview.reps}
-                  </span>
-                </div>
-              </div>
-              <div>
-                Minutes of work — Continuous Time (if range set):{' '}
-                <span className="font-mono tabular-nums">
-                  {yearlyPeriodPreview.minutesOfWork === '—'
-                    ? '—'
-                    : `${yearlyPeriodPreview.minutesOfWork} min/serie`}
-                </span>
               </div>
             </div>
 
@@ -3551,6 +3417,9 @@ export default function PlanGymWeekManualModal({
                       ) : day.sectors.map((sec, secIdx) => {
                         const overviewDropTarget =
                           sectorDropHighlight?.dayIdx === dayIdx && sectorDropHighlight?.secIdx === secIdx;
+                        const constantIdsForDay = getConstantSectorIdsForDay(dayIdx);
+                        const isConstantSector =
+                          constantIdsForDay.has(sec.sectorId) || constantIdsForDay.has(sec.sectorLabel);
                         return (
                           <div
                             key={`${sec.sectorId}-${secIdx}`}
@@ -3610,7 +3479,11 @@ export default function PlanGymWeekManualModal({
                             <div className="relative h-10 w-10 shrink-0">
                               <Image src={sec.image} alt={sec.sectorLabel} fill className="object-contain" unoptimized />
                             </div>
-                            <span className="font-medium text-gray-900 min-w-[100px] shrink-0">{sec.sectorLabel}</span>
+                            <span
+                              className={`min-w-[100px] shrink-0 font-medium ${isConstantSector ? 'font-bold text-red-600' : 'text-gray-900'}`}
+                            >
+                              {sec.sectorLabel}
+                            </span>
                             <span className="min-w-0 flex-1 text-gray-600">
                               {sectorExercisesCount(sec, trainingLevel)} ex · {sec.series} series · reps{' '}
                               {sec.seriesReps?.join('/') ?? sec.reps} ·
@@ -3686,19 +3559,23 @@ export default function PlanGymWeekManualModal({
           ) : (
           <>
               {/* Day tabs */}
-          <div className="flex flex-wrap gap-1 border-b border-gray-200">
+          <div className="flex flex-wrap gap-1 border-b-4 border-gray-800">
             {stableDays.map((day, idx) => {
               const goalLabel = getGoalLabel(goals[idx]);
                   const defaultName = `Day ${idx + 1}`;
                   const hasCustomName = (day.routineName || '').trim() !== '' && day.routineName !== defaultName;
               return (
                     <button key={idx} type="button" onClick={() => setActiveDayIndex(idx)}
-                      className={`px-3 py-2 rounded-t-lg font-medium text-sm text-left max-w-[200px] ${activeDayIndex === idx ? 'bg-amber-100 border border-b-0 border-amber-200 text-amber-900' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                      className={`px-3 py-2 rounded-t-lg font-medium text-sm text-left max-w-[200px] ${
+                        activeDayIndex === idx
+                          ? 'border border-b-0 border-amber-600 bg-amber-400 text-amber-950 shadow-sm'
+                          : 'border border-transparent bg-gray-300 text-gray-900 hover:bg-gray-400'
+                      }`}
                       title={`Day ${idx + 1}${hasCustomName ? `: ${day.routineName}` : ''}${goalLabel ? ` — ${goalLabel}` : ''}`}
                 >
                   <span className="font-semibold">Day {idx + 1}</span>
                       {hasCustomName ? <span className="block text-xs font-normal opacity-90 truncate">{day.routineName}</span> : null}
-                      {goalLabel  ? <span className="block text-[10px] text-gray-500 truncate mt-0.5">Goal: {goalLabel}</span> : null}
+                      {goalLabel  ? <span className="block text-[10px] text-gray-800 truncate mt-0.5">Goal: {goalLabel}</span> : null}
                 </button>
               );
             })}
@@ -3826,7 +3703,11 @@ export default function PlanGymWeekManualModal({
                       Sector – Muscular areas for this day ({activeDay.sectors.length} selected)
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {activeDay.sectors.map((sec, chipIdx) => (
+                      {activeDay.sectors.map((sec, chipIdx) => {
+                        const constantIdsForDay = getConstantSectorIdsForDay(activeDayIndex);
+                        const isConstantSector =
+                          constantIdsForDay.has(sec.sectorId) || constantIdsForDay.has(sec.sectorLabel);
+                        return (
                         <span
                           key={`${sec.sectorId}-${chipIdx}`}
                           className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-gray-800"
@@ -3836,18 +3717,21 @@ export default function PlanGymWeekManualModal({
                             <Image src={sec.image} alt={sec.sectorLabel} fill className="object-contain" unoptimized />
                           </span>
                           <span className="min-w-0 flex flex-col leading-tight">
-                            <span className="font-medium text-gray-900">{sec.sectorLabel}</span>
+                            <span className={`font-medium ${isConstantSector ? 'font-bold text-red-600' : 'text-gray-900'}`}>
+                              {sec.sectorLabel}
+                            </span>
                             <span className="font-bold text-amber-800">
                               {sec.series > 0 ? `${sec.series} series` : 'series'}
                             </span>
                           </span>
                         </span>
-                      ))}
+                        );
+                      })}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        onClick={applyManualAutoProcess}
+                        onClick={() => setShowAutoWarn(true)}
                         title={
                           selectedSectorFrameIndex != null
                             ? 'Recalculate Exercises, Series, Reps and Macros for the selected sector (yellow frame) only'
@@ -3897,6 +3781,9 @@ export default function PlanGymWeekManualModal({
               ) : (
                 activeDay.sectors.map((sec, secIdx) => {
                   const lastWorkout = nutritionPlan ? getLastWorkoutBySector(nutritionPlan, sec.sectorLabel, sec.sectorId) : null;
+                  const constantIdsForDay = getConstantSectorIdsForDay(activeDayIndex);
+                  const isConstantSector =
+                    constantIdsForDay.has(sec.sectorId) || constantIdsForDay.has(sec.sectorLabel);
                       const isPctMode   = sec.typeByPercent ?? false;
                   const frameSelected = selectedSectorFrameIndex === secIdx;
                   const dropTarget =
@@ -3975,7 +3862,11 @@ export default function PlanGymWeekManualModal({
                               <div className="relative h-9 w-9 sm:h-10 sm:w-10">
                                 <Image src={sec.image} alt={sec.sectorLabel} fill className="object-contain" unoptimized />
                               </div>
-                              <span className="text-sm font-bold text-gray-900">{sec.sectorLabel}</span>
+                              <span
+                                className={`text-sm font-bold ${isConstantSector ? 'text-red-600' : 'text-gray-900'}`}
+                              >
+                                {sec.sectorLabel}
+                              </span>
                             </div>
                             <div className="min-w-0 flex-1 overflow-x-auto text-xs text-gray-800 [scrollbar-width:thin]">
                               {lastWorkout ? (
@@ -4076,29 +3967,24 @@ export default function PlanGymWeekManualModal({
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <label
                         className="flex items-center gap-1 text-xs text-gray-600"
-                        title="Number of exercises in this muscular area. Cannot exceed Series."
+                        title="From the series distribution table (training level × total series planned)."
                       >
-                        Exercises
-                        <SectorScalarStepper
-                          value={sectorExercisesCount(sec, trainingLevel)}
-                          min={sec.series > 0 ? 1 : 0}
-                          max={sec.series > 0 ? sec.series : 0}
-                          disabled={sec.series <= 0}
-                          onChange={(v) => updateSector(activeDayIndex, secIdx, 'exercises', v)}
-                        />
+                        Number of exercises
+                        <span
+                          className="inline-flex min-w-[2.5rem] items-center justify-center rounded border border-gray-300 bg-gray-100 px-2 py-0.5 text-sm font-semibold tabular-nums text-gray-900"
+                          aria-label={`Number of exercises: ${sectorExercisesCount(sec, trainingLevel)}`}
+                        >
+                          {sectorExercisesCount(sec, trainingLevel)}
+                        </span>
                       </label>
                       <label
                         className="flex items-center gap-1 text-xs text-gray-600"
-                        title="Number of series in this area. Cannot be less than Exercises."
+                        title="Number of series in this area."
                       >
-                        Series
+                        series
                         <SectorScalarStepper
                           value={sec.series > 0 ? sec.series : 0}
-                          min={
-                            sec.series > 0
-                              ? Math.max(1, sectorExercisesCount(sec, trainingLevel))
-                              : 1
-                          }
+                          min={1}
                           max={20}
                           disabled={false}
                           onChange={(v) => updateSector(activeDayIndex, secIdx, 'series', v)}
@@ -4554,7 +4440,7 @@ export default function PlanGymWeekManualModal({
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div className="bg-amber-500 px-5 py-4 flex items-start gap-3">
-              <span className="text-white text-2xl leading-none mt-0.5" aria-hidden>⚠️</span>
+              <AlertTriangle className="h-6 w-6 shrink-0 text-white mt-0.5" aria-hidden />
               <div>
                 <h3 className="font-bold text-white text-base">Automatic processing procedure</h3>
                 <p className="text-amber-100 text-xs mt-1">This action overwrites calculated fields for the current day</p>
@@ -4592,7 +4478,7 @@ export default function PlanGymWeekManualModal({
                 onClick={applyManualAutoProcess}
                 className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-bold"
               >
-                Confirm — Apply
+                Confirm {UI_EM_DASH} Apply
               </button>
             </div>
           </div>

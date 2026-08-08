@@ -278,6 +278,21 @@ th.sticky-options-header {
   opacity: 1 !important;
 }
 
+/* Movelap detail table (nested under moveframe row) — keep Options above scrollable cells */
+.movelap-detail-table-scroll td.sticky-options-col {
+  z-index: 1100 !important;
+  background-color: rgb(250 245 255) !important; /* purple-50 */
+}
+
+.movelap-detail-table-scroll th.sticky-options-header {
+  z-index: 1101 !important;
+  background-color: rgb(243 232 255) !important; /* purple-100 */
+}
+
+.movelap-detail-table-scroll {
+  scroll-padding-right: 8px;
+}
+
 /* Options column background is set via inline styles in component */
 
 /* Thick black line between weeks */

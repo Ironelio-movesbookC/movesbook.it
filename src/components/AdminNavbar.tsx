@@ -177,13 +177,15 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
                 }
                 className="bg-white p-1 sm:p-1.5 rounded overflow-hidden cursor-pointer"
               >
-                <Image 
-                  src="/assets/admin.png" 
-                  alt="Admin Logo"
-                  width={36}
-                  height={36}
-                  className="h-7 sm:h-9 w-auto object-contain"
-                />
+                <span className="relative block h-7 w-7 sm:h-9 sm:w-9">
+                  <Image
+                    src="/assets/admin.png"
+                    alt="Admin Logo"
+                    fill
+                    sizes="36px"
+                    className="object-contain"
+                  />
+                </span>
               </Link>
               <div>
                 <h1 className="text-lg sm:text-2xl font-bold leading-tight">

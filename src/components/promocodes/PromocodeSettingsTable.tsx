@@ -140,6 +140,7 @@ export default function PromocodeSettingsTable({
                         row.inviteEntries ??
                         (row.inviteEmails ?? []).map((email) => ({
                           email,
+                          username: null,
                           registered: false,
                           registrationDate: null,
                           subscriptionName: null,
