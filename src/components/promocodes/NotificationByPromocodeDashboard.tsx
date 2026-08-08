@@ -1,7 +1,10 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import type { NotificationByPromocodeDashboard } from '@/lib/promocodes/notificationByPromocodeService';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { NotificationByPromocodeDashboard, PromocodeOption } from '@/lib/promocodes/notificationByPromocodeService';
+import {
+  isPromocodeInviteSentMessage,
+} from '@/lib/promocodes/promocodeInviteEvents';
 import {
   PROMOCODE_NO_FLAG_IMAGE,
   promocodeFlagImageUrl,
@@ -32,6 +35,32 @@ function formatRoleName(roleName: string, roleId?: number | null): string {
   return roleName.charAt(0).toUpperCase() + roleName.slice(1);
 }
 
+function validateInviteForm(receiverEmail: string, promocodeId: string): string | null {
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!receiverEmail.trim()) {
+    return 'Please enter the mail address for recipient.';
+  }
+  if (!emailPattern.test(receiverEmail.trim())) {
+    return 'Please enter valid mail address.';
+  }
+  if (!promocodeId) {
+    return 'Please select a promocode to use for the invite.';
+  }
+  return null;
+}
+
+function buildSendInvitePreviewUrl(email: string, option: PromocodeOption): string {
+  const params = new URLSearchParams({
+    email_address: email.trim(),
+    promocode: option.code,
+    other_info: '',
+    adv_page: '',
+    html_page_id: option.helpHtmlPagesId != null ? String(option.helpHtmlPagesId) : '',
+    language_id: String(option.languageId ?? 1),
+  });
+  return `/promocodes/send-invite?${params.toString()}`;
+}
+
 export default function NotificationByPromocodeDashboardView() {
   const [data, setData] = useState<NotificationByPromocodeDashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,8 +69,8 @@ export default function NotificationByPromocodeDashboardView() {
   const [receiverEmail, setReceiverEmail] = useState('');
   const [promocodeId, setPromocodeId] = useState('');
   const [validEndDate, setValidEndDate] = useState('');
-  const [sending, setSending] = useState(false);
   const [highlightedPromoId, setHighlightedPromoId] = useState<number | null>(null);
+  const invitePopupPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,6 +99,40 @@ export default function NotificationByPromocodeDashboardView() {
     }
   }, []);
 
+  const watchInvitePopupUntilClosed = useCallback(
+    (popup: Window | null) => {
+      if (!popup) return;
+      if (invitePopupPollRef.current) {
+        clearInterval(invitePopupPollRef.current);
+      }
+      invitePopupPollRef.current = setInterval(() => {
+        if (!popup.closed) return;
+        if (invitePopupPollRef.current) {
+          clearInterval(invitePopupPollRef.current);
+          invitePopupPollRef.current = null;
+        }
+        void load();
+      }, 400);
+    },
+    [load]
+  );
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (isPromocodeInviteSentMessage(event.data)) {
+        void load();
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('message', onMessage);
+      if (invitePopupPollRef.current) {
+        clearInterval(invitePopupPollRef.current);
+      }
+    };
+  }, [load]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -82,22 +145,38 @@ export default function NotificationByPromocodeDashboardView() {
     setValidEndDate(selected?.validTo ?? '');
   };
 
-  const sendInvite = async () => {
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!receiverEmail.trim()) {
-      window.alert('Please enter the mail address for recipient.');
+  const openInvitePreview = () => {
+    const validationError = validateInviteForm(receiverEmail, promocodeId);
+    if (validationError) {
+      window.alert(validationError);
       return;
     }
-    if (!emailPattern.test(receiverEmail.trim())) {
-      window.alert('Please enter valid mail address.');
-      return;
-    }
-    if (!promocodeId) {
+
+    const selected = promocodeOptions.find((p) => String(p.id) === promocodeId);
+    if (!selected?.code) {
       window.alert('Please select a promocode to use for the invite.');
       return;
     }
 
-    setSending(true);
+    const popup = window.open(
+      buildSendInvitePreviewUrl(receiverEmail, selected),
+      '_blank',
+      'noopener,noreferrer'
+    );
+    if (!popup) {
+      window.alert('Please allow pop-ups for this site to open the invitation preview.');
+      return;
+    }
+    watchInvitePopupUntilClosed(popup);
+  };
+
+  const sendInvite = async () => {
+    const validationError = validateInviteForm(receiverEmail, promocodeId);
+    if (validationError) {
+      window.alert(validationError);
+      return;
+    }
+
     try {
       const res = await userPromocodeFetch('/api/users/notification-by-promocode/send-invite', {
         method: 'POST',
@@ -107,15 +186,18 @@ export default function NotificationByPromocodeDashboardView() {
         }),
       });
       const json = await res.json();
-      window.alert(json.message || (json.status === 'success' ? 'Your invitation was sent successfully.' : 'Requesting member failed.'));
+      window.alert(
+        json.message ||
+          (json.status === 'success'
+            ? 'Your invitation was sent successfully.'
+            : 'Requesting member failed.')
+      );
       if (json.status === 'success') {
         setReceiverEmail('');
         void load();
       }
     } catch {
       window.alert('An error occurred while sending the invitation. Please try again.');
-    } finally {
-      setSending(false);
     }
   };
 
@@ -170,8 +252,11 @@ export default function NotificationByPromocodeDashboardView() {
               onChange={(e) => setReceiverEmail(e.target.value)}
               style={{ width: '30%', minWidth: 200 }}
             />
-            <button type="button" className="button-black-promocode" disabled={sending} onClick={() => void sendInvite()}>
+            <button type="button" className="button-black-promocode" onClick={sendInvite}>
               Send Invite
+            </button>
+            <button type="button" className="button-preview-promocode" onClick={openInvitePreview}>
+              Preview
             </button>
           </div>
 

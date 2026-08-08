@@ -1,8 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import type { PromocodeSettingRow } from '@/lib/promocodes/types';
-import { usePromocodeDialogs } from './usePromocodeDialogs';
+import type { PromocodeInviteEntry, PromocodeSettingRow } from '@/lib/promocodes/types';
+import PromocodeInviteEmailsModal from './PromocodeInviteEmailsModal';
 import PromocodeAssetImage from './PromocodeAssetImage';
 import {
   PROMOCODE_NO_FLAG_IMAGE,
@@ -30,7 +31,8 @@ export default function PromocodeSettingsTable({
   onRowDoubleClick?: (id: number) => void;
   showSelectAll?: boolean;
 }) {
-  const { showAlert, dialogs } = usePromocodeDialogs();
+  const [inviteEmailsOpen, setInviteEmailsOpen] = useState(false);
+  const [inviteEmailEntries, setInviteEmailEntries] = useState<PromocodeInviteEntry[]>([]);
   const today = new Date().toISOString().slice(0, 10);
   const allSelected = rows.length > 0 && rows.every((r) => selectedIds.includes(r.id));
 
@@ -131,13 +133,20 @@ export default function PromocodeSettingsTable({
                   <button
                     type="button"
                     className="text-blue-700 underline"
-                    title={row.inviteEmails.join(', ')}
-                    onClick={() =>
-                      showAlert(
-                        row.inviteEmails.length > 0 ? row.inviteEmails.join('\n') : 'No invites',
-                        'Invite emails'
-                      )
-                    }
+                    title={(row.inviteEntries ?? []).map((entry) => entry.email).join(', ')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const entries =
+                        row.inviteEntries ??
+                        (row.inviteEmails ?? []).map((email) => ({
+                          email,
+                          registered: false,
+                          registrationDate: null,
+                          subscriptionName: null,
+                        }));
+                      setInviteEmailEntries(entries);
+                      setInviteEmailsOpen(true);
+                    }}
                   >
                     {row.inviteCount}
                   </button>
@@ -160,7 +169,11 @@ export default function PromocodeSettingsTable({
           })}
         </tbody>
       </table>
-      {dialogs}
+      <PromocodeInviteEmailsModal
+        open={inviteEmailsOpen}
+        entries={inviteEmailEntries}
+        onClose={() => setInviteEmailsOpen(false)}
+      />
     </div>
   );
 }

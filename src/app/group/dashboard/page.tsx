@@ -388,6 +388,7 @@ export default function GroupDashboard() {
                   }
                 }}
                 onCreateGroupClick={entityCreation.openCreateFlow}
+                onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
               />
             </div>
           )}

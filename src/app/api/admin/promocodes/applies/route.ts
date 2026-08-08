@@ -18,6 +18,9 @@ export async function GET(request: NextRequest) {
   const promocodeId = promocodeIdRaw ? parseInt(promocodeIdRaw, 10) : undefined;
 
   try {
+    const scopeToCurrentUser =
+      !auth.access.isAdmin && Number.isFinite(promocodeId) && (promocodeId ?? 0) > 0;
+
     const result = await listPromocodeApplies({
       page,
       pageSize,
@@ -25,6 +28,7 @@ export async function GET(request: NextRequest) {
       orderBy,
       registeredOnly,
       promocodeId: Number.isFinite(promocodeId) ? promocodeId : undefined,
+      senderScopeUserId: scopeToCurrentUser ? auth.access.legacyUserId : undefined,
     });
     return NextResponse.json(result);
   } catch (e) {

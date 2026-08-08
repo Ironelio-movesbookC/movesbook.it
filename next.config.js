@@ -1,15 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  experimental: {
-    serverComponentsExternalPackages: ['xlsx'],
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   async redirects() {
     return [
       {
@@ -41,12 +32,12 @@ const nextConfig = {
           '**/hiberfil.sys',
           '**/swapfile.sys',
           '**/$Recycle.Bin/**',
-          '**/System Volume Information/**',
-        ],
+          '**/System Volume Information/**'
+        ]
       };
     }
     return config;
-  },
-};
-
+  }
+}
+  
 module.exports = nextConfig;

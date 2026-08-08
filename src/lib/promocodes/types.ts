@@ -63,12 +63,20 @@ export type PromocodeSettingRow = {
   created: string | null;
   inviteCount: number;
   inviteEmails: string[];
+  inviteEntries: PromocodeInviteEntry[];
   creator: LegacyUserSnippet | null;
   creatorFlagImage: string | null;
   creatorCountryCode: string | null;
   inviteFlagImage?: string | null;
   inviteCountryCode?: string | null;
   versionCount: number;
+};
+
+export type PromocodeInviteEntry = {
+  email: string;
+  registered: boolean;
+  registrationDate: string | null;
+  subscriptionName: string | null;
 };
 
 export type PromocodeSettingFormData = {

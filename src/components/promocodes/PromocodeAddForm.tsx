@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Eye,
   FileText,
@@ -18,6 +19,7 @@ import {
   PROMOCODE_FORM_LANGUAGES,
 } from '@/lib/promocodes/promocodeLanguages';
 import { fetchGeneratedPromocode } from '@/lib/promocodes/generatePromocode';
+import { markPromocodeListForRefresh } from '@/lib/promocodes/promocodeInviteEvents';
 import './promocode-add.css';
 
 const MONTHS: Record<string, string> = {
@@ -168,6 +170,7 @@ export default function PromocodeAddForm({
   initialSocialOptions,
 }: PromocodeAddFormProps) {
   const isEdit = mode === 'edit';
+  const router = useRouter();
   const { showAlert, dialogs } = usePromocodeDialogs();
   const now = new Date();
   const [meta, setMeta] = useState<PromocodeMeta | null>(null);
@@ -422,7 +425,21 @@ export default function PromocodeAddForm({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
-      setFlashMessage(isEdit ? 'Promocode has been updated.' : 'Promocode has been saved.');
+
+      if (isEdit) {
+        setFlashMessage('Promocode has been updated.');
+        return;
+      }
+
+      const createdId = typeof data.id === 'number' ? data.id : Number(data.id);
+      markPromocodeListForRefresh(Number.isFinite(createdId) ? createdId : undefined);
+
+      window.setTimeout(() => {
+        window.close();
+        if (!window.closed) {
+          router.push('/promocodes/promoList');
+        }
+      }, 50);
     } catch (err) {
       showAlert(err instanceof Error ? err.message : 'Save failed', 'Error');
     } finally {

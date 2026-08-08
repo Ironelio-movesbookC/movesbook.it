@@ -87,7 +87,7 @@ import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModa
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
 import AthleteMyClubRightSidebar from '@/components/dashboard/AthleteMyClubRightSidebar';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import { isClubAccountUserType, showSuggestMovesbookForTab } from '@/utils/dashboardRouting';
 
 function heroBannerStripBgUrl(p: AthleteLegacyBannerProfile | null): string {
   return getHeroBannerDisplayUrl(p);
@@ -615,12 +615,15 @@ function AthleteDashboardContent() {
                   >
                     FAQ
                   </button>
-                  <button
-                    type="button"
-                    className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
-                  >
-                    Suggest Movesbook
-                  </button>
+                  {showSuggestMovesbookForTab(user?.userType ?? 'ATHLETE', activeTab) ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push('/users/notification_by_promocode')}
+                      className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                    >
+                      Suggest Movesbook
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
@@ -775,6 +778,7 @@ function AthleteDashboardContent() {
                   setActiveTab('my-entity');
                   setClubAddSongsOgpOpen(true);
                 }}
+                onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
               />
             </div>
           )}

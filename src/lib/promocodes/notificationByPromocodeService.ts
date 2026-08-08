@@ -38,6 +38,8 @@ export type PromocodeOption = {
   id: number;
   code: string;
   validTo: string;
+  helpHtmlPagesId: number | null;
+  languageId: number | null;
 };
 
 export type InvitationRow = {
@@ -251,7 +253,13 @@ export async function getNotificationByPromocodeDashboard(params: {
   const usersTable = await getLegacyUsersTable();
 
   const promocodesList: PromocodeOption[] = [];
-  let promocode: PromocodeOption = { id: 0, code: '', validTo: '' };
+  let promocode: PromocodeOption = {
+    id: 0,
+    code: '',
+    validTo: '',
+    helpHtmlPagesId: null,
+    languageId: null,
+  };
 
   if (appliesTable && settingsTable) {
     const receivedRows = await prisma.$queryRawUnsafe<{ promocode_id: number | null }[]>(
@@ -265,15 +273,20 @@ export async function getNotificationByPromocodeDashboard(params: {
 
     if (promoIds.length > 0) {
       const placeholders = promoIds.map(() => '?').join(',');
+      const promoSelectSql = await buildPromocodeSettingsSelectSql(settingsTable);
       const promoRows = await prisma.$queryRawUnsafe<PromoRow[]>(
-        `SELECT id, code, CAST(valid_to AS CHAR) AS valid_to FROM \`${settingsTable}\` WHERE id IN (${placeholders})`,
+        `SELECT ${promoSelectSql} FROM \`${settingsTable}\` WHERE id IN (${placeholders})`,
         ...promoIds
       );
       for (const p of promoRows) {
+        const helpHtmlPagesIdRaw = rowStr(p, 'help_html_pages_id', 'help_html_page_id');
+        const languageIdRaw = rowNum(p, 'language_id');
         const option: PromocodeOption = {
           id: Number(p.id),
           code: rowStr(p, 'code'),
           validTo: formatDate(p.valid_to),
+          helpHtmlPagesId: helpHtmlPagesIdRaw ? Number(helpHtmlPagesIdRaw) : null,
+          languageId: languageIdRaw > 0 ? languageIdRaw : null,
         };
         promocodesList.push(option);
         if (promocode.id === 0) promocode = option;

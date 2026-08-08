@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { Home, Eye, EyeOff, Users } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
@@ -16,6 +17,7 @@ import { useTeamDashboard } from './hooks/useTeamDashboard';
 import { useManagedEntityCreation } from '@/hooks/useManagedEntityCreation';
 
 export default function TeamDashboard() {
+  const router = useRouter();
   const {
     user,
     loading,
@@ -314,6 +316,7 @@ export default function TeamDashboard() {
                   }
                 }}
                 onCreateTeamClick={entityCreation.openCreateFlow}
+                onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
               />
             </div>
           )}

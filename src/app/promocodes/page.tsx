@@ -8,6 +8,11 @@ import PromocodesPagination, {
 } from '@/components/promocodes/PromocodeAppliesTable';
 import { promocodesFetch, usePromocodesAdminAuth } from '@/components/promocodes/usePromocodesAdminAuth';
 import { usePromocodeDialogs } from '@/components/promocodes/usePromocodeDialogs';
+import PromocodeSendMessageModal from '@/components/promocodes/PromocodeSendMessageModal';
+import {
+  promocodeApplyRecipientEmail,
+  promocodeRecipientLabel,
+} from '@/lib/promocodes/promocodeApplyDisplay';
 import type { PaginatedResult, PromocodeApplyRow } from '@/lib/promocodes/types';
 
 export default function PromocodesIndexPage() {
@@ -21,6 +26,9 @@ export default function PromocodesIndexPage() {
   const [registeredOnly, setRegisteredOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [sendMessageOpen, setSendMessageOpen] = useState(false);
+  const [sendMessageEmail, setSendMessageEmail] = useState('');
+  const [sendMessageLabel, setSendMessageLabel] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,6 +53,38 @@ export default function PromocodesIndexPage() {
   useEffect(() => {
     if (ready) void load();
   }, [ready, load]);
+
+  const openSendMessage = () => {
+    if (!selectedId) {
+      showAlert('Please select a row first.');
+      return;
+    }
+    const row = data?.items.find((item) => item.id === selectedId);
+    if (!row) {
+      showAlert('Selected row is no longer available. Refresh the list and try again.');
+      return;
+    }
+    const email = promocodeApplyRecipientEmail(row);
+    if (!email) {
+      showAlert('No valid email address found for the selected recipient.');
+      return;
+    }
+    setSendMessageEmail(email);
+    setSendMessageLabel(promocodeRecipientLabel(row).text || email);
+    setSendMessageOpen(true);
+  };
+
+  const handleSendMessage = async (payload: { to: string; subject: string; html: string }) => {
+    const res = await promocodesFetch('/api/admin/promocodes/send-message', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || 'Failed to send message');
+    }
+    showAlert(json.message || 'Message sent successfully.');
+  };
 
   const deleteSelected = () => {
     if (!selectedId) {
@@ -85,11 +125,7 @@ export default function PromocodesIndexPage() {
         <button type="button" onClick={() => window.print()} className="text-sm text-blue-800 underline">
           Print
         </button>
-        <button
-          type="button"
-          onClick={() => showAlert('Send message flow not yet connected.')}
-          className="text-sm text-blue-800 underline"
-        >
+        <button type="button" onClick={openSendMessage} className="text-sm text-blue-800 underline">
           Send Msg
         </button>
         <button type="button" onClick={deleteSelected} className="text-sm text-red-700 underline">
@@ -173,6 +209,15 @@ export default function PromocodesIndexPage() {
       )}
 
       <PromocodesPagination page={page} totalPages={totalPages} onPageChange={setPage} />
+
+      <PromocodeSendMessageModal
+        open={sendMessageOpen}
+        toEmail={sendMessageEmail}
+        recipientLabel={sendMessageLabel}
+        onClose={() => setSendMessageOpen(false)}
+        onSend={handleSendMessage}
+      />
+
       {dialogs}
     </div>
   );
