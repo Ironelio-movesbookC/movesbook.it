@@ -331,10 +331,10 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
           id: 'system_topbanner',
           subItems: [
             { label: 'Why Movesbook', href: '/admin/global-settings/why-movesbook' },
-            { label: 'Newsletters', href: '/admin/global-settings/why-movesbook' },
-            { label: 'References', href: '/admin/global-settings/why-movesbook' },
+            { label: 'Newsletters', href: '/admin/global-settings/newsletters' },
+            { label: 'References', href: '/admin/global-settings/newsletters' },
             { label: 'About us', href: '/admin/global-settings/about-us' },
-            { label: 'Product infos', href: '/admin/global-settings/why-movesbook' }
+            { label: 'Product infos', href: '/admin/global-settings/newsletters' }
           ]
         },
         { 
