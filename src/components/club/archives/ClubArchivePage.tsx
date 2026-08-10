@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
@@ -17,6 +17,9 @@ type Props = {
   footerHint?: string;
   emptyMessage?: string;
   showFilters?: boolean;
+  headerAction?: ReactNode;
+  /** Bump to force a reload (e.g. after adding a member). */
+  refreshKey?: number;
   onEditItem?: (item: Member) => void;
   onDeleteItem?: (item: Member) => void;
 };
@@ -30,6 +33,8 @@ export default function ClubArchivePage({
   footerHint,
   emptyMessage = 'No records found.',
   showFilters = true,
+  headerAction,
+  refreshKey = 0,
   onEditItem,
   onDeleteItem,
 }: Props) {
@@ -90,7 +95,7 @@ export default function ClubArchivePage({
     } finally {
       setLoading(false);
     }
-  }, [archiveType, appliedFilters, direction, page, pageSize, onEditItem, onDeleteItem]);
+  }, [archiveType, appliedFilters, direction, page, pageSize, onEditItem, onDeleteItem, refreshKey]);
 
   useEffect(() => {
     load();
@@ -121,6 +126,7 @@ export default function ClubArchivePage({
       title={title}
       activeTab=""
       tabs={[]}
+      headerAction={headerAction}
       error={error || undefined}
       footerHint={footerHint}
       pagination={
