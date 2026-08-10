@@ -4,8 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 
-import ClassicEditor from '@ckeditor/ckeditor5-build-classic';
-
 // CKEditor must be loaded on client only.
 const CKEditor = dynamic(
   () =>
@@ -231,90 +229,99 @@ function HomepageContentEditor({
   language: string;
   onChange: (value: string) => void;
 }) {
-  return (
-    <div>
-      <div className="mb-1 text-[15px]">
-        Content
-      </div>
+  const [Editor, setEditor] = useState<any>(null);
 
+  useEffect(() => {
+    let mounted = true;
+
+    import('@ckeditor/ckeditor5-build-classic')
+      .then((module) => {
+        if (mounted) {
+          setEditor(() => module.default);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load CKEditor:', error);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!Editor) {
+    return (
       <div className="ckeditor-wrapper">
-        {typeof window !== 'undefined' && (
-          <CKEditor
-            /*
-             * The key is important.
-             *
-             * When language changes, CKEditor gets
-             * recreated with the new language content.
-             */
-            key={language}
-            editor={ClassicEditor as any}
-            data={content}
-            onChange={(_, editor) => {
-              onChange(
-                editor.getData()
-              );
-            }}
-            config={{
-              toolbar: {
-                items: [
-                  'heading',
-                  '|',
-                  'bold',
-                  'italic',
-                  'underline',
-                  'strikethrough',
-                  '|',
-                  'bulletedList',
-                  'numberedList',
-                  '|',
-                  'alignment',
-                  '|',
-                  'link',
-                  'insertTable',
-                  'blockQuote',
-                  '|',
-                  'undo',
-                  'redo',
-                ],
-                shouldNotGroupWhenFull:
-                  true,
-              },
-
-              heading: {
-                options: [
-                  {
-                    model: 'paragraph',
-                    title: 'Paragraph',
-                    class:
-                      'ck-heading_paragraph',
-                  },
-                  {
-                    model: 'heading1',
-                    view: 'h1',
-                    title: 'Heading 1',
-                    class:
-                      'ck-heading_heading1',
-                  },
-                  {
-                    model: 'heading2',
-                    view: 'h2',
-                    title: 'Heading 2',
-                    class:
-                      'ck-heading_heading2',
-                  },
-                  {
-                    model: 'heading3',
-                    view: 'h3',
-                    title: 'Heading 3',
-                    class:
-                      'ck-heading_heading3',
-                  },
-                ],
-              },
-            }}
-          />
-        )}
+        <div className="border border-[#ccc] p-3 text-sm text-gray-500">
+          Loading editor...
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="ckeditor-wrapper">
+      <CKEditor
+        key={language}
+        editor={Editor}
+        data={content}
+        onChange={(_, editor) => {
+          onChange(editor.getData());
+        }}
+        config={{
+          toolbar: {
+            items: [
+              'heading',
+              '|',
+              'bold',
+              'italic',
+              'underline',
+              'strikethrough',
+              '|',
+              'bulletedList',
+              'numberedList',
+              '|',
+              'alignment',
+              '|',
+              'link',
+              'insertTable',
+              'blockQuote',
+              '|',
+              'undo',
+              'redo',
+            ],
+            shouldNotGroupWhenFull: true,
+          },
+
+          heading: {
+            options: [
+              {
+                model: 'paragraph',
+                title: 'Paragraph',
+                class: 'ck-heading_paragraph',
+              },
+              {
+                model: 'heading1',
+                view: 'h1',
+                title: 'Heading 1',
+                class: 'ck-heading_heading1',
+              },
+              {
+                model: 'heading2',
+                view: 'h2',
+                title: 'Heading 2',
+                class: 'ck-heading_heading2',
+              },
+              {
+                model: 'heading3',
+                view: 'h3',
+                title: 'Heading 3',
+                class: 'ck-heading_heading3',
+              },
+            ],
+          },
+        }}
+      />
     </div>
   );
 }

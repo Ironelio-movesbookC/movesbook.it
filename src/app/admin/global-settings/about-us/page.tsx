@@ -28,9 +28,6 @@ import {
 
 import { CSS } from '@dnd-kit/utilities';
 
-import ClassicEditor from '@ckeditor/ckeditor5-build-classic';
-
-
 // ============================================================
 // CKEDITOR
 // ============================================================
@@ -547,6 +544,68 @@ function SortableSection({
   );
 }
 
+function DocumentationEditor({
+  content,
+  onChange,
+}: {
+  content: string;
+  onChange: (value: string) => void;
+}) {
+  const [Editor, setEditor] = useState<any>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    import('@ckeditor/ckeditor5-build-classic')
+      .then((module) => {
+        if (mounted) {
+          setEditor(() => module.default);
+        }
+      })
+      .catch((error) => {
+        console.error(
+          'Failed to load CKEditor:',
+          error
+        );
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!Editor) {
+    return (
+      <div
+        className="
+          min-h-[300px]
+          border
+          border-[#ccc]
+          p-3
+          text-sm
+          text-gray-500
+        "
+      >
+        Loading editor...
+      </div>
+    );
+  }
+
+  return (
+    <CKEditor
+      editor={Editor}
+      data={content}
+      onChange={(_event, editor) => {
+        onChange(editor.getData());
+      }}
+      config={{
+        toolbar: {
+          shouldNotGroupWhenFull: true,
+        },
+      }}
+    />
+  );
+}
 
 // ============================================================
 // MAIN PAGE
@@ -944,57 +1003,31 @@ function PageContent() {
   const handleDeleteSection = (
     section: Section
   ) => {
-
-    const confirmed =
-      window.confirm(
-        `Delete "${section.title}"?`
-      );
-
+    const confirmed = window.confirm(
+      `Delete "${section.title}"?`
+    );
 
     if (!confirmed) {
       return;
     }
 
+    setSections((current) => {
+      const remaining = current.filter(
+        (item) => item.id !== section.id
+      );
 
-    setSections(
-      (current) =>
-        current.filter(
-          (item) =>
-            item.id !==
-            section.id
-        )
-    );
-
-
-    if (
-      selectedSectionId ===
-      section.id
-    ) {
-
-      const remaining =
-        sections.filter(
-          (item) =>
-            item.id !==
-            section.id
-        );
-
-
-      if (
-        remaining.length
-      ) {
-
-        setSelectedSectionId(
-          remaining[0].id
-        );
-
-      } else {
-
-        setSelectedSectionId('');
-
+      if (selectedSectionId === section.id) {
+        if (remaining.length > 0) {
+          setSelectedSectionId(
+            remaining[0].id
+          );
+        } else {
+          setSelectedSectionId('');
+        }
       }
 
-    }
-
+      return remaining;
+    });
   };
 
 
@@ -1242,44 +1275,14 @@ function PageContent() {
 
         </div>
 
+        <div className="mt-[20px]">
 
-        {/* ==================================================
-            EDITOR AREA
-        ================================================== */}
-
-        <div
-          className="
-            mt-[20px]
-          "
-        >
-
-          <CKEditor
-            editor={
-              ClassicEditor as any
-            }
-            data={
-              editorContent
-            }
-            onChange={(
-              _event,
-              editor
-            ) => {
-
-              handleEditorChange(
-                editor.getData()
-              );
-
-            }}
-            config={{
-              toolbar: {
-                shouldNotGroupWhenFull:
-                  true,
-              },
-            }}
+          <DocumentationEditor
+            content={editorContent}
+            onChange={handleEditorChange}
           />
 
         </div>
-
 
         {/* ==================================================
             SAVE / CANCEL

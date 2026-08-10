@@ -34,8 +34,6 @@ import {
   Plus,
 } from 'lucide-react';
 
-import ClassicEditor from '@ckeditor/ckeditor5-build-classic';
-
 // ---------------------------------------------------------
 // CKEDITOR
 // ---------------------------------------------------------
@@ -216,6 +214,108 @@ function SortableSection({
 
       </div>
     </div>
+  );
+}
+
+function DocumentationEditor({
+  content,
+  onChange,
+}: {
+  content: string;
+  onChange: (value: string) => void;
+}) {
+  const [Editor, setEditor] = useState<any>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    import('@ckeditor/ckeditor5-build-classic')
+      .then((module) => {
+        if (mounted) {
+          setEditor(() => module.default);
+        }
+      })
+      .catch((error) => {
+        console.error(
+          'Failed to load CKEditor:',
+          error
+        );
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!Editor) {
+    return (
+      <div className="min-h-[325px] p-3 text-sm text-gray-500">
+        Loading editor...
+      </div>
+    );
+  }
+
+  return (
+    <CKEditor
+      editor={Editor}
+      data={content}
+      onChange={(_event, editor) => {
+        onChange(editor.getData());
+      }}
+      config={{
+        toolbar: {
+          items: [
+            'heading',
+            '|',
+            'bold',
+            'italic',
+            'underline',
+            'strikethrough',
+            '|',
+            'bulletedList',
+            'numberedList',
+            '|',
+            'alignment',
+            '|',
+            'link',
+            'insertTable',
+            'blockQuote',
+            '|',
+            'undo',
+            'redo',
+          ],
+          shouldNotGroupWhenFull: true,
+        },
+
+        heading: {
+          options: [
+            {
+              model: 'paragraph',
+              title: 'Paragraph',
+              class: 'ck-heading_paragraph',
+            },
+            {
+              model: 'heading1',
+              view: 'h1',
+              title: 'Heading 1',
+              class: 'ck-heading_heading1',
+            },
+            {
+              model: 'heading2',
+              view: 'h2',
+              title: 'Heading 2',
+              class: 'ck-heading_heading2',
+            },
+            {
+              model: 'heading3',
+              view: 'h3',
+              title: 'Heading 3',
+              class: 'ck-heading_heading3',
+            },
+          ],
+        },
+      }}
+    />
   );
 }
 
@@ -871,34 +971,12 @@ function FrameSettingsPageContent() {
               "
             >
 
-              {typeof window !==
-                'undefined' && (
-                <CKEditor
-                  editor={
-                    ClassicEditor as any
-                  }
-                  data={
-                    editorContent
-                  }
-                  onChange={(
-                    _event,
-                    editor
-                  ) => {
-                    setEditorContent(
-                      editor.getData()
-                    );
-                  }}
-                  config={{
-                    toolbar: {
-                      shouldNotGroupWhenFull:
-                        true,
-                    },
-                  }}
-                />
-              )}
+              <DocumentationEditor
+                content={editorContent}
+                onChange={setEditorContent}
+              />
 
             </div>
-
 
             {/* ==================================================
                 SAVE / CANCEL
