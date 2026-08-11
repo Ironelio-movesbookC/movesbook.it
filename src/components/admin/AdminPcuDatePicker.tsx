@@ -94,8 +94,11 @@ type AdminPcuDatePickerProps = {
   allowPastDates?: boolean;
   /** ISO date (yyyy-mm-dd); dates on or before this day are not selectable. */
   minDateIso?: string;
+  /** Render the month grid under the field instead of a floating popover. */
+  inline?: boolean;
   placeholder?: string;
   className?: string;
+  inputClassName?: string;
 };
 
 export default function AdminPcuDatePicker({
@@ -104,8 +107,10 @@ export default function AdminPcuDatePicker({
   disabled,
   allowPastDates = true,
   minDateIso,
+  inline = false,
   placeholder = 'dd/mm/yyyy',
   className = '',
+  inputClassName = '',
 }: AdminPcuDatePickerProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -125,7 +130,7 @@ export default function AdminPcuDatePicker({
   }, [value]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || inline) return;
     const onDoc = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -133,7 +138,7 @@ export default function AdminPcuDatePicker({
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
+  }, [open, inline]);
 
   const cells = useMemo(() => {
     const first = new Date(viewYear, viewMonth, 1);
@@ -153,103 +158,123 @@ export default function AdminPcuDatePicker({
 
   const years = useMemo(() => {
     const y = today.getFullYear();
-    return Array.from({ length: 12 }, (_, i) => y - 2 + i);
-  }, [today]);
+    const start = allowPastDates ? y - 15 : y - 2;
+    const end = y + 2;
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }, [allowPastDates, today]);
+
+  const calendar = open ? (
+    <div
+      className={
+        inline
+          ? 'mt-2 w-full border border-gray-300 bg-white shadow-sm rounded'
+          : 'absolute left-0 top-full z-50 mt-1 w-[220px] border border-gray-300 bg-white shadow-lg'
+      }
+    >
+      <div className="bg-[#7d0e1f] text-white px-2 py-2 flex items-center justify-center gap-2 text-sm font-semibold">
+        <select
+          value={viewMonth}
+          onChange={(e) => setViewMonth(Number(e.target.value))}
+          className="bg-transparent border border-white/80 text-white text-sm px-1 py-0.5 rounded cursor-pointer"
+        >
+          {MONTH_NAMES.map((name, idx) => (
+            <option key={name} value={idx} className="text-black">
+              {name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={viewYear}
+          onChange={(e) => setViewYear(Number(e.target.value))}
+          className="bg-transparent border border-white/80 text-white text-sm px-1 py-0.5 rounded cursor-pointer"
+        >
+          {years.map((y) => (
+            <option key={y} value={y} className="text-black">
+              {y}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="grid grid-cols-7 text-center text-xs font-bold border-b border-gray-200 py-1 bg-gradient-to-b from-white to-gray-100">
+        {WEEKDAYS.map((w) => (
+          <span key={w} className="text-gray-800">
+            {w}
+          </span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 text-center text-sm bg-[#f7f7f7] p-0.5">
+        {cells.map(({ date, key }) => {
+          if (!date) {
+            return <span key={key} className="py-1.5" />;
+          }
+          const dayStart = startOfDay(date);
+          const isPast = !allowPastDates && dayStart.getTime() < today.getTime();
+          const isOnOrBeforeMin =
+            minDate != null && dayStart.getTime() <= minDate.getTime();
+          const isBlocked = isPast || isOnOrBeforeMin;
+          const isToday = dayStart.getTime() === today.getTime();
+          const isSelected = selected && startOfDay(selected).getTime() === dayStart.getTime();
+
+          return (
+            <button
+              key={key}
+              type="button"
+              disabled={isBlocked || disabled}
+              onClick={() => {
+                onChange(toIsoDate(date));
+                setOpen(false);
+              }}
+              className={`py-1.5 text-sm transition ${
+                isBlocked
+                  ? 'text-gray-300 bg-gray-100 cursor-not-allowed'
+                  : isSelected
+                    ? 'border-2 border-[#c9a227] text-[#c9a227] font-semibold bg-white'
+                    : isToday
+                      ? 'border border-[#c9a227] text-[#c9a227] bg-white hover:bg-[#fff8dc]'
+                      : 'text-gray-900 hover:bg-[#e8e8e8] bg-white'
+              }`}
+            >
+              {date.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
 
   return (
-    <div ref={wrapRef} className={`relative inline-flex items-center gap-2 ${className}`}>
-      <input
-        type="text"
-        readOnly
-        value={displayValue}
-        placeholder={placeholder}
-        disabled={disabled}
-        onClick={() => !disabled && setOpen((v) => !v)}
-        className="px-2 py-1 border border-gray-300 bg-white text-sm w-28 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-      />
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center hover:bg-gray-200 disabled:opacity-60"
-        aria-label="Open calendar"
-      >
-        <CalendarDays className="w-4 h-4 text-gray-600" />
-      </button>
-
-      {open ? (
-        <div className="absolute left-0 top-full z-50 mt-1 w-[220px] border border-gray-300 bg-white shadow-lg">
-          <div className="bg-[#7d0e1f] text-white px-2 py-2 flex items-center justify-center gap-2 text-sm font-semibold">
-            <select
-              value={viewMonth}
-              onChange={(e) => setViewMonth(Number(e.target.value))}
-              className="bg-transparent border border-white/80 text-white text-sm px-1 py-0.5 rounded cursor-pointer"
-            >
-              {MONTH_NAMES.map((name, idx) => (
-                <option key={name} value={idx} className="text-black">
-                  {name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={viewYear}
-              onChange={(e) => setViewYear(Number(e.target.value))}
-              className="bg-transparent border border-white/80 text-white text-sm px-1 py-0.5 rounded cursor-pointer"
-            >
-              {years.map((y) => (
-                <option key={y} value={y} className="text-black">
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-7 text-center text-xs font-bold border-b border-gray-200 py-1 bg-gradient-to-b from-white to-gray-100">
-            {WEEKDAYS.map((w) => (
-              <span key={w} className="text-gray-800">
-                {w}
-              </span>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7 text-center text-sm bg-[#f7f7f7] p-0.5">
-            {cells.map(({ date, key }) => {
-              if (!date) {
-                return <span key={key} className="py-1.5" />;
-              }
-              const dayStart = startOfDay(date);
-              const isPast = !allowPastDates && dayStart.getTime() < today.getTime();
-              const isOnOrBeforeMin =
-                minDate != null && dayStart.getTime() <= minDate.getTime();
-              const isToday = dayStart.getTime() === today.getTime();
-              const isSelected = selected && startOfDay(selected).getTime() === dayStart.getTime();
-
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={isPast || isOnOrBeforeMin || disabled}
-                  onClick={() => {
-                    onChange(toIsoDate(date));
-                    setOpen(false);
-                  }}
-                  className={`py-1.5 text-sm transition ${
-                    isPast || isOnOrBeforeMin
-                      ? 'text-gray-300 bg-gray-100 cursor-not-allowed'
-                      : isSelected
-                        ? 'border-2 border-[#c9a227] text-[#c9a227] font-semibold bg-white'
-                        : isToday
-                          ? 'border border-[#c9a227] text-[#c9a227] bg-white hover:bg-[#fff8dc]'
-                          : 'text-gray-900 hover:bg-[#e8e8e8] bg-white'
-                  }`}
-                >
-                  {date.getDate()}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
+    <div
+      ref={wrapRef}
+      className={`${inline ? 'block w-full' : 'relative inline-flex items-center gap-2'} ${className}`}
+    >
+      <div className={inline ? 'flex items-center gap-2 w-full' : 'contents'}>
+        <input
+          type="text"
+          readOnly
+          value={displayValue}
+          placeholder={placeholder}
+          disabled={disabled}
+          onClick={() => !disabled && setOpen((v) => !v)}
+          className={
+            inputClassName ||
+            `px-2 py-1 border border-gray-300 bg-white text-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+              inline ? 'flex-1 min-w-0 rounded' : 'w-28'
+            }`
+          }
+        />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen((v) => !v)}
+          className="w-7 h-7 shrink-0 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center hover:bg-gray-200 disabled:opacity-60"
+          aria-label="Open calendar"
+        >
+          <CalendarDays className="w-4 h-4 text-gray-600" />
+        </button>
+      </div>
+      {calendar}
     </div>
   );
 }

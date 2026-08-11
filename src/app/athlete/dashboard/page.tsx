@@ -70,6 +70,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import WorkoutSection from '@/components/workouts/WorkoutSection';
 import NutritionSection from '@/components/nutrition/NutritionSection';
 import ChatPanel from '@/components/chat/ChatPanel';
+import ChatAudienceSelectModal from '@/components/chat/ChatAudienceSelectModal';
+import type { ChatAudience } from '@/lib/chat/chatAudience';
 import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
@@ -79,6 +81,7 @@ import NewsOGPPanel from '@/components/news/NewsOGPPanel';
 import MyMusicPanel from '@/components/music/MyMusicPanel';
 import MusicOGPPanel from '@/components/music/MusicOGPPanel';
 import PostsPanel from '@/components/posts/PostsPanel';
+import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 import AthleteLegacyBanner, {
   type AthleteLegacyBannerProfile,
 } from '@/components/athlete/AthleteLegacyBanner';
@@ -127,6 +130,7 @@ function AthleteDashboardContent() {
     | 'music'
     | 'music-editor'
     | 'registration-info'
+    | 'staff-feedbacks'
   >('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
@@ -142,6 +146,8 @@ function AthleteDashboardContent() {
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showChatAudienceModal, setShowChatAudienceModal] = useState(false);
+  const [chatAudience, setChatAudience] = useState<ChatAudience | null>(null);
   const [telegramAccount, setTelegramAccount] = useState('');
   const [userTelegramAccount, setUserTelegramAccount] = useState<string | null>(null);
   const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
@@ -277,12 +283,18 @@ function AthleteDashboardContent() {
 
   const handleChatPanelClick = () => {
     if (userTelegramAccount) {
-      // User already joined, show chat in main content area
-      setActiveSection('chat');
+      // Ask who they want to chat with before opening the panel
+      setShowChatAudienceModal(true);
     } else {
       // User hasn't joined, show join modal
       setShowJoinModal(true);
     }
+  };
+
+  const handleChatAudienceSelect = (audience: ChatAudience) => {
+    setChatAudience(audience);
+    setShowChatAudienceModal(false);
+    setActiveSection('chat');
   };
 
   const handleJoinChat = async () => {
@@ -314,8 +326,8 @@ function AthleteDashboardContent() {
           setUserTelegramAccount(formattedAccount);
           setShowJoinModal(false);
           setTelegramAccount('');
-          // Show chat in main content
-          setActiveSection('chat');
+          // After joining Telegram, pick who to chat with
+          setShowChatAudienceModal(true);
         } else {
           alert(data.error || 'Failed to save Telegram account');
         }
@@ -817,6 +829,10 @@ function AthleteDashboardContent() {
                   setActiveTab('my-page');
                   setActiveSection('registration-info');
                 }}
+                onMyFeedbacksStaffClick={() => {
+                  setActiveTab('my-page');
+                  setActiveSection('staff-feedbacks');
+                }}
                 onMyClubClick={() => setActiveTab('my-entity')}
                 onClubAddSongsPlaylistsClick={() => {
                   setActiveTab('my-entity');
@@ -842,11 +858,16 @@ function AthleteDashboardContent() {
                 {activeSection === 'progress' && <AthleteProgress t={t} />}
                 {activeSection === 'settings' && <AthleteSettings t={t} />}
                 {activeSection === 'personal-settings' && <PersonalSettingsContent t={t} user={user} />}
-                {activeSection === 'chat' && (
+                {activeSection === 'chat' && chatAudience && (
                   <div className="flex-1 flex flex-col min-h-0 max-h-[75vh]">
                     <ChatPanel
+                      key={chatAudience}
                       embedded
-                      onClose={() => setActiveSection('overview')}
+                      chatAudience={chatAudience}
+                      onClose={() => {
+                        setActiveSection('overview');
+                        setChatAudience(null);
+                      }}
                     />
                   </div>
                 )}
@@ -903,6 +924,11 @@ function AthleteDashboardContent() {
                       embedded
                       onClose={() => setActiveSection('overview')}
                     />
+                  </div>
+                )}
+                {activeSection === 'staff-feedbacks' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <MyStaffFeedbacksPanel onClose={() => setActiveSection('overview')} />
                   </div>
                 )}
               </div>
@@ -1131,6 +1157,13 @@ function AthleteDashboardContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {showChatAudienceModal && (
+        <ChatAudienceSelectModal
+          onSelect={handleChatAudienceSelect}
+          onCancel={() => setShowChatAudienceModal(false)}
+        />
       )}
 
     </div>

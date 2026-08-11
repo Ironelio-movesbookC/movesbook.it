@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
@@ -20,8 +20,11 @@ function sameMemberAndOpenRest(rows: Member[]): boolean {
   return rows.every((r) => r.userId === firstUserId && (r.rest ?? 0) > 0);
 }
 
-export default function DeadLinePage() {
+function DeadLinePageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const memberId = searchParams.get('memberId');
+  const [scope, setScope] = useState<'member' | 'all'>(memberId ? 'member' : 'all');
   const [data, setData] = useState<Member[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
@@ -40,6 +43,7 @@ export default function DeadLinePage() {
         page,
         pageSize: SERVICE_SALE_PAGE_SIZE,
         includePaid: displayAlsoPaid,
+        memberId: scope === 'member' && memberId ? memberId : undefined,
       });
       setTotal(res.total);
       setData(
@@ -65,7 +69,7 @@ export default function DeadLinePage() {
     } finally {
       setLoading(false);
     }
-  }, [page, displayAlsoPaid]);
+  }, [page, displayAlsoPaid, scope, memberId]);
 
   useEffect(() => {
     load();
@@ -119,8 +123,10 @@ export default function DeadLinePage() {
     router.push(`/clubs/payment_detail/${primary}?ids=${ids.join(',')}`);
   }
 
+  const memberQuery = memberId ? `?memberId=${encodeURIComponent(memberId)}` : '';
+
   const tabs: ProcedureTab[] = [
-    { id: 'historical', label: 'Historical', href: '/clubs/archive_service_list' },
+    { id: 'historical', label: 'Historical', href: `/clubs/archive_service_list${memberQuery}` },
     {
       id: 'deadline',
       label: 'Archive of Deadlines',
@@ -135,9 +141,11 @@ export default function DeadLinePage() {
     {
       id: 'payments',
       label: 'Payments',
-      href: selectedId ? `/clubs/user_payment_list/${selectedId}` : '/clubs/service_payments',
+      href: selectedId
+        ? `/clubs/user_payment_list/${selectedId}`
+        : `/clubs/service_payments${memberQuery}`,
     },
-    { id: 'receipts', label: 'Receipts', href: '/clubs/service_receipts' },
+    { id: 'receipts', label: 'Receipts', href: `/clubs/service_receipts${memberQuery}` },
   ];
 
   return (
@@ -146,7 +154,36 @@ export default function DeadLinePage() {
       activeTab="deadline"
       tabs={tabs}
       tabsTrailing={
-        <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+        <div className="flex items-center gap-4">
+          {memberId && (
+            <div className="flex items-center gap-4 text-sm text-gray-700">
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="radio"
+                  name="deadlinesScope"
+                  checked={scope === 'member'}
+                  onChange={() => {
+                    setScope('member');
+                    setPage(1);
+                  }}
+                />
+                Member selected
+              </label>
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="radio"
+                  name="deadlinesScope"
+                  checked={scope === 'all'}
+                  onChange={() => {
+                    setScope('all');
+                    setPage(1);
+                  }}
+                />
+                All members
+              </label>
+            </div>
+          )}
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
           <input
             type="checkbox"
             className="h-4 w-4 rounded border-gray-300 text-teal-700 focus:ring-teal-600"
@@ -159,7 +196,8 @@ export default function DeadLinePage() {
             }}
           />
           Display also paid
-        </label>
+          </label>
+        </div>
       }
       error={error || selectionError}
       footerHint={
@@ -196,5 +234,13 @@ export default function DeadLinePage() {
         }}
       />
     </ProcedureArchiveShell>
+  );
+}
+
+export default function DeadLinePage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-500">Loading...</div>}>
+      <DeadLinePageInner />
+    </Suspense>
   );
 }

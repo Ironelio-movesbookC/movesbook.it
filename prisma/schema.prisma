@@ -61,6 +61,7 @@ model User {
   chatMessagesSent         ChatMessage[]     @relation("MessageSender")
   userMessageThreads      UserMessageThread[]
   userThreadMessagesSent  UserThreadMessage[] @relation("UserThreadMessageSender")
+  userMessageThreadLikes  UserMessageThreadLike[]
   newsTopics               UserNewsTopic[]
   ogpArticles              OgpArticle[]
   ogpArticlesDeleted       OgpArticle[]       @relation("OgpDeletedBy")
@@ -72,7 +73,17 @@ model User {
   musicOgpArticles         MusicOgpArticle[]
   musicOgpArticlesDeleted  MusicOgpArticle[]  @relation("MusicOgpDeletedBy")
   musicOgpArticleLikes     MusicOgpArticleLike[]
+  musicOgpListenHistory    MusicOgpListenHistory[]
+  musicOgpGroups           MusicOgpGroup[]
+  musicOgpGroupLikes       MusicOgpGroupLike[]
   musicTypedArticles       MusicTypedArticle[]
+  exerciseTopics              UserExerciseTopic[]
+  exerciseOgpArticles         ExerciseOgpArticle[]
+  exerciseOgpArticlesDeleted  ExerciseOgpArticle[]  @relation("ExerciseOgpDeletedBy")
+  exerciseOgpArticleLikes     ExerciseOgpArticleLike[]
+  exerciseOgpGroups           ExerciseOgpGroup[]
+  exerciseOgpGroupLikes       ExerciseOgpGroupLike[]
+  exerciseTypedArticles       ExerciseTypedArticle[]
   plannedActionTemplates  PlannedActionTemplate[]
   workoutDayPlannedActions WorkoutDayPlannedAction[]
   sportMachines           SportMachine[]
@@ -220,6 +231,8 @@ model OgpNewsGroup {
   name                  String
   topic                 String
   customDescription     String?   @db.Text
+  /// Optional custom cover; when null, UI uses the 1st member OGP's image/video.
+  coverImage            String?   @db.Text
   savedAt               DateTime  @default(now())
   expiresAt             DateTime?
   deletedAt             DateTime?
@@ -314,6 +327,8 @@ model MusicOgpArticle {
   registrationType      String?
   /// True when the creator checked "Put in my favourites" at save time.
   isFavourite           Boolean   @default(false)
+  /// Times this music was opened/played (global). Used for Suggested ranking.
+  viewCount             Int       @default(0)
   languageCode          String?
   savedAt               DateTime  @default(now())
   expiresAt             DateTime?
@@ -326,11 +341,72 @@ model MusicOgpArticle {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy             User?     @relation("MusicOgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   likes                 MusicOgpArticleLike[]
+  listenHistory         MusicOgpListenHistory[]
+  groupItems            MusicOgpGroupItem[]
 
   @@index([userId])
   @@index([userId, topic])
   @@index([deletedAt])
+  @@index([viewCount])
   @@map("music_ogp_articles")
+}
+
+/// Named collection of OGP Music articles (mirrors OgpNewsGroup).
+model MusicOgpGroup {
+  id                    String    @id @default(cuid())
+  userId                String
+  name                  String
+  topic                 String
+  customDescription     String?   @db.Text
+  /// Optional custom cover; when null, UI uses the 1st member OGP's image/video.
+  coverImage            String?   @db.Text
+  savedAt               DateTime  @default(now())
+  expiresAt             DateTime?
+  deletedAt             DateTime?
+  deletedByUserId       String?
+  visibilityUserTypes   String?   @db.Text
+  visibilityCountries   String?   @db.Text
+  visibilityLanguages   String?   @db.Text
+  visibilitySports      String?   @db.Text
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items                 MusicOgpGroupItem[]
+  likes                 MusicOgpGroupLike[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([userId, topic])
+  @@index([topic])
+  @@index([deletedAt])
+  @@map("music_ogp_groups")
+}
+
+model MusicOgpGroupItem {
+  id                String          @id @default(cuid())
+  groupId           String
+  musicOgpArticleId String
+  sortOrder         Int             @default(0)
+  addedAt           DateTime        @default(now())
+  group             MusicOgpGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  musicOgpArticle   MusicOgpArticle @relation(fields: [musicOgpArticleId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, musicOgpArticleId])
+  @@index([groupId])
+  @@index([musicOgpArticleId])
+  @@map("music_ogp_group_items")
+}
+
+model MusicOgpGroupLike {
+  id        String        @id @default(cuid())
+  groupId   String
+  userId    String
+  createdAt DateTime      @default(now())
+  group     MusicOgpGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+  @@map("music_ogp_group_likes")
 }
 
 model MusicOgpArticleLike {
@@ -345,6 +421,21 @@ model MusicOgpArticleLike {
   @@index([musicOgpArticleId])
   @@index([userId])
   @@map("music_ogp_article_likes")
+}
+
+/// Per-user last listen time for "Listen Again" on My Music Home.
+model MusicOgpListenHistory {
+  id                 String          @id @default(cuid())
+  userId             String
+  musicOgpArticleId  String
+  lastPlayedAt       DateTime        @default(now())
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  musicOgpArticle    MusicOgpArticle @relation(fields: [musicOgpArticleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, musicOgpArticleId])
+  @@index([userId, lastPlayedAt])
+  @@index([musicOgpArticleId])
+  @@map("music_ogp_listen_history")
 }
 
 model MusicTypedArticle {
@@ -364,6 +455,145 @@ model MusicTypedArticle {
 
   @@index([userId])
   @@map("music_typed_articles")
+}
+
+/// Custom topics for My Library of Exercises OGP (scoped by library category).
+model UserExerciseTopic {
+  id           String   @id @default(cuid())
+  userId       String
+  /// One of the 9 library categories (e.g. "Isotonic\\weights", "Stretching").
+  category     String
+  name         String
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category, name])
+  @@index([userId])
+  @@index([userId, category])
+  @@map("user_exercise_topics")
+}
+
+/// OGP-style exercise cards for My Library of Exercises (mirrors OgpArticle + category).
+model ExerciseOgpArticle {
+  id                    String    @id @default(cuid())
+  userId                String
+  /// One of the 9 library categories.
+  category              String
+  title                 String?   @db.Text
+  image                 String?   @db.Text
+  description           String?   @db.Text
+  url                   String    @db.Text
+  siteName              String?
+  type                  String?
+  customDescription     String?   @db.Text
+  topic                 String
+  languageCode          String?
+  savedAt               DateTime  @default(now())
+  expiresAt             DateTime?
+  deletedAt             DateTime?
+  deletedByUserId       String?
+  visibilityUserTypes   String?   @db.Text
+  visibilityCountries   String?   @db.Text
+  visibilityLanguages   String?   @db.Text
+  visibilitySports      String?   @db.Text
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deletedBy             User?     @relation("ExerciseOgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
+  likes                 ExerciseOgpArticleLike[]
+  groupItems            ExerciseOgpGroupItem[]
+
+  @@index([userId])
+  @@index([userId, category])
+  @@index([userId, category, topic])
+  @@index([category])
+  @@index([deletedAt])
+  @@map("exercise_ogp_articles")
+}
+
+model ExerciseOgpArticleLike {
+  id                   String             @id @default(cuid())
+  exerciseOgpArticleId String
+  userId               String
+  createdAt            DateTime           @default(now())
+  exerciseOgpArticle   ExerciseOgpArticle @relation(fields: [exerciseOgpArticleId], references: [id], onDelete: Cascade)
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([exerciseOgpArticleId, userId])
+  @@index([exerciseOgpArticleId])
+  @@index([userId])
+  @@map("exercise_ogp_article_likes")
+}
+
+/// Named collection of OGP Exercise articles.
+model ExerciseOgpGroup {
+  id                    String    @id @default(cuid())
+  userId                String
+  name                  String
+  category              String
+  topic                 String
+  customDescription     String?   @db.Text
+  coverImage            String?   @db.Text
+  savedAt               DateTime  @default(now())
+  expiresAt             DateTime?
+  deletedAt             DateTime?
+  deletedByUserId       String?
+  visibilityUserTypes   String?   @db.Text
+  visibilityCountries   String?   @db.Text
+  visibilityLanguages   String?   @db.Text
+  visibilitySports      String?   @db.Text
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items                 ExerciseOgpGroupItem[]
+  likes                 ExerciseOgpGroupLike[]
+
+  @@unique([userId, category, name])
+  @@index([userId])
+  @@index([userId, category])
+  @@index([userId, category, topic])
+  @@index([category])
+  @@index([deletedAt])
+  @@map("exercise_ogp_groups")
+}
+
+model ExerciseOgpGroupItem {
+  id                   String             @id @default(cuid())
+  groupId              String
+  exerciseOgpArticleId String
+  sortOrder            Int                @default(0)
+  addedAt              DateTime           @default(now())
+  group                ExerciseOgpGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  exerciseOgpArticle   ExerciseOgpArticle @relation(fields: [exerciseOgpArticleId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, exerciseOgpArticleId])
+  @@index([groupId])
+  @@index([exerciseOgpArticleId])
+  @@map("exercise_ogp_group_items")
+}
+
+model ExerciseOgpGroupLike {
+  id        String           @id @default(cuid())
+  groupId   String
+  userId    String
+  createdAt DateTime         @default(now())
+  group     ExerciseOgpGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+  @@map("exercise_ogp_group_likes")
+}
+
+model ExerciseTypedArticle {
+  id          String   @id @default(cuid())
+  userId      String
+  category    String
+  description String   @db.Text
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, category])
+  @@map("exercise_typed_articles")
 }
 
 model ChatConversation {
@@ -399,6 +629,23 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+/// Admin → users broadcast messages for the Movesbook channel in user chat.
+model ChatBroadcastMessage {
+  id           String   @id @default(cuid())
+  content      String   @db.LongText
+  mode         String   // all | group | subscribers | favourites | repliers | reply
+  senderName   String   @default("Movesbook admin")
+  /// JSON string[] of target user IDs. Null = all Telegram-linked users (mode=all).
+  /// For mode=reply: JSON { parentId, senderUserId }.
+  /// For mode=repliers: JSON string[] of users who replied to broadcasts (Chat users → All).
+  recipientIds String?  @db.LongText
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([mode])
+  @@map("chat_broadcast_messages")
+}
+
 /// User-owned threads: REVIEW (private) and SUPPORT (community feed)
 model UserMessageThread {
   id              String                @id @default(cuid())
@@ -410,17 +657,26 @@ model UserMessageThread {
   realPath        String?               @db.VarChar(2048)
   errorMessage    String?               @db.VarChar(1000)
   supportCategory String?               @db.VarChar(32)
+  /// Workflow status for Suggestions/Problems (pending|progress|future|solved|unsolvable).
+  /// Legacy assistance also used: S=Started, C=Completed, D=Decline
+  status          String?               @db.VarChar(32)
+  /// JSON array of up to 3 public image URLs attached to the first post
+  imageUrls       String?               @db.Text
+  likeCount       Int                   @default(0)
+  dislikeCount    Int                   @default(0)
   isPublic        Boolean               @default(false)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages        UserThreadMessage[]
+  likes           UserMessageThreadLike[]
 
   @@index([userId])
   @@index([userId, kind])
   @@index([supportCategory])
   @@index([languageCode])
   @@index([isPublic, kind])
+  @@index([status])
   @@map("user_message_threads")
 }
 
@@ -436,6 +692,23 @@ model UserThreadMessage {
 
   @@index([threadId])
   @@map("user_thread_messages")
+}
+
+/// Per-user like/dislike on a support/review thread (legacy Assistance_like)
+model UserMessageThreadLike {
+  id        String            @id @default(cuid())
+  threadId  String
+  userId    String
+  /// L = like, D = dislike
+  reaction  String            @db.VarChar(1)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  thread    UserMessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId])
+  @@index([userId])
+  @@map("user_message_thread_likes")
 }
 
 enum UserMessageThreadKind {
@@ -1098,6 +1371,10 @@ model UserSettings {
   musicHiddenTopics      String?   @db.Text
   /// JSON object: { [topicName]: string[] } — musical genres hidden per topic
   musicHiddenGenres      String?   @db.Text
+  /// JSON object: { [category]: string[] } — topic order per My Library exercise category
+  exerciseTopicOrder     String?   @db.Text
+  /// JSON object: { [category]: string[] } — hidden topic names per exercise library category
+  exerciseHiddenTopics   String?   @db.Text
   /// JSON array of musical genre names used in Music (grey chips in topic bar)
   musicGenres            String?   @db.Text
   /// JSON: { "A"?: PlanPersist, "B"?: … } for Weekly workout structure tab (Plans A–E)

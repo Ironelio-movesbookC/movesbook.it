@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import type { OGPData } from './OGPForm';
 import { ChevronDown } from 'lucide-react';
+import { ogpDescriptionPlainText } from '@/components/shared/OgpRichDescription';
 
 export type ArticlePasted = OGPData & { customDescription?: string; id: string; topic: string; savedAt?: string };
 export type ArticleTyped = { id: string; description: string; topic: string; savedAt?: string };
@@ -88,7 +89,7 @@ function OGPCard({ article: a, onRemove }: { article: ArticlePasted; onRemove?: 
           </h4>
           {(a.description || a.customDescription) && (
             <p className="text-xs text-gray-500 mt-1 line-clamp-2 flex-1">
-              {a.customDescription || a.description}
+              {ogpDescriptionPlainText(a.customDescription, a.description)}
             </p>
           )}
           <p className="text-sm text-gray-600 mt-2">
@@ -243,7 +244,7 @@ export default function TopicOGPContent({
                     </div>
                     <div className="p-3">
                       <h4 className="font-medium text-gray-900 line-clamp-2 text-sm leading-snug">
-                        {a.description}
+                        {ogpDescriptionPlainText(a.description)}
                       </h4>
                       <p className="text-xs text-gray-500 mt-1">
                         {formatDate(a.savedAt)}

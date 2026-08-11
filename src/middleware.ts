@@ -74,7 +74,8 @@ export function middleware(request: NextRequest) {
     publicRoutes.includes(pathname) ||
     pathname.startsWith('/api/auth/') ||
     pathname.startsWith('/shared/') ||
-    pathname.startsWith('/news/group/')
+    pathname.startsWith('/news/group/') ||
+    pathname.startsWith('/music/')
   ) {
     return NextResponse.next();
   }

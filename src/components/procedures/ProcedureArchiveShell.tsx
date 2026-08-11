@@ -9,6 +9,7 @@ export default function ProcedureArchiveShell({
   tabs,
   headerAction,
   tabsTrailing,
+  tabActions,
   error,
   footerHint,
   children,
@@ -21,8 +22,15 @@ export default function ProcedureArchiveShell({
         {headerAction}
       </div>
       <div className="bg-white border border-gray-200 rounded-b-lg p-4">
-        {tabs.length > 0 && (
-          <ProcedureArchiveTabs tabs={tabs} activeTab={activeTab} trailing={tabsTrailing} />
+        {tabActions ? (
+          <div className="flex items-center gap-1 border-b border-gray-200 mb-3">
+            {tabActions}
+            {tabsTrailing && <div className="ml-auto pb-2">{tabsTrailing}</div>}
+          </div>
+        ) : (
+          tabs.length > 0 && (
+            <ProcedureArchiveTabs tabs={tabs} activeTab={activeTab} trailing={tabsTrailing} />
+          )
         )}
         {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
         {children}

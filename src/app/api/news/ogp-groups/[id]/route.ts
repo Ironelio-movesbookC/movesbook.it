@@ -92,6 +92,7 @@ export async function PATCH(
       topic?: string;
       name?: string;
       customDescription?: string | null;
+      coverImage?: string | null;
       visibilityUserTypes?: string;
       visibilityCountries?: string;
       visibilityLanguages?: string;
@@ -108,6 +109,12 @@ export async function PATCH(
     if (body.customDescription !== undefined) {
       data.customDescription =
         typeof body.customDescription === 'string' ? body.customDescription.trim() || null : null;
+    }
+    if (body.coverImage !== undefined) {
+      data.coverImage =
+        typeof body.coverImage === 'string' && body.coverImage.trim()
+          ? body.coverImage.trim()
+          : null;
     }
     if (body.visibilityUserTypes !== undefined) {
       data.visibilityUserTypes = JSON.stringify(parseJsonArray(body.visibilityUserTypes));

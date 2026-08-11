@@ -1,8 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useState, type MouseEvent } from 'react';
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, X } from 'lucide-react';
 import type { SupportCategory } from '@/lib/messages/userThreads';
+import { MAX_SUPPORT_IMAGES } from '@/lib/messages/supportImages';
+import ThreadPathOpenLink from '@/components/messages/ThreadPathOpenLink';
+import AdminPcuDatePicker from '@/components/admin/AdminPcuDatePicker';
+import {
+  SUPPORT_WORKFLOW_STATUS_CODES,
+  SUPPORT_WORKFLOW_STATUS_LABELS,
+  isSupportWorkflowCategory,
+  normalizeSupportWorkflowStatus,
+  supportWorkflowStatusLabel,
+  type SupportWorkflowStatus,
+} from '@/lib/messages/supportStatus';
 
 type LangOption = { id: string; code: string; name: string };
 
@@ -13,6 +24,8 @@ type FeedItem = {
   updatedAt: string;
   messageCount?: number;
   author?: string;
+  imageUrls?: string[];
+  status?: string | null;
 };
 
 type ThreadDetail = {
@@ -24,9 +37,12 @@ type ThreadDetail = {
     updatedAt: string;
     languageCode?: string | null;
     pathStaff?: string | null;
+    realPath?: string | null;
     supportCategory?: string | null;
     errorMessage?: string | null;
     authorName?: string | null;
+    imageUrls?: string[];
+    status?: string | null;
   };
   messages: Array<{
     id: string;
@@ -62,6 +78,13 @@ export default function AdminCustomerFeedbackPanel({
   const [filterLang, setFilterLang] = useState('');
   const [recentOnly, setRecentOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterFromDate, setFilterFromDate] = useState('');
+  const [filterToDate, setFilterToDate] = useState('');
+  const [appliedFromDate, setAppliedFromDate] = useState('');
+  const [appliedToDate, setAppliedToDate] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [statusSaving, setStatusSaving] = useState(false);
 
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +97,11 @@ export default function AdminCustomerFeedbackPanel({
   const [replyBody, setReplyBody] = useState('');
   const [replySending, setReplySending] = useState(false);
   const [replyError, setReplyError] = useState('');
+
+  const [pictureLightbox, setPictureLightbox] = useState<{
+    urls: string[];
+    index: number;
+  } | null>(null);
 
   const authFetch = useCallback(async (path: string, init?: RequestInit) => {
     const token = localStorage.getItem('adminToken');
@@ -105,12 +133,53 @@ export default function AdminCustomerFeedbackPanel({
     })();
   }, []);
 
+  useEffect(() => {
+    if (!pictureLightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPictureLightbox(null);
+      if (e.key === 'ArrowLeft') {
+        setPictureLightbox((cur) => {
+          if (!cur || cur.urls.length < 2) return cur;
+          return { ...cur, index: (cur.index - 1 + cur.urls.length) % cur.urls.length };
+        });
+      }
+      if (e.key === 'ArrowRight') {
+        setPictureLightbox((cur) => {
+          if (!cur || cur.urls.length < 2) return cur;
+          return { ...cur, index: (cur.index + 1) % cur.urls.length };
+        });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pictureLightbox]);
+
+  const openPictureLightbox = useCallback((urls: string[], index: number, e?: MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    const clean = urls.filter(Boolean).slice(0, MAX_SUPPORT_IMAGES);
+    if (!clean.length) return;
+    setPictureLightbox({
+      urls: clean,
+      index: Math.max(0, Math.min(index, clean.length - 1)),
+    });
+  }, []);
+
   const loadItems = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       if (kind === 'review') {
-        const data = await authFetch('/api/messages/reviews?admin=1&pageSize=50');
+        const qs = new URLSearchParams({
+          admin: '1',
+          community: '1',
+          pageSize: '50',
+        });
+        if (filterLang) qs.set('lang', filterLang);
+        if (recentOnly) qs.set('recent', '1');
+        if (appliedFromDate) qs.set('from', appliedFromDate);
+        if (appliedToDate) qs.set('to', appliedToDate);
+        const data = await authFetch(`/api/messages/reviews?${qs}`);
         setItems(data.items || []);
       } else {
         const qs = new URLSearchParams({ feed: '1', pageSize: '50' });
@@ -119,6 +188,9 @@ export default function AdminCustomerFeedbackPanel({
         if (excludeBugs) qs.set('excludeBugs', '1');
         if (filterLang) qs.set('lang', filterLang);
         if (recentOnly) qs.set('recent', '1');
+        if (appliedFromDate) qs.set('from', appliedFromDate);
+        if (appliedToDate) qs.set('to', appliedToDate);
+        if (filterStatus) qs.set('status', filterStatus);
         const data = await authFetch(`/api/messages/support?${qs}`);
         setItems(data.items || []);
       }
@@ -128,11 +200,28 @@ export default function AdminCustomerFeedbackPanel({
     } finally {
       setLoading(false);
     }
-  }, [authFetch, bugsOnly, category, excludeBugs, filterLang, kind, recentOnly]);
+  }, [
+    appliedFromDate,
+    appliedToDate,
+    authFetch,
+    bugsOnly,
+    category,
+    excludeBugs,
+    filterLang,
+    filterStatus,
+    kind,
+    recentOnly,
+  ]);
 
   useEffect(() => {
     void loadItems();
   }, [loadItems]);
+
+  const applyDateFilter = () => {
+    setAppliedFromDate(filterFromDate);
+    setAppliedToDate(filterToDate);
+    setFilterOpen(false);
+  };
 
   const openThread = useCallback(
     async (id: string) => {
@@ -140,7 +229,8 @@ export default function AdminCustomerFeedbackPanel({
       setDetailLoading(true);
       setReplyError('');
       try {
-        const data = await authFetch(`/api/messages/threads/${id}`);
+        const communityQs = kind === 'review' ? '?communityReview=1' : '';
+        const data = await authFetch(`/api/messages/threads/${id}${communityQs}`);
         setThreadDetail(data);
       } catch {
         setThreadDetail(null);
@@ -149,7 +239,7 @@ export default function AdminCustomerFeedbackPanel({
         setDetailLoading(false);
       }
     },
-    [authFetch],
+    [authFetch, kind],
   );
 
   const submitReply = useCallback(async () => {
@@ -171,12 +261,37 @@ export default function AdminCustomerFeedbackPanel({
     }
   }, [authFetch, loadItems, replyBody, selectedId]);
 
+  const updateThreadStatus = useCallback(
+    async (status: SupportWorkflowStatus) => {
+      if (!selectedId) return;
+      setStatusSaving(true);
+      setReplyError('');
+      try {
+        const data = await authFetch(`/api/messages/threads/${selectedId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status }),
+        });
+        setThreadDetail(data);
+        setItems((prev) =>
+          prev.map((item) => (item.id === selectedId ? { ...item, status } : item)),
+        );
+      } catch {
+        setReplyError('Failed to update status.');
+      } finally {
+        setStatusSaving(false);
+      }
+    },
+    [authFetch, selectedId],
+  );
+
+  const showWorkflowStatus = kind === 'support' && isSupportWorkflowCategory(category);
   const filteredItems = items.filter((item) => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return true;
     return `${item.title} ${item.excerpt} ${item.author || ''}`.toLowerCase().includes(q);
   });
 
+  const showPictures = kind === 'support';
   const fieldClass =
     'w-full border border-slate-300 rounded px-2 py-2 text-sm bg-white text-slate-900';
 
@@ -187,8 +302,8 @@ export default function AdminCustomerFeedbackPanel({
         <p className="text-sm text-slate-600 mt-1">{description}</p>
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-3 items-center justify-between">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div className="relative z-20 px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-3 items-center justify-between overflow-visible">
           <div className="flex flex-wrap gap-2 items-center">
             <input
               type="search"
@@ -197,39 +312,77 @@ export default function AdminCustomerFeedbackPanel({
               placeholder="Search title or author…"
               className="border border-slate-300 rounded px-3 py-1.5 text-sm w-56"
             />
-            {kind === 'support' && (
-              <>
-                <select
-                  value={filterLang}
-                  onChange={(e) => setFilterLang(e.target.value)}
-                  className="border border-slate-300 rounded px-2 py-1.5 text-sm"
-                >
-                  <option value="">All languages</option>
-                  {langOptions.map((l) => (
-                    <option key={l.id} value={l.code}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setRecentOnly(false)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded ${
-                    !recentOnly ? 'bg-[#058592] text-white' : 'bg-white border border-slate-300'
-                  }`}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRecentOnly(true)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded ${
-                    recentOnly ? 'bg-[#058592] text-white' : 'bg-white border border-slate-300'
-                  }`}
-                >
-                  Recent (14 days)
-                </button>
-              </>
+            <select
+              value={filterLang}
+              onChange={(e) => setFilterLang(e.target.value)}
+              className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+            >
+              <option value="">All languages</option>
+              {langOptions.map((l) => (
+                <option key={l.id} value={l.code}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+            {showWorkflowStatus ? (
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+                title="Filter by status"
+              >
+                <option value="">All status</option>
+                {SUPPORT_WORKFLOW_STATUS_CODES.map((code) => (
+                  <option key={code} value={code}>
+                    {SUPPORT_WORKFLOW_STATUS_LABELS[code]}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setRecentOnly(false)}
+              className={`px-2.5 py-1 text-xs font-medium rounded ${
+                !recentOnly ? 'bg-[#058592] text-white' : 'bg-white border border-slate-300'
+              }`}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setRecentOnly(true)}
+              className={`px-2.5 py-1 text-xs font-medium rounded ${
+                recentOnly ? 'bg-[#058592] text-white' : 'bg-white border border-slate-300'
+              }`}
+            >
+              Recent (14 days)
+            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setFilterOpen(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded bg-[#292929] text-white"
+              >
+                Filter
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </div>
+            {(appliedFromDate || appliedToDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterFromDate('');
+                  setFilterToDate('');
+                  setAppliedFromDate('');
+                  setAppliedToDate('');
+                }}
+                className="px-2 py-1 text-xs text-slate-600 underline"
+              >
+                Clear dates
+                {appliedFromDate || appliedToDate
+                  ? ` (${[appliedFromDate, appliedToDate].filter(Boolean).join(' → ')})`
+                  : ''}
+              </button>
             )}
           </div>
           <button
@@ -246,7 +399,7 @@ export default function AdminCustomerFeedbackPanel({
           <div className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-100">{error}</div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[520px] divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+        <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[520px] divide-y lg:divide-y-0 lg:divide-x divide-slate-200 overflow-hidden rounded-b-lg">
           <div className="flex flex-col max-h-[70vh] lg:max-h-[calc(100vh-280px)]">
             <div className="px-4 py-2 border-b border-slate-100 text-sm font-semibold text-slate-700">
               User submissions ({filteredItems.length})
@@ -260,24 +413,57 @@ export default function AdminCustomerFeedbackPanel({
                 <ul className="space-y-2">
                   {filteredItems.map((item) => (
                     <li key={item.id}>
-                      <button
-                        type="button"
-                        onClick={() => void openThread(item.id)}
-                        className={`w-full text-left p-3 rounded border transition ${
+                      <div
+                        className={`rounded border overflow-hidden transition ${
                           selectedId === item.id
                             ? 'border-[#058592] bg-teal-50'
                             : 'border-slate-200 hover:bg-slate-50'
                         }`}
                       >
-                        <div className="font-semibold text-slate-900 text-sm leading-snug">{item.title}</div>
-                        {item.excerpt ? (
-                          <p className="text-slate-600 text-xs mt-1 line-clamp-2">{item.excerpt}</p>
+                        <button
+                          type="button"
+                          onClick={() => void openThread(item.id)}
+                          className="w-full text-left p-3"
+                        >
+                          <div className="font-semibold text-slate-900 text-sm leading-snug">
+                            {item.title}
+                          </div>
+                          {item.excerpt ? (
+                            <p className="text-slate-600 text-xs mt-1 line-clamp-2">{item.excerpt}</p>
+                          ) : null}
+                          <div className="text-[11px] text-slate-500 mt-1.5">
+                            {item.author || '—'} · {new Date(item.updatedAt).toLocaleString()}
+                            {item.messageCount != null ? ` · ${item.messageCount} msg` : ''}
+                          </div>
+                          {showWorkflowStatus ? (
+                            <div className="mt-1.5">
+                              <span className="inline-block text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                {supportWorkflowStatusLabel(item.status)}
+                              </span>
+                            </div>
+                          ) : null}
+                        </button>
+                        {showPictures && item.imageUrls && item.imageUrls.length > 0 ? (
+                          <div className="px-3 pb-3 flex gap-1.5 flex-wrap">
+                            {item.imageUrls.slice(0, MAX_SUPPORT_IMAGES).map((src, imgIdx) => (
+                              <button
+                                key={src}
+                                type="button"
+                                title="View picture"
+                                onClick={(e) => openPictureLightbox(item.imageUrls || [], imgIdx, e)}
+                                className="p-0 rounded border border-slate-200 overflow-hidden bg-slate-100 hover:ring-2 hover:ring-[#058592]/40"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={src}
+                                  alt=""
+                                  className="h-14 w-14 object-cover pointer-events-none"
+                                />
+                              </button>
+                            ))}
+                          </div>
                         ) : null}
-                        <div className="text-[11px] text-slate-500 mt-1.5">
-                          {item.author || '—'} · {new Date(item.updatedAt).toLocaleString()}
-                          {item.messageCount != null ? ` · ${item.messageCount} msg` : ''}
-                        </div>
-                      </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -304,20 +490,72 @@ export default function AdminCustomerFeedbackPanel({
                       {threadDetail.thread.authorName} ·{' '}
                       {new Date(threadDetail.thread.updatedAt).toLocaleString()}
                     </p>
+                    {showWorkflowStatus ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <label className="text-xs font-semibold text-slate-700" htmlFor="edit-status">
+                          Edit status
+                        </label>
+                        <select
+                          id="edit-status"
+                          disabled={statusSaving}
+                          value={normalizeSupportWorkflowStatus(threadDetail.thread.status)}
+                          onChange={(e) =>
+                            void updateThreadStatus(e.target.value as SupportWorkflowStatus)
+                          }
+                          className="border border-slate-300 rounded px-2 py-1 text-xs bg-white text-slate-900 disabled:opacity-50"
+                        >
+                          {SUPPORT_WORKFLOW_STATUS_CODES.map((code) => (
+                            <option key={code} value={code}>
+                              {SUPPORT_WORKFLOW_STATUS_LABELS[code]}
+                            </option>
+                          ))}
+                        </select>
+                        {statusSaving ? (
+                          <span className="text-[11px] text-slate-500">Saving…</span>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {threadDetail.thread.languageCode ? (
                       <p className="text-xs text-slate-500 mt-0.5">
                         Language: {threadDetail.thread.languageCode}
                       </p>
                     ) : null}
-                    {threadDetail.thread.pathStaff ? (
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Path: {threadDetail.thread.pathStaff}
-                      </p>
-                    ) : null}
+                    <ThreadPathOpenLink
+                      pathStaff={threadDetail.thread.pathStaff}
+                      realPath={threadDetail.thread.realPath}
+                      pathLabel="Path"
+                      openLabel="Open link"
+                    />
                     {threadDetail.thread.errorMessage ? (
                       <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1 mt-2">
                         Error: {threadDetail.thread.errorMessage}
                       </p>
+                    ) : null}
+                    {showPictures &&
+                    threadDetail.thread.imageUrls &&
+                    threadDetail.thread.imageUrls.length > 0 ? (
+                      <div className="mt-2 flex gap-1.5 flex-wrap">
+                        {threadDetail.thread.imageUrls
+                          .slice(0, MAX_SUPPORT_IMAGES)
+                          .map((src, imgIdx) => (
+                            <button
+                              key={src}
+                              type="button"
+                              title="View picture"
+                              onClick={(e) =>
+                                openPictureLightbox(threadDetail.thread.imageUrls || [], imgIdx, e)
+                              }
+                              className="p-0 rounded border border-slate-200 overflow-hidden bg-slate-100 hover:ring-2 hover:ring-[#058592]/40"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={src}
+                                alt=""
+                                className="h-20 w-20 object-cover pointer-events-none"
+                              />
+                            </button>
+                          ))}
+                      </div>
                     ) : null}
                   </div>
 
@@ -384,6 +622,148 @@ export default function AdminCustomerFeedbackPanel({
           </div>
         </div>
       </div>
+
+      {filterOpen ? (
+        <div
+          className="fixed inset-0 z-[280] flex items-center justify-center bg-black/40 p-4 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Filter by date"
+          onClick={() => setFilterOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm my-auto rounded-lg border border-slate-300 bg-white shadow-2xl p-4 text-sm text-black"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3 border-b border-slate-200 pb-2">
+              <h3 className="font-semibold text-slate-900">Filter by date</h3>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setFilterOpen(false)}
+                className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="mb-3">
+              <span className="text-slate-600 text-xs font-medium">From date</span>
+              <div className="mt-1">
+                <AdminPcuDatePicker
+                  value={filterFromDate}
+                  onChange={setFilterFromDate}
+                  allowPastDates
+                  inline
+                  placeholder="mm/dd/yyyy"
+                />
+              </div>
+            </div>
+            <div className="mb-4">
+              <span className="text-slate-600 text-xs font-medium">To date</span>
+              <div className="mt-1">
+                <AdminPcuDatePicker
+                  value={filterToDate}
+                  onChange={setFilterToDate}
+                  allowPastDates
+                  inline
+                  placeholder="mm/dd/yyyy"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setFilterOpen(false)}
+                className="px-3 py-1.5 rounded bg-slate-200 text-slate-800 text-xs font-medium"
+              >
+                Exit
+              </button>
+              <button
+                type="button"
+                onClick={applyDateFilter}
+                className="px-3 py-1.5 rounded bg-[#058592] text-white text-xs font-semibold"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pictureLightbox ? (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="View picture"
+          onClick={() => setPictureLightbox(null)}
+        >
+          <button
+            type="button"
+            className="absolute top-4 right-4 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+            aria-label="Close"
+            onClick={() => setPictureLightbox(null)}
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {pictureLightbox.urls.length > 1 ? (
+            <>
+              <button
+                type="button"
+                className="absolute left-3 sm:left-6 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+                aria-label="Previous picture"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPictureLightbox((cur) => {
+                    if (!cur) return cur;
+                    return {
+                      ...cur,
+                      index: (cur.index - 1 + cur.urls.length) % cur.urls.length,
+                    };
+                  });
+                }}
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button
+                type="button"
+                className="absolute right-3 sm:right-6 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+                aria-label="Next picture"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPictureLightbox((cur) => {
+                    if (!cur) return cur;
+                    return {
+                      ...cur,
+                      index: (cur.index + 1) % cur.urls.length,
+                    };
+                  });
+                }}
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            </>
+          ) : null}
+
+          <div
+            className="relative max-h-[90vh] max-w-[min(96vw,56rem)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={pictureLightbox.urls[pictureLightbox.index]}
+              alt=""
+              className="max-h-[85vh] max-w-full rounded object-contain shadow-2xl"
+            />
+            {pictureLightbox.urls.length > 1 ? (
+              <p className="mt-2 text-center text-sm text-white/90">
+                {pictureLightbox.index + 1} / {pictureLightbox.urls.length}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

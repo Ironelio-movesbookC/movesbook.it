@@ -95,6 +95,7 @@ export default function AdminSuperAdminOGPMusicContent({
     topicNamesCreatedByNormalUsers,
     userInsertedTopics,
     pastedArticles,
+    ogpNewsGroups,
     typedArticles,
     viewAsUserId,
     viewAsUserCountry,
@@ -113,6 +114,10 @@ export default function AdminSuperAdminOGPMusicContent({
     updatePastedArticleSettings,
     updatePastedArticleTopic,
     updatePastedArticle,
+    saveOgpNewsGroup,
+    removeOgpNewsGroup,
+    updateOgpNewsGroup,
+    updateOgpNewsGroupSettings,
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData({
@@ -702,6 +707,12 @@ export default function AdminSuperAdminOGPMusicContent({
             musicalGenresForFilter={genresForActiveTopic}
             activeMusicalGenre={activeMusicalGenre}
             onMusicalGenreSelect={handleMusicalGenreSelect}
+            ogpNewsGroups={ogpNewsGroups}
+            onSaveOgpNewsGroup={viewAsUsername ? undefined : saveOgpNewsGroup}
+            onCreateTopic={viewAsUsername ? undefined : addTopic}
+            onRemoveOgpNewsGroup={viewAsUsername ? undefined : removeOgpNewsGroup}
+            onUpdateOgpNewsGroup={viewAsUsername ? undefined : updateOgpNewsGroup}
+            onUpdateOgpNewsGroupSettings={viewAsUsername ? undefined : updateOgpNewsGroupSettings}
           />
         </div>
       </div>

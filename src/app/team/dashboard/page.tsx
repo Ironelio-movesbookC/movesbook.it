@@ -28,6 +28,7 @@ import {
 } from '@/hooks/useEntityDirectAccessGuard';
 import { clearEntityCompanyLoginSession, isEntityWorkspaceSession } from '@/lib/entity/entityDirectAccessSession';
 import { useEntityWorkspaceDashboardNav } from '@/hooks/useEntityWorkspaceDashboardNav';
+import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 
 function TeamDashboardContent() {
   const router = useRouter();
@@ -64,6 +65,7 @@ function TeamDashboardContent() {
   const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
+  const [showStaffFeedbacks, setShowStaffFeedbacks] = useState(false);
   /** My Team tab visible only after opening a team from the sidebar (hidden on My Page). */
   const [myEntityTabVisible, setMyEntityTabVisible] = useState(false);
 
@@ -223,11 +225,19 @@ function TeamDashboardContent() {
                   }
                 }}
                 onCreateTeamClick={entityCreation.openCreateFlow}
+                onMyFeedbacksStaffClick={() => {
+                  setActiveTab('my-page');
+                  setShowStaffFeedbacks(true);
+                }}
               />
             </div>
           )}
 
           <div className="flex-1 min-w-0 flex flex-col px-4">
+            {showStaffFeedbacks ? (
+              <MyStaffFeedbacksPanel onClose={() => setShowStaffFeedbacks(false)} />
+            ) : (
+              <>
             {activeTab === 'my-page' && (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">My Page</h2>
@@ -281,6 +291,8 @@ function TeamDashboardContent() {
                 onTeamSelect={handleTeamSelectWithTab}
                 onCreateTeam={entityCreation.openCreateFlow}
               />
+            )}
+              </>
             )}
           </div>
 

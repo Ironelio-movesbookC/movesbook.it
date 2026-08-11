@@ -66,12 +66,11 @@ export function longTextDisplayHtml(text: string): string {
 /** Headers for POST /api/translate (includes Bearer token when stored in localStorage). */
 export function getTranslateFetchHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-  }
+  if (typeof window === 'undefined') return headers;
+  const token =
+    localStorage.getItem('adminToken')?.trim() ||
+    localStorage.getItem('token')?.trim();
+  if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
 

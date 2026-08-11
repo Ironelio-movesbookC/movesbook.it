@@ -1,36 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
+import { normalizeTelegramAccount } from '@/lib/profileSports';
+
+async function resolveAuthenticatedUserId(request: NextRequest): Promise<string | null> {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) return null;
+
+  const token = authHeader.slice(7);
+  const decoded = verifyToken(token);
+  if (!decoded?.userId) return null;
+
+  const userType = decoded.userType != null ? String(decoded.userType) : undefined;
+  return resolveMessageDatabaseUserId(String(decoded.userId), userType);
+}
 
 /**
  * GET - Get user's Telegram account
+ * Supports normal users and super-admin / staff tokens (resolved to users_new).
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const userId = await resolveAuthenticatedUserId(request);
+    if (!userId) {
       return NextResponse.json({ error: 'Authorization required' }, { status: 401 });
     }
-    
-    const token = authHeader.replace('Bearer ', '');
-    const decoded = verifyToken(token);
-    
-    if (!decoded || !decoded.userId) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
-    }
-    
-    const userId = decoded.userId;
-    
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { telegramAccount: true }
+      select: { telegramAccount: true },
     });
-    
+
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
-    
+
     return NextResponse.json({ telegramAccount: user.telegramAccount });
   } catch (error) {
     console.error('Error fetching Telegram account:', error);
@@ -40,50 +45,46 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST/PUT - Save or update user's Telegram account
+ * Supports normal users and super-admin / staff tokens (resolved to users_new).
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const userId = await resolveAuthenticatedUserId(request);
+    if (!userId) {
       return NextResponse.json({ error: 'Authorization required' }, { status: 401 });
     }
-    
-    const token = authHeader.replace('Bearer ', '');
-    const decoded = verifyToken(token);
-    
-    if (!decoded || !decoded.userId) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
-    }
-    
-    const userId = decoded.userId;
+
     const body = await request.json();
-    const { telegramAccount } = body;
-    
-    // Validate Telegram account format (should start with @)
-    if (telegramAccount && !telegramAccount.startsWith('@')) {
-      return NextResponse.json({ 
-        error: 'Telegram account must start with @ symbol',
-        success: false 
-      }, { status: 400 });
+    const telegramAccount = normalizeTelegramAccount(String(body?.telegramAccount ?? ''));
+
+    if (body?.telegramAccount && !telegramAccount) {
+      return NextResponse.json(
+        {
+          error: 'Telegram account is required',
+          success: false,
+        },
+        { status: 400 }
+      );
     }
-    
-    // Update user's Telegram account
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: { telegramAccount: telegramAccount || null },
-      select: { id: true, telegramAccount: true }
+      data: { telegramAccount },
+      select: { id: true, telegramAccount: true },
     });
-    
-    return NextResponse.json({ 
-      success: true, 
-      telegramAccount: updatedUser.telegramAccount 
+
+    return NextResponse.json({
+      success: true,
+      telegramAccount: updatedUser.telegramAccount,
     });
   } catch (error) {
     console.error('Error saving Telegram account:', error);
-    return NextResponse.json({ 
-      error: 'Failed to save Telegram account',
-      success: false 
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: 'Failed to save Telegram account',
+        success: false,
+      },
+      { status: 500 }
+    );
   }
 }

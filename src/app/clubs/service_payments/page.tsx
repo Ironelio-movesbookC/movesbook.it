@@ -76,7 +76,9 @@ function ServicePaymentsInner() {
   const scopedIds = useScopedRecordIds();
   const effectiveIds = useEffectiveScopedRecordIds();
   const scopeQuery = scopedArchiveQuery(searchParams);
+  const memberId = scopedIds.length === 0 ? searchParams.get('memberId') : null;
 
+  const [scope, setScope] = useState<'member' | 'all'>(memberId ? 'member' : 'all');
   const [data, setData] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -96,6 +98,7 @@ function ServicePaymentsInner() {
         page,
         pageSize: SERVICE_SALE_PAGE_SIZE,
         recordIds: effectiveIds.length > 0 ? effectiveIds : undefined,
+        memberId: scope === 'member' && memberId ? memberId : undefined,
       });
       setTotal(res.total);
       setData(
@@ -118,7 +121,7 @@ function ServicePaymentsInner() {
     } finally {
       setLoading(false);
     }
-  }, [page, effectiveIds]);
+  }, [page, effectiveIds, scope, memberId]);
 
   const performDelete = useCallback(
     async (id: string) => {
@@ -148,9 +151,41 @@ function ServicePaymentsInner() {
         'payments',
         null,
         scopedIds.length > 0 ? scopedIds : null,
-        scopeQuery || null
+        scopeQuery || null,
+        memberId
       )}
-      tabsTrailing={<DisplayAllArchivesCheckbox archiveLabel="payments" />}
+      tabsTrailing={
+        memberId ? (
+          <div className="flex items-center gap-4 text-sm text-gray-700">
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="paymentsScope"
+                checked={scope === 'member'}
+                onChange={() => {
+                  setScope('member');
+                  setPage(1);
+                }}
+              />
+              Member selected
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="paymentsScope"
+                checked={scope === 'all'}
+                onChange={() => {
+                  setScope('all');
+                  setPage(1);
+                }}
+              />
+              All members
+            </label>
+          </div>
+        ) : (
+          <DisplayAllArchivesCheckbox archiveLabel="payments" />
+        )
+      }
       error={error}
       footerHint={
         effectiveIds.length > 0

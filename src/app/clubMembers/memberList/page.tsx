@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarClock, Edit, Trash2, View } from 'lucide-react';
+import { UserPlus } from 'lucide-react';
+import ClubArchivePage from '@/components/club/archives/ClubArchivePage';
+import AddMemberModal from '@/components/AddMemberModal';
 import ClubMemberArchiveHeader from './components/status';
-import MembersTable from '@/components/club/ui/table';
-import { fetchClubArchive } from '@/lib/club/archives/clubArchiveClient';
-import { clubApiFetch } from '@/lib/club/servicePurchasesClient';
+import { clubApiFetch, getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesClient';
 import {
   computeClubMemberCapacity,
   type ClubMemberCapacityStats,
@@ -18,41 +18,34 @@ import { SUBSCRIPTION_SETTINGS_UPDATED_EVENT } from '@/lib/admin/subscriptionSet
 import { useClubWorkspace } from '@/contexts/ClubWorkspaceContext';
 import type { Column, Member } from '@/types/clubTable';
 
-const icons = (...Icons: React.ElementType[]) => (
-  <div className="flex gap-2 justify-center">
-    {Icons.map((Icon, i) => (
-      <Icon key={i} className="w-4 h-4 cursor-pointer hover:text-blue-500" />
-    ))}
-  </div>
-);
-
-const formatDate = (value: unknown) => {
-  if (!value) return '-';
-  const d = new Date(String(value));
-  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
-};
-
-const memberTypeColumn: Column = {
-  key: 'memberType',
-  header: 'Member Type',
-  render: (value) => {
-    const label = String(value ?? '-');
-    const styles: Record<string, string> = {
-      Premium: 'bg-purple-100 text-purple-700',
-      Gold: 'bg-yellow-100 text-yellow-700',
-      Standard: 'bg-gray-100 text-gray-700',
-      Basic: 'bg-gray-100 text-gray-700',
-    };
-
-    return (
-      <span className={`px-2 py-1 rounded text-xs ${styles[label] || 'bg-gray-100 text-gray-700'}`}>
-        {label}
-      </span>
-    );
-  },
-};
+function memberTypeBadge(value: unknown) {
+  const label = String(value ?? 'Standard').trim() || 'Standard';
+  const lower = label.toLowerCase();
+  const className =
+    lower.includes('premium') || lower.includes('gold')
+      ? 'bg-violet-100 text-violet-800'
+      : lower.includes('vip')
+        ? 'bg-amber-100 text-amber-800'
+        : 'bg-gray-100 text-gray-700';
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${className}`}>
+      {label}
+    </span>
+  );
+}
 
 const columns: Column[] = [
+  {
+    key: 'checked',
+    header: (
+      <span className="inline-flex w-4 justify-center" aria-hidden>
+        □
+      </span>
+    ),
+    render: () => (
+      <input type="checkbox" className="h-4 w-4 rounded border-gray-300" aria-label="Select member" />
+    ),
+  },
   {
     key: 'image',
     header: 'Image',
@@ -60,51 +53,38 @@ const columns: Column[] = [
       value ? (
         <img
           src={String(value)}
-          alt="profile"
-          className="w-10 h-10 rounded-full mx-auto object-cover"
+          alt=""
+          className="mx-auto h-10 w-10 rounded-full object-cover"
         />
       ) : (
-        <div className="w-10 h-10 rounded-full mx-auto bg-gray-200" />
+        <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-xs text-gray-400">
+          —
+        </span>
       ),
   },
   { key: 'surname', header: 'Surname' },
   { key: 'name', header: 'Name' },
   { key: 'gender', header: 'Gender' },
-  {
-    key: 'dateOfBirth',
-    header: 'Date of Birth',
-    render: (value) => formatDate(value),
-  },
+  { key: 'dateOfBirth', header: 'Date of Birth' },
   { key: 'operator', header: 'Operator' },
-  memberTypeColumn,
-  { key: 'Localcity', header: 'Local City' },
+  {
+    key: 'memberType',
+    header: 'Member Type',
+    render: (value) => memberTypeBadge(value),
+  },
+  {
+    key: 'localCity',
+    header: 'Local City',
+    render: (value, row) => String(value || row.Localcity || '-'),
+  },
   { key: 'phone', header: 'Phone' },
   {
     key: 'insertDate',
     header: 'Insert Date',
-    render: (value) => formatDate(value),
+    render: (_value, row: Member) =>
+      String(row.insertDateDisplay || row.insertDate || '-'),
   },
-  { key: 'options', header: 'Options' },
 ];
-
-function mapArchiveRow(row: Member): Member {
-  const memberType = row.memberType ?? '-';
-  return {
-    ...row,
-    id: row.id,
-    image: row.image || undefined,
-    gender: row.gender ?? '-',
-    dateOfBirth: row.dateOfBirth ?? '',
-    memberType,
-    typology: memberType,
-    Localcity: row.Localcity ?? '-',
-    phone: row.phone ?? '-',
-    insertDate: row.insertDate ?? '',
-    operator: row.operator ?? '-',
-    casual: row.casual ?? '',
-    options: icons(View, Edit, CalendarClock, Trash2),
-  };
-}
 
 type MemberCapacityResponse = {
   subscriptionSettingId: number | null;
@@ -112,33 +92,18 @@ type MemberCapacityResponse = {
 };
 
 export default function MemberListPage() {
-  const { selectedClubId } = useClubWorkspace();
-  const [data, setData] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [totalMembers, setTotalMembers] = useState(0);
+  const { selectedClubId: contextClubId } = useClubWorkspace();
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [addError, setAddError] = useState('');
   const [capacityPayload, setCapacityPayload] = useState<MemberCapacityResponse | null>(null);
   const [settingsRevision, setSettingsRevision] = useState(0);
 
-  const clubId =
-    selectedClubId ??
-    (typeof window !== 'undefined' ? localStorage.getItem('selectedClub') : null);
-
-  const loadMembers = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const res = await fetchClubArchive('members', { page: 1, pageSize: 500 });
-      setTotalMembers(res.total);
-      setData((res.items as Member[]).map(mapArchiveRow));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load members');
-      setData([]);
-      setTotalMembers(0);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const clubId = useMemo(() => {
+    if (contextClubId) return contextClubId;
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('selectedClub');
+  }, [contextClubId]);
 
   const loadCapacity = useCallback(async () => {
     if (!clubId) {
@@ -156,12 +121,8 @@ export default function MemberListPage() {
   }, [clubId]);
 
   useEffect(() => {
-    void loadMembers();
-  }, [loadMembers]);
-
-  useEffect(() => {
     void loadCapacity();
-  }, [loadCapacity, totalMembers]);
+  }, [loadCapacity, refreshKey]);
 
   useEffect(() => {
     const refresh = () => setSettingsRevision((value) => value + 1);
@@ -182,7 +143,7 @@ export default function MemberListPage() {
     if (!subscriptionSettingId) return base;
 
     return computeClubMemberCapacity({
-      membersAdded: totalMembers,
+      membersAdded: base.membersAdded,
       membersPurchasedBase: base.membersPurchasedBase,
       subscriptionSettingId,
       subscriptionPhase: base.subscriptionPhase,
@@ -192,7 +153,40 @@ export default function MemberListPage() {
       usersAllowanceFirst: getUsersAvailableFirstSubscription(subscriptionSettingId),
       usersAllowanceRenewal: getUsersAvailableRenewal(subscriptionSettingId),
     });
-  }, [capacityPayload, settingsRevision, totalMembers]);
+  }, [capacityPayload, settingsRevision]);
+
+  const handleAddExistingUser = useCallback(
+    async (data: { username: string; password: string }) => {
+      setAddError('');
+      const resolvedClubId =
+        clubId ||
+        (typeof window !== 'undefined' ? localStorage.getItem('selectedClub') : null);
+      if (!resolvedClubId) {
+        throw new Error('Select a club under My clubs before adding members.');
+      }
+
+      const response = await fetch(
+        withSelectedClubId(`/api/clubs/${encodeURIComponent(resolvedClubId)}/members/add`),
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            username: data.username,
+            password: data.password,
+          }),
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          typeof payload.error === 'string' ? payload.error : 'Failed to add member',
+        );
+      }
+
+      setRefreshKey((k) => k + 1);
+    },
+    [clubId],
+  );
 
   return (
     <div className="w-full h-full flex flex-col p-4 gap-4">
@@ -208,25 +202,49 @@ export default function MemberListPage() {
         />
       ) : null}
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+      {!capacity && clubId ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Loading member capacity from your subscription version…
         </div>
-      )}
+      ) : null}
 
-      {!capacity && !loading ? (
+      {!clubId ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Select a club workspace to view member capacity from your subscription version.
         </div>
       ) : null}
 
-      {loading ? (
-        <div className="rounded-lg border border-gray-200 bg-white px-4 py-8 text-center text-gray-500">
-          Loading members...
-        </div>
-      ) : (
-        <MembersTable columns={columns} tableData={data} />
-      )}
+      {addError ? (
+        <p className="text-sm text-red-600">{addError}</p>
+      ) : null}
+
+      <ClubArchivePage
+        title="Archive — Members"
+        archiveType="members"
+        columns={columns}
+        refreshKey={refreshKey}
+        footerHint="Live data from club members in the database."
+        headerAction={
+          <button
+            type="button"
+            onClick={() => {
+              setAddError('');
+              setShowAddMemberModal(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded bg-white px-3 py-1.5 text-sm font-semibold text-teal-800 hover:bg-teal-50"
+          >
+            <UserPlus className="h-4 w-4" />
+            Add a member
+          </button>
+        }
+      />
+
+      <AddMemberModal
+        isOpen={showAddMemberModal}
+        onClose={() => setShowAddMemberModal(false)}
+        entityType="club"
+        onAddExistingUser={handleAddExistingUser}
+      />
     </div>
   );
 }

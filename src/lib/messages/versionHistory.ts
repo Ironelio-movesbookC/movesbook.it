@@ -3,7 +3,12 @@ import { prisma } from '@/lib/prisma';
 import { findExistingTable, getTableColumns } from '@/lib/outcomeSettingsDb';
 import { ensurePromocodeMetaTables } from '@/lib/promocodes/ensureMetaTables';
 import { richTextToPlainText } from '@/utils/richTextTranslation';
-import { legacyCodeFromLangId, legacyLanguageIdFromCode } from '@/lib/messages/versionHistoryLang';
+import {
+  languageDisplayNameFromId,
+  legacyCodeFromLangId,
+  legacyLanguageIdFromCode,
+  listAllVersionHistoryLanguages,
+} from '@/lib/messages/versionHistoryLang';
 
 const SECTIONS_TABLE = ['why_movesbook_sections'];
 const LANGUAGE_TABLE = ['language_values'];
@@ -170,26 +175,8 @@ async function ensureArticleGroupColumn(table: string, columns: Set<string>): Pr
 }
 
 export async function listVersionHistoryLanguages(): Promise<VersionHistoryLanguage[]> {
-  const ctx = await getSectionsTable();
-  const languageNames = await loadLanguageNames();
-  if (!ctx) return [];
-
-  const distinctLangRows = await prisma.$queryRawUnsafe<{ lang_id: number | string }[]>(
-    `SELECT DISTINCT lang_id
-     FROM \`${ctx.table}\`
-     WHERE module = ?
-     ORDER BY lang_id ASC`,
-    VERSION_MODULE,
-  );
-
-  return distinctLangRows.map((row) => {
-    const id = Number(row.lang_id);
-    return {
-      id: String(id),
-      code: legacyCodeFromLangId(id),
-      name: languageNames.get(id) ?? `Lang ${id}`,
-    };
-  });
+  // Always expose the full 12-language catalog with display names (not only langs that have posts).
+  return listAllVersionHistoryLanguages();
 }
 
 export async function listVersionHistoryArticles(opts?: {
@@ -252,7 +239,7 @@ export async function listVersionHistoryArticles(opts?: {
       excerpt: excerptFromHtml(content),
       langId: String(langId),
       languageCode: legacyCodeFromLangId(langId),
-      languageName: languageNames.get(langId) ?? `Lang ${langId}`,
+      languageName: languageDisplayNameFromId(langId, languageNames.get(langId)),
       createdAt: pickDate(row, columns),
       articleGroup: row.article_group != null ? String(row.article_group) : null,
     };
@@ -313,7 +300,7 @@ export async function getVersionHistoryArticle(id: string): Promise<VersionHisto
     excerpt: excerptFromHtml(content),
     langId: String(langId),
     languageCode: legacyCodeFromLangId(langId),
-    languageName: languageNames.get(langId) ?? `Lang ${langId}`,
+    languageName: languageDisplayNameFromId(langId, languageNames.get(langId)),
     createdAt: pickDate(row, columns),
     articleGroup,
     translations,

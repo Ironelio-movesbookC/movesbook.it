@@ -40,6 +40,8 @@ export type ArchiveFetchParams = {
   toDate?: string;
   orderBy?: 'recent' | 'old';
   includePaid?: boolean;
+  /** Scope to a single member (e.g. "Member selected" vs "All members" toggle). */
+  memberId?: string;
 };
 
 export async function fetchClubArchive(
@@ -55,6 +57,7 @@ export async function fetchClubArchive(
   if (params?.toDate) qs.set('toDate', params.toDate);
   if (params?.orderBy) qs.set('orderBy', params.orderBy);
   if (params?.includePaid) qs.set('includePaid', '1');
+  if (params?.memberId) qs.set('memberId', params.memberId);
   const query = qs.toString();
   const url = `/api/club/archives/${type}${query ? `?${query}` : ''}`;
   return clubApiFetch<ArchiveListResult>(url);

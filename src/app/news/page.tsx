@@ -323,6 +323,7 @@ export default function NewsPage() {
             addButtonDisabled={activeTopic === ALL_TOPICS}
             ogpNewsGroups={ogpNewsGroups}
             onSaveOgpNewsGroup={saveOgpNewsGroup}
+            onCreateTopic={addTopic}
             onRemoveOgpNewsGroup={removeOgpNewsGroup}
             onUpdateOgpNewsGroup={updateOgpNewsGroup}
             onUpdateOgpNewsGroupSettings={updateOgpNewsGroupSettings}
