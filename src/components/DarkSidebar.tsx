@@ -137,6 +137,7 @@ import {
 } from '@/utils/youtubeChannelUrl';
 import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
 import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
+import ClubSocialSubmenu from '@/components/club/ClubSocialSubmenu';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
@@ -359,6 +360,8 @@ interface DarkSidebarProps {
   onAccessOutcomeSettingsClick?: () => void;
   /** Communities → Suggest Movesbook (promocode invite dashboard) */
   onSuggestMovesbookClick?: () => void;
+  /** My Club → SOCIAL → Chat (club broadcast channel) */
+  onClubChatClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
@@ -400,6 +403,7 @@ export default function DarkSidebar({
   onIdentificationDevicesClick,
   onAccessOutcomeSettingsClick,
   onSuggestMovesbookClick,
+  onClubChatClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
@@ -1480,6 +1484,7 @@ export default function DarkSidebar({
           onClubYoutubeSaved={handleClubYoutubeSaved}
           onClubBootstrapped={handleClubBootstrapped}
           onChangeLogo={() => setShowChangeProfilePhotoModal(true)}
+          onChatClick={onClubChatClick}
         />
       ) : (
         <div className="bg-gray-800 p-3 flex-shrink-0">
@@ -2509,16 +2514,7 @@ export default function DarkSidebar({
                       </div>
                     </div>
 
-                    {/* SOCIAL section header */}
-                    <div className="w-full bg-[#7a0d1c] text-white border-b border-teal-700">
-                      <div className="flex items-center justify-between py-2 px-3">
-                        <div className="flex items-center gap-2.5">
-                          <Bell className="w-5 h-5" />
-                          <span className="font-bold tracking-wide text-sm">SOCIAL</span>
-                        </div>
-                        <ChevronDown className="w-4 h-4 opacity-90" />
-                      </div>
-                    </div>
+                    <ClubSocialSubmenu onChatClick={onClubChatClick} />
 
                     {isClubAccountUserType(userType) ? (
                       <ClubMyClubInfoSubmenu

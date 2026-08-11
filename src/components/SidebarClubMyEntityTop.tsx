@@ -4,7 +4,6 @@ import Image from 'next/image';
 import {
   UserCircle,
   BookOpen,
-  Bell,
   Building2,
   Eye,
   ChevronDown,
@@ -13,6 +12,7 @@ import {
 import { useLanguage } from '@/contexts/LanguageContext';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
+import ClubSocialSubmenu from '@/components/club/ClubSocialSubmenu';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import { canManageClubWebsite } from '@/lib/club/clubWebsitePermissions';
 import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
@@ -61,6 +61,7 @@ export default function SidebarClubMyEntityTop({
   onClubYoutubeSaved,
   onClubBootstrapped,
   onChangeLogo,
+  onChatClick,
 }: {
   personName: string;
   club: ClubEntity | null;
@@ -74,6 +75,7 @@ export default function SidebarClubMyEntityTop({
     youtubeChannelUrl?: string | null;
   }) => void;
   onChangeLogo?: () => void;
+  onChatClick?: () => void;
 }) {
   const { t } = useLanguage();
   const { user } = useAuth();
@@ -186,15 +188,7 @@ export default function SidebarClubMyEntityTop({
           </div>
         </div>
 
-        <div className="w-full bg-[#7a0d1c] text-white border-b border-teal-700">
-          <div className="flex items-center justify-between py-2 px-3">
-            <div className="flex items-center gap-2.5">
-              <Bell className="w-5 h-5" />
-              <span className="font-bold tracking-wide text-sm">SOCIAL</span>
-            </div>
-            <ChevronDown className="w-4 h-4 opacity-90" />
-          </div>
-        </div>
+        <ClubSocialSubmenu onChatClick={onChatClick} />
 
         {isClubAccountUserType(userType) ? (
           <ClubMyClubInfoSubmenu clubId={club?.id} />

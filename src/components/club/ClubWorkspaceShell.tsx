@@ -269,7 +269,14 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   };
 
   const goToDashboardPanel = useCallback(
-    (panel: 'identification-devices' | 'outcome-settings' | 'news' | 'suggest-movesbook') => {
+    (
+      panel:
+        | 'identification-devices'
+        | 'outcome-settings'
+        | 'news'
+        | 'suggest-movesbook'
+        | 'chat'
+    ) => {
       if (!hasFormClub) return;
       const clubId = selectedClubId ?? formClubs[0]?.id ?? null;
       if (!selectedClubId && clubId) {
@@ -354,6 +361,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onIdentificationDevicesClick={() => goToDashboardPanel('identification-devices')}
                 onAccessOutcomeSettingsClick={() => goToDashboardPanel('outcome-settings')}
                 onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
+                onClubChatClick={() => goToDashboardPanel('chat')}
                 onCreateClubClick={openCreateClubFlow}
                 onMyFeedbacksStaffClick={() => {
                   setActiveTab('my-page');

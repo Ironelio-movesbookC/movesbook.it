@@ -3,11 +3,13 @@ import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { verifyToken } from '@/lib/auth';
 import {
+  channelPhotoPublicPath,
   clearOldChannelPhotos,
   ensureChatUploadDir,
   readChannelSettings,
   writeChannelSettings,
 } from '@/lib/chat/channelSettings';
+import { resolveClubChannelAuth } from '@/lib/chat/clubChannelAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +24,12 @@ function authorize(request: NextRequest) {
   const decoded = verifyToken(authHeader.replace('Bearer ', ''));
   if (!decoded?.userId) return null;
   return decoded as { userId: string; userType?: string };
+}
+
+function parseClubId(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed || null;
 }
 
 function isAdminToken(decoded: { userType?: string }) {
@@ -58,7 +66,8 @@ export async function GET(request: NextRequest) {
     if (!authorize(request)) {
       return NextResponse.json({ error: 'Authorization required' }, { status: 401 });
     }
-    const settings = await readChannelSettings();
+    const clubId = parseClubId(request.nextUrl.searchParams.get('clubId'));
+    const settings = await readChannelSettings(clubId);
     return NextResponse.json({
       channelName: settings.channelName,
       channelPhoto: settings.photoUrl,
@@ -70,23 +79,22 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** POST - Admin sets the Movesbook channel photo (multipart file or JSON dataUrl). */
+/** POST - Admin / club admin sets the channel photo (multipart file or JSON dataUrl). */
 export async function POST(request: NextRequest) {
   try {
     const decoded = authorize(request);
     if (!decoded) {
       return NextResponse.json({ error: 'Authorization required' }, { status: 401 });
     }
-    if (!isAdminToken(decoded)) {
-      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
-    }
 
     const contentType = request.headers.get('content-type') || '';
     let buffer: Buffer | null = null;
     let ext = 'jpg';
+    let clubId: string | null = null;
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
+      clubId = parseClubId(formData.get('clubId'));
       const file = formData.get('file');
       if (!(file instanceof Blob)) {
         return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -107,6 +115,7 @@ export async function POST(request: NextRequest) {
       } catch {
         body = {};
       }
+      clubId = parseClubId(body.clubId);
       const dataUrl = typeof body.photoDataUrl === 'string' ? body.photoDataUrl : '';
       const parsed = parseDataUrl(dataUrl);
       if (!parsed) {
@@ -123,17 +132,26 @@ export async function POST(request: NextRequest) {
       buffer = parsed.buffer;
     }
 
+    if (clubId) {
+      const clubAuth = await resolveClubChannelAuth(request, clubId);
+      if (!clubAuth.ok) {
+        return NextResponse.json({ error: clubAuth.error }, { status: clubAuth.status });
+      }
+    } else if (!isAdminToken(decoded)) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
     if (!buffer?.length) {
       return NextResponse.json({ error: 'Empty image' }, { status: 400 });
     }
 
-    const dir = await ensureChatUploadDir();
+    const dir = await ensureChatUploadDir(clubId);
     const fileName = `channel-photo-${Date.now()}.${ext}`;
     await writeFile(join(dir, fileName), buffer);
-    await clearOldChannelPhotos(fileName);
+    await clearOldChannelPhotos(fileName, clubId);
 
-    const photoUrl = `/uploads/chat/${fileName}`;
-    const settings = await writeChannelSettings({ photoUrl });
+    const photoUrl = channelPhotoPublicPath(fileName, clubId);
+    const settings = await writeChannelSettings({ photoUrl }, clubId);
 
     return NextResponse.json({
       success: true,
