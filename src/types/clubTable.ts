@@ -66,6 +66,8 @@ export type Member = {
   category?: string;
 
   service?: string;
+  /** Another receipt shares this row's document type + number. */
+  isDuplicate?: boolean;
   options?: React.ReactNode;
   edit?: React.ReactNode;
   delete?: React.ReactNode;

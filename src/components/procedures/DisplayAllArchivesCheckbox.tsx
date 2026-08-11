@@ -15,12 +15,14 @@ export function useScopedRecordIds(): string[] {
   }, [searchParams]);
 }
 
+const EMPTY_IDS: string[] = [];
+
 /** Empty when "Display all" is checked — otherwise the scoped ids. */
 export function useEffectiveScopedRecordIds(): string[] {
   const searchParams = useSearchParams();
   const scopedIds = useScopedRecordIds();
-  if (searchParams.get('all') === '1') return [];
-  return scopedIds;
+  const displayAll = searchParams.get('all') === '1';
+  return useMemo(() => (displayAll ? EMPTY_IDS : scopedIds), [displayAll, scopedIds]);
 }
 
 type Props = {

@@ -36,6 +36,7 @@ function parseArchiveParams(request: NextRequest): ArchiveQueryParams & { includ
     fromDate: sp.get('fromDate') ?? undefined,
     toDate: sp.get('toDate') ?? undefined,
     orderBy: (sp.get('orderBy') as 'recent' | 'old') ?? undefined,
+    memberId: sp.get('memberId') ?? undefined,
     includePaid: sp.get('includePaid') === '1' || sp.get('includePaid') === 'true',
   };
 }

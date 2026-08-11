@@ -745,7 +745,7 @@ export async function listUnifiedPayments(
 
   for (const procedureType of UNIFIED_PROCEDURE_TYPES) {
     const res = await procedureService
-      .listPayments(ctx, procedureType, { page: 1, pageSize: 500 })
+      .listPayments(ctx, procedureType, { page: 1, pageSize: 500, memberId: params.memberId })
       .catch(() => ({ items: [] as Awaited<ReturnType<typeof procedureService.listPayments>>['items'] }));
 
     for (const p of res.items) {
@@ -783,7 +783,7 @@ export async function listUnifiedReceipts(
 
   for (const procedureType of UNIFIED_PROCEDURE_TYPES) {
     const res = await procedureService
-      .listReceipts(ctx, procedureType, { page: 1, pageSize: 500 })
+      .listReceipts(ctx, procedureType, { page: 1, pageSize: 500, memberId: params.memberId })
       .catch(() => ({ items: [] as Awaited<ReturnType<typeof procedureService.listReceipts>>['items'] }));
 
     for (const r of res.items) {
@@ -802,6 +802,7 @@ export async function listUnifiedReceipts(
         residualDebt: r.residualDebt ?? Math.max(0, r.amount - r.paymentAmount),
         casual: r.annotations ?? '',
         operator: r.operatorName,
+        isDuplicate: r.isDuplicate ?? false,
       });
     }
   }

@@ -218,6 +218,15 @@ export default function MemberDebtPaymentDetailPage() {
     [id]
   );
 
+  async function handleAddToRecordTotal(additionalAmount: number): Promise<void> {
+    if (!purchase) return;
+    const newTotal = purchase.value + additionalAmount;
+    await client.updateRecord(id, { totalAmount: newTotal });
+    setPurchases((prev) =>
+      prev.map((p, i) => (i === 0 ? { ...p, value: newTotal, rest: p.rest + additionalAmount } : p))
+    );
+  }
+
   async function handleSubmit(values: ServicePaymentSubmitValues) {
     setError('');
     setSuccess('');
@@ -309,6 +318,7 @@ export default function MemberDebtPaymentDetailPage() {
             success={success}
             onSubmit={handleSubmit}
             onCancel={() => router.push('/clubs/member_debt_dead_line')}
+            onAddToRecordTotal={extraPurchases.length > 0 ? undefined : handleAddToRecordTotal}
             operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
           />
         )}

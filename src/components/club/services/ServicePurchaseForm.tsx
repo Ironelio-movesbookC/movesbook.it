@@ -315,7 +315,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
                   setValue('');
                 }}
               >
-                <option value="">Select sector</option>
+                <option value="">All</option>
                 {options?.sectors.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
