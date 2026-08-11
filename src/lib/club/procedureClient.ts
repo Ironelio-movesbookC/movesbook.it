@@ -67,6 +67,7 @@ export type ListParams = {
   page?: number;
   pageSize?: number;
   recordId?: string;
+  memberId?: string;
 };
 
 export type PaginatedResult<T> = {
@@ -153,6 +154,7 @@ function buildQuery(params?: ListParams & { view?: string }): string {
   const qs = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (params?.view) qs.set('view', params.view);
   if (params?.recordId) qs.set('recordId', params.recordId);
+  if (params?.memberId) qs.set('memberId', params.memberId);
   return qs.toString();
 }
 

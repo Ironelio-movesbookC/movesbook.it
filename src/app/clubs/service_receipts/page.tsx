@@ -47,6 +47,7 @@ function mapReceipt(
     residualDebt: r.residualDebt,
     casual: r.annotations,
     operator: r.operatorName,
+    isDuplicate: r.isDuplicate,
     edit: (
       <button
         type="button"
@@ -81,7 +82,9 @@ function ServiceReceiptsInner() {
   const scopedIds = useScopedRecordIds();
   const effectiveIds = useEffectiveScopedRecordIds();
   const scopeQuery = scopedArchiveQuery(searchParams);
+  const memberId = scopedIds.length === 0 ? searchParams.get('memberId') : null;
 
+  const [scope, setScope] = useState<'member' | 'all'>(memberId ? 'member' : 'all');
   const [data, setData] = useState<Member[]>([]);
   const [receiptsById, setReceiptsById] = useState<Record<string, ServiceSaleReceipt>>({});
   const [loading, setLoading] = useState(true);
@@ -103,6 +106,7 @@ function ServiceReceiptsInner() {
         page,
         pageSize: SERVICE_SALE_PAGE_SIZE,
         recordIds: effectiveIds.length > 0 ? effectiveIds : undefined,
+        memberId: scope === 'member' && memberId ? memberId : undefined,
       });
       setTotal(res.total);
       const byId: Record<string, ServiceSaleReceipt> = {};
@@ -128,7 +132,7 @@ function ServiceReceiptsInner() {
     } finally {
       setLoading(false);
     }
-  }, [page, effectiveIds]);
+  }, [page, effectiveIds, scope, memberId]);
 
   const performDelete = useCallback(
     async (id: string) => {
@@ -181,9 +185,41 @@ function ServiceReceiptsInner() {
         'receipts',
         null,
         scopedIds.length > 0 ? scopedIds : null,
-        scopeQuery || null
+        scopeQuery || null,
+        memberId
       )}
-      tabsTrailing={<DisplayAllArchivesCheckbox archiveLabel="receipts" />}
+      tabsTrailing={
+        memberId ? (
+          <div className="flex items-center gap-4 text-sm text-gray-700">
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="receiptsScope"
+                checked={scope === 'member'}
+                onChange={() => {
+                  setScope('member');
+                  setPage(1);
+                }}
+              />
+              Member selected
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="receiptsScope"
+                checked={scope === 'all'}
+                onChange={() => {
+                  setScope('all');
+                  setPage(1);
+                }}
+              />
+              All members
+            </label>
+          </div>
+        ) : (
+          <DisplayAllArchivesCheckbox archiveLabel="receipts" />
+        )
+      }
       error={error}
       footerHint={
         effectiveIds.length > 0

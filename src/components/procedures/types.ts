@@ -19,6 +19,8 @@ export type ProcedureArchiveShellProps = {
   headerAction?: React.ReactNode;
   /** Extra content on the right of the tabs row (e.g. Display also paid). */
   tabsTrailing?: React.ReactNode;
+  /** Renders instead of the `tabs` list when the tab row needs custom buttons/handlers. */
+  tabActions?: React.ReactNode;
   error?: string;
   footerHint?: string;
   children: React.ReactNode;

@@ -27,14 +27,12 @@ const columns: Column[] = [
   { key: 'operator', header: 'Operator' },
 ];
 
+/** Same member + open rest — deadlines of different typologies can be paid together. */
 function sameMemberAndOpenRest(rows: Member[]): boolean {
   if (rows.length === 0) return false;
   const firstUserId = rows[0]?.userId;
-  const firstType = rows[0]?.procedureType;
-  if (!firstUserId || !firstType) return false;
-  return rows.every(
-    (r) => r.userId === firstUserId && r.procedureType === firstType && (r.rest ?? 0) > 0
-  );
+  if (!firstUserId) return false;
+  return rows.every((r) => r.userId === firstUserId && (r.rest ?? 0) > 0);
 }
 
 function paymentHref(row: Member, ids?: string[]): string | null {
@@ -47,6 +45,14 @@ function paymentHref(row: Member, ids?: string[]): string | null {
     return `${base}?ids=${encodeURIComponent(ids.join(','))}`;
   }
   return base;
+}
+
+/** Multi-select payment across mixed typologies routes through the generic pay_deadlines page. */
+function multiTypePayHref(rows: Member[]): string | null {
+  const ids = rows.map((r) => r.id).filter((id): id is string => Boolean(id));
+  const types = rows.map((r) => r.procedureType).filter((t): t is string => Boolean(t));
+  if (ids.length !== rows.length || types.length !== rows.length) return null;
+  return `/clubs/pay_deadlines?ids=${encodeURIComponent(ids.join(','))}&types=${encodeURIComponent(types.join(','))}`;
 }
 
 export default function ArchiveDeadlinesPage() {
@@ -90,6 +96,11 @@ export default function ArchiveDeadlinesPage() {
   );
 
   const canPaySelected = checkedRows.length > 1 && sameMemberAndOpenRest(checkedRows);
+  const selectedMemberId = useMemo(
+    () => (selectedId ? data.find((r) => r.id === selectedId)?.userId ?? null : null),
+    [data, selectedId]
+  );
+  const memberQuery = selectedMemberId ? `?memberId=${encodeURIComponent(selectedMemberId)}` : '';
 
   function toggleSelect(row: Member) {
     if (!row.id || (row.rest ?? 0) <= 0) return;
@@ -119,20 +130,19 @@ export default function ArchiveDeadlinesPage() {
       return;
     }
     if (!sameMemberAndOpenRest(checkedRows)) {
-      setSelectionError(
-        'Checked deadlines must belong to the same member, same typology, and all have Rest > 0.'
-      );
+      setSelectionError('Checked deadlines must belong to the same member and all have Rest > 0.');
       return;
     }
+    const sameType = checkedRows.every((r) => r.procedureType === checkedRows[0]!.procedureType);
     const ids = checkedRows.map((r) => r.id!).filter(Boolean);
-    const href = paymentHref(checkedRows[0]!, ids);
+    const href = sameType ? paymentHref(checkedRows[0]!, ids) : multiTypePayHref(checkedRows);
     if (href) router.push(href);
   }
 
   const tabs: ProcedureTab[] = [
     { id: 'deadlines', label: 'Archive of Deadlines', href: '/clubs/archive_deadlines' },
-    { id: 'payments', label: 'Archive of Payments', href: '/clubs/archive_payments' },
-    { id: 'receipts', label: 'Archive of Receipts', href: '/clubs/archive_receipts' },
+    { id: 'payments', label: 'Archive of Payments', href: `/clubs/archive_payments${memberQuery}` },
+    { id: 'receipts', label: 'Archive of Receipts', href: `/clubs/archive_receipts${memberQuery}` },
     {
       id: 'pay-selected',
       label: 'Pay more deadlines',
@@ -163,7 +173,7 @@ export default function ArchiveDeadlinesPage() {
         </label>
       }
       error={error || selectionError}
-      footerHint="All typologies. Double-click a row with Rest > 0 to pay, or check several (same member + typology) and use Pay more deadlines."
+      footerHint="All typologies. Double-click a row with Rest > 0 to pay, or check several (same member, Rest > 0 — typology can differ) and use Pay more deadlines."
       pagination={
         <ProcedurePagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
       }

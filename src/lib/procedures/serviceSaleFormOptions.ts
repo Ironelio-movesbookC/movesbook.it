@@ -15,6 +15,16 @@ function num(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+async function tableHasColumn(tableName: string, columnName: string): Promise<boolean> {
+  const rows = await prisma.$queryRawUnsafe<{ COLUMN_NAME: string }[]>(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    tableName,
+    columnName
+  );
+  return rows.length > 0;
+}
+
 function normalizeServiceImagePath(value: unknown): string | null {
   const image = text(value);
   if (!image) return null;
@@ -53,6 +63,7 @@ export async function fetchServiceSaleFormOptions(
   }
 
   if (serviceTable) {
+    const hasAvailableColumn = await tableHasColumn(serviceTable, 'service_available');
     const serviceRows = await prisma.$queryRawUnsafe<
       {
         id: bigint | number;
@@ -62,7 +73,10 @@ export async function fetchServiceSaleFormOptions(
         service_img: string | null;
       }[]
     >(
-      `SELECT id, service_name, sector_id, club_currency_cost, service_img FROM \`${serviceTable}\` ORDER BY service_name ASC`
+      `SELECT id, service_name, sector_id, club_currency_cost, service_img
+       FROM \`${serviceTable}\`
+       ${hasAvailableColumn ? 'WHERE service_available IS NULL OR service_available <> 0' : ''}
+       ORDER BY service_name ASC`
     );
     for (const s of serviceRows) {
       services.push({

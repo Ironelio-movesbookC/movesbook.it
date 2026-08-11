@@ -205,7 +205,7 @@ function PaymentDetailPageInner() {
           ? 'Payments saved across selected deadlines.'
           : 'Payment saved successfully.'
       );
-      await load();
+      router.push('/clubs/dead_line');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
     } finally {

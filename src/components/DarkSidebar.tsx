@@ -293,7 +293,6 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)', path: '/clubs/movement_cash_details' },
   ],
   [
-    { kind: 'icon', Icon: CreditCard, label: 'Archive of Payments', path: '/clubs/archive_payments' },
     { kind: 'icon', Icon: ClipboardCheck, label: 'Archive of Receipts', path: '/clubs/archive_receipts' },
   ],
   [
