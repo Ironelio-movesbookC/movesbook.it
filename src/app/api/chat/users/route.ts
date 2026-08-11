@@ -3,11 +3,14 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
+import { buildChatAudienceWhere, isChatAudience } from '@/lib/chat/chatAudience';
 
 export const dynamic = 'force-dynamic';
 
 /** GET - List users who have a Telegram account (for starting a chat). Excludes current user.
- *  Query param: search - filter by telegramAccount (Telegram username) or name, case-insensitive partial match.
+ *  Query params:
+ *    search - filter by telegramAccount (Telegram username) or name, case-insensitive partial match.
+ *    audience - movesbook-staff | club-admin | club-staff | movesbook-user | …
  */
 export async function GET(request: NextRequest) {
   try {
@@ -26,10 +29,18 @@ export async function GET(request: NextRequest) {
 
     const searchRaw = request.nextUrl.searchParams.get('search')?.trim() ?? '';
     const searchNorm = searchRaw.replace(/^@+/, ''); // strip leading @ like Telegram
+    const audienceRaw = request.nextUrl.searchParams.get('audience')?.trim() ?? '';
+    const audience = isChatAudience(audienceRaw) ? audienceRaw : null;
+    const audienceWhere = audience ? buildChatAudienceWhere(audience, myId) : null;
+
+    if (audience && !audienceWhere) {
+      return NextResponse.json({ users: [] });
+    }
 
     const whereClause: Prisma.UserWhereInput = {
       id: { not: myId },
       telegramAccount: { not: null },
+      ...(audienceWhere ?? {}),
     };
 
     if (searchNorm.length > 0) {

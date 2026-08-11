@@ -26,6 +26,20 @@ async function clubMemberUserIds(clubId: string): Promise<string[]> {
   return rows.map((r) => r.memberId);
 }
 
+function formatArchiveDate(value: Date | null | undefined): string {
+  if (!value || Number.isNaN(value.getTime())) return '-';
+  const dd = String(value.getDate()).padStart(2, '0');
+  const mm = String(value.getMonth() + 1).padStart(2, '0');
+  const yyyy = value.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function titleCaseRole(role: string | null | undefined): string {
+  const raw = String(role ?? '').trim();
+  if (!raw) return 'Member';
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
 export async function listClubMembersArchive(
   ctx: ClubAuthContext,
   params: ArchiveQueryParams = {}
@@ -43,6 +57,9 @@ export async function listClubMembersArchive(
           name: true,
           username: true,
           image: true,
+          gender: true,
+          birthdate: true,
+          country: true,
           createdAt: true,
         },
       },
@@ -50,17 +67,40 @@ export async function listClubMembersArchive(
     orderBy: { joinedAt: 'desc' },
   });
 
-  const items = rows.map((row, i) => ({
-    id: row.member.id,
-    number: i + 1,
-    name: formatName(row.member.firstName, row.member.surname, row.member.name),
-    surname: row.member.surname ?? '',
-    image: row.member.image,
-    memberType: row.membershipType ?? '-',
-    insertDate: row.joinedAt.toISOString().slice(0, 10),
-    operator: '-',
-    typology: row.role ?? 'Member',
-  }));
+  const items = rows.map((row, i) => {
+    const firstName =
+      text(row.member.firstName) ||
+      text(row.member.name).split(/\s+/)[0] ||
+      text(row.member.username) ||
+      '-';
+    const surname =
+      text(row.member.surname) ||
+      (() => {
+        const parts = text(row.member.name).split(/\s+/).filter(Boolean);
+        return parts.length > 1 ? parts.slice(1).join(' ') : '';
+      })();
+
+    return {
+      id: row.member.id,
+      memberId: row.member.id,
+      number: i + 1,
+      name: firstName,
+      surname: surname || '-',
+      fullName: formatName(row.member.firstName, row.member.surname, row.member.name),
+      image: row.member.image,
+      gender: text(row.member.gender) || '-',
+      dateOfBirth: formatArchiveDate(row.member.birthdate),
+      memberType: text(row.membershipType) || 'Standard',
+      localCity: text(row.member.country) || '-',
+      Localcity: text(row.member.country) || '-',
+      phone: '-',
+      /** ISO for From/To filters; UI formats for display. */
+      insertDate: row.joinedAt.toISOString().slice(0, 10),
+      insertDateDisplay: formatArchiveDate(row.joinedAt),
+      operator: titleCaseRole(row.role),
+      typology: titleCaseRole(row.role),
+    };
+  });
 
   return paginate(applyFilters(items, params), page, pageSize);
 }
