@@ -14,7 +14,7 @@ export type MemberRegistrationInfoResponse = MemberRegistrationInfoPayload & {
   language: string;
 };
 
-async function resolveLegacySubscriptionForUser(userId: string): Promise<{
+export async function resolveLegacySubscriptionForUser(userId: string): Promise<{
   subscriptionSettingId: number | null;
   subscriptionStartDate: string | null;
   subscriptionEndDate: string | null;

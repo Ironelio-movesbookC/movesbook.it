@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import type { SubscriptionUserType } from '@/types/adminSubscriptionSettings';
 import {
+  getSubscriptionListRows,
   getSubscriptionRowsByUserType,
-  SUBSCRIPTION_LIST_ROWS,
+  SUBSCRIPTION_SETTINGS_UPDATED_EVENT,
 } from '@/lib/admin/subscriptionSettingsMock';
 import SubscriptionSystemDashboardHeader from './SubscriptionSystemDashboardHeader';
 import SubscriptionSettingsTable from './SubscriptionSettingsTable';
@@ -33,10 +34,26 @@ export default function SubscriptionSettingsPanel() {
   const userType = resolveUserType(searchParams?.get('userType') ?? null);
   const [showFreeLabel, setShowFreeLabel] = useState(false);
   const [defaultRowId, setDefaultRowId] = useState(
-    SUBSCRIPTION_LIST_ROWS.find((r) => r.isDefault)?.id,
+    () => getSubscriptionListRows().find((r) => r.isDefault)?.id,
   );
+  const [rowsRevision, setRowsRevision] = useState(0);
 
-  const rows = useMemo(() => getSubscriptionRowsByUserType(userType), [userType]);
+  useEffect(() => {
+    const refresh = () => setRowsRevision((value) => value + 1);
+    window.addEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
+
+  const rows = useMemo(
+    () => getSubscriptionRowsByUserType(userType),
+    [userType, rowsRevision],
+  );
 
   return (
     <div className="h-full flex flex-col bg-gray-100">

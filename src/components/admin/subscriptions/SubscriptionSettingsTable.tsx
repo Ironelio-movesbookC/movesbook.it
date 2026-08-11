@@ -9,6 +9,9 @@ import {
   getEditHref,
   getUserTypeLabel,
 } from '@/lib/admin/subscriptionSettingsMock';
+import { usesCoachTeamClubSharingLayout } from '@/lib/admin/subscriptionEditSettingsLayout';
+
+const TABLE_COLUMN_COUNT = 21;
 
 type SubscriptionSettingsTableProps = {
   rows: SubscriptionListRow[];
@@ -21,6 +24,11 @@ type SubscriptionSettingsTableProps = {
 
 function formatValue(value: number, showFree: boolean): string {
   if (showFree && value === 0) return 'Free';
+  return String(value);
+}
+
+function formatManageableUsersValue(row: SubscriptionListRow, value: number): string {
+  if (!usesCoachTeamClubSharingLayout(row.userType)) return '—';
   return String(value);
 }
 
@@ -60,6 +68,9 @@ function SubscriptionTable({
           <th className="border border-gray-300 px-2 py-2 text-center font-bold" colSpan={4}>
             User that can be invited
           </th>
+          <th className="border border-gray-300 px-2 py-2 text-center font-bold" colSpan={3}>
+            Max number of manageable users
+          </th>
           <th className="border border-gray-300 px-2 py-2 text-center font-bold">
             Notify at expiration
           </th>
@@ -82,6 +93,15 @@ function SubscriptionTable({
           <th className="border border-gray-300 px-1 py-1 text-center">T</th>
           <th className="border border-gray-300 px-1 py-1 text-center">G</th>
           <th className="border border-gray-300 px-1 py-1 text-center">C</th>
+          <th className="border border-gray-300 px-1 py-1 text-center bg-[#fffacd] text-red-600 font-bold">
+            Creatable companies
+          </th>
+          <th className="border border-gray-300 px-1 py-1 text-center bg-[#fffacd] font-bold text-gray-900">
+            Users - 1th subscription
+          </th>
+          <th className="border border-gray-300 px-1 py-1 text-center bg-[#fffacd] font-bold text-gray-900">
+            Users - next subscriptions
+          </th>
           <th className="border border-gray-300 px-1 py-1" />
           <th className="border border-gray-300 px-1 py-1" />
         </tr>
@@ -96,7 +116,7 @@ function SubscriptionTable({
               {showHeader ? (
                 <tr className="bg-[#d9d9d9]">
                   <td
-                    colSpan={18}
+                    colSpan={TABLE_COLUMN_COUNT}
                     className="border border-gray-300 px-3 py-1.5 font-bold text-gray-800 text-sm"
                   >
                     {getUserTypeLabel(row.userType)}
@@ -153,6 +173,15 @@ function SubscriptionTable({
                 </td>
                 <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-700">
                   {row.inviteClubs}
+                </td>
+                <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-700 bg-[#fffacd]/40">
+                  {formatManageableUsersValue(row, row.creatableCompanies)}
+                </td>
+                <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-700 bg-[#fffacd]/40">
+                  {formatManageableUsersValue(row, row.usersFirstSubscription)}
+                </td>
+                <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-700 bg-[#fffacd]/40">
+                  {formatManageableUsersValue(row, row.usersRenewal)}
                 </td>
                 <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-600 text-[11px]">
                   {formatNotifyChannels(row.notifyChannels)}

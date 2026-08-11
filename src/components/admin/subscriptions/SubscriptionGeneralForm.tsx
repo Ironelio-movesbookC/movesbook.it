@@ -1,8 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { SubscriptionGeneralSettings, SubscriptionListRow } from '@/types/adminSubscriptionSettings';
 import { translateEnglishRichTextToAllLangs } from '@/lib/admin/subscriptionMultilangTranslate';
+import {
+  copyInfoVersionFromSubscription,
+  getInfoVersionCopySourceOptions,
+} from '@/lib/admin/subscriptionInfoVersionCopy';
 import SubscriptionLanguageTabs from './SubscriptionLanguageTabs';
 import SubscriptionPricingPresentation from './SubscriptionPricingPresentation';
 import RegistrationVersionSloganBlock from '@/components/register/RegistrationVersionSloganBlock';
@@ -12,6 +16,7 @@ import {
 } from '@/utils/richTextTranslation';
 
 type SubscriptionGeneralFormProps = {
+  subscriptionId: number;
   general: SubscriptionGeneralSettings;
   row: SubscriptionListRow;
   activeLang: string;
@@ -48,6 +53,7 @@ function FieldInput({
 }
 
 export default function SubscriptionGeneralForm({
+  subscriptionId,
   general,
   row,
   activeLang,
@@ -55,6 +61,12 @@ export default function SubscriptionGeneralForm({
   onChange,
 }: SubscriptionGeneralFormProps) {
   const [translatingSlogan, setTranslatingSlogan] = useState(false);
+  const [copySourceId, setCopySourceId] = useState('');
+
+  const copySourceOptions = useMemo(
+    () => getInfoVersionCopySourceOptions(subscriptionId, row.userType),
+    [subscriptionId, row.userType],
+  );
 
   const update = (patch: Partial<SubscriptionGeneralSettings>) => {
     onChange({ ...general, ...patch });
@@ -76,19 +88,50 @@ export default function SubscriptionGeneralForm({
 
     setTranslatingSlogan(true);
     try {
-      const record = await translateEnglishRichTextToAllLangs(enHtml, general.sloganByLang);
+      const { byLang, partialWarning } = await translateEnglishRichTextToAllLangs(
+        enHtml,
+        general.sloganByLang,
+      );
       onChange({
         ...general,
-        sloganByLang: { ...general.sloganByLang, ...record },
+        sloganByLang: { ...general.sloganByLang, ...byLang },
       });
+      if (partialWarning) {
+        window.alert(`Translation completed with warnings.\n\n${partialWarning}`);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       window.alert(
-        `Translation failed.\n\n${msg}\n\nYou can edit other languages manually. Same API as Settings → Technical → Pathologies.`
+        `Translation failed.\n\n${msg}\n\nYou can edit other languages manually.`,
       );
     } finally {
       setTranslatingSlogan(false);
     }
+  };
+
+  const handleCopyFromVersion = () => {
+    if (!copySourceId) {
+      window.alert('Select a version to copy from.');
+      return;
+    }
+
+    const sourceId = Number(copySourceId);
+    const sourceLabel = copySourceOptions.find((option) => option.id === sourceId)?.label;
+    const sloganByLang = copyInfoVersionFromSubscription(sourceId);
+    if (!sloganByLang) {
+      window.alert('Could not load Info version text from the selected subscription.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Copy Info version text from "${sourceLabel}"?\n\nThis replaces the Info version content in all languages for this subscription.`,
+    );
+    if (!confirmed) return;
+
+    onChange({
+      ...general,
+      sloganByLang: { ...sloganByLang },
+    });
   };
 
   return (
@@ -288,14 +331,37 @@ export default function SubscriptionGeneralForm({
             activeLang={activeLang}
             onChange={onLangChange}
             actions={
-              <button
-                type="button"
-                disabled={translatingSlogan}
-                onClick={() => void handleSloganTranslate()}
-                className="rounded border border-[#337ab7] bg-white px-3 py-1 text-xs font-semibold text-[#337ab7] hover:bg-[#eef5fb] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {translatingSlogan ? 'Translating…' : 'Translate'}
-              </button>
+              <>
+                <select
+                  value={copySourceId}
+                  onChange={(e) => setCopySourceId(e.target.value)}
+                  className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800"
+                  aria-label="Copy Info version from another subscription"
+                >
+                  <option value="">Copy from version…</option>
+                  {copySourceOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!copySourceId}
+                  onClick={handleCopyFromVersion}
+                  className="rounded border border-gray-500 bg-white px-3 py-1 text-xs font-semibold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Copy on another version
+                </button>
+                <button
+                  type="button"
+                  disabled={translatingSlogan}
+                  onClick={() => void handleSloganTranslate()}
+                  className="rounded border border-[#337ab7] bg-white px-3 py-1 text-xs font-semibold text-[#337ab7] hover:bg-[#eef5fb] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {translatingSlogan ? 'Translating…' : 'Translate'}
+                </button>
+              </>
             }
           />
           <div className="p-2">

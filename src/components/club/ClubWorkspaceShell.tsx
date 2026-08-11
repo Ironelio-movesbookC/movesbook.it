@@ -34,6 +34,15 @@ import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLeg
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import { ClubWorkspaceContext } from '@/contexts/ClubWorkspaceContext';
 import { clubProfilePayloadForApi } from '@/lib/club/clubProfilePayload';
+import { type CreatableCompaniesQuota } from '@/lib/club/creatableCompaniesQuota.shared';
+import {
+  canCreateAnotherCompany,
+  getCreatableCompaniesLimit,
+  isCreatableCompaniesUnlimited,
+  remainingCreatableCompanies,
+} from '@/lib/admin/subscriptionManageableUsers';
+import { SUBSCRIPTION_SETTINGS_UPDATED_EVENT } from '@/lib/admin/subscriptionSettingsMock';
+import { getDefaultVersionId } from '@/lib/registration/waysToGetStarted';
 import { applyEntityLogoOnSave } from '@/lib/entity/applyEntityLogoOnSave';
 import {
   useEntityDirectAccessGuard,
@@ -76,6 +85,8 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const [createClubModalKey, setCreateClubModalKey] = useState(0);
   const [createClubSaving, setCreateClubSaving] = useState(false);
   const [myClubTabVisible, setMyClubTabVisible] = useState(false);
+  const [subscriptionSettingId, setSubscriptionSettingId] = useState<number | null>(null);
+  const [settingsRevision, setSettingsRevision] = useState(0);
 
   const showMyClubTab = useCallback(() => {
     setMyClubTabVisible(true);
@@ -100,6 +111,23 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     () => getFormCreatedClubsSortedByCreatedAt(clubs),
     [clubs],
   );
+
+  const creatableCompaniesQuota = useMemo((): CreatableCompaniesQuota | null => {
+    void settingsRevision;
+    const created = formClubs.length;
+    const limit = getCreatableCompaniesLimit(subscriptionSettingId);
+    if (limit == null) return null;
+
+    const unlimited = isCreatableCompaniesUnlimited(limit);
+    return {
+      limit,
+      created,
+      remaining: remainingCreatableCompanies(limit, created),
+      canCreate: canCreateAnotherCompany(limit, created),
+      unlimited,
+    };
+  }, [formClubs.length, subscriptionSettingId, settingsRevision]);
+
   const hasFormClub = formClubs.length > 0;
   const activeClub = selectedClubId
     ? formClubs.find((c) => c.id === selectedClubId) ?? null
@@ -123,6 +151,28 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
       console.error('Error loading clubs:', error);
     } finally {
       setClubsLoaded(true);
+    }
+  }, []);
+
+  const loadSubscriptionSettingId = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const response = await fetch('/api/user/member-registration-info', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const fallbackId = getDefaultVersionId('club');
+        if (fallbackId) setSubscriptionSettingId(fallbackId);
+        return;
+      }
+      const data = (await response.json()) as { subscriptionSettingId?: number };
+      if (typeof data.subscriptionSettingId === 'number') {
+        setSubscriptionSettingId(data.subscriptionSettingId);
+      }
+    } catch {
+      /* optional */
     }
   }, []);
 
@@ -157,6 +207,20 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     if (savedClubId) setSelectedClubId(savedClubId);
     const savedTab = readClubWorkspaceTab();
     if (savedTab) setActiveTab(savedTab);
+  }, []);
+
+  useEffect(() => {
+    void loadSubscriptionSettingId();
+  }, [loadSubscriptionSettingId]);
+
+  useEffect(() => {
+    const refresh = () => setSettingsRevision((value) => value + 1);
+    window.addEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener('focus', refresh);
+    };
   }, []);
 
   useEffect(() => {
@@ -281,7 +345,16 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     router.push(`/my-club?clubId=${encodeURIComponent(clubId)}`);
   }, [selectedClubId, formClubs, router]);
 
-  const openCreateClubFlow = () => setShowAdminPasswordConfirm(true);
+  const openCreateClubFlow = () => {
+    if (creatableCompaniesQuota && !creatableCompaniesQuota.canCreate) {
+      showAlert({
+        title: 'Company limit reached',
+        bodyHtml: `<p>You cannot create more companies for this subscription version.</p><p><strong>Limit:</strong> ${creatableCompaniesQuota.limit} · <strong>Already created:</strong> ${creatableCompaniesQuota.created}</p>`,
+      });
+      return;
+    }
+    setShowAdminPasswordConfirm(true);
+  };
 
   const handleAdminPasswordVerified = () => {
     setShowAdminPasswordConfirm(false);
@@ -415,6 +488,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onAccessOutcomeSettingsClick={() => goToDashboardPanel('outcome-settings')}
                 onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
                 onCreateClubClick={openCreateClubFlow}
+                creatableCompaniesQuota={creatableCompaniesQuota}
               />
             </aside>
           )}

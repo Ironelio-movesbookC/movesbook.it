@@ -1,3 +1,6 @@
+import type { SubscriptionEditData } from '@/types/adminSubscriptionSettings';
+import { hasRichTextContent } from '@/utils/richTextTranslation';
+
 /** Map registration / standard locale codes to subscription admin language keys. */
 const LOCALE_TO_SUBSCRIPTION_LANG: Record<string, string> = {
   pt: 'por',
@@ -43,4 +46,23 @@ export function getLastNewsForLang(
   lang: string,
 ): string {
   return getLocalizedRichTextForLang(lastNewsByLang, lang);
+}
+
+/**
+ * Info version text for the registration "News about version" modal.
+ * Prefers Info version (slogan); falls back to Last news when slogan is empty.
+ */
+export function getInfoVersionHtmlForRegistration(
+  editData: SubscriptionEditData | null | undefined,
+  lang: string,
+): string {
+  if (!editData) return '';
+
+  const slogan = getSloganForLang(editData.general.sloganByLang, lang);
+  if (hasRichTextContent(slogan)) return slogan;
+
+  const news = getLastNewsForLang(editData.settings.lastNewsByLang, lang);
+  if (hasRichTextContent(news)) return news;
+
+  return '';
 }

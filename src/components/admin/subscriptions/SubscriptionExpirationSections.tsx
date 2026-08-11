@@ -46,11 +46,17 @@ export default function SubscriptionExpirationSections({
     const enHtml = settings.lastNewsByLang.en ?? '';
     setTranslatingLastNews(true);
     try {
-      const record = await translateEnglishRichTextToAllLangs(enHtml, settings.lastNewsByLang);
+      const { byLang, partialWarning } = await translateEnglishRichTextToAllLangs(
+        enHtml,
+        settings.lastNewsByLang,
+      );
       onChange({
         ...settings,
-        lastNewsByLang: { ...settings.lastNewsByLang, ...record },
+        lastNewsByLang: { ...settings.lastNewsByLang, ...byLang },
       });
+      if (partialWarning) {
+        window.alert(`Translation completed with warnings.\n\n${partialWarning}`);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       window.alert(

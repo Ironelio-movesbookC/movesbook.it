@@ -3,8 +3,9 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { getSloganForLang } from '@/lib/admin/subscriptionSlogan';
+import { getInfoVersionHtmlForRegistration } from '@/lib/admin/subscriptionSlogan';
 import { getSubscriptionEditData } from '@/lib/admin/subscriptionSettingsMock';
+import type { SubscriptionEditData } from '@/types/adminSubscriptionSettings';
 
 type RegistrationVersionNewsModalProps = {
   isOpen: boolean;
@@ -12,6 +13,7 @@ type RegistrationVersionNewsModalProps = {
   versionId: number | null;
   versionName?: string;
   lang: string;
+  editData?: SubscriptionEditData | null;
 };
 
 /** Modal opened by "News about version" — shows Info version content from subscription admin. */
@@ -21,6 +23,7 @@ export default function RegistrationVersionNewsModal({
   versionId,
   versionName,
   lang,
+  editData: editDataProp,
 }: RegistrationVersionNewsModalProps) {
   useEffect(() => {
     if (!isOpen) return;
@@ -33,8 +36,9 @@ export default function RegistrationVersionNewsModal({
 
   if (!isOpen) return null;
 
-  const editData = versionId ? getSubscriptionEditData(versionId, false) : null;
-  const infoHtml = getSloganForLang(editData?.general.sloganByLang, lang);
+  const editData =
+    editDataProp ?? (versionId ? getSubscriptionEditData(versionId, false) : null);
+  const infoHtml = getInfoVersionHtmlForRegistration(editData, lang);
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">

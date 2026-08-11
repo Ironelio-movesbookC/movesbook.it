@@ -22,6 +22,12 @@ export type SubscriptionListRow = {
   inviteTeams: number;
   inviteGroups: number;
   inviteClubs: number;
+  /** Coach / team / club only — companies the admin can create. */
+  creatableCompanies: number;
+  /** Coach / team / club only — users for the first subscription. */
+  usersFirstSubscription: number;
+  /** Coach / team / club only — users for renewal subscriptions. */
+  usersRenewal: number;
   notifyChannels: SubscriptionNotifyChannel[];
   isDefault?: boolean;
   isTemplate?: boolean;
@@ -58,6 +64,12 @@ export type SubscriptionEditSettings = {
   coachTiers: Record<SubscriptionTier, boolean>;
   athletesLimit: number;
   athleteTiers: Record<SubscriptionTier, boolean>;
+  /** Coach / team / club — limit and sharing with invited coaches. */
+  coachSharing: SubscriptionMembershipSetting;
+  /** Coach / team / club — max manageable users (synced to browse table). */
+  creatableCompanies: number;
+  usersAvailableFirstSubscription: number;
+  usersAvailableRenewal: number;
   teams: SubscriptionMembershipSetting;
   groups: SubscriptionMembershipSetting;
   clubs: SubscriptionMembershipSetting;

@@ -6,6 +6,10 @@ import type {
   SubscriptionTier,
   SubscriptionUserType,
 } from '@/types/adminSubscriptionSettings';
+import {
+  getMembershipSectionLabel,
+  usesCoachTeamClubSharingLayout,
+} from '@/lib/admin/subscriptionEditSettingsLayout';
 
 const TIERS: { key: SubscriptionTier; label: string }[] = [
   { key: 'trial', label: 'Trial' },
@@ -27,6 +31,8 @@ type SubscriptionMembershipSharingDisplayProps = {
   userType: SubscriptionUserType;
   daysValue: number;
   mode?: SubscriptionSharingDisplayMode;
+  /** Hide the days-duration tier row (coach / team / club admin preview). */
+  hideDaysDuration?: boolean;
 };
 
 function roleLabel(userType: SubscriptionUserType): string {
@@ -38,7 +44,7 @@ function roleLabel(userType: SubscriptionUserType): string {
 }
 
 function showsAthletesRelation(userType: SubscriptionUserType): boolean {
-  return userType === 'coach' || userType === 'club';
+  return userType === 'coach' || userType === 'team' || userType === 'club';
 }
 
 export default function SubscriptionMembershipSharingDisplay({
@@ -46,18 +52,25 @@ export default function SubscriptionMembershipSharingDisplay({
   userType,
   daysValue,
   mode = 'registration',
+  hideDaysDuration = false,
 }: SubscriptionMembershipSharingDisplayProps) {
   const role = roleLabel(userType);
+  const coachTeamClubLayout = usesCoachTeamClubSharingLayout(userType);
+  const showDaysDuration = !hideDaysDuration && !coachTeamClubLayout;
   const athletesRelation = showsAthletesRelation(userType);
   const relationLabel = athletesRelation ? 'Athletes' : 'Coaches';
   const relationLimit = athletesRelation ? settings.athletesLimit : settings.coachesLimit;
   const relationTiers = athletesRelation ? settings.athleteTiers : settings.coachTiers;
+  const coachSharing = settings.coachSharing ?? { limit: 1, sharingEnabled: true };
 
   const membershipRows = [
-    { label: 'Teams', setting: settings.teams, shareLabel: 'Sharing with teams' },
-    { label: 'Groups', setting: settings.groups, shareLabel: 'Sharing with groups' },
-    { label: 'Clubs', setting: settings.clubs, shareLabel: 'Sharing with clubs' },
-  ] as const;
+    ...(coachTeamClubLayout
+      ? [{ label: 'Coaches' as const, setting: coachSharing, shareLabel: 'Sharing with coaches' }]
+      : []),
+    { label: 'Teams' as const, setting: settings.teams, shareLabel: 'Sharing with teams' },
+    { label: 'Groups' as const, setting: settings.groups, shareLabel: 'Sharing with groups' },
+    { label: 'Clubs' as const, setting: settings.clubs, shareLabel: 'Sharing with clubs' },
+  ];
 
   const wrapperClass =
     mode === 'admin-preview'
@@ -72,41 +85,49 @@ export default function SubscriptionMembershipSharingDisplay({
         </p>
       ) : null}
 
-      <div>
-        <div className="mb-2 text-sm font-medium text-gray-800">Days duration</div>
-        <div className="flex flex-wrap items-center gap-2">
-          {TIERS.map((tier) => (
-            <span
-              key={tier.key}
-              className="inline-flex h-10 w-14 items-center justify-center border border-gray-300 bg-[#e8e8e8] text-sm"
-              title={tier.label}
-            >
-              {daysValue}!
+      {showDaysDuration ? (
+        <div>
+          <div className="mb-2 text-sm font-medium text-gray-800">Days duration</div>
+          <div className="flex flex-wrap items-center gap-2">
+            {TIERS.map((tier) => (
+              <span
+                key={tier.key}
+                className="inline-flex h-10 w-14 items-center justify-center border border-gray-300 bg-[#e8e8e8] text-sm"
+                title={tier.label}
+              >
+                {daysValue}!
+              </span>
+            ))}
+            <span className="ml-auto border border-gray-300 px-2 py-1 text-xs text-gray-600">
+              -1=Unlimited
             </span>
-          ))}
-          <span className="ml-auto border border-gray-300 px-2 py-1 text-xs text-gray-600">
-            -1=Unlimited
-          </span>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div>
         <div className="mb-2 text-sm font-medium text-gray-800">{relationLabel}</div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           {TIERS.map((tier) => (
-            <span
-              key={tier.key}
-              className="inline-flex h-10 w-14 items-center justify-center border border-gray-300 bg-[#e8e8e8] text-sm"
-              title={tier.label}
-            >
-              {relationTiers[tier.key] ? relationLimit : ''}
-            </span>
+            <div key={tier.key} className="flex flex-col items-center gap-1">
+              {coachTeamClubLayout ? (
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                  {tier.label}
+                </span>
+              ) : null}
+              <span
+                className="inline-flex h-10 w-14 items-center justify-center border border-gray-300 bg-[#e8e8e8] text-sm"
+                title={tier.label}
+              >
+                {relationTiers[tier.key] ? relationLimit : ''}
+              </span>
+            </div>
           ))}
         </div>
       </div>
 
       <div className="border border-gray-300 p-4">
-        <p className="mb-3 text-sm text-gray-700">{role} can be member of....</p>
+        <p className="mb-3 text-sm text-gray-700">{getMembershipSectionLabel(userType, role)}</p>
         {membershipRows.map(({ label, setting, shareLabel }) => (
           <div
             key={label}
@@ -144,13 +165,35 @@ export function SubscriptionSharingSummary({
   userType: SubscriptionUserType;
 }) {
   const role = roleLabel(userType);
-  const rows = [
-    { label: 'Teams', setting: settings.teams },
-    { label: 'Groups', setting: settings.groups },
-    { label: 'Clubs', setting: settings.clubs },
-  ] as const;
+  const coachTeamClubLayout = usesCoachTeamClubSharingLayout(userType);
+  const coachSharing = settings.coachSharing ?? { limit: 1, sharingEnabled: true };
 
-  const enabled = rows.filter((r) => r.setting.sharingEnabled);
+  const rows: { label: string; limit: number; sharingEnabled: boolean }[] = [];
+
+  if (coachTeamClubLayout) {
+    rows.push({
+      label: 'Athletes',
+      limit: settings.athletesLimit,
+      sharingEnabled: true,
+    });
+    rows.push({
+      label: 'Coaches',
+      limit: coachSharing.limit,
+      sharingEnabled: coachSharing.sharingEnabled,
+    });
+  }
+
+  rows.push(
+    { label: 'Teams', limit: settings.teams.limit, sharingEnabled: settings.teams.sharingEnabled },
+    {
+      label: 'Groups',
+      limit: settings.groups.limit,
+      sharingEnabled: settings.groups.sharingEnabled,
+    },
+    { label: 'Clubs', limit: settings.clubs.limit, sharingEnabled: settings.clubs.sharingEnabled },
+  );
+
+  const enabled = rows.filter((row) => row.sharingEnabled);
   if (enabled.length === 0) return null;
 
   return (
@@ -159,13 +202,13 @@ export function SubscriptionSharingSummary({
         Sharing options — {role}
       </div>
       <ul className="mt-1.5 space-y-1 text-sm text-gray-800">
-        {enabled.map(({ label, setting }) => (
+        {enabled.map(({ label, limit }) => (
           <li key={label} className="flex items-center gap-2">
             <Share2 className="h-4 w-4 shrink-0 text-[#5cb85c]" aria-hidden />
             <span>
               {label}:{' '}
               <span className="font-semibold">
-                {setting.limit === -1 ? 'Unlimited' : setting.limit}
+                {limit === -1 ? 'Unlimited' : limit}
               </span>
             </span>
           </li>

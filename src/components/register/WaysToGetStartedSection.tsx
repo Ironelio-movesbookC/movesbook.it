@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { getSubscriptionEditData } from '@/lib/admin/subscriptionSettingsMock';
 import {
   formatRegistrationPrice,
   getDefaultVersionId,
@@ -10,6 +9,11 @@ import {
   REGISTRATION_USER_TYPE_TABS,
   type RegistrationUserType,
 } from '@/lib/registration/waysToGetStarted';
+import {
+  SUBSCRIPTION_SETTINGS_UPDATED_EVENT,
+  getSubscriptionEditData,
+  syncSubscriptionEditDataFromStorage,
+} from '@/lib/admin/subscriptionSettingsMock';
 import RegistrationPackageInfoModal from './RegistrationPackageInfoModal';
 import RegistrationSubscriptionPricingBlock from './RegistrationSubscriptionPricingBlock';
 import RegistrationMonthlyCostLine from './RegistrationMonthlyCostLine';
@@ -36,9 +40,37 @@ export default function WaysToGetStartedSection({
   const [showPackageInfo, setShowPackageInfo] = useState(false);
   const [showNews, setShowNews] = useState(false);
 
-  const versions = useMemo(() => getRegistrationVersions(userType), [userType]);
+  const [settingsRevision, setSettingsRevision] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => {
+      syncSubscriptionEditDataFromStorage();
+      setSettingsRevision((value) => value + 1);
+    };
+    window.addEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
+
+  const versions = useMemo(
+    () => getRegistrationVersions(userType),
+    [userType, settingsRevision],
+  );
   const selectedVersion = versions.find((v) => v.id === selectedVersionId);
-  const selectedEditData = selectedVersionId ? getSubscriptionEditData(selectedVersionId, false) : null;
+  const selectedEditData = useMemo(
+    () => (selectedVersionId ? getSubscriptionEditData(selectedVersionId, false) : null),
+    [selectedVersionId, settingsRevision],
+  );
+
+  useEffect(() => {
+    syncSubscriptionEditDataFromStorage();
+    setSettingsRevision((value) => value + 1);
+  }, []);
 
   useEffect(() => {
     if (!versions.length) return;
@@ -175,11 +207,13 @@ export default function WaysToGetStartedSection({
       />
 
       <RegistrationVersionNewsModal
+        key={`news-${selectedVersionId ?? 'none'}-${settingsRevision}`}
         isOpen={showNews}
         onClose={() => setShowNews(false)}
         versionId={selectedVersionId}
         versionName={selectedVersion?.name}
         lang={lang}
+        editData={selectedEditData}
       />
     </>
   );

@@ -1,11 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SubscriptionEditData } from '@/types/adminSubscriptionSettings';
 import {
   getSubscriptionById,
+  getSubscriptionEditData,
   saveSubscriptionEditData,
+  SUBSCRIPTION_SETTINGS_UPDATED_EVENT,
+  syncSubscriptionEditDataFromStorage,
 } from '@/lib/admin/subscriptionSettingsMock';
 import SubscriptionSystemDashboardHeader from './SubscriptionSystemDashboardHeader';
 import SubscriptionGeneralForm from './SubscriptionGeneralForm';
@@ -28,6 +31,25 @@ export default function EditSubscriptionPanel({
   const [data, setData] = useState(initialData);
   const [activeLang, setActiveLang] = useState(lang || 'en');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    syncSubscriptionEditDataFromStorage();
+    const fresh = getSubscriptionEditData(subscriptionId, false);
+    if (fresh) setData(fresh);
+
+    const refresh = () => {
+      syncSubscriptionEditDataFromStorage();
+      const updated = getSubscriptionEditData(subscriptionId, false);
+      if (updated) setData(updated);
+    };
+
+    window.addEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, [subscriptionId]);
 
   if (!row) {
     return (
@@ -59,6 +81,7 @@ export default function EditSubscriptionPanel({
       <SubscriptionSystemDashboardHeader />
       <div className="flex-1 overflow-y-auto p-4 lg:p-6 max-w-5xl">
         <SubscriptionGeneralForm
+          subscriptionId={subscriptionId}
           general={data.general}
           row={row}
           activeLang={activeLang}

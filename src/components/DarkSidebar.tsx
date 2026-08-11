@@ -127,6 +127,7 @@ import {
   isClubCreatedFromForm,
   userHasClubProfile,
 } from '@/lib/club/clubSidebarLabel';
+import { formatCreatableCompaniesSidebarLabel } from '@/lib/club/creatableCompaniesQuota.shared';
 import { canManageClubWebsite } from '@/lib/club/clubWebsitePermissions';
 import {
   formatEntitySidebarLabel,
@@ -385,6 +386,8 @@ interface DarkSidebarProps {
   hideMyPageTab?: boolean;
   /** Club workspace: clubs list has finished loading from the API. */
   clubProfileLoaded?: boolean;
+  /** Club admin — companies creatable vs already created (from subscription version). */
+  creatableCompaniesQuota?: import('@/lib/club/creatableCompaniesQuota.shared').CreatableCompaniesQuota | null;
 }
 
 export default function DarkSidebar({
@@ -415,6 +418,7 @@ export default function DarkSidebar({
   clubMyClubTabVisible = false,
   hideMyPageTab = false,
   clubProfileLoaded = true,
+  creatableCompaniesQuota = null,
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -1571,14 +1575,21 @@ export default function DarkSidebar({
                   className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left transition-colors hover:bg-teal-700"
                 >
                   <Mail className="h-5 w-5 shrink-0" />
-                  <span>
-                    {isCoachUser
-                      ? t('sidebar_my_groups_trained')
-                      : isTeamManagerUser
-                        ? t('sidebar_my_teams')
-                        : isGroupAdminUser
-                          ? t('sidebar_my_group')
-                          : t('sidebar_my_clubs')}
+                  <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span>
+                      {isCoachUser
+                        ? t('sidebar_my_groups_trained')
+                        : isTeamManagerUser
+                          ? t('sidebar_my_teams')
+                          : isGroupAdminUser
+                            ? t('sidebar_my_group')
+                            : t('sidebar_my_clubs')}
+                    </span>
+                    {isClubAccountUserType(userType) && creatableCompaniesQuota ? (
+                      <span className="text-[11px] font-semibold normal-case text-yellow-300">
+                        {formatCreatableCompaniesSidebarLabel(creatableCompaniesQuota)}
+                      </span>
+                    ) : null}
                   </span>
                 </button>
                 <button
@@ -1597,7 +1608,8 @@ export default function DarkSidebar({
                   <button
                     type="button"
                     onClick={() => onCreateClubClick?.()}
-                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800"
+                    disabled={creatableCompaniesQuota ? !creatableCompaniesQuota.canCreate : false}
+                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:from-red-500 disabled:hover:to-red-700"
                   >
                     Create a club
                   </button>

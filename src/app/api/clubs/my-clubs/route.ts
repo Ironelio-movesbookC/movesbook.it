@@ -6,6 +6,7 @@ import {
   isClubCreatedFromForm,
   parseClubDescriptionMeta,
 } from '@/lib/club/clubSidebarLabel';
+import { getClubCreatableCompaniesQuota } from '@/lib/club/creatableCompaniesQuota';
 import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 
 export const dynamic = 'force-dynamic';
@@ -13,28 +14,22 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const token = request.headers.get('authorization')?.replace('Bearer ', '');
-    
+
     if (!token) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const decoded = verifyToken(token);
     if (!decoded || !decoded.userId) {
-      return NextResponse.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    const userId = decoded.userId;
+    const userId = decoded.userId as string;
+    const userType = String(decoded.userType ?? '');
 
-    // Get all clubs where user is admin
     const clubs = await prisma.club.findMany({
       where: {
-        adminId: userId
+        adminId: userId,
       },
       include: {
         admin: {
@@ -42,8 +37,8 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             username: true,
-            email: true
-          }
+            email: true,
+          },
         },
         members: {
           include: {
@@ -52,15 +47,15 @@ export async function GET(request: NextRequest) {
                 id: true,
                 name: true,
                 username: true,
-                email: true
-              }
-            }
-          }
-        }
+                email: true,
+              },
+            },
+          },
+        },
       },
       orderBy: {
-        createdAt: 'desc'
-      }
+        createdAt: 'desc',
+      },
     });
 
     const mapped = clubs.map((club) => {
@@ -87,17 +82,16 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    const creatableCompaniesQuota = await getClubCreatableCompaniesQuota(userId, userType);
+
     return NextResponse.json({
       clubs: mapped,
       hasClubProfile: mapped.some((c) => c.hasClubProfile),
       clubProfiles: mapped.filter((c) => c.hasClubProfile),
+      creatableCompaniesQuota,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching clubs:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-

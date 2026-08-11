@@ -2,12 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, Edit, Trash2, View } from 'lucide-react';
-import MemberStats from './components/status';
+import ClubMemberArchiveHeader from './components/status';
 import MembersTable from '@/components/club/ui/table';
 import { fetchClubArchive } from '@/lib/club/archives/clubArchiveClient';
+import { clubApiFetch } from '@/lib/club/servicePurchasesClient';
+import {
+  computeClubMemberCapacity,
+  type ClubMemberCapacityStats,
+} from '@/lib/club/clubMemberCapacity';
+import {
+  getUsersAvailableFirstSubscription,
+  getUsersAvailableRenewal,
+} from '@/lib/admin/subscriptionManageableUsers';
+import { SUBSCRIPTION_SETTINGS_UPDATED_EVENT } from '@/lib/admin/subscriptionSettingsMock';
+import { useClubWorkspace } from '@/contexts/ClubWorkspaceContext';
 import type { Column, Member } from '@/types/clubTable';
-
-const DEFAULT_MAX_MEMBERS = 50;
 
 const icons = (...Icons: React.ElementType[]) => (
   <div className="flex gap-2 justify-center">
@@ -97,11 +106,23 @@ function mapArchiveRow(row: Member): Member {
   };
 }
 
+type MemberCapacityResponse = {
+  subscriptionSettingId: number | null;
+  capacity: ClubMemberCapacityStats;
+};
+
 export default function MemberListPage() {
+  const { selectedClubId } = useClubWorkspace();
   const [data, setData] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [totalMembers, setTotalMembers] = useState(0);
+  const [capacityPayload, setCapacityPayload] = useState<MemberCapacityResponse | null>(null);
+  const [settingsRevision, setSettingsRevision] = useState(0);
+
+  const clubId =
+    selectedClubId ??
+    (typeof window !== 'undefined' ? localStorage.getItem('selectedClub') : null);
 
   const loadMembers = useCallback(async () => {
     setLoading(true);
@@ -119,24 +140,85 @@ export default function MemberListPage() {
     }
   }, []);
 
+  const loadCapacity = useCallback(async () => {
+    if (!clubId) {
+      setCapacityPayload(null);
+      return;
+    }
+    try {
+      const response = await clubApiFetch<MemberCapacityResponse>(
+        `/api/club/member-capacity?clubId=${encodeURIComponent(clubId)}`,
+      );
+      setCapacityPayload(response);
+    } catch {
+      setCapacityPayload(null);
+    }
+  }, [clubId]);
+
   useEffect(() => {
-    loadMembers();
+    void loadMembers();
   }, [loadMembers]);
 
-  const maxMembers = useMemo(
-    () => Math.max(DEFAULT_MAX_MEMBERS, totalMembers),
-    [totalMembers]
-  );
+  useEffect(() => {
+    void loadCapacity();
+  }, [loadCapacity, totalMembers]);
+
+  useEffect(() => {
+    const refresh = () => setSettingsRevision((value) => value + 1);
+    window.addEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
+
+  const capacity = useMemo(() => {
+    void settingsRevision;
+    if (!capacityPayload?.capacity) return null;
+
+    const base = capacityPayload.capacity;
+    const subscriptionSettingId = capacityPayload.subscriptionSettingId;
+    if (!subscriptionSettingId) return base;
+
+    return computeClubMemberCapacity({
+      membersAdded: totalMembers,
+      membersPurchasedBase: base.membersPurchasedBase,
+      subscriptionSettingId,
+      subscriptionPhase: base.subscriptionPhase,
+      subscriptionEndDate: base.subscriptionEndDateIso
+        ? new Date(`${base.subscriptionEndDateIso}T12:00:00.000Z`)
+        : null,
+      usersAllowanceFirst: getUsersAvailableFirstSubscription(subscriptionSettingId),
+      usersAllowanceRenewal: getUsersAvailableRenewal(subscriptionSettingId),
+    });
+  }, [capacityPayload, settingsRevision, totalMembers]);
 
   return (
     <div className="w-full h-full flex flex-col p-4 gap-4">
-      <MemberStats maxMembers={maxMembers} currentMembers={totalMembers} />
+      {capacity ? (
+        <ClubMemberArchiveHeader
+          capacity={capacity}
+          onPurchaseMembers={() => {
+            window.alert('Purchase members — additional slot packs will be added to Members purchased.');
+          }}
+          onStatusAccounts={() => {
+            window.alert('Status accounts — member account status overview.');
+          }}
+        />
+      ) : null}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
+
+      {!capacity && !loading ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Select a club workspace to view member capacity from your subscription version.
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-8 text-center text-gray-500">

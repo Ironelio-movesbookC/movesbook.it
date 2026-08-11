@@ -8,6 +8,11 @@ import type {
   SubscriptionUserType,
 } from '@/types/adminSubscriptionSettings';
 import SubscriptionMembershipSharingDisplay from './SubscriptionMembershipSharingDisplay';
+import {
+  getCoachVariantIntroText,
+  getMembershipSectionLabel,
+  usesCoachTeamClubSharingLayout,
+} from '@/lib/admin/subscriptionEditSettingsLayout';
 
 const TIERS: { key: SubscriptionTier; label: string }[] = [
   { key: 'trial', label: 'Trial' },
@@ -70,7 +75,7 @@ export default function SubscriptionEditSettingsForm({
   };
 
   const updateMembership = (
-    key: 'teams' | 'groups' | 'clubs',
+    key: 'coachSharing' | 'teams' | 'groups' | 'clubs',
     patch: Partial<SubscriptionMembershipSetting>,
   ) => {
     onChange({ ...settings, [key]: { ...settings[key], ...patch } });
@@ -82,6 +87,9 @@ export default function SubscriptionEditSettingsForm({
       : userType === 'coach'
         ? 'Coach'
         : getRoleCapitalized(userType);
+
+  const coachTeamClubLayout = variant === 'coach' && usesCoachTeamClubSharingLayout(userType);
+  const coachSharing = settings.coachSharing ?? { limit: 1, sharingEnabled: true };
 
   return (
     <div className="border border-gray-300 mb-4">
@@ -120,6 +128,58 @@ export default function SubscriptionEditSettingsForm({
               </div>
             </div>
           </div>
+        ) : coachTeamClubLayout ? (
+          <div>
+            <p className="text-sm text-gray-700 mb-3">{getCoachVariantIntroText(userType)}</p>
+            <div className="flex flex-wrap items-center gap-4 mb-4">
+              <span className="text-sm text-gray-700">Athletes</span>
+              <input
+                type="text"
+                value={settings.athletesLimit}
+                onChange={(e) => update({ athletesLimit: Number(e.target.value) || 0 })}
+                className="border border-gray-300 bg-[#fffacd] px-2 py-1 text-sm w-16"
+              />
+              <div className="flex items-center gap-4 ml-4">
+                {TIERS.map((tier) => (
+                  <label key={tier.key} className="flex items-center gap-1 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={settings.athleteTiers[tier.key]}
+                      onChange={(e) =>
+                        update({
+                          athleteTiers: { ...settings.athleteTiers, [tier.key]: e.target.checked },
+                        })
+                      }
+                    />
+                    {tier.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-[80px_60px_32px_32px_1fr] items-center gap-2 py-1">
+              <span className="text-sm text-gray-700 font-medium">Coaches</span>
+              <input
+                type="text"
+                value={coachSharing.limit}
+                onChange={(e) =>
+                  updateMembership('coachSharing', { limit: Number(e.target.value) || 0 })
+                }
+                className="border border-gray-300 bg-[#fffacd] px-2 py-1 text-sm w-full"
+              />
+              <div className="flex justify-center">
+                <Share2 className="w-5 h-5 text-[#5cb85c]" />
+              </div>
+              <input
+                type="checkbox"
+                checked={coachSharing.sharingEnabled}
+                onChange={(e) =>
+                  updateMembership('coachSharing', { sharingEnabled: e.target.checked })
+                }
+                className="justify-self-center"
+              />
+              <span className="text-sm text-gray-600">Sharing with coaches</span>
+            </div>
+          </div>
         ) : (
           <div>
             <p className="text-sm text-gray-700 mb-3">
@@ -153,8 +213,61 @@ export default function SubscriptionEditSettingsForm({
           </div>
         )}
 
+        {coachTeamClubLayout ? (
+          <div>
+            <p className="text-sm font-medium text-gray-800 mb-1">Max number of manageable users</p>
+            <p className="text-xs text-gray-500 mb-3">
+              Limits for companies and users managed by the admin — shown in the subscription
+              settings browse table.
+            </p>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-sm text-gray-700 min-w-[280px]">
+                  Companies creable by the admin
+                </label>
+                <input
+                  type="text"
+                  value={settings.creatableCompanies}
+                  onChange={(e) =>
+                    update({ creatableCompanies: Number(e.target.value) || 0 })
+                  }
+                  className="border border-gray-300 bg-[#fffacd] px-2 py-1 text-sm w-24"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-sm text-gray-700 min-w-[280px]">
+                  Number of users available for the 1th subscription
+                </label>
+                <input
+                  type="text"
+                  value={settings.usersAvailableFirstSubscription}
+                  onChange={(e) =>
+                    update({ usersAvailableFirstSubscription: Number(e.target.value) || 0 })
+                  }
+                  className="border border-gray-300 bg-[#fffacd] px-2 py-1 text-sm w-24"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-sm text-gray-700 min-w-[280px]">
+                  Number of users available for the renewal
+                </label>
+                <input
+                  type="text"
+                  value={settings.usersAvailableRenewal}
+                  onChange={(e) =>
+                    update({ usersAvailableRenewal: Number(e.target.value) || 0 })
+                  }
+                  className="border border-gray-300 bg-[#fffacd] px-2 py-1 text-sm w-24"
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div>
-          <p className="text-sm text-gray-700 mb-1">{roleLabel} can be member of....</p>
+          <p className="text-sm text-gray-700 mb-1">
+            {getMembershipSectionLabel(userType, roleLabel)}
+          </p>
           <p className="text-xs text-gray-500 mb-3">
             Sharing limits for this version — displayed during registration (Package → Availability
             shares tab and when the user selects this version).
@@ -188,6 +301,7 @@ export default function SubscriptionEditSettingsForm({
               userType={userType}
               daysValue={daysValue}
               mode="admin-preview"
+              hideDaysDuration={coachTeamClubLayout}
             />
           </div>
         </div>

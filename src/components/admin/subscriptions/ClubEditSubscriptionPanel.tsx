@@ -5,7 +5,10 @@ import { useEffect, useState } from 'react';
 import type { SubscriptionEditData } from '@/types/adminSubscriptionSettings';
 import {
   getSubscriptionById,
+  getSubscriptionEditData,
   saveSubscriptionEditData,
+  SUBSCRIPTION_SETTINGS_UPDATED_EVENT,
+  syncSubscriptionEditDataFromStorage,
 } from '@/lib/admin/subscriptionSettingsMock';
 import SubscriptionSystemDashboardHeader from './SubscriptionSystemDashboardHeader';
 import SubscriptionGeneralForm from './SubscriptionGeneralForm';
@@ -42,6 +45,25 @@ export default function ClubEditSubscriptionPanel({
   const [activeTab, setActiveTab] = useState<ClubSubscriptionEditTab>(() =>
     parseTab(searchParams?.get('tab') ?? null),
   );
+
+  useEffect(() => {
+    syncSubscriptionEditDataFromStorage();
+    const fresh = getSubscriptionEditData(id, false);
+    if (fresh) setData(fresh);
+
+    const refresh = () => {
+      syncSubscriptionEditDataFromStorage();
+      const updated = getSubscriptionEditData(id, false);
+      if (updated) setData(updated);
+    };
+
+    window.addEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, [id]);
 
   useEffect(() => {
     const tab = searchParams?.get('tab');
@@ -105,6 +127,7 @@ export default function ClubEditSubscriptionPanel({
         {activeTab === 'setting_subscriptions' ? (
           <>
             <SubscriptionGeneralForm
+              subscriptionId={id}
               general={data.general}
               row={row}
               activeLang={activeLang}

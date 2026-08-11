@@ -1,8 +1,15 @@
 import type {
   SubscriptionEditData,
+  SubscriptionEditSettings,
   SubscriptionListRow,
+  SubscriptionMembershipSetting,
   SubscriptionUserType,
 } from '@/types/adminSubscriptionSettings';
+import {
+  getDefaultManageableUsersForUserType,
+  usesCoachTeamClubSharingLayout,
+} from '@/lib/admin/subscriptionEditSettingsLayout';
+import { hasRichTextContent } from '@/utils/richTextTranslation';
 
 export const SUBSCRIPTION_LANGUAGES = [
   { code: 'en', label: 'En' },
@@ -25,7 +32,19 @@ function notify(...channels: SubscriptionListRow['notifyChannels'][number][]): S
   return channels;
 }
 
-export const SUBSCRIPTION_LIST_ROWS: SubscriptionListRow[] = [
+type SubscriptionListRowSeed = Omit<
+  SubscriptionListRow,
+  'creatableCompanies' | 'usersFirstSubscription' | 'usersRenewal'
+>;
+
+function completeListRow(row: SubscriptionListRowSeed): SubscriptionListRow {
+  return {
+    ...row,
+    ...getDefaultManageableUsersForUserType(row.userType),
+  };
+}
+
+const RAW_SUBSCRIPTION_LIST_ROWS: SubscriptionListRowSeed[] = [
   // Athlete
   { id: 1, listOrder: 1, code: 'U00', name: 'Trial Base', userType: 'athlete', days1: 361, days2: 10, price1: 101, price2: 10, credit1: 10, credit2: 20, credit3: 10, credit4: 10, inviteAthletes: -1, inviteTeams: -1, inviteGroups: -1, inviteClubs: -1, notifyChannels: notify('mail', 'network', 'cellular', 'facebook'), isDefault: true },
   { id: 2, listOrder: 2, code: 'U01', name: 'Trial for club members', userType: 'athlete', days1: 365, days2: 10, price1: 10, price2: 10, credit1: 10, credit2: 20, credit3: 10, credit4: 10, inviteAthletes: -1, inviteTeams: -1, inviteGroups: -1, inviteClubs: -1, notifyChannels: notify('mail', 'network', 'cellular', 'facebook') },
@@ -54,27 +73,46 @@ export const SUBSCRIPTION_LIST_ROWS: SubscriptionListRow[] = [
   { id: 18, listOrder: 19, code: 'C04', name: 'Club Trial', userType: 'club', days1: 30, days2: 10, price1: 0, price2: 0, credit1: 10, credit2: 10, credit3: 10, credit4: 10, inviteAthletes: 13, inviteTeams: 1, inviteGroups: 10, inviteClubs: 1, notifyChannels: notify('mail', 'network'), isTemplate: true },
 ];
 
-export const CLUB_TEMPLATE_ROWS: SubscriptionListRow[] = Array.from({ length: 12 }, (_, i) => ({
-  id: 100 + i,
-  listOrder: 19 + i,
-  code: '',
-  name: '',
-  userType: 'club' as const,
-  days1: 0,
-  days2: 0,
-  price1: 0,
-  price2: 0,
-  credit1: 0,
-  credit2: 0,
-  credit3: 0,
-  credit4: 0,
-  inviteAthletes: 13,
-  inviteTeams: 1,
-  inviteGroups: 10,
-  inviteClubs: 1,
-  notifyChannels: notify('mail', 'network'),
-  isTemplate: true,
+const INITIAL_SUBSCRIPTION_LIST_ROWS: SubscriptionListRow[] =
+  RAW_SUBSCRIPTION_LIST_ROWS.map(completeListRow);
+
+/** Mutable list rows — updated when version settings are saved. */
+let subscriptionListRows: SubscriptionListRow[] = INITIAL_SUBSCRIPTION_LIST_ROWS.map((row) => ({
+  ...row,
 }));
+
+/** @deprecated Prefer getSubscriptionListRows() for current data. */
+export const SUBSCRIPTION_LIST_ROWS: SubscriptionListRow[] = subscriptionListRows;
+
+const SUBSCRIPTION_EDIT_STORAGE_KEY = 'movesbook:subscription-edit-data:v1';
+
+export function getSubscriptionListRows(): SubscriptionListRow[] {
+  return subscriptionListRows.map(getEffectiveListRow);
+}
+
+export const CLUB_TEMPLATE_ROWS: SubscriptionListRow[] = Array.from({ length: 12 }, (_, i) =>
+  completeListRow({
+    id: 100 + i,
+    listOrder: 19 + i,
+    code: '',
+    name: '',
+    userType: 'club',
+    days1: 0,
+    days2: 0,
+    price1: 0,
+    price2: 0,
+    credit1: 0,
+    credit2: 0,
+    credit3: 0,
+    credit4: 0,
+    inviteAthletes: 13,
+    inviteTeams: 1,
+    inviteGroups: 10,
+    inviteClubs: 1,
+    notifyChannels: notify('mail', 'network'),
+    isTemplate: true,
+  }),
+);
 
 const USER_TYPE_LABELS: Record<SubscriptionUserType, string> = {
   athlete: 'Athlete',
@@ -99,16 +137,20 @@ export function formatNotifyChannels(channels: SubscriptionListRow['notifyChanne
 }
 
 export function getSubscriptionRowsByUserType(userType?: SubscriptionUserType | null): SubscriptionListRow[] {
-  if (!userType) return SUBSCRIPTION_LIST_ROWS;
-  return SUBSCRIPTION_LIST_ROWS.filter((r) => r.userType === userType);
+  const rows = userType
+    ? subscriptionListRows.filter((r) => r.userType === userType)
+    : subscriptionListRows;
+  return rows.map(getEffectiveListRow);
 }
 
 export function getSubscriptionByListOrder(listOrder: number): SubscriptionListRow | undefined {
-  return SUBSCRIPTION_LIST_ROWS.find((r) => r.listOrder === listOrder);
+  const row = subscriptionListRows.find((r) => r.listOrder === listOrder);
+  return row ? getEffectiveListRow(row) : undefined;
 }
 
 export function getSubscriptionById(id: number): SubscriptionListRow | undefined {
-  return SUBSCRIPTION_LIST_ROWS.find((r) => r.id === id);
+  const row = subscriptionListRows.find((r) => r.id === id);
+  return row ? getEffectiveListRow(row) : undefined;
 }
 
 /** Resolve /subscriptions/edit_subscription/[param]/… — accepts subscription id or listOrder. */
@@ -147,10 +189,10 @@ function buildDefaultEditData(row: SubscriptionListRow): SubscriptionEditData {
     general: {
       code: row.code,
       name: row.name,
-      senderRegisterCredit1: row.userType === 'athlete' ? 10 : 0,
-      senderRegisterCredit2: row.userType === 'athlete' ? 20 : 0,
-      receiverRegisterCredit1: row.userType === 'athlete' ? 15 : 0,
-      receiverRegisterCredit2: row.userType === 'athlete' ? 25 : 0,
+      senderRegisterCredit1: row.credit1,
+      senderRegisterCredit2: row.credit2,
+      receiverRegisterCredit1: row.credit3,
+      receiverRegisterCredit2: row.credit4,
       maxDiscount: 10,
       promocodeDurationDays: 10,
       promocodeAssign: false,
@@ -176,8 +218,18 @@ function buildDefaultEditData(row: SubscriptionListRow): SubscriptionEditData {
     settings: {
       coachesLimit: row.userType === 'athlete' ? 2 : 0,
       coachTiers: { ...DEFAULT_TIERS },
-      athletesLimit: row.userType === 'coach' ? 5 : 0,
+      athletesLimit:
+        row.userType === 'coach' ||
+        row.userType === 'team' ||
+        row.userType === 'group' ||
+        row.userType === 'club'
+          ? row.inviteAthletes
+          : 0,
       athleteTiers: { trial: true, base: false, premium: false, pro: false },
+      coachSharing: { limit: 1, sharingEnabled: true },
+      creatableCompanies: row.creatableCompanies,
+      usersAvailableFirstSubscription: row.usersFirstSubscription,
+      usersAvailableRenewal: row.usersRenewal,
       teams: { limit: row.inviteTeams, sharingEnabled: true },
       groups: { limit: row.inviteGroups, sharingEnabled: true },
       clubs: { limit: row.inviteClubs, sharingEnabled: true },
@@ -216,19 +268,227 @@ function buildDefaultEditData(row: SubscriptionListRow): SubscriptionEditData {
 
 const editDataCache = new Map<number, SubscriptionEditData>();
 
+function buildNotifyChannelsFromSettings(
+  settings: SubscriptionEditData['settings'],
+): SubscriptionListRow['notifyChannels'] {
+  const channels: SubscriptionListRow['notifyChannels'] = [];
+  if (settings.notifyMail) channels.push('mail');
+  if (settings.notifyNetwork) channels.push('network');
+  if (settings.notifyCellular) channels.push('cellular');
+  if (settings.notifyFacebook) channels.push('facebook');
+  return channels;
+}
+
+function usesAthletesInviteLimit(userType: SubscriptionUserType): boolean {
+  return userType === 'coach' || userType === 'team' || userType === 'group' || userType === 'club';
+}
+
+function applyEditDataToListRow(
+  row: SubscriptionListRow,
+  data: SubscriptionEditData,
+): SubscriptionListRow {
+  const { general, settings } = data;
+
+  return {
+    ...row,
+    code: general.code,
+    name: general.name,
+    days1: general.firstSubscriptionDays,
+    days2: general.renewalDays,
+    price1: general.firstSubscriptionPrice,
+    price2: general.renewalPrice,
+    credit1: general.senderRegisterCredit1,
+    credit2: general.senderRegisterCredit2,
+    credit3: general.receiverRegisterCredit1,
+    credit4: general.receiverRegisterCredit2,
+    inviteAthletes: usesAthletesInviteLimit(row.userType)
+      ? settings.athletesLimit
+      : row.inviteAthletes,
+    inviteTeams: settings.teams.limit,
+    inviteGroups: settings.groups.limit,
+    inviteClubs: settings.clubs.limit,
+    notifyChannels: buildNotifyChannelsFromSettings(settings),
+    ...(usesCoachTeamClubSharingLayout(row.userType)
+      ? {
+          creatableCompanies: settings.creatableCompanies,
+          usersFirstSubscription: settings.usersAvailableFirstSubscription,
+          usersRenewal: settings.usersAvailableRenewal,
+        }
+      : {}),
+  };
+}
+
+function getEffectiveListRow(row: SubscriptionListRow): SubscriptionListRow {
+  const cached = editDataCache.get(row.id);
+  return cached ? applyEditDataToListRow(row, cached) : row;
+}
+
+function syncListRowFromEditData(data: SubscriptionEditData): void {
+  const index = subscriptionListRows.findIndex((row) => row.id === data.id);
+  if (index < 0) return;
+  subscriptionListRows[index] = applyEditDataToListRow(subscriptionListRows[index], data);
+}
+
+function persistEditDataCache(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const payload: Record<string, SubscriptionEditData> = {};
+    editDataCache.forEach((data, id) => {
+      payload[String(id)] = data;
+    });
+    window.localStorage.setItem(SUBSCRIPTION_EDIT_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore quota / private-mode errors in mock storage.
+  }
+}
+
+function mergeRichTextByLang(
+  cached: Record<string, string> | undefined,
+  defaults: Record<string, string>,
+): Record<string, string> {
+  const merged = { ...defaults };
+  if (!cached) return merged;
+
+  for (const [key, value] of Object.entries(cached)) {
+    if (hasRichTextContent(value)) {
+      merged[key] = value;
+    }
+  }
+
+  return merged;
+}
+
+function mergeMembershipSetting(
+  cached: SubscriptionMembershipSetting | undefined,
+  defaults: SubscriptionMembershipSetting,
+): SubscriptionMembershipSetting {
+  return {
+    limit: cached?.limit ?? defaults.limit,
+    sharingEnabled: cached?.sharingEnabled ?? defaults.sharingEnabled,
+  };
+}
+
+function mergeEditDataWithDefaults(
+  cached: SubscriptionEditData,
+  row: SubscriptionListRow,
+): SubscriptionEditData {
+  const defaults = buildDefaultEditData(row);
+
+  return {
+    ...cached,
+    general: {
+      ...cached.general,
+      sloganByLang: mergeRichTextByLang(cached.general?.sloganByLang, defaults.general.sloganByLang),
+    },
+    settings: {
+      ...defaults.settings,
+      ...cached.settings,
+      athletesLimit: cached.settings?.athletesLimit ?? defaults.settings.athletesLimit,
+      coachSharing: mergeMembershipSetting(
+        cached.settings?.coachSharing,
+        defaults.settings.coachSharing,
+      ),
+      teams: mergeMembershipSetting(cached.settings?.teams, defaults.settings.teams),
+      groups: mergeMembershipSetting(cached.settings?.groups, defaults.settings.groups),
+      clubs: mergeMembershipSetting(cached.settings?.clubs, defaults.settings.clubs),
+      lastNewsByLang: mergeRichTextByLang(
+        cached.settings?.lastNewsByLang,
+        defaults.settings.lastNewsByLang,
+      ),
+    },
+  };
+}
+
+function loadEditDataCacheFromStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(SUBSCRIPTION_EDIT_STORAGE_KEY);
+    if (!raw) return;
+    const payload = JSON.parse(raw) as Record<string, SubscriptionEditData>;
+    for (const data of Object.values(payload)) {
+      if (!data?.id) continue;
+      editDataCache.set(data.id, data);
+      syncListRowFromEditData(data);
+    }
+  } catch {
+    // Ignore corrupt storage payloads.
+  }
+}
+
+/** Reload subscription edit data from localStorage (e.g. after admin save in another tab). */
+export function syncSubscriptionEditDataFromStorage(): void {
+  loadEditDataCacheFromStorage();
+}
+
+function hydrateEditDataCacheFromStorage(): void {
+  loadEditDataCacheFromStorage();
+}
+
+export const SUBSCRIPTION_SETTINGS_UPDATED_EVENT = 'subscription-settings-updated';
+
+function notifySubscriptionSettingsUpdated(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(SUBSCRIPTION_SETTINGS_UPDATED_EVENT));
+}
+
+function normalizeSubscriptionEditSettings(
+  settings: SubscriptionEditSettings,
+  userType?: SubscriptionUserType,
+): SubscriptionEditSettings {
+  const manageableDefaults = userType
+    ? getDefaultManageableUsersForUserType(userType)
+    : { creatableCompanies: 0, usersFirstSubscription: 0, usersRenewal: 0 };
+
+  return {
+    ...settings,
+    coachSharing: settings.coachSharing ?? { limit: 1, sharingEnabled: true },
+    teams: settings.teams ?? { limit: 0, sharingEnabled: true },
+    groups: settings.groups ?? { limit: 0, sharingEnabled: true },
+    clubs: settings.clubs ?? { limit: 0, sharingEnabled: true },
+    creatableCompanies: settings.creatableCompanies ?? manageableDefaults.creatableCompanies,
+    usersAvailableFirstSubscription:
+      settings.usersAvailableFirstSubscription ?? manageableDefaults.usersFirstSubscription,
+    usersAvailableRenewal:
+      settings.usersAvailableRenewal ?? manageableDefaults.usersRenewal,
+  };
+}
+
 export function getSubscriptionEditData(idOrListOrder: number, byListOrder = false): SubscriptionEditData | null {
   const row = byListOrder
-    ? getSubscriptionByListOrder(idOrListOrder)
-    : getSubscriptionById(idOrListOrder);
+    ? subscriptionListRows.find((entry) => entry.listOrder === idOrListOrder)
+    : subscriptionListRows.find((entry) => entry.id === idOrListOrder);
   if (!row) return null;
 
-  const cacheKey = row.id;
-  if (!editDataCache.has(cacheKey)) {
-    editDataCache.set(cacheKey, buildDefaultEditData(row));
+  const effectiveRow = getEffectiveListRow(row);
+  const cached = editDataCache.get(row.id);
+  if (cached) {
+    const merged = mergeEditDataWithDefaults(cached, effectiveRow);
+    return {
+      ...merged,
+      settings: normalizeSubscriptionEditSettings(merged.settings, merged.userType),
+    };
   }
-  return editDataCache.get(cacheKey)!;
+
+  const built = buildDefaultEditData(effectiveRow);
+  return {
+    ...built,
+    settings: normalizeSubscriptionEditSettings(built.settings, built.userType),
+  };
 }
 
 export function saveSubscriptionEditData(data: SubscriptionEditData): void {
   editDataCache.set(data.id, data);
+  syncListRowFromEditData(data);
+  persistEditDataCache();
+  notifySubscriptionSettingsUpdated();
+}
+
+hydrateEditDataCacheFromStorage();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === SUBSCRIPTION_EDIT_STORAGE_KEY || event.key === null) {
+      loadEditDataCacheFromStorage();
+    }
+  });
 }

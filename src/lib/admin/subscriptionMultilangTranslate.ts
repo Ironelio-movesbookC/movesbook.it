@@ -1,5 +1,6 @@
 import { SUBSCRIPTION_LANGUAGES } from '@/lib/admin/subscriptionSettingsMock';
 import {
+  getTranslateFetchHeaders,
   hasRichTextContent,
   plainTextToRichHtml,
   richTextToPlainText,
@@ -15,18 +16,38 @@ export function subscriptionLangToApiCode(code: string): string {
     por: 'pt',
     rus: 'ru',
     ind: 'hi',
+    indo: 'id',
+    jap: 'ja',
     chin: 'zh',
     arab: 'ar',
   };
   return map[code] || code;
 }
 
-export async function fetchSubscriptionTranslations(text: string): Promise<Record<string, string>> {
-  const targetLanguages = SUBSCRIPTION_TARGET_LANGS.map(subscriptionLangToApiCode);
+export type SubscriptionTranslationFetchResult = {
+  record: Record<string, string>;
+  failedLanguages: string[];
+  warning?: string;
+};
+
+export type SubscriptionRichTextTranslateResult = {
+  byLang: Record<string, string>;
+  partialWarning?: string;
+};
+
+export async function fetchSubscriptionTranslations(
+  text: string,
+): Promise<SubscriptionTranslationFetchResult> {
+  const pairs = SUBSCRIPTION_TARGET_LANGS.map((subLang) => ({
+    subLang,
+    apiLang: subscriptionLangToApiCode(subLang),
+  }));
+  const targetLanguages = [...new Set(pairs.map((pair) => pair.apiLang))];
+
   const response = await fetch('/api/translate', {
     method: 'POST',
     cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getTranslateFetchHeaders(),
     body: JSON.stringify({ text, targetLanguages }),
   });
   if (!response.ok) {
@@ -34,16 +55,31 @@ export async function fetchSubscriptionTranslations(text: string): Promise<Recor
     throw new Error(`Translation API returned ${response.status}: ${errorText.substring(0, 120)}`);
   }
   const data = await response.json();
-  return data.translations && typeof data.translations === 'object'
-    ? (data.translations as Record<string, string>)
-    : {};
+  const apiTranslations =
+    data.translations && typeof data.translations === 'object'
+      ? (data.translations as Record<string, string>)
+      : {};
+
+  const record: Record<string, string> = {};
+  for (const { subLang, apiLang } of pairs) {
+    const raw = apiTranslations[apiLang] ?? apiTranslations[subLang];
+    if (typeof raw === 'string' && raw.trim()) {
+      record[subLang] = raw.trim();
+    }
+  }
+
+  const failedLanguages = Array.isArray(data.failedLanguages)
+    ? (data.failedLanguages as string[])
+    : [];
+
+  return { record, failedLanguages, warning: typeof data.warning === 'string' ? data.warning : undefined };
 }
 
 /** Translate English rich text into all subscription languages (keeps EN HTML as source). */
 export async function translateEnglishRichTextToAllLangs(
   enHtml: string,
   existingByLang: Record<string, string> = {},
-): Promise<Record<string, string>> {
+): Promise<SubscriptionRichTextTranslateResult> {
   if (!hasRichTextContent(enHtml)) {
     throw new Error('Enter English text first, then press Translate.');
   }
@@ -53,20 +89,32 @@ export async function translateEnglishRichTextToAllLangs(
     throw new Error('Enter English text first, then press Translate.');
   }
 
-  const translations = await fetchSubscriptionTranslations(plain);
+  const { record: translations, failedLanguages, warning } =
+    await fetchSubscriptionTranslations(plain);
   const record: Record<string, string> = { en: enHtml, ...existingByLang };
 
   for (const subLang of SUBSCRIPTION_TARGET_LANGS) {
-    const apiLang = subscriptionLangToApiCode(subLang);
-    const raw = translations[apiLang];
+    const raw = translations[subLang];
     if (typeof raw === 'string' && raw.trim()) {
       record[subLang] = plainTextToRichHtml(raw.trim());
     }
   }
 
-  if (Object.keys(record).filter((k) => k !== 'en' && record[k]?.trim()).length === 0) {
-    throw new Error('No translated values were returned by the translation service.');
+  const translatedCount = SUBSCRIPTION_TARGET_LANGS.filter((lang) => record[lang]?.trim()).length;
+
+  if (translatedCount === 0) {
+    throw new Error(
+      warning ||
+        'No translated values were returned. External translation services may be unreachable — try again or edit other languages manually.',
+    );
   }
 
-  return record;
+  if (failedLanguages.length > 0) {
+    return {
+      byLang: record,
+      partialWarning: `${translatedCount} language(s) translated; failed: ${failedLanguages.join(', ')}`,
+    };
+  }
+
+  return { byLang: record };
 }
