@@ -15,6 +15,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
+const MAX_CHANNEL_NAME_LEN = 64;
 
 function authorize(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -60,7 +61,32 @@ function parseDataUrl(dataUrl: string): { mime: string; buffer: Buffer } | null 
   }
 }
 
-/** GET - Channel display settings (photo) for any authenticated user. */
+async function assertCanWriteSettings(
+  request: NextRequest,
+  decoded: { userType?: string },
+  clubId: string | null
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (clubId) {
+    const clubAuth = await resolveClubChannelAuth(request, clubId);
+    if (!clubAuth.ok) {
+      return { ok: false, status: clubAuth.status, error: clubAuth.error };
+    }
+    return { ok: true };
+  }
+  if (!isAdminToken(decoded)) {
+    return { ok: false, status: 403, error: 'Admin access required' };
+  }
+  return { ok: true };
+}
+
+function normalizeChannelName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return null;
+  return trimmed.slice(0, MAX_CHANNEL_NAME_LEN);
+}
+
+/** GET - Channel display settings (photo + name) for any authenticated user. */
 export async function GET(request: NextRequest) {
   try {
     if (!authorize(request)) {
@@ -79,7 +105,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** POST - Admin / club admin sets the channel photo (multipart file or JSON dataUrl). */
+/**
+ * POST - Admin / club admin updates channel settings.
+ * Accepts:
+ *  - JSON `{ channelName, clubId? }` — rename only
+ *  - JSON `{ photoDataUrl, channelName?, clubId? }` — photo (+ optional rename)
+ *  - multipart `file` (+ optional `clubId`, `channelName`) — photo upload
+ */
 export async function POST(request: NextRequest) {
   try {
     const decoded = authorize(request);
@@ -91,10 +123,12 @@ export async function POST(request: NextRequest) {
     let buffer: Buffer | null = null;
     let ext = 'jpg';
     let clubId: string | null = null;
+    let channelNamePatch: string | null = null;
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
       clubId = parseClubId(formData.get('clubId'));
+      channelNamePatch = normalizeChannelName(formData.get('channelName'));
       const file = formData.get('file');
       if (!(file instanceof Blob)) {
         return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -116,33 +150,48 @@ export async function POST(request: NextRequest) {
         body = {};
       }
       clubId = parseClubId(body.clubId);
+      channelNamePatch = normalizeChannelName(body.channelName);
+
       const dataUrl = typeof body.photoDataUrl === 'string' ? body.photoDataUrl : '';
-      const parsed = parseDataUrl(dataUrl);
-      if (!parsed) {
+      if (dataUrl) {
+        const parsed = parseDataUrl(dataUrl);
+        if (!parsed) {
+          return NextResponse.json(
+            { error: 'Invalid photo. Provide multipart file or photoDataUrl.' },
+            { status: 400 }
+          );
+        }
+        const mimeExt = extFromMime(parsed.mime);
+        if (!mimeExt || !ALLOWED_EXT.has(mimeExt === 'jpeg' ? 'jpg' : mimeExt)) {
+          return NextResponse.json({ error: 'Invalid file type. Only images are allowed' }, { status: 400 });
+        }
+        ext = mimeExt === 'jpeg' ? 'jpg' : mimeExt;
+        buffer = parsed.buffer;
+      } else if (!channelNamePatch) {
         return NextResponse.json(
-          { error: 'Invalid photo. Provide multipart file or photoDataUrl.' },
+          { error: 'Provide channelName and/or a channel photo.' },
           { status: 400 }
         );
       }
-      const mimeExt = extFromMime(parsed.mime);
-      if (!mimeExt || !ALLOWED_EXT.has(mimeExt === 'jpeg' ? 'jpg' : mimeExt)) {
-        return NextResponse.json({ error: 'Invalid file type. Only images are allowed' }, { status: 400 });
-      }
-      ext = mimeExt === 'jpeg' ? 'jpg' : mimeExt;
-      buffer = parsed.buffer;
     }
 
-    if (clubId) {
-      const clubAuth = await resolveClubChannelAuth(request, clubId);
-      if (!clubAuth.ok) {
-        return NextResponse.json({ error: clubAuth.error }, { status: clubAuth.status });
-      }
-    } else if (!isAdminToken(decoded)) {
-      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    const auth = await assertCanWriteSettings(request, decoded, clubId);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
+    // Rename-only (no photo)
     if (!buffer?.length) {
-      return NextResponse.json({ error: 'Empty image' }, { status: 400 });
+      const settings = await writeChannelSettings(
+        channelNamePatch ? { channelName: channelNamePatch } : {},
+        clubId
+      );
+      return NextResponse.json({
+        success: true,
+        channelName: settings.channelName,
+        channelPhoto: settings.photoUrl,
+        updatedAt: settings.updatedAt,
+      });
     }
 
     const dir = await ensureChatUploadDir(clubId);
@@ -151,7 +200,13 @@ export async function POST(request: NextRequest) {
     await clearOldChannelPhotos(fileName, clubId);
 
     const photoUrl = channelPhotoPublicPath(fileName, clubId);
-    const settings = await writeChannelSettings({ photoUrl }, clubId);
+    const settings = await writeChannelSettings(
+      {
+        photoUrl,
+        ...(channelNamePatch ? { channelName: channelNamePatch } : {}),
+      },
+      clubId
+    );
 
     return NextResponse.json({
       success: true,
@@ -161,6 +216,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Chat channel-settings POST:', error);
-    return NextResponse.json({ error: 'Failed to save channel photo' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to save channel settings' }, { status: 500 });
   }
 }

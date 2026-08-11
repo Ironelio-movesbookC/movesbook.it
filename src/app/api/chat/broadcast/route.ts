@@ -281,7 +281,7 @@ export async function GET(request: NextRequest) {
     const channelSettings = await readChannelSettings(clubId);
 
     return NextResponse.json({
-      channelName: channelSettings.channelName || (clubId ? 'Club channel' : 'Movesbook channel'),
+      channelName: channelSettings.channelName || (clubId ? 'Club Channel' : 'Movesbook channel'),
       channelPhoto: channelSettings.photoUrl,
       messages,
       unreadHint: messages.length,

@@ -17,7 +17,7 @@ const PLATFORM_DEFAULT: ChatChannelSettings = {
 
 const CLUB_DEFAULT: ChatChannelSettings = {
   photoUrl: null,
-  channelName: 'Club channel',
+  channelName: 'Club Channel',
   updatedAt: null,
 };
 

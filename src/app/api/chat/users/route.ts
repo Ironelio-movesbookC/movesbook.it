@@ -31,10 +31,22 @@ export async function GET(request: NextRequest) {
     const searchNorm = searchRaw.replace(/^@+/, ''); // strip leading @ like Telegram
     const audienceRaw = request.nextUrl.searchParams.get('audience')?.trim() ?? '';
     const audience = isChatAudience(audienceRaw) ? audienceRaw : null;
-    const audienceWhere = audience ? buildChatAudienceWhere(audience, myId) : null;
+    const clubId = request.nextUrl.searchParams.get('clubId')?.trim() || null;
+    const audienceWhere = audience ? buildChatAudienceWhere(audience, myId, clubId) : null;
 
     if (audience && !audienceWhere) {
       return NextResponse.json({ users: [] });
+    }
+
+    // When scoping club-member/club-admin to a club, require caller membership
+    if (clubId && (audience === 'club-member' || audience === 'club-admin')) {
+      const membership = await prisma.clubMember.findUnique({
+        where: { clubId_memberId: { clubId, memberId: myId } },
+        select: { id: true },
+      });
+      if (!membership) {
+        return NextResponse.json({ users: [] });
+      }
     }
 
     const whereClause: Prisma.UserWhereInput = {

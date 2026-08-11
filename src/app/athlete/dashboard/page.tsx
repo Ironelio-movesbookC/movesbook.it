@@ -132,6 +132,10 @@ function AthleteDashboardContent() {
   const [telegramAccount, setTelegramAccount] = useState('');
   const [userTelegramAccount, setUserTelegramAccount] = useState<string | null>(null);
   const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
+  /** Open Club Channel chat on My Club tab (member view). */
+  const [clubChatOpen, setClubChatOpen] = useState(false);
+  /** After Telegram join, open club chat instead of My Page audience picker. */
+  const [pendingClubChatOpen, setPendingClubChatOpen] = useState(false);
   
   // Entities athlete belongs to
   const [myCoaches, setMyCoaches] = useState<any[]>([]);
@@ -216,12 +220,14 @@ function AthleteDashboardContent() {
     if (activeTab !== 'my-entity') {
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
+      setClubChatOpen(false);
     }
   }, [activeTab]);
 
   useEffect(() => {
     if (myClubs.length === 0 && activeTab === 'my-entity') {
       setActiveTab('my-page');
+      setClubChatOpen(false);
     }
   }, [myClubs.length, activeTab]);
 
@@ -254,11 +260,40 @@ function AthleteDashboardContent() {
   };
 
   const handleChatPanelClick = () => {
+    setPendingClubChatOpen(false);
     if (userTelegramAccount) {
       // Ask who they want to chat with before opening the panel
       setShowChatAudienceModal(true);
     } else {
       // User hasn't joined, show join modal
+      setShowJoinModal(true);
+    }
+  };
+
+  const openClubChat = useCallback(() => {
+    const clubId = selectedClubId ?? myClubs[0]?.id ?? null;
+    if (!clubId) {
+      alert('Join a club first to use Club Chat.');
+      return;
+    }
+    if (!selectedClubId) {
+      setSelectedClubId(clubId);
+    }
+    setActiveTab('my-entity');
+    setClubAddSongsOgpOpen(false);
+    setClubChatOpen(true);
+  }, [selectedClubId, myClubs]);
+
+  const handleClubChatClick = () => {
+    const clubId = selectedClubId ?? myClubs[0]?.id ?? null;
+    if (!clubId) {
+      alert('Join a club first to use Club Chat.');
+      return;
+    }
+    if (userTelegramAccount) {
+      openClubChat();
+    } else {
+      setPendingClubChatOpen(true);
       setShowJoinModal(true);
     }
   };
@@ -298,8 +333,13 @@ function AthleteDashboardContent() {
           setUserTelegramAccount(formattedAccount);
           setShowJoinModal(false);
           setTelegramAccount('');
-          // After joining Telegram, pick who to chat with
-          setShowChatAudienceModal(true);
+          if (pendingClubChatOpen) {
+            setPendingClubChatOpen(false);
+            openClubChat();
+          } else {
+            // After joining Telegram, pick who to chat with
+            setShowChatAudienceModal(true);
+          }
         } else {
           alert(data.error || 'Failed to save Telegram account');
         }
@@ -802,8 +842,10 @@ function AthleteDashboardContent() {
                   setActiveSection('staff-feedbacks');
                 }}
                 onMyClubClick={() => setActiveTab('my-entity')}
+                onClubChatClick={handleClubChatClick}
                 onClubAddSongsPlaylistsClick={() => {
                   setActiveTab('my-entity');
+                  setClubChatOpen(false);
                   setClubAddSongsOgpOpen(true);
                 }}
               />
@@ -905,6 +947,16 @@ function AthleteDashboardContent() {
                     embedded
                     isExpanded={clubAddSongsOgpExpanded}
                     onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
+                  />
+                </div>
+              ) : clubChatOpen && (selectedClubId ?? myClubs[0]?.id) ? (
+                <div className="flex-1 flex flex-col min-h-0 max-h-[75vh]">
+                  <ChatPanel
+                    key={`club-chat-${selectedClubId ?? myClubs[0]?.id}`}
+                    embedded
+                    clubId={selectedClubId ?? myClubs[0]?.id}
+                    chatAudience="club-member"
+                    onClose={() => setClubChatOpen(false)}
                   />
                 </div>
               ) : (
@@ -1101,6 +1153,7 @@ function AthleteDashboardContent() {
                   onClick={() => {
                     setShowJoinModal(false);
                     setTelegramAccount('');
+                    setPendingClubChatOpen(false);
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                 >

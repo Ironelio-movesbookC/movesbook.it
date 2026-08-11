@@ -259,7 +259,7 @@ export default function AdminChatUsersPanel({
   const [deleteTarget, setDeleteTarget] = useState<ThreadMessage | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -468,7 +468,10 @@ export default function AdminChatUsersPanel({
   );
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    // Scroll only the messages pane — never the page (scrollIntoView causes a jump).
+    el.scrollTop = el.scrollHeight;
   }, [visibleMessages.length, selectedUserId]);
 
   const setMute = (value: boolean) => {
@@ -945,7 +948,7 @@ export default function AdminChatUsersPanel({
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        <div ref={messagesContainerRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
           {loadingThread && selectedUserId ? (
             <p className="py-8 text-center text-sm text-[#4a667a]">Loading conversation…</p>
           ) : visibleMessages.length === 0 ? (
@@ -1034,7 +1037,6 @@ export default function AdminChatUsersPanel({
                   </div>
                 );
               })}
-              <div ref={messagesEndRef} />
             </div>
           )}
         </div>

@@ -225,6 +225,16 @@ const CLUB_SENT_LABELS: Record<BroadcastMode, string> = {
   favourites: 'Sent to only favourites',
 };
 
+/** Display handle under Scan QR code, e.g. "Movesbook" → "t.me/movesbook". */
+function channelNameToTelegramHandle(name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `t.me/${slug || 'channel'}`;
+}
+
 function storageKey(base: string, clubId?: string | null): string {
   const id = typeof clubId === 'string' ? clubId.trim() : '';
   return id ? `clubChat:${id}:${base}` : base;
@@ -319,8 +329,9 @@ export default function AdminChatExperience({
     'invite' | 'edit' | 'subscribers' | 'administrators' | 'addSubscribers' | 'addAdministrators'
   >('invite');
   const [channelPhoto, setChannelPhoto] = useState<string | null>(null);
-  const [channelName, setChannelName] = useState(isClubChannel ? 'club' : 'movesbook');
+  const [channelName, setChannelName] = useState(isClubChannel ? 'Club Channel' : 'Movesbook channel');
   const [channelDescription, setChannelDescription] = useState('');
+  const [savingChannelSettings, setSavingChannelSettings] = useState(false);
   const [subscriberIds, setSubscriberIds] = useState<string[]>([]);
   const [subscribers, setSubscribers] = useState<ChannelSubscriber[]>([]);
   const [subscriberSearchOpen, setSubscriberSearchOpen] = useState(false);
@@ -352,8 +363,6 @@ export default function AdminChatExperience({
       : isClubChannel
         ? 'https://movesbook.app/register?invite=club'
         : 'https://movesbook.app/register?invite=movesbook-admin';
-  const publicInviteDisplay = isClubChannel ? 't.me/club-channel' : 't.me/movesbook';
-
   useEffect(() => {
     try {
       // Settings are initialized from localStorage; refresh other persisted UI state here.
@@ -815,6 +824,47 @@ export default function AdminChatExperience({
     setAddAdminSearchOpen(false);
   };
 
+  const saveChannelName = async (name: string): Promise<boolean> => {
+    const trimmed = name.trim().replace(/\s+/g, ' ');
+    if (!trimmed) {
+      alert('Channel name cannot be empty.');
+      return false;
+    }
+    setSavingChannelSettings(true);
+    try {
+      const res = await fetch('/api/chat/channel-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          channelName: trimmed,
+          ...(clubId ? { clubId } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to save channel name');
+        return false;
+      }
+      const data = await res.json();
+      if (typeof data.channelName === 'string' && data.channelName.trim()) {
+        setChannelName(data.channelName.trim());
+      } else {
+        setChannelName(trimmed);
+      }
+      return true;
+    } catch {
+      alert('Failed to save channel name');
+      return false;
+    } finally {
+      setSavingChannelSettings(false);
+    }
+  };
+
+  const finishChannelSettingsEdit = async () => {
+    const ok = await saveChannelName(channelName);
+    if (ok) setBroadcastPanelView('invite');
+  };
+
   const onChannelPhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1203,18 +1253,20 @@ export default function AdminChatExperience({
                   <div className="flex items-center justify-between px-3 py-2.5">
                     <button
                       type="button"
-                      className="rounded p-1 text-[#8ab4d9] hover:bg-white/10"
+                      className="rounded p-1 text-[#8ab4d9] hover:bg-white/10 disabled:opacity-50"
                       onClick={() => setBroadcastPanelView('invite')}
                       title="Back"
+                      disabled={savingChannelSettings}
                     >
                       <ArrowLeft className="h-5 w-5" />
                     </button>
-                    <span className="text-[16px] font-medium">Edit</span>
+                    <span className="text-[16px] font-medium">Channel Settings</span>
                     <button
                       type="button"
-                      className="rounded p-1 text-[#8ab4d9] hover:bg-white/10"
-                      onClick={() => setBroadcastPanelView('invite')}
-                      title="Done"
+                      className="rounded p-1 text-[#8ab4d9] hover:bg-white/10 disabled:opacity-50"
+                      onClick={() => void finishChannelSettingsEdit()}
+                      title="Save"
+                      disabled={savingChannelSettings}
                     >
                       <Check className="h-5 w-5" />
                     </button>
@@ -1242,6 +1294,14 @@ export default function AdminChatExperience({
                       <input
                         value={channelName}
                         onChange={(e) => setChannelName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void finishChannelSettingsEdit();
+                          }
+                        }}
+                        maxLength={64}
+                        placeholder={isClubChannel ? 'Club Channel' : 'Movesbook channel'}
                         className="w-full rounded-lg border-0 bg-[#2b3645] px-3 py-2.5 text-sm text-white outline-none ring-1 ring-transparent focus:ring-[#50a2e9]"
                       />
                     </label>
@@ -1255,6 +1315,9 @@ export default function AdminChatExperience({
                         className="w-full resize-none rounded-lg border-0 bg-[#2b3645] px-3 py-2.5 text-sm text-white outline-none ring-1 ring-transparent placeholder:text-white/30 focus:ring-[#50a2e9]"
                       />
                     </label>
+                    {savingChannelSettings && (
+                      <p className="text-center text-[12px] text-[#8ab4d9]">Saving…</p>
+                    )}
                   </div>
                 </>
               ) : broadcastPanelView === 'subscribers' ? (
@@ -1690,86 +1753,90 @@ export default function AdminChatExperience({
                   </div>
                 </>
               ) : (
-                <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4">
+                <div className="relative flex min-h-0 flex-1 flex-col">
                   <button
                     type="button"
-                    className="absolute right-2 top-2 rounded p-1 text-[#8ab4d9]/80 hover:bg-white/10 hover:text-[#8ab4d9]"
+                    className="absolute right-2 top-2 z-10 rounded p-1 text-[#8ab4d9]/80 hover:bg-white/10 hover:text-[#8ab4d9]"
                     onClick={closeBroadcastPanel}
                     title="Close"
                   >
                     <X className="h-4 w-4" />
                   </button>
 
-                  {/* Photo + Set New Photo */}
-                  <div className="mb-5 flex items-center gap-3 rounded border border-[#4a7ab0]/70 bg-transparent p-2">
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      className="flex h-[52px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded bg-[#2b3645]"
-                    >
-                      {channelPhoto ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={channelPhoto} alt="Channel" className="h-full w-full object-cover" />
-                      ) : (
-                        <User className="h-7 w-7 text-white/85" strokeWidth={1.25} />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      className="inline-flex items-center gap-2 text-[14px] font-medium text-[#50a2e9] hover:text-[#7ec8e3]"
-                    >
-                      <span className="relative inline-flex">
-                        <Camera className="h-5 w-5" />
-                        <span className="absolute -bottom-0.5 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-[#50a2e9] text-[9px] leading-none font-bold text-[#1c242f]">
-                          +
+                  <div className="min-h-0 flex-1 overflow-y-auto scrollbar-hide px-4 pb-3 pt-4">
+                    {/* Photo + Set New Photo */}
+                    <div className="mb-5 flex items-center gap-3 rounded border border-[#4a7ab0]/70 bg-transparent p-2">
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        className="flex h-[52px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded bg-[#2b3645]"
+                      >
+                        {channelPhoto ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={channelPhoto} alt="Channel" className="h-full w-full object-cover" />
+                        ) : (
+                          <User className="h-7 w-7 text-white/85" strokeWidth={1.25} />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        className="inline-flex items-center gap-2 text-[14px] font-medium text-[#50a2e9] hover:text-[#7ec8e3]"
+                      >
+                        <span className="relative inline-flex">
+                          <Camera className="h-5 w-5" />
+                          <span className="absolute -bottom-0.5 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-[#50a2e9] text-[9px] leading-none font-bold text-[#1c242f]">
+                            +
+                          </span>
                         </span>
-                      </span>
-                      Set New Photo
-                    </button>
-                  </div>
+                        Set New Photo
+                      </button>
+                    </div>
 
-                  <p className="mb-3 text-center text-[14px] text-[#b8c0c8]">Invite by QR Code</p>
+                    <p className="mb-3 text-center text-[14px] text-[#b8c0c8]">Invite by QR Code</p>
 
-                  <div className="mx-auto mb-3 flex h-[190px] w-[190px] items-center justify-center bg-white p-2.5">
-                    <div className="relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=170x170&data=${encodeURIComponent(inviteUrl)}`}
-                        alt="Invite QR code"
-                        width={170}
-                        height={170}
-                        className="block"
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2AABEE] shadow">
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="white" aria-hidden>
-                            <path d="M9.78 14.25l-.3 4.2c.43 0 .62-.18.85-.4l2.04-1.96 4.23 3.11c.78.43 1.33.2 1.54-.72l2.8-13.17h.01c.25-1.16-.42-1.62-1.18-1.34L3.3 10.1c-1.13.44-1.11 1.07-.19 1.35l4.6 1.44 10.68-6.73c.5-.33.96-.15.58.21" />
-                          </svg>
+                    <div className="mx-auto mb-3 flex h-[190px] w-[190px] items-center justify-center bg-white p-2.5">
+                      <div className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=170x170&data=${encodeURIComponent(inviteUrl)}`}
+                          alt="Invite QR code"
+                          width={170}
+                          height={170}
+                          className="block"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2AABEE] shadow">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="white" aria-hidden>
+                              <path d="M9.78 14.25l-.3 4.2c.43 0 .62-.18.85-.4l2.04-1.96 4.23 3.11c.78.43 1.33.2 1.54-.72l2.8-13.17h.01c.25-1.16-.42-1.62-1.18-1.34L3.3 10.1c-1.13.44-1.11 1.07-.19 1.35l4.6 1.44 10.68-6.73c.5-.33.96-.15.58.21" />
+                            </svg>
+                          </div>
                         </div>
                       </div>
                     </div>
+
+                    <p className="mb-5 px-1 text-center text-[12px] leading-snug text-[#8a94a0]">
+                      Everyone on Telegram can scan this code to write to your channel.
+                    </p>
+
+                    <div className="mb-2">
+                      <p className="mb-0.5 text-[13px] text-[#8a94a0]">Scan QR code</p>
+                      <p className="text-[14px] tracking-tight text-[#b8c0c8]">
+                        {channelNameToTelegramHandle(channelName)}
+                      </p>
+                      <button
+                        type="button"
+                        className="mt-0.5 text-[14px] font-medium text-[#50a2e9] hover:underline"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(inviteUrl);
+                        }}
+                      >
+                        Invite Link
+                      </button>
+                    </div>
                   </div>
 
-                  <p className="mb-5 px-1 text-center text-[12px] leading-snug text-[#8a94a0]">
-                    Everyone on Telegram can scan this code to write to your channel.
-                  </p>
-
-                  <div className="mb-5">
-                    <p className="mb-0.5 text-[13px] text-[#8a94a0]">Scan QR code</p>
-                    <p className="text-[16px] font-semibold tracking-tight text-white">{publicInviteDisplay}</p>
-                    <button
-                      type="button"
-                      className="mt-0.5 text-[14px] font-medium text-[#50a2e9] hover:underline"
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(inviteUrl);
-                      }}
-                    >
-                      Invite Link
-                    </button>
-                  </div>
-
-                  <div className="mt-auto overflow-hidden rounded-xl bg-[#232d3b]">
+                  <div className="shrink-0 overflow-hidden rounded-xl bg-[#232d3b] mx-4 mb-4">
                     <button
                       type="button"
                       className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-white/5"
@@ -1945,7 +2012,7 @@ export default function AdminChatExperience({
             </div>
 
             {/* Broadcast composer */}
-            <div className="relative shrink-0 border-t border-[#cfcfcf] bg-white px-2 py-2" ref={composerMenuRef}>
+            <div className="relative shrink-0 border-t border-[#cfcfcf] bg-white px-2 py-1.5" ref={composerMenuRef}>
               {showComposerMenu && (
                 <div className="absolute bottom-full left-2 z-20 mb-1 min-w-[180px] rounded border border-[#ccc] bg-white py-1 shadow-lg">
                   {!showMuteSubmenu ? (
@@ -2020,10 +2087,10 @@ export default function AdminChatExperience({
                 </div>
               )}
 
-              <div className="flex items-center gap-2 rounded border border-[#cfcfcf] bg-white px-2 py-1.5">
+              <div className="flex items-end gap-1.5 rounded border border-[#cfcfcf] bg-white px-1.5 py-1">
                 <button
                   type="button"
-                  className="rounded p-1.5 text-[#555] hover:bg-[#e8e8e8]"
+                  className="mb-0.5 shrink-0 rounded p-1 text-[#555] hover:bg-[#e8e8e8]"
                   onClick={() => {
                     setShowComposerMenu((v) => !v);
                     setShowMuteSubmenu(false);
@@ -2032,7 +2099,7 @@ export default function AdminChatExperience({
                 >
                   <Settings className="h-4 w-4" />
                 </button>
-                <input
+                <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   onPaste={handlePaste}
@@ -2042,17 +2109,22 @@ export default function AdminChatExperience({
                       void sendBroadcast();
                     }
                   }}
+                  rows={1}
                   placeholder="Broadcast (paste image to send)"
-                  className="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none placeholder:text-gray-400"
+                  className="max-h-28 min-h-[28px] min-w-0 flex-1 resize-none border-0 bg-transparent py-1 text-sm leading-5 outline-none placeholder:text-gray-400 scrollbar-hide"
                 />
-                <button type="button" className="rounded p-1.5 text-[#555] hover:bg-[#e8e8e8]" title="Notifications">
+                <button
+                  type="button"
+                  className="mb-0.5 shrink-0 rounded p-1 text-[#555] hover:bg-[#e8e8e8]"
+                  title="Notifications"
+                >
                   <Bell className="h-4 w-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => void sendBroadcast()}
                   disabled={!message.trim()}
-                  className="rounded bg-[#8b1a1a] p-1.5 text-white hover:bg-[#6e1414] disabled:opacity-40"
+                  className="mb-0.5 shrink-0 rounded bg-[#8b1a1a] p-1 text-white hover:bg-[#6e1414] disabled:opacity-40"
                   title="Send broadcast"
                 >
                   <Send className="h-4 w-4" />
