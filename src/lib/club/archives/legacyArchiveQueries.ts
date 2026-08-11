@@ -8,6 +8,8 @@ export type ArchiveQueryParams = {
   fromDate?: string;
   toDate?: string;
   orderBy?: 'recent' | 'old';
+  /** Scope to a single member (e.g. "Member selected" vs "All members" toggle). */
+  memberId?: string;
 };
 
 export type PaginatedArchive<T> = { items: T[]; total: number; page: number; pageSize: number };

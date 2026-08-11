@@ -31,6 +31,8 @@ type ServiceItem = {
   actualCost: string;
   currencyCode: string;
   imageUrl: string | null;
+  howMany: string;
+  available: boolean;
   created: string | null;
   modified: string | null;
 };
@@ -40,13 +42,15 @@ type ServiceDraft = {
   sectorId: string;
   serviceName: string;
   cost: string;
+  howMany: string;
+  available: boolean;
   currentImageUrl: string | null;
   imageFile: File | null;
   imagePreview: string | null;
   removeImage: boolean;
 };
 
-type FieldErrors = Partial<Record<'sectorId' | 'serviceName' | 'cost' | 'image', string>>;
+type FieldErrors = Partial<Record<'sectorId' | 'serviceName' | 'cost' | 'howMany' | 'image', string>>;
 type PageItem = number | 'ellipsis-left' | 'ellipsis-right';
 type SortKey = 'sector' | 'service' | 'cost' | 'modified';
 type SortDirection = 'asc' | 'desc';
@@ -110,6 +114,10 @@ function validateDraft(draft: ServiceDraft): FieldErrors {
     errors.cost = 'Cost must be a number greater than or equal to 0.';
   }
 
+  if (draft.howMany.trim() && (!Number.isFinite(Number(draft.howMany)) || Number(draft.howMany) < 0)) {
+    errors.howMany = 'How many must be a number greater than or equal to 0.';
+  }
+
   if (draft.imageFile) {
     if (draft.imageFile.size > MAX_IMAGE_BYTES) {
       errors.image = 'Service image must be 5MB or smaller.';
@@ -126,6 +134,8 @@ function makeEmptyDraft(): ServiceDraft {
     sectorId: '',
     serviceName: '',
     cost: '',
+    howMany: '',
+    available: true,
     currentImageUrl: null,
     imageFile: null,
     imagePreview: null,
@@ -257,6 +267,8 @@ export default function ClubTablesServicesPage() {
       sectorId: item.sectorId,
       serviceName: item.serviceName,
       cost: item.cost,
+      howMany: item.howMany,
+      available: item.available,
       currentImageUrl: item.imageUrl,
       imageFile: null,
       imagePreview: null,
@@ -329,6 +341,8 @@ export default function ClubTablesServicesPage() {
       formData.append('sectorId', draft.sectorId);
       formData.append('serviceName', draft.serviceName.trim());
       formData.append('cost', String(Number(draft.cost)));
+      formData.append('howMany', draft.howMany.trim());
+      formData.append('available', draft.available ? '1' : '0');
       formData.append('removeImage', draft.removeImage ? '1' : '0');
       if (draft.imageFile) {
         formData.append('image', draft.imageFile);
@@ -587,7 +601,7 @@ export default function ClubTablesServicesPage() {
                 }}
               />
 
-              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 md:row-span-2">
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 md:row-span-3">
                 <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
                   <ImagePlus className="h-4 w-4" />
                   Service image
@@ -646,6 +660,29 @@ export default function ClubTablesServicesPage() {
                 </div>
                 {fieldErrors.image && <span className="mt-2 block text-xs font-medium text-red-600">{fieldErrors.image}</span>}
               </div>
+
+              <Field
+                label="How many"
+                value={draft.howMany}
+                error={fieldErrors.howMany}
+                type="number"
+                min={0}
+                step="1"
+                onChange={(value) => {
+                  updateDraft({ howMany: value });
+                  setFieldErrors((current) => ({ ...current, howMany: undefined }));
+                }}
+              />
+
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-800">
+                <input
+                  type="checkbox"
+                  checked={draft.available}
+                  onChange={(event) => updateDraft({ available: event.target.checked })}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                Available
+              </label>
             </div>
 
             <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">

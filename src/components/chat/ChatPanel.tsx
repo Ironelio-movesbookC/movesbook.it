@@ -12,6 +12,7 @@ import MovesbookChannel, {
   loadChannelLeft,
   rejoinMovesbookChannel,
 } from './MovesbookChannel';
+import type { ChatAudience } from '@/lib/chat/chatAudience';
 
 /** Turn URLs in text into clickable links (http/https only). Returns array of React nodes. */
 function linkify(text: string, isOwn: boolean): (string | React.ReactNode)[] {
@@ -116,6 +117,11 @@ type ChatPanelProps = {
   getAuthHeaders?: () => Record<string, string>;
   /** Show Movesbook broadcast channel (normal users). Default true. */
   showMovesbookChannel?: boolean;
+  /**
+   * Restrict 1:1 conversations / start-chat user list to this audience
+   * (e.g. Movesbook Staff vs Movesbook User).
+   */
+  chatAudience?: ChatAudience | null;
 };
 
 const defaultGetAuthHeaders = (): Record<string, string> => {
@@ -129,6 +135,7 @@ export default function ChatPanel({
   onClose,
   getAuthHeaders: getAuthHeadersProp,
   showMovesbookChannel = true,
+  chatAudience = null,
 }: ChatPanelProps) {
   const getAuthHeaders = getAuthHeadersProp ?? defaultGetAuthHeaders;
 
@@ -208,7 +215,8 @@ export default function ChatPanel({
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true);
     try {
-      const res = await fetch('/api/chat/conversations', { headers: getAuthHeaders() });
+      const qs = chatAudience ? `?audience=${encodeURIComponent(chatAudience)}` : '';
+      const res = await fetch(`/api/chat/conversations${qs}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setConversations(data.conversations || []);
@@ -218,14 +226,15 @@ export default function ChatPanel({
     } finally {
       setLoadingConversations(false);
     }
-  }, [getAuthHeaders]);
+  }, [getAuthHeaders, chatAudience]);
 
   const loadUsers = useCallback(async (search?: string) => {
     try {
-      const url = search != null && search.trim() !== ''
-        ? `/api/chat/users?search=${encodeURIComponent(search.trim())}`
-        : '/api/chat/users';
-      const res = await fetch(url, { headers: getAuthHeaders() });
+      const params = new URLSearchParams();
+      if (search != null && search.trim() !== '') params.set('search', search.trim());
+      if (chatAudience) params.set('audience', chatAudience);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`/api/chat/users${qs}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setUsers(data.users || []);
@@ -233,7 +242,7 @@ export default function ChatPanel({
     } catch (e) {
       console.error('Load users:', e);
     }
-  }, [getAuthHeaders]);
+  }, [getAuthHeaders, chatAudience]);
 
   useEffect(() => {
     loadConversations();
@@ -342,7 +351,10 @@ export default function ChatPanel({
       const res = await fetch('/api/chat/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ participantId: otherUser.id }),
+        body: JSON.stringify({
+          participantId: otherUser.id,
+          ...(chatAudience ? { audience: chatAudience } : {}),
+        }),
       });
       if (res.ok) {
         const data = await res.json();

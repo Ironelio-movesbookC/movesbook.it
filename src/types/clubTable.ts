@@ -17,8 +17,11 @@ export type Member = {
   dateOfBirth?: Date | string;
   memberType?: string;
   Localcity?: string;
+  localCity?: string;
   phone?: string;
   insertDate?: Date | string;
+  /** Display-ready insert date (e.g. DD/MM/YYYY) when insertDate is kept as ISO for filters. */
+  insertDateDisplay?: string;
   membershipEndDate?: Date | string;
 
   // membership
@@ -63,6 +66,8 @@ export type Member = {
   category?: string;
 
   service?: string;
+  /** Another receipt shares this row's document type + number. */
+  isDuplicate?: boolean;
   options?: React.ReactNode;
   edit?: React.ReactNode;
   delete?: React.ReactNode;

@@ -18,6 +18,8 @@ type ServicePayload = {
   sectorId: string;
   serviceName: string;
   cost: string;
+  howMany: string;
+  available: boolean;
   removeImage: boolean;
   image: File | null;
 };
@@ -32,6 +34,8 @@ type ServiceRow = {
   actual_cost?: string | number | null;
   club_currency_code?: string | null;
   service_img?: string | null;
+  service_qty?: string | number | null;
+  service_available?: string | number | boolean | null;
   sector_name?: string | null;
   created?: string | Date | null;
   modified?: string | Date | null;
@@ -70,6 +74,8 @@ const SERVICE_COLUMN_DEFINITIONS: Record<string, string> = {
   actual_cost: 'VARCHAR(80) NULL',
   club_currency_code: 'VARCHAR(20) NULL',
   service_img: 'VARCHAR(255) NULL',
+  service_qty: 'VARCHAR(80) NULL',
+  service_available: 'TINYINT(1) NOT NULL DEFAULT 1',
   created: 'DATETIME DEFAULT CURRENT_TIMESTAMP',
   modified: 'DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
 };
@@ -192,6 +198,20 @@ async function getTableColumns(tableName: string): Promise<Set<string>> {
   return new Set(rows.map((row) => row.COLUMN_NAME));
 }
 
+const MYSQL_DUPLICATE_COLUMN = '1060';
+
+/** Concurrent requests can both see a column missing and race to add it; the loser's ALTER TABLE then fails with "Duplicate column" — safe to ignore. */
+async function addColumnIfMissing(tableName: string, column: string, definition: string) {
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE \`${tableName}\` ADD COLUMN \`${column}\` ${definition}`
+    );
+  } catch (error) {
+    const code = (error as { meta?: { code?: string } })?.meta?.code;
+    if (code !== MYSQL_DUPLICATE_COLUMN) throw error;
+  }
+}
+
 async function ensureSectorTable(): Promise<string> {
   const existing = await findExistingTable(SECTOR_TABLE_CANDIDATES);
   const tableName = existing ?? SECTOR_TABLE;
@@ -213,9 +233,7 @@ async function ensureSectorTable(): Promise<string> {
   const columns = await getTableColumns(tableName);
   for (const [column, definition] of Object.entries(SECTOR_COLUMN_DEFINITIONS)) {
     if (!columns.has(column)) {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE \`${tableName}\` ADD COLUMN \`${column}\` ${definition}`
-      );
+      await addColumnIfMissing(tableName, column, definition);
     }
   }
 
@@ -304,9 +322,7 @@ async function ensureServicesTable(): Promise<string> {
   const columns = await getTableColumns(tableName);
   for (const [column, definition] of Object.entries(SERVICE_COLUMN_DEFINITIONS)) {
     if (!columns.has(column)) {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE \`${tableName}\` ADD COLUMN \`${column}\` ${definition}`
-      );
+      await addColumnIfMissing(tableName, column, definition);
     }
   }
 
@@ -386,6 +402,8 @@ function parsePayload(formData: FormData): ServicePayload {
     sectorId: text(formData.get('sectorId')),
     serviceName: text(formData.get('serviceName')),
     cost: text(formData.get('cost')),
+    howMany: text(formData.get('howMany')),
+    available: formData.get('available') === '1',
     removeImage: formData.get('removeImage') === '1',
     image: fileFromForm(formData)
   };
@@ -415,6 +433,10 @@ async function validatePayload(sectorTable: string, payload: ServicePayload): Pr
     fieldErrors.cost = 'Please enter cost.';
   } else if (!Number.isFinite(Number(payload.cost)) || Number(payload.cost) < 0) {
     fieldErrors.cost = 'Cost must be a number greater than or equal to 0.';
+  }
+
+  if (payload.howMany && (!Number.isFinite(Number(payload.howMany)) || Number(payload.howMany) < 0)) {
+    fieldErrors.howMany = 'How many must be a number greater than or equal to 0.';
   }
 
   if (payload.image) {
@@ -525,6 +547,8 @@ function normalizeService(row: ServiceRow) {
     actualCost: text(row.actual_cost),
     currencyCode: text(row.club_currency_code) || 'EUR',
     imageUrl,
+    howMany: text(row.service_qty),
+    available: row.service_available == null ? true : Number(row.service_available) !== 0,
     created: toIsoDate(row.created),
     modified: toIsoDate(row.modified)
   };
@@ -548,7 +572,7 @@ export async function GET(request: NextRequest) {
     const rows = await prisma.$queryRawUnsafe<ServiceRow[]>(
       `SELECT svc.id, svc.user_id, svc.club_id, svc.sector_id, svc.service_name,
               svc.club_currency_cost, svc.actual_cost, svc.club_currency_code,
-              svc.service_img, svc.created, svc.modified,
+              svc.service_img, svc.service_qty, svc.service_available, svc.created, svc.modified,
               sector.sector_name
        FROM \`${serviceTable}\` svc
        LEFT JOIN \`${sectorTable}\` sector
@@ -608,8 +632,8 @@ export async function POST(request: NextRequest) {
 
     await prisma.$executeRawUnsafe(
       `INSERT INTO \`${serviceTable}\`
-         (user_id, club_id, sector_id, service_name, club_currency_cost, actual_cost, club_currency_code, service_img)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (user_id, club_id, sector_id, service_name, club_currency_cost, actual_cost, club_currency_code, service_img, service_qty, service_available)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       storageUserId,
       context.club?.id ?? null,
       payload.sectorId,
@@ -617,7 +641,9 @@ export async function POST(request: NextRequest) {
       cost,
       actualCost,
       'EUR',
-      imagePath
+      imagePath,
+      payload.howMany || null,
+      payload.available ? 1 : 0
     );
 
     const idRows = await prisma.$queryRawUnsafe<{ id: bigint | number | string }[]>(
@@ -633,7 +659,9 @@ export async function POST(request: NextRequest) {
         cost,
         actualCost,
         currencyCode: 'EUR',
-        imageUrl: imagePath
+        imageUrl: imagePath,
+        howMany: payload.howMany,
+        available: payload.available
       }
     }, { status: 201 });
   } catch (error) {
@@ -699,6 +727,8 @@ export async function PUT(request: NextRequest) {
            actual_cost = ?,
            club_currency_code = ?,
            service_img = ?,
+           service_qty = ?,
+           service_available = ?,
            modified = CURRENT_TIMESTAMP
        WHERE id = ?`,
       payload.sectorId,
@@ -707,6 +737,8 @@ export async function PUT(request: NextRequest) {
       actualCost,
       currencyCode,
       imagePath,
+      payload.howMany || null,
+      payload.available ? 1 : 0,
       id
     );
 
@@ -723,7 +755,9 @@ export async function PUT(request: NextRequest) {
         cost,
         actualCost,
         currencyCode,
-        imageUrl: imagePath
+        imageUrl: imagePath,
+        howMany: payload.howMany,
+        available: payload.available
       }
     });
   } catch (error) {

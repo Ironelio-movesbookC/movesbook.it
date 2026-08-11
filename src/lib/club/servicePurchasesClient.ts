@@ -35,7 +35,9 @@ export async function clubApiFetch<T>(url: string, init?: RequestInit): Promise<
     } else if (details?.formErrors?.length) {
       message = `${message} — ${details.formErrors.join('; ')}`;
     }
-    throw new Error(message);
+    const error = new Error(message) as Error & Record<string, unknown>;
+    Object.assign(error, data);
+    throw error;
   }
   return data as T;
 }
