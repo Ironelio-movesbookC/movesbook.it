@@ -9,6 +9,7 @@ import OGPForm from '@/app/news/components/OGPForm';
 import NewsArticlesList from '@/app/news/components/NewsArticlesList';
 import { useAuth } from '@/hooks/useAuth';
 import { useNewsData } from '@/hooks/useNewsData';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 interface NewsOGPPanelProps {
   onClose: () => void;
@@ -44,6 +45,9 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
     removeTypedArticle,
   } = useNewsData();
   const { user } = useAuth();
+  const isClubAdmin = user?.userType ? isClubAccountUserType(user.userType) : false;
+
+  const [articleSharedClubIds, setArticleSharedClubIds] = useState<Record<string, string[]>>({});
 
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>(null);
   const prevLoading = useRef(true);
@@ -181,6 +185,15 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
     [removeTypedArticle]
   );
 
+  const handleArticleSharedClubIdsChange = useCallback((articleId: string, clubIds: string[]) => {
+    setArticleSharedClubIds((prev) => ({ ...prev, [articleId]: clubIds }));
+  }, []);
+
+  const pastedWithClubShares = pastedArticles.map((a) => ({
+    ...a,
+    sharedClubIds: articleSharedClubIds[a.id] ?? a.sharedClubIds,
+  }));
+
   return (
     <div
       className={`flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden ${
@@ -277,7 +290,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
         )}
 
         <NewsArticlesList
-          pasted={pastedArticles}
+          pasted={pastedWithClubShares}
           typed={typedArticles}
           activeTopic={activeTopic}
           topics={topics}
@@ -296,6 +309,10 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           onRemoveOgpNewsGroup={removeOgpNewsGroup}
           onUpdateOgpNewsGroup={updateOgpNewsGroup}
           onUpdateOgpNewsGroupSettings={updateOgpNewsGroupSettings}
+          showShareInMyClubsButton={isClubAdmin}
+          currentUserType={user?.userType ?? null}
+          clubAdminUsername={user?.username ?? null}
+          onArticleSharedClubIdsChange={handleArticleSharedClubIdsChange}
         />
       </div>
     </div>
