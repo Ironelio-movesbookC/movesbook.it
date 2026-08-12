@@ -21,12 +21,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isLogin = pathname?.startsWith('/admin/login');
   /** OGP News needs the full main column; Current Users sidebar crowds the card grid. */
   const isOgpNewsPage = pathname?.startsWith('/admin/news/links');
+  const isGlobalNewsPage = pathname?.startsWith('/admin/news/global');
+  const hideRightSidebar = isOgpNewsPage || isGlobalNewsPage;
 
   useEffect(() => {
-    if (isOgpNewsPage) {
+    if (hideRightSidebar) {
       setRightOpen(false);
     }
-  }, [isOgpNewsPage]);
+  }, [hideRightSidebar]);
 
   useEffect(() => {
     const onExpand = (event: Event) => {

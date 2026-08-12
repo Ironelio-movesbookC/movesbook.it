@@ -199,6 +199,7 @@ model OgpArticle {
   visibilityCountries   String?   @db.Text // JSON array of country names
   visibilityLanguages   String?   @db.Text // JSON array of language codes e.g. ["en","de"]
   visibilitySports      String?   @db.Text // JSON array of SportType e.g. ["RUN","SWIM"]
+  inGlobalNews          Boolean   @default(false) // Super admin: shown in Global News merged feed
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy             User?     @relation("OgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   likes                 OgpArticleLike[]
@@ -2123,6 +2124,7 @@ model News {
   writerClubTeamName                        String?               // Club/Team name (for Team/Club writers)
   writerVerified                            Boolean               @default(false)
   showWriterImage                           Boolean               @default(false) // Show writer profile image on detail page
+  inGlobalNews                              Boolean               @default(false) // Super admin: shown in Global News merged feed
   createdAt                                DateTime              @default(now())
   updatedAt                                DateTime              @updatedAt
 
