@@ -552,11 +552,50 @@ export class ProcedureService {
     return { success: true };
   }
 
+  /** Duplicate document numbers are allowed (legacy data already has them) but must be flagged. */
+  async checkDuplicateDocument(
+    ctx: ClubAuthContext,
+    documentType: string,
+    documentNumber: string,
+    excludeReceiptId?: string
+  ): Promise<boolean> {
+    const trimmedNumber = documentNumber.trim();
+    if (!trimmedNumber) return false;
+
+    const count = await prisma.procedureReceipt.count({
+      where: {
+        clubId: ctx.club.id,
+        documentType,
+        documentNumber: trimmedNumber,
+        ...(excludeReceiptId ? { id: { not: excludeReceiptId } } : {}),
+      },
+    });
+
+    return count > 0;
+  }
+
+  /** Keys of `documentType::documentNumber` pairs that appear on more than one receipt for the club. */
+  async getDuplicateDocumentKeys(clubId: string): Promise<Set<string>> {
+    const groups = await prisma.procedureReceipt.groupBy({
+      by: ['documentType', 'documentNumber'],
+      where: { clubId, documentNumber: { not: null } },
+      _count: { id: true },
+    });
+
+    const keys = new Set<string>();
+    for (const g of groups) {
+      const number = (g.documentNumber ?? '').trim();
+      if (!number) continue;
+      if (g._count.id > 1) keys.add(`${g.documentType ?? ''}::${number}`);
+    }
+    return keys;
+  }
+
   async updateReceipt(
     ctx: ClubAuthContext,
     procedureTypeCode: string,
     receiptId: string,
-    input: { documentType?: string; documentNumber?: string; annotations?: string }
+    input: { documentType?: string; documentNumber?: string; annotations?: string; confirmDuplicate?: boolean }
   ) {
     const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
     if (!procedureType) throw new Error('Unknown procedure type');
@@ -567,6 +606,18 @@ export class ProcedureService {
     });
     if (!receipt || receipt.procedureRecord.clubId !== ctx.club.id || receipt.procedureRecord.procedureTypeId !== procedureType.id) {
       throw new Error('Receipt not found');
+    }
+
+    const nextDocumentType = input.documentType !== undefined ? input.documentType : (receipt.documentType ?? '');
+    const nextDocumentNumber = input.documentNumber !== undefined ? input.documentNumber : (receipt.documentNumber ?? '');
+
+    if (!input.confirmDuplicate) {
+      const isDuplicate = await this.checkDuplicateDocument(ctx, nextDocumentType, nextDocumentNumber, receiptId);
+      if (isDuplicate) {
+        const error = new Error('Duplicate document number') as Error & { duplicate?: boolean };
+        error.duplicate = true;
+        throw error;
+      }
     }
 
     const data: Record<string, unknown> = {};
@@ -674,6 +725,7 @@ export class ProcedureService {
         procedureTypeId: procedureType.id,
         procedureType: { code: procedureTypeCode },
         status: ProcedureRecordStatus.ACTIVE,
+        ...(query.memberId ? { memberId: query.memberId } : {}),
         ...(query.recordIds && query.recordIds.length > 0
           ? { id: { in: query.recordIds } }
           : query.recordId
@@ -729,6 +781,7 @@ export class ProcedureService {
     const { page, pageSize, skip } = parsePagination(query);
     const where: Prisma.ProcedureReceiptWhereInput = {
       clubId: ctx.club.id,
+      ...(query.memberId ? { memberId: query.memberId } : {}),
       procedureRecord: {
         procedureTypeId: procedureType.id,
         procedureType: { code: procedureTypeCode },
@@ -760,9 +813,11 @@ export class ProcedureService {
 
     const def = getProcedureDefinition(procedureTypeCode);
     const primaryKey = def?.metadataKeys.primary ?? 'serviceName';
+    const duplicateKeys = await this.getDuplicateDocumentKeys(ctx.club.id);
 
     const items: ProcedureReceiptDto[] = rows.map((row) => {
       const metadata = (row.procedureRecord.metadata as Record<string, unknown> | null) ?? null;
+      const documentNumber = (row.documentNumber ?? '').trim();
       return {
         id: row.id,
         procedureRecordId: row.procedureRecordId,
@@ -778,6 +833,7 @@ export class ProcedureService {
         annotations: row.annotations,
         typology: getProcedureTypology(procedureTypeCode),
         operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
+        isDuplicate: documentNumber ? duplicateKeys.has(`${row.documentType ?? ''}::${documentNumber}`) : false,
       };
     });
 

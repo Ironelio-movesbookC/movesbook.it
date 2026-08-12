@@ -318,14 +318,14 @@ export default function CashMovementsArchive({
         className={tabClass(view === 'details_deadline')}
         onClick={handleDetailsDeadline}
       >
-        Details deadline
+        Details deadline selected
       </button>
       <button
         type="button"
         className={tabClass(view === 'totals_payments')}
         onClick={handleTotalsPayments}
       >
-        Totals about payments
+        Payments record selected
       </button>
     </>
   );

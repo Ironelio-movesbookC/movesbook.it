@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
@@ -35,11 +36,14 @@ function toReceiptRow(receipt: ProcedureReceiptView): Member {
   };
 }
 
-export default function ProcedureReceiptsArchive({ procedureCode, activeTab }: Props) {
+function ProcedureReceiptsArchiveInner({ procedureCode, activeTab }: Props) {
   const def = getProcedureDefinition(procedureCode)!;
   const client = useMemo(() => createProcedureClient(procedureCode), [procedureCode]);
   const columns = useMemo(() => buildProcedureColumns(def), [def]);
+  const searchParams = useSearchParams();
+  const memberId = searchParams.get('memberId');
 
+  const [scope, setScope] = useState<'member' | 'all'>(memberId ? 'member' : 'all');
   const [data, setData] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -50,7 +54,11 @@ export default function ProcedureReceiptsArchive({ procedureCode, activeTab }: P
     setLoading(true);
     setError('');
     try {
-      const res = await client.fetchReceipts({ page, pageSize: client.pageSize });
+      const res = await client.fetchReceipts({
+        page,
+        pageSize: client.pageSize,
+        memberId: scope === 'member' && memberId ? memberId : undefined,
+      });
       setTotal(res.total);
       setData(res.items.map(toReceiptRow));
     } catch (e) {
@@ -58,7 +66,7 @@ export default function ProcedureReceiptsArchive({ procedureCode, activeTab }: P
     } finally {
       setLoading(false);
     }
-  }, [client, page]);
+  }, [client, page, scope, memberId]);
 
   useEffect(() => {
     load();
@@ -69,6 +77,36 @@ export default function ProcedureReceiptsArchive({ procedureCode, activeTab }: P
       title={def.archiveTitles.receipts}
       activeTab={activeTab}
       tabs={getProcedureTabs(procedureCode, activeTab)}
+      tabsTrailing={
+        memberId ? (
+          <div className="flex items-center gap-4 text-sm text-gray-700">
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="receiptsScope"
+                checked={scope === 'member'}
+                onChange={() => {
+                  setScope('member');
+                  setPage(1);
+                }}
+              />
+              Member selected
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="receiptsScope"
+                checked={scope === 'all'}
+                onChange={() => {
+                  setScope('all');
+                  setPage(1);
+                }}
+              />
+              All members
+            </label>
+          </div>
+        ) : undefined
+      }
       error={error}
       pagination={
         <ProcedurePagination
@@ -81,5 +119,13 @@ export default function ProcedureReceiptsArchive({ procedureCode, activeTab }: P
     >
       <ProcedureArchiveTable columns={columns.receiptColumns} rows={data} loading={loading} />
     </ProcedureArchiveShell>
+  );
+}
+
+export default function ProcedureReceiptsArchive(props: Props) {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-500">Loading...</div>}>
+      <ProcedureReceiptsArchiveInner {...props} />
+    </Suspense>
   );
 }

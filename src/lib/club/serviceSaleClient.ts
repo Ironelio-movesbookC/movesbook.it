@@ -64,6 +64,7 @@ export type ServiceSaleReceipt = {
   residualDebt: number;
   annotations: string;
   operatorName: string;
+  isDuplicate?: boolean;
 };
 
 export type ServiceSaleFormOptions = {
@@ -161,6 +162,7 @@ export function mapReceipt(receipt: ProcedureReceiptDto): ServiceSaleReceipt {
     residualDebt: receipt.residualDebt ?? Math.max(0, receipt.amount - receipt.paymentAmount),
     annotations: receipt.annotations ?? '',
     operatorName: receipt.operatorName,
+    isDuplicate: receipt.isDuplicate,
   };
 }
 
@@ -175,6 +177,8 @@ export type ListParams = {
   recordId?: string;
   /** Scope list to these procedure record ids (from payment form selection). */
   recordIds?: string[];
+  /** Scope list to a single member (e.g. "all deadlines of this member" toggle). */
+  memberId?: string;
   /** When fetching deadlines, also include Rest = 0 rows. */
   includePaid?: boolean;
 };
@@ -203,6 +207,7 @@ function buildQuery(params?: ListParams & { view?: string }): string {
   if (params?.recordIds && params.recordIds.length > 0) {
     qs.set('ids', params.recordIds.join(','));
   }
+  if (params?.memberId) qs.set('memberId', params.memberId);
   if (params?.includePaid) qs.set('includePaid', '1');
   return qs.toString();
 }
@@ -437,7 +442,7 @@ export async function fetchReceipts(
 
 export async function updateReceipt(
   id: string,
-  input: { documentType?: string; documentNumber?: string; annotations?: string }
+  input: { documentType?: string; documentNumber?: string; annotations?: string; confirmDuplicate?: boolean }
 ): Promise<void> {
   await clubApiFetch(`${BASE}/receipts/${encodeURIComponent(id)}`, {
     method: 'PATCH',

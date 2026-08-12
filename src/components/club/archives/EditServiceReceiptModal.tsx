@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { updateReceipt } from '@/lib/club/serviceSaleClient';
 import { TAX_DOCUMENT_TYPE_OPTIONS } from '@/lib/procedures/taxDocumentDefaults';
@@ -28,6 +28,8 @@ export default function EditServiceReceiptModal({
   const [annotations, setAnnotations] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDuplicate, setConfirmingDuplicate] = useState(false);
+  const noButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -36,11 +38,16 @@ export default function EditServiceReceiptModal({
     setAnnotations(receipt.annotations ?? '');
     setError(null);
     setSaving(false);
+    setConfirmingDuplicate(false);
   }, [isOpen, receipt]);
+
+  useEffect(() => {
+    if (confirmingDuplicate) noButtonRef.current?.focus();
+  }, [confirmingDuplicate]);
 
   if (!isOpen) return null;
 
-  const handleSave = async () => {
+  const performSave = async (confirmDuplicate: boolean) => {
     setSaving(true);
     setError(null);
     try {
@@ -48,15 +55,22 @@ export default function EditServiceReceiptModal({
         documentType: documentType || undefined,
         documentNumber: documentNumber || undefined,
         annotations: annotations || undefined,
+        confirmDuplicate,
       });
       onSaved();
       onClose();
     } catch (e) {
+      if (!confirmDuplicate && e instanceof Error && (e as Error & { duplicate?: boolean }).duplicate) {
+        setConfirmingDuplicate(true);
+        setSaving(false);
+        return;
+      }
       setError(e instanceof Error ? e.message : 'Save failed');
-    } finally {
       setSaving(false);
     }
   };
+
+  const handleSave = () => void performSave(false);
 
   return (
     <div
@@ -149,6 +163,42 @@ export default function EditServiceReceiptModal({
           </div>
         </div>
       </div>
+
+      {confirmingDuplicate && (
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-black/55 p-4"
+          role="alertdialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-sm border border-gray-400 bg-[#f3f3f3] shadow-2xl">
+            <div className="bg-[#6b1020] px-4 py-2.5 text-sm font-semibold text-white">
+              Confirm duplicate document
+            </div>
+            <div className="space-y-4 p-5">
+              <p className="text-sm text-gray-800">
+                The type of Document with this number already exist. Do you want confirm?
+              </p>
+              <div className="flex justify-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => void performSave(true)}
+                  className="rounded-lg border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-8 py-2.5 text-sm font-semibold text-white shadow"
+                >
+                  Yes
+                </button>
+                <button
+                  ref={noButtonRef}
+                  type="button"
+                  onClick={() => setConfirmingDuplicate(false)}
+                  className="rounded-lg border border-gray-900 bg-gradient-to-b from-gray-700 to-black px-8 py-2.5 text-sm font-semibold text-white shadow"
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

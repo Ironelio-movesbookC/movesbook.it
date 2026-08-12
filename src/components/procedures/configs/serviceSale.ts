@@ -9,17 +9,14 @@ export const SERVICE_SALE_PAGE_SIZE = 25;
 export function getServiceSaleTabs(
   active: ServiceSaleTabId,
   selectedRecordId?: string | null,
-  /** When set (e.g. from payment form), Historical/Payments/Receipts are scoped to these records. */
+  /** When set (e.g. from payment form), Historical/Payments/Receipts are scoped to these exact records. */
   scopedRecordIds?: string[] | null,
   /** Extra query suffix already including `?` (e.g. `?ids=a,b&all=1`) to preserve scope on sibling tabs. */
-  scopeQuery?: string | null
+  scopeQuery?: string | null,
+  /** Member of the row selected on Historical — scopes Deadlines/Payments/Receipts to "this member" by default. */
+  selectedMemberId?: string | null
 ): ProcedureTab[] {
-  const ids =
-    scopedRecordIds && scopedRecordIds.length > 0
-      ? scopedRecordIds
-      : selectedRecordId
-        ? [selectedRecordId]
-        : [];
+  const ids = scopedRecordIds && scopedRecordIds.length > 0 ? scopedRecordIds : [];
 
   const builtQuery =
     scopeQuery && scopeQuery.length > 0
@@ -30,11 +27,15 @@ export function getServiceSaleTabs(
         ? `?ids=${encodeURIComponent(ids.join(','))}`
         : '';
 
+  const memberQuery = selectedMemberId ? `?memberId=${encodeURIComponent(selectedMemberId)}` : '';
+  // Exact-record scope (from the payment form) wins over member scope (from a Historical row click).
+  const sideQuery = builtQuery || memberQuery;
+
   return [
     { id: 'historical', label: 'Historical', href: `/clubs/archive_service_list${builtQuery}` },
-    { id: 'deadline', label: 'Archive of Deadlines', href: '/clubs/dead_line' },
-    { id: 'payments', label: 'Payments', href: `/clubs/service_payments${builtQuery}` },
-    { id: 'receipts', label: 'Receipts', href: `/clubs/service_receipts${builtQuery}` },
+    { id: 'deadline', label: 'Archive of Deadlines', href: `/clubs/dead_line${memberQuery}` },
+    { id: 'payments', label: 'Payments', href: `/clubs/service_payments${sideQuery}` },
+    { id: 'receipts', label: 'Receipts', href: `/clubs/service_receipts${sideQuery}` },
   ];
 }
 
