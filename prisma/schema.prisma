@@ -635,6 +635,8 @@ model ChatBroadcastMessage {
   content      String   @db.LongText
   mode         String   // all | group | subscribers | favourites | repliers | reply
   senderName   String   @default("Movesbook admin")
+  /// Null = platform Movesbook Channel. Set = Club Channel for that club.
+  clubId       String?
   /// JSON string[] of target user IDs. Null = all Telegram-linked users (mode=all).
   /// For mode=reply: JSON { parentId, senderUserId }.
   /// For mode=repliers: JSON string[] of users who replied to broadcasts (Chat users → All).
@@ -643,6 +645,7 @@ model ChatBroadcastMessage {
 
   @@index([createdAt])
   @@index([mode])
+  @@index([clubId])
   @@map("chat_broadcast_messages")
 }
 

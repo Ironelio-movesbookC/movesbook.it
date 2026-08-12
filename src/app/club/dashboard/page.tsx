@@ -12,6 +12,7 @@ import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettin
 import ClubBachecaMemberPanel from '@/components/club/websiteSettings/ClubBachecaMemberPanel';
 import ClubTopicMemberPanel from '@/components/club/websiteSettings/ClubTopicMemberPanel';
 import ClubDashboardTopicsHorizontalPanel from '@/components/club/ClubDashboardTopicsHorizontalPanel';
+import ClubChatPanel from '@/components/club/ClubChatPanel';
 import NotificationByPromocodeDashboardView from '@/components/promocodes/NotificationByPromocodeDashboard';
 import {
   getClubMyPageDisplayName,
@@ -45,6 +46,7 @@ function ClubDashboardContent() {
     | 'bacheca'
     | 'topic'
     | 'topics-horizontal'
+    | 'chat'
   >('default');
   const [clubTopicId, setClubTopicId] = useState<string | null>(null);
 
@@ -131,6 +133,14 @@ function ClubDashboardContent() {
       setClubMainPanel('suggest-movesbook');
       router.replace('/club/dashboard', { scroll: false });
     }
+    if (panel === 'chat') {
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('chat');
+      router.replace('/club/dashboard', { scroll: false });
+    }
     if (panel === 'bacheca') {
       const queryClubId = searchParams?.get('clubId');
       if (queryClubId) {
@@ -211,6 +221,21 @@ function ClubDashboardContent() {
         <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col min-h-0">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Suggest Movesbook to friends</h2>
           <NotificationByPromocodeDashboardView />
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'chat' ? (
+        <div className="flex min-h-0 w-full flex-col">
+          {selectedClubId ?? activeClub?.id ? (
+            <ClubChatPanel
+              clubId={(selectedClubId ?? activeClub?.id)!}
+              onCancelTelegram={() => setClubMainPanel('default')}
+            />
+          ) : (
+            <div className="rounded-lg border bg-white p-6 shadow-sm">
+              <p className="py-12 text-center text-sm text-gray-600">
+                Select a club in the sidebar to open Club Channel chat.
+              </p>
+            </div>
+          )}
         </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'bacheca' ? (
         <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-4 shadow-sm">

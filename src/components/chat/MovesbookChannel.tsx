@@ -40,6 +40,28 @@ const READ_AT_KEY = 'movesbookChannelReadAt';
 const PIN_KEY = 'movesbookChannelPinnedId';
 const HIDDEN_KEY = 'movesbookChannelHiddenIds';
 
+function storageKey(base: string, clubId?: string | null): string {
+  const id = typeof clubId === 'string' ? clubId.trim() : '';
+  return id ? `clubChannel:${id}:${base}` : base;
+}
+
+function withClubQuery(url: string, clubId?: string | null): string {
+  const id = typeof clubId === 'string' ? clubId.trim() : '';
+  if (!id) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}clubId=${encodeURIComponent(id)}`;
+}
+
+function channelLeftEventName(clubId?: string | null): string {
+  const id = typeof clubId === 'string' ? clubId.trim() : '';
+  return id ? `club-channel-left:${id}` : 'movesbook-channel-left';
+}
+
+function channelRejoinedEventName(clubId?: string | null): string {
+  const id = typeof clubId === 'string' ? clubId.trim() : '';
+  return id ? `club-channel-rejoined:${id}` : 'movesbook-channel-rejoined';
+}
+
 function isImageContent(content: string): boolean {
   return content.startsWith('data:image/');
 }
@@ -62,7 +84,7 @@ type ContextMenuState = {
 };
 
 /** Audience labels shown on each broadcast bubble for normal users. */
-const BROADCAST_MODE_LABELS: Record<string, string> = {
+const PLATFORM_BROADCAST_MODE_LABELS: Record<string, string> = {
   all: 'Sent to all users',
   subscribers: 'Sent to only subscribers',
   group: 'Sent to only group selected',
@@ -70,8 +92,17 @@ const BROADCAST_MODE_LABELS: Record<string, string> = {
   repliers: 'Channel chat',
 };
 
-function broadcastModeLabel(mode: string): string {
-  return BROADCAST_MODE_LABELS[mode] ?? 'Sent to all users';
+const CLUB_BROADCAST_MODE_LABELS: Record<string, string> = {
+  all: 'Sent to all members',
+  subscribers: 'Sent to only subscribers',
+  group: 'Sent to only group selected',
+  favourites: 'Sent to only favourites',
+  repliers: 'Channel chat',
+};
+
+function broadcastModeLabel(mode: string, clubId?: string | null): string {
+  const labels = clubId ? CLUB_BROADCAST_MODE_LABELS : PLATFORM_BROADCAST_MODE_LABELS;
+  return labels[mode] ?? (clubId ? 'Sent to all members' : 'Sent to all users');
 }
 
 type MovesbookChannelProps = {
@@ -81,6 +112,11 @@ type MovesbookChannelProps = {
   /** When true, render only the top header strip (left column). */
   variant: 'header' | 'pane';
   onCloseEmbedded?: () => void;
+  /**
+   * When set, shows Club Channel for that club (member view of admin broadcasts)
+   * instead of the platform Movesbook Channel.
+   */
+  clubId?: string | null;
 };
 
 /** Channel avatar — uses admin-set photo when available. */
@@ -88,10 +124,12 @@ export function ChannelAvatar({
   size = 36,
   className = '',
   photoUrl,
+  alt = 'Channel',
 }: {
   size?: number;
   className?: string;
   photoUrl?: string | null;
+  alt?: string;
 }) {
   if (photoUrl) {
     return (
@@ -100,7 +138,7 @@ export function ChannelAvatar({
         style={{ width: size, height: size }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={photoUrl} alt="Movesbook channel" className="h-full w-full object-cover" />
+        <img src={photoUrl} alt={alt} className="h-full w-full object-cover" />
       </span>
     );
   }
@@ -156,9 +194,9 @@ function formatTime(dateStr: string) {
   }
 }
 
-function loadHiddenIds(): Set<string> {
+function loadHiddenIds(clubId?: string | null): Set<string> {
   try {
-    const raw = localStorage.getItem(HIDDEN_KEY);
+    const raw = localStorage.getItem(storageKey(HIDDEN_KEY, clubId));
     if (!raw) return new Set();
     const arr = JSON.parse(raw) as unknown;
     if (!Array.isArray(arr)) return new Set();
@@ -168,46 +206,55 @@ function loadHiddenIds(): Set<string> {
   }
 }
 
-function saveHiddenIds(ids: Set<string>) {
+function saveHiddenIds(ids: Set<string>, clubId?: string | null) {
   try {
-    localStorage.setItem(HIDDEN_KEY, JSON.stringify([...ids]));
+    localStorage.setItem(storageKey(HIDDEN_KEY, clubId), JSON.stringify([...ids]));
   } catch {
     /* ignore */
   }
 }
 
-function loadPinnedId(): string | null {
+function loadPinnedId(clubId?: string | null): string | null {
   try {
-    return localStorage.getItem(PIN_KEY);
+    return localStorage.getItem(storageKey(PIN_KEY, clubId));
   } catch {
     return null;
   }
 }
 
-function savePinnedId(id: string | null) {
+function savePinnedId(id: string | null, clubId?: string | null) {
   try {
-    if (id) localStorage.setItem(PIN_KEY, id);
-    else localStorage.removeItem(PIN_KEY);
+    const key = storageKey(PIN_KEY, clubId);
+    if (id) localStorage.setItem(key, id);
+    else localStorage.removeItem(key);
   } catch {
     /* ignore */
   }
 }
 
-export function loadChannelLeft(): boolean {
+export function loadChannelLeft(clubId?: string | null): boolean {
   try {
-    return localStorage.getItem(LEFT_KEY) === '1';
+    return localStorage.getItem(storageKey(LEFT_KEY, clubId)) === '1';
   } catch {
     return false;
   }
 }
 
-export function rejoinMovesbookChannel(): void {
+export function rejoinMovesbookChannel(clubId?: string | null): void {
   try {
-    localStorage.removeItem(LEFT_KEY);
+    localStorage.removeItem(storageKey(LEFT_KEY, clubId));
   } catch {
     /* ignore */
   }
-  window.dispatchEvent(new Event('movesbook-channel-rejoined'));
+  window.dispatchEvent(new Event(channelRejoinedEventName(clubId)));
+}
+
+export function getChannelLeftEventName(clubId?: string | null): string {
+  return channelLeftEventName(clubId);
+}
+
+export function getChannelRejoinedEventName(clubId?: string | null): string {
+  return channelRejoinedEventName(clubId);
 }
 
 export default function MovesbookChannel({
@@ -216,6 +263,7 @@ export default function MovesbookChannel({
   onSelect,
   variant,
   onCloseEmbedded,
+  clubId = null,
 }: MovesbookChannelProps) {
   const [messages, setMessages] = useState<ChannelBroadcastMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -233,6 +281,9 @@ export default function MovesbookChannel({
   const [replyError, setReplyError] = useState<string | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   const [channelPhoto, setChannelPhoto] = useState<string | null>(null);
+  const [channelName, setChannelName] = useState(
+    clubId ? 'Club Channel' : 'Movesbook channel'
+  );
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
@@ -251,13 +302,19 @@ export default function MovesbookChannel({
 
   const inviteUrl =
     typeof window !== 'undefined'
-      ? `${window.location.origin}/register?invite=movesbook-channel`
-      : 'https://movesbook.app/register?invite=movesbook-channel';
+      ? clubId
+        ? `${window.location.origin}/register?invite=club-${clubId}`
+        : `${window.location.origin}/register?invite=movesbook-channel`
+      : clubId
+        ? 'https://movesbook.app/register?invite=club'
+        : 'https://movesbook.app/register?invite=movesbook-channel';
 
   const loadMessages = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/chat/broadcast', { headers: getAuthHeaders() });
+      const res = await fetch(withClubQuery('/api/chat/broadcast', clubId), {
+        headers: getAuthHeaders(),
+      });
       if (!res.ok) return;
       const data = await res.json();
       const list = Array.isArray(data.messages) ? (data.messages as ChannelBroadcastMessage[]) : [];
@@ -265,10 +322,17 @@ export default function MovesbookChannel({
       if (typeof data.channelPhoto === 'string' && data.channelPhoto.trim()) {
         setChannelPhoto(data.channelPhoto.trim());
       }
+      if (typeof data.channelName === 'string' && data.channelName.trim()) {
+        // Normalize casing for Club Channel display
+        const name = data.channelName.trim();
+        setChannelName(
+          clubId && name.toLowerCase() === 'club channel' ? 'Club Channel' : name
+        );
+      }
 
       let readAt = 0;
       try {
-        readAt = Number(localStorage.getItem(READ_AT_KEY) || '0');
+        readAt = Number(localStorage.getItem(storageKey(READ_AT_KEY, clubId)) || '0');
       } catch {
         readAt = 0;
       }
@@ -284,31 +348,32 @@ export default function MovesbookChannel({
     } finally {
       setLoading(false);
     }
-  }, [getAuthHeaders]);
+  }, [getAuthHeaders, clubId]);
 
   useEffect(() => {
     try {
-      setMuted(localStorage.getItem(MUTE_KEY) === '1');
+      setMuted(localStorage.getItem(storageKey(MUTE_KEY, clubId)) === '1');
     } catch {
       /* ignore */
     }
-    setPinnedId(loadPinnedId());
-    setHiddenIds(loadHiddenIds());
+    setPinnedId(loadPinnedId(clubId));
+    setHiddenIds(loadHiddenIds(clubId));
+    setChannelName(clubId ? 'Club Channel' : 'Movesbook channel');
     void loadMessages();
     const t = setInterval(() => void loadMessages(), 60_000);
     return () => clearInterval(t);
-  }, [loadMessages]);
+  }, [loadMessages, clubId]);
 
   useEffect(() => {
     if (!selected) return;
     try {
-      localStorage.setItem(READ_AT_KEY, String(Date.now()));
+      localStorage.setItem(storageKey(READ_AT_KEY, clubId), String(Date.now()));
     } catch {
       /* ignore */
     }
     setUnreadCount(0);
     void loadMessages();
-  }, [selected, loadMessages]);
+  }, [selected, loadMessages, clubId]);
 
   useEffect(() => {
     if (!selected || variant !== 'pane') return;
@@ -346,7 +411,7 @@ export default function MovesbookChannel({
   const setMute = (value: boolean) => {
     setMuted(value);
     try {
-      localStorage.setItem(MUTE_KEY, value ? '1' : '0');
+      localStorage.setItem(storageKey(MUTE_KEY, clubId), value ? '1' : '0');
     } catch {
       /* ignore */
     }
@@ -359,24 +424,24 @@ export default function MovesbookChannel({
 
   const confirmLeaveChannel = () => {
     try {
-      localStorage.setItem(LEFT_KEY, '1');
+      localStorage.setItem(storageKey(LEFT_KEY, clubId), '1');
     } catch {
       /* ignore */
     }
     setLeaveConfirmOpen(false);
-    window.dispatchEvent(new Event('movesbook-channel-left'));
+    window.dispatchEvent(new Event(channelLeftEventName(clubId)));
   };
 
   const hideMessageLocally = (messageId: string) => {
     setHiddenIds((prev) => {
       const next = new Set(prev);
       next.add(messageId);
-      saveHiddenIds(next);
+      saveHiddenIds(next, clubId);
       return next;
     });
     if (pinnedId === messageId) {
       setPinnedId(null);
-      savePinnedId(null);
+      savePinnedId(null, clubId);
     }
   };
 
@@ -429,7 +494,7 @@ export default function MovesbookChannel({
     setContextMenu(null);
     const next = pinnedId === id ? null : id;
     setPinnedId(next);
-    savePinnedId(next);
+    savePinnedId(next, clubId);
   };
 
   const handleContextEdit = () => {
@@ -710,7 +775,9 @@ export default function MovesbookChannel({
         className="w-full max-w-sm rounded-md border border-[#ccc] bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-2 text-base font-semibold text-gray-900">Leave Movesbook channel?</h3>
+        <h3 className="mb-2 text-base font-semibold text-gray-900">
+          Leave {channelName}?
+        </h3>
         <p className="mb-4 text-sm text-gray-600">
           You will stop seeing broadcast messages here. You can rejoin anytime from the chat list.
         </p>
@@ -755,10 +822,10 @@ export default function MovesbookChannel({
             selected ? 'bg-[#252d38]' : 'bg-[#1a2332] hover:bg-[#222b38]'
           }`}
         >
-          <ChannelAvatar size={40} className="mt-0.5 shadow-sm" photoUrl={channelPhoto} />
+          <ChannelAvatar size={40} className="mt-0.5 shadow-sm" photoUrl={channelPhoto} alt={channelName} />
           <span className="min-w-0 flex-1">
             <span className="flex items-baseline gap-1.5">
-              <span className="truncate text-[15px] font-semibold text-white">Movesbook channel</span>
+              <span className="truncate text-[15px] font-semibold text-white">{channelName}</span>
               {unreadCount > 0 && !muted && (
                 <span className="shrink-0 text-[15px] font-bold text-[#e8a317]">({unreadCount})</span>
               )}
@@ -839,7 +906,7 @@ export default function MovesbookChannel({
             title="Unpin"
             onClick={() => {
               setPinnedId(null);
-              savePinnedId(null);
+              savePinnedId(null, clubId);
             }}
           >
             <X className="h-4 w-4" />
@@ -940,7 +1007,7 @@ export default function MovesbookChannel({
                     </p>
                     <div className="mt-1.5 flex items-end justify-between gap-3 text-[11px] text-gray-400">
                       <span className="min-w-0 flex-1 leading-snug text-[#6b7280]">
-                        {broadcastModeLabel(msg.mode)}
+                        {broadcastModeLabel(msg.mode, clubId)}
                       </span>
                       <span className="inline-flex shrink-0 items-center gap-2">
                         {pinnedId === msg.id && <Pin className="h-3 w-3 text-amber-600" />}
