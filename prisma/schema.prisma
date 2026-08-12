@@ -2816,7 +2816,7 @@ model MubButtonTranslation {
   button       MubButtonItem @relation(fields: [buttonId], references: [id], onDelete: Cascade)
   languageCode String
   shortText    String        @default("")
-  extendedText String        @default("") @db.Text
+  extendedText String        @db.Text
 
   @@unique([buttonId, languageCode])
   @@map("mub_button_translations")
