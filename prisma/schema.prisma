@@ -2310,3 +2310,76 @@ model LanguageParagraph {
 
   @@map("language_paragraphs")
 }
+
+enum MubScope {
+  USER
+  STAFF
+  CLUB
+}
+
+enum MubCategory {
+  CLUB_MANAGEMENT
+  WORKOUT
+  SOCIAL
+}
+
+enum MubRoleTemplate {
+  CLUB
+  TEAM
+  COACH
+}
+
+enum MubIconSource {
+  INTERNAL
+  EXTERNAL
+}
+
+model MubPageSettings {
+  id              String           @id @default(cuid())
+  scope           MubScope
+  ownerId         String?
+  roleTemplate    MubRoleTemplate?
+  category        MubCategory
+  backgroundColor String           @default("white")
+  displayMode     Int              @default(1)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  buttons         MubButtonItem[]
+
+  @@unique([scope, ownerId, roleTemplate, category])
+  @@index([ownerId])
+  @@map("mub_page_settings")
+}
+
+model MubButtonItem {
+  id           String                 @id @default(cuid())
+  pageId       String
+  page         MubPageSettings        @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  sortOrder    Int                    @default(0)
+  buttonColor  String                 @default("#000000")
+  textFont     String                 @default("Arial")
+  textColor    String                 @default("yellow")
+  iconPath     String?
+  iconSource   MubIconSource          @default(INTERNAL)
+  urlToOpen    String?
+  pageToOpen   String                 @default("same_label")
+  isImported   Boolean                @default(false)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  translations MubButtonTranslation[]
+
+  @@index([pageId, sortOrder])
+  @@map("mub_button_items")
+}
+
+model MubButtonTranslation {
+  id           String        @id @default(cuid())
+  buttonId     String
+  button       MubButtonItem @relation(fields: [buttonId], references: [id], onDelete: Cascade)
+  languageCode String
+  shortText    String        @default("")
+  extendedText String        @default("") @db.Text
+
+  @@unique([buttonId, languageCode])
+  @@map("mub_button_translations")
+}

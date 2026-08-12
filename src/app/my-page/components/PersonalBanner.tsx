@@ -1,6 +1,7 @@
 import { UserCircle, HelpCircle, Settings, Home, Menu, ChevronRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import MyPageFastMenu from '@/components/my-page/MyPageFastMenu';
+import MubBannerStripControl from '@/components/mub/MubBannerStripControl';
 
 interface PersonalBannerProps {
   user: any;
@@ -38,10 +39,7 @@ export default function PersonalBanner({ user, currentTab }: PersonalBannerProps
                 <HelpCircle className="w-4 h-4" />
                 <span>FAQ Suggest Movesbook</span>
               </button>
-              <button className="text-lime-400 hover:text-lime-300 transition-colors flex items-center gap-2">
-                <span>Most used buttons</span>
-                <Settings className="w-4 h-4 text-gray-400" />
-              </button>
+              <MubBannerStripControl />
             </div>
           </div>
 
