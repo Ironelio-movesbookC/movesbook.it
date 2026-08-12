@@ -10,6 +10,7 @@ import {
   STATS_KIND_COLORS,
   type StatsUserKind,
 } from '@/lib/admin/statisticsKinds';
+
 import type { StatsSlice } from '@/lib/admin/buildStatistics';
 
 type Selection = {
