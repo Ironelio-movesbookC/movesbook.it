@@ -18,6 +18,7 @@ import { getOgpGroupShareUrl } from '@/lib/ogpGroupShareUrl';
 import OgpRichDescription, {
   ogpDescriptionPlainText,
 } from '@/components/shared/OgpRichDescription';
+import { ShareInMyClubsButtonIfClub } from '@/components/club/ShareInMyClubsButton';
 import RichTextEditor from '@/components/settings/RichTextEditor';
 
 type MusicLibraryNavKey = 'recent' | 'playlist' | 'songs' | 'albums' | 'favourites';
@@ -66,6 +67,8 @@ export type ArticlePasted = OGPData & {
   isOgpGroup?: boolean;
   /** Super admin: included in the Global News merged feed. */
   inGlobalNews?: boolean;
+  /** Club admin: club ids this OGP article has been shared to. */
+  sharedClubIds?: string[];
   groupName?: string;
   memberCount?: number;
   memberIds?: string[];
@@ -314,6 +317,14 @@ interface NewsArticlesListProps {
   showGlobalNewsButton?: boolean;
   /** Super admin: toggle Global News flag for an OGP article. */
   onToggleGlobalNews?: (id: string, inGlobalNews: boolean) => void | Promise<void>;
+  /** Club admin: show "Share in My Clubs" on OGP News cards. */
+  showShareInMyClubsButton?: boolean;
+  /** Current user type (for club share button). */
+  currentUserType?: string | null;
+  /** Club admin username for password confirm copy. */
+  clubAdminUsername?: string | null;
+  /** Called after share/unshare to update local sharedClubIds on an article. */
+  onArticleSharedClubIdsChange?: (articleId: string, clubIds: string[]) => void;
 }
 
 export default function NewsArticlesList({
@@ -351,6 +362,10 @@ export default function NewsArticlesList({
   onUpdateOgpNewsGroupSettings,
   showGlobalNewsButton = false,
   onToggleGlobalNews,
+  showShareInMyClubsButton = false,
+  currentUserType = null,
+  clubAdminUsername = null,
+  onArticleSharedClubIdsChange,
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
   const isMusic = apiBase === '/api/music';
@@ -2091,6 +2106,19 @@ export default function NewsArticlesList({
                         >
                           <Globe className="w-3.5 h-3.5" />
                         </button>
+                      ) : null}
+                      {showShareInMyClubsButton && !a.isOgpGroup && !isMusic && !isExercise ? (
+                        <ShareInMyClubsButtonIfClub
+                          userType={currentUserType}
+                          kind="ogp"
+                          itemId={a.id}
+                          itemTitle={a.title ?? a.customDescription ?? null}
+                          adminUsername={clubAdminUsername ?? undefined}
+                          sharedClubIds={a.sharedClubIds}
+                          onSharedChange={(clubIds) =>
+                            onArticleSharedClubIdsChange?.(a.id, clubIds)
+                          }
+                        />
                       ) : null}
                       {a.isOgpGroup && (
                         <span

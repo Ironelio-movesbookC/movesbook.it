@@ -79,6 +79,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 function SortableItem(props: { id: string, children: React.ReactNode }) {
   const {
@@ -153,7 +154,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    setIsSuperAdmin(Boolean(localStorage.getItem('superAdminUser')));
+    setIsSuperAdmin(resolveIsSuperAdminFromStorage());
     const adminData = localStorage.getItem('adminUser');
     if (!adminData) return;
     try {

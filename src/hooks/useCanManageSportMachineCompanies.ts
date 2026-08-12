@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 /** Super Admin (table) JWT or User ADMIN panel JWT — same rules as former Admin Management → Companies. */
 export async function checkCanManageSportMachineCompanies(): Promise<boolean> {
@@ -18,7 +19,7 @@ export async function checkCanManageSportMachineCompanies(): Promise<boolean> {
       /* ignore */
     }
   }
-  if (localStorage.getItem('superAdminUser')) return true;
+  if (resolveIsSuperAdminFromStorage()) return true;
   return false;
 }
 

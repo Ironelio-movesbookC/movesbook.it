@@ -8,6 +8,7 @@ import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { DOCUMENT_TYPES } from '@/lib/news/mappings';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 interface NewsItem {
   id: string;
@@ -124,7 +125,7 @@ export default function NewsIndexAllPage() {
           const parsed = JSON.parse(adminData);
           setAdminUser(parsed);
         }
-        setIsSuperAdmin(Boolean(localStorage.getItem('superAdminUser')));
+        setIsSuperAdmin(resolveIsSuperAdminFromStorage());
       } catch (error) {
         console.error('Error parsing admin user:', error);
       } finally {

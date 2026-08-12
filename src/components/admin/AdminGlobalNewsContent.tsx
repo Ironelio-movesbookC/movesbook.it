@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Globe, Newspaper, ExternalLink, X } from 'lucide-react';
 import type { GlobalNewsFeedItem } from '@/lib/globalNewsAuth';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 function formatDate(iso: string) {
   try {
@@ -39,7 +40,7 @@ export default function AdminGlobalNewsContent({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!localStorage.getItem('superAdminUser')) {
+    if (!localStorage.getItem('superAdminUser') && !resolveIsSuperAdminFromStorage()) {
       router.replace('/admin/dashboard');
       return;
     }

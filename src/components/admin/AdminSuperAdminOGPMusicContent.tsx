@@ -12,6 +12,7 @@ import NewsArticlesList, { type ArticlePasted } from '@/app/news/components/News
 import MusicOGPStatisticsModal from '@/components/music/MusicOGPStatisticsModal';
 import { ADMIN_OGP_EXPAND_EVENT } from '@/lib/adminOgpExpand';
 import { defaultSettings } from '@/app/news/components/NewsSettingModal';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 /** Music has no built-in default topics; users add their own via "Add topic". */
 const MUSIC_TOPICS = [] as const;
@@ -258,15 +259,7 @@ export default function AdminSuperAdminOGPMusicContent({
         setAdminUser(u?.id ? { id: u.id, name: u.name } : null);
         if (!u?.id) router.replace('/admin/dashboard');
         else {
-          const superRaw = localStorage.getItem('superAdminUser');
-          if (superRaw) {
-            try {
-              const su = JSON.parse(superRaw);
-              if (su?.id != null && u?.id != null && String(su.id) === String(u.id)) setIsSuperAdmin(true);
-            } catch {
-              /* ignore */
-            }
-          }
+          setIsSuperAdmin(resolveIsSuperAdminFromStorage(u));
         }
       } catch {
         router.replace('/admin/dashboard');

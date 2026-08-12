@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
+import {
   Shield, 
   UserCog, 
   UserPlus, 
@@ -17,6 +17,7 @@ import {
   Trash2,
   RefreshCw
 } from 'lucide-react';
+import { persistAdminLoginSession, resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 type AdminTab = 'super-admin' | 'admin-users';
 
@@ -105,7 +106,7 @@ export default function AdminManagement() {
         } catch {
           /* ignore */
         }
-      } else if (localStorage.getItem('superAdminUser')) {
+      } else if (resolveIsSuperAdminFromStorage() || localStorage.getItem('superAdminUser')) {
         tableSuperAdmin = true;
       }
 
@@ -206,11 +207,12 @@ export default function AdminManagement() {
 
       if (response.ok) {
         setMessage({ type: 'success', text: '✅ Logged in successfully!' });
-        localStorage.setItem('superAdminUser', JSON.stringify(data.superAdmin));
-        // So admin panel (e.g. News, dashboard) and APIs work: use same session shape as admin login
+        // Persist admin + superAdmin session so News/Music/OGP recognize Super Admin
         if (data.token && data.user) {
-          localStorage.setItem('adminToken', data.token);
-          localStorage.setItem('adminUser', JSON.stringify(data.user));
+          persistAdminLoginSession(data.token, { ...data.user, isSuperAdmin: true });
+        }
+        if (data.superAdmin) {
+          localStorage.setItem('superAdminUser', JSON.stringify(data.superAdmin));
         }
         setSuperAdminLoggedIn(true);
       } else {

@@ -10,6 +10,7 @@ import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
 import NewsArticlesList from '@/app/news/components/NewsArticlesList';
 import { ADMIN_OGP_EXPAND_EVENT } from '@/lib/adminOgpExpand';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 export interface AdminSuperAdminOGPNewsContentProps {
   /** Target for the header close (X) link — default returns to admin home without query params */
@@ -117,15 +118,7 @@ export default function AdminSuperAdminOGPNewsContent({
         setAdminUser(u?.id ? { id: u.id, name: u.name } : null);
         if (!u?.id) router.replace('/admin/dashboard');
         else {
-          const superRaw = localStorage.getItem('superAdminUser');
-          if (superRaw) {
-            try {
-              const su = JSON.parse(superRaw);
-              if (su?.id != null && u?.id != null && String(su.id) === String(u.id)) setIsSuperAdmin(true);
-            } catch {
-              /* ignore */
-            }
-          }
+          setIsSuperAdmin(resolveIsSuperAdminFromStorage(u));
         }
       } catch {
         router.replace('/admin/dashboard');

@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useNewsData } from '@/hooks/useNewsData';
 import { getExerciseDefaultTopics } from '@/constants/exerciseLibrary.constants';
 import { X } from 'lucide-react';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 const EXERCISE_API_BASE = '/api/exercises';
 
@@ -112,17 +113,7 @@ export default function ExerciseOGPPanel({
       const u = raw ? JSON.parse(raw) : null;
       if (u?.id) {
         setAdminUser({ id: String(u.id), name: u.name });
-        const superRaw = localStorage.getItem('superAdminUser');
-        if (superRaw) {
-          try {
-            const su = JSON.parse(superRaw);
-            setIsSuperAdmin(su?.id != null && String(su.id) === String(u.id));
-          } catch {
-            setIsSuperAdmin(false);
-          }
-        } else {
-          setIsSuperAdmin(false);
-        }
+        setIsSuperAdmin(resolveIsSuperAdminFromStorage(u));
         return;
       }
       const superRaw = localStorage.getItem('superAdminUser');
