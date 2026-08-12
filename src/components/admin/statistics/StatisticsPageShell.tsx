@@ -3,7 +3,9 @@
 import type { ReactNode } from 'react';
 import {
   STATS_KIND_LABELS,
+  STATS_TYPE_KIND_FILTER_LABELS,
   STATS_USER_KINDS,
+  type StatsTypeKindFilter,
   type StatsUserKind,
 } from '@/lib/admin/statisticsKinds';
 import { formatCount, formatEuro } from '@/components/admin/statistics/useAdminStatistics';
@@ -118,6 +120,34 @@ export function userTypeFilterOptions(includeAll = true) {
     label: STATS_KIND_LABELS[k],
   }));
   return includeAll ? [{ value: 'all', label: 'All types' }, ...kinds] : kinds;
+}
+
+/** Dropdown for users-by-country bars (Each type = 5 colored bars). */
+export function usersByCountryFilterOptions() {
+  return [
+    { value: 'all', label: 'Each type of users' },
+    ...STATS_USER_KINDS.map((k) => ({
+      value: k,
+      label:
+        k === 'single'
+          ? 'Athletes'
+          : k === 'clubs'
+            ? 'Clubs'
+            : STATS_KIND_LABELS[k],
+    })),
+  ];
+}
+
+/** Options for type-by-country pie (includes ALL Users / except Groups). */
+export function typeKindFilterOptions() {
+  const extras: StatsTypeKindFilter[] = ['all', 'except_groups'];
+  return [
+    ...extras.map((k) => ({ value: k, label: STATS_TYPE_KIND_FILTER_LABELS[k] })),
+    ...STATS_USER_KINDS.map((k) => ({
+      value: k,
+      label: STATS_KIND_LABELS[k],
+    })),
+  ];
 }
 
 export function kindLabel(kind: StatsUserKind): string {
