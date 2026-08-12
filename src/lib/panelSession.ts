@@ -11,6 +11,77 @@ export type PanelSessionUser = {
   isSuperAdmin?: boolean;
 };
 
+/**
+ * Persist admin login so News/Music/OGP pages recognize Super Admin.
+ * Those pages require `superAdminUser` (ID-matched to `adminUser`); the main
+ * admin login historically only wrote `adminUser`, so Super Admin looked like
+ * a normal admin in the header but missed All / Exclude / MB controls.
+ */
+export function persistAdminLoginSession(
+  token: string,
+  user: PanelSessionUser & Record<string, unknown>,
+): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('adminToken', token);
+  localStorage.setItem('adminUser', JSON.stringify(user));
+  if (user.isSuperAdmin) {
+    localStorage.setItem(
+      'superAdminUser',
+      JSON.stringify({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        name: user.name,
+      }),
+    );
+  } else {
+    localStorage.removeItem('superAdminUser');
+  }
+}
+
+/** True when session is Super Admin (explicit flag or matching `superAdminUser`). */
+export function resolveIsSuperAdminFromStorage(adminUser?: PanelSessionUser | null): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const u =
+      adminUser ??
+      (localStorage.getItem('adminUser')
+        ? (JSON.parse(localStorage.getItem('adminUser') as string) as PanelSessionUser)
+        : null);
+    if (!u?.id) return false;
+    if (u.isSuperAdmin) {
+      const superRaw = localStorage.getItem('superAdminUser');
+      let needsSync = true;
+      if (superRaw) {
+        try {
+          const su = JSON.parse(superRaw) as { id?: string };
+          needsSync = String(su?.id) !== String(u.id);
+        } catch {
+          needsSync = true;
+        }
+      }
+      if (needsSync) {
+        localStorage.setItem(
+          'superAdminUser',
+          JSON.stringify({
+            id: u.id,
+            username: u.username,
+            email: u.email,
+            name: u.name,
+          }),
+        );
+      }
+      return true;
+    }
+    const superRaw = localStorage.getItem('superAdminUser');
+    if (!superRaw) return false;
+    const su = JSON.parse(superRaw) as { id?: string };
+    return su?.id != null && String(su.id) === String(u.id);
+  } catch {
+    return false;
+  }
+}
+
 export function readPanelSession(): PanelSessionUser | null {
   if (typeof window === 'undefined') return null;
   try {

@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     const parent = await prisma.chatBroadcastMessage.findUnique({
       where: { id: replyToId },
-      select: { id: true, content: true, mode: true, senderName: true },
+      select: { id: true, content: true, mode: true, senderName: true, clubId: true },
     });
     if (!parent || !BROADCAST_MODES.has(parent.mode)) {
       return NextResponse.json({ error: 'Broadcast message not found' }, { status: 404 });
@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
         content,
         mode: 'reply',
         senderName: user.name || 'User',
+        clubId: parent.clubId,
         recipientIds: JSON.stringify({ parentId: parent.id, senderUserId: user.id }),
       },
     });

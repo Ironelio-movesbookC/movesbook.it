@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
-import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2, List, Music2, Disc3, Heart, type LucideIcon } from 'lucide-react';
+import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2, List, Music2, Disc3, Heart, Globe, type LucideIcon } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
 import { ALL_TOPICS, ALL_USER_SECTORS, ALL_SUPER_ADMIN, NEWS_TOPIC_KEYS, NEWS_TOPICS } from './NewsTopicBar';
@@ -18,6 +18,7 @@ import { getOgpGroupShareUrl } from '@/lib/ogpGroupShareUrl';
 import OgpRichDescription, {
   ogpDescriptionPlainText,
 } from '@/components/shared/OgpRichDescription';
+import { ShareInMyClubsButtonIfClub } from '@/components/club/ShareInMyClubsButton';
 import RichTextEditor from '@/components/settings/RichTextEditor';
 
 type MusicLibraryNavKey = 'recent' | 'playlist' | 'songs' | 'albums' | 'favourites';
@@ -64,6 +65,10 @@ export type ArticlePasted = OGPData & {
   isFavourite?: boolean;
   /** When true, this card represents an OGP News group (preview = first member). */
   isOgpGroup?: boolean;
+  /** Super admin: included in the Global News merged feed. */
+  inGlobalNews?: boolean;
+  /** Club admin: club ids this OGP article has been shared to. */
+  sharedClubIds?: string[];
   groupName?: string;
   memberCount?: number;
   memberIds?: string[];
@@ -308,6 +313,18 @@ interface NewsArticlesListProps {
   ) => void | Promise<void>;
   /** Update group visibility settings (gear). */
   onUpdateOgpNewsGroupSettings?: (id: string, settings: OgpVisibilitySettings) => void | Promise<void>;
+  /** Super admin: show "Share in Global News" on OGP News cards (news section only). */
+  showGlobalNewsButton?: boolean;
+  /** Super admin: toggle Global News flag for an OGP article. */
+  onToggleGlobalNews?: (id: string, inGlobalNews: boolean) => void | Promise<void>;
+  /** Club admin: show "Share in My Clubs" on OGP News cards. */
+  showShareInMyClubsButton?: boolean;
+  /** Current user type (for club share button). */
+  currentUserType?: string | null;
+  /** Club admin username for password confirm copy. */
+  clubAdminUsername?: string | null;
+  /** Called after share/unshare to update local sharedClubIds on an article. */
+  onArticleSharedClubIdsChange?: (articleId: string, clubIds: string[]) => void;
 }
 
 export default function NewsArticlesList({
@@ -343,6 +360,12 @@ export default function NewsArticlesList({
   onRemoveOgpNewsGroup,
   onUpdateOgpNewsGroup,
   onUpdateOgpNewsGroupSettings,
+  showGlobalNewsButton = false,
+  onToggleGlobalNews,
+  showShareInMyClubsButton = false,
+  currentUserType = null,
+  clubAdminUsername = null,
+  onArticleSharedClubIdsChange,
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
   const isMusic = apiBase === '/api/music';
@@ -493,6 +516,7 @@ export default function NewsArticlesList({
   const [previewCreatorUsername, setPreviewCreatorUsername] = useState<string | null>(null);
   const [likesMap, setLikesMap] = useState<Record<string, { count: number; likedByMe: boolean }>>({});
   const [likeLoadingId, setLikeLoadingId] = useState<string | null>(null);
+  const [globalNewsLoadingId, setGlobalNewsLoadingId] = useState<string | null>(null);
   const [shareModalArticle, setShareModalArticle] = useState<ArticlePasted | null>(null);
   const ogpGridRef = useRef<HTMLDivElement>(null);
   const [ogpListMaxHeight, setOgpListMaxHeight] = useState<number | null>(null);
@@ -556,6 +580,19 @@ export default function NewsArticlesList({
       setCreatorLoading(false);
     }
   }, [adminContext, apiBase]);
+
+  const handleGlobalNewsToggle = useCallback(
+    async (articleId: string, currentlyShared: boolean) => {
+      if (!onToggleGlobalNews) return;
+      setGlobalNewsLoadingId(articleId);
+      try {
+        await onToggleGlobalNews(articleId, !currentlyShared);
+      } finally {
+        setGlobalNewsLoadingId(null);
+      }
+    },
+    [onToggleGlobalNews],
+  );
 
   useEffect(() => {
     if (creatorModalArticleId != null) {
@@ -2041,6 +2078,48 @@ export default function NewsArticlesList({
                       >
                         <Share2 className="w-3.5 h-3.5" />
                       </button>
+                      {showGlobalNewsButton && !a.isOgpGroup && !isMusic && !isExercise && onToggleGlobalNews ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleGlobalNewsToggle(a.id, a.inGlobalNews === true);
+                          }}
+                          disabled={
+                            superAdminReadOnlyOgpActions ||
+                            globalNewsLoadingId === a.id
+                          }
+                          className={`inline-flex items-center justify-center rounded-md border px-2 py-1 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+                            a.inGlobalNews
+                              ? 'border-teal-500 bg-teal-50 text-teal-700 hover:bg-teal-100'
+                              : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
+                          }`}
+                          title={
+                            a.inGlobalNews
+                              ? 'Shared in Global News (click to remove)'
+                              : 'Share in Global News'
+                          }
+                          aria-label={
+                            a.inGlobalNews ? 'Remove from Global News' : 'Share in Global News'
+                          }
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                        </button>
+                      ) : null}
+                      {showShareInMyClubsButton && !a.isOgpGroup && !isMusic && !isExercise ? (
+                        <ShareInMyClubsButtonIfClub
+                          userType={currentUserType}
+                          kind="ogp"
+                          itemId={a.id}
+                          itemTitle={a.title ?? a.customDescription ?? null}
+                          adminUsername={clubAdminUsername ?? undefined}
+                          sharedClubIds={a.sharedClubIds}
+                          onSharedChange={(clubIds) =>
+                            onArticleSharedClubIdsChange?.(a.id, clubIds)
+                          }
+                        />
+                      ) : null}
                       {a.isOgpGroup && (
                         <span
                           className="inline-flex items-center justify-center min-w-[1.5rem] h-7 px-1.5 rounded border border-gray-300 bg-white text-gray-800 text-sm font-semibold tabular-nums"

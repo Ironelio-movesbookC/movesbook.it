@@ -84,7 +84,16 @@ type ContextMenuState = {
 type AdminChatUsersPanelProps = {
   getAuthHeaders: () => Record<string, string>;
   onCountChange?: (count: number) => void;
+  /** When set, scopes Chat users / repliers to this club's channel. */
+  clubId?: string | null;
 };
+
+function withClubQuery(url: string, clubId?: string | null): string {
+  const id = typeof clubId === 'string' ? clubId.trim() : '';
+  if (!id) return url;
+  const q = `clubId=${encodeURIComponent(id)}`;
+  return url.includes('?') ? `${url}&${q}` : `${url}?${q}`;
+}
 
 const AVATAR_COLORS = [
   '#e17076',
@@ -221,7 +230,9 @@ function UserAvatar({
 export default function AdminChatUsersPanel({
   getAuthHeaders,
   onCountChange,
+  clubId = null,
 }: AdminChatUsersPanelProps) {
+  const defaultSenderName = clubId ? 'Club admin' : 'Movesbook admin';
   const [users, setUsers] = useState<ReplierUser[]>([]);
   const [replies, setReplies] = useState<BroadcastReply[]>([]);
   const [loading, setLoading] = useState(true);
@@ -248,7 +259,7 @@ export default function AdminChatUsersPanel({
   const [deleteTarget, setDeleteTarget] = useState<ThreadMessage | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -257,7 +268,9 @@ export default function AdminChatUsersPanel({
   const loadRepliers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/chat/broadcast/repliers', { headers: getAuthHeaders() });
+      const res = await fetch(withClubQuery('/api/chat/broadcast/repliers', clubId), {
+        headers: getAuthHeaders(),
+      });
       if (!res.ok) return;
       const data = await res.json();
       const list = Array.isArray(data.users) ? (data.users as ReplierUser[]) : [];
@@ -274,7 +287,7 @@ export default function AdminChatUsersPanel({
     } finally {
       setLoading(false);
     }
-  }, [getAuthHeaders, onCountChange]);
+  }, [getAuthHeaders, onCountChange, clubId]);
 
   useEffect(() => {
     void loadRepliers();
@@ -455,7 +468,10 @@ export default function AdminChatUsersPanel({
   );
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    // Scroll only the messages pane — never the page (scrollIntoView causes a jump).
+    el.scrollTop = el.scrollHeight;
   }, [visibleMessages.length, selectedUserId]);
 
   const setMute = (value: boolean) => {
@@ -528,7 +544,8 @@ export default function AdminChatUsersPanel({
             content,
             mode: 'repliers',
             subscriberIds: users.map((u) => u.id),
-            senderName: 'Movesbook admin',
+            senderName: defaultSenderName,
+            ...(clubId ? { clubId } : {}),
           }),
         });
         if (!res.ok) return;
@@ -545,7 +562,7 @@ export default function AdminChatUsersPanel({
                   ? msg.createdAt
                   : new Date().toISOString(),
               senderName:
-                typeof msg.senderName === 'string' ? msg.senderName : 'Movesbook admin',
+                typeof msg.senderName === 'string' ? msg.senderName : defaultSenderName,
               isOwn: true,
               source: 'channel',
             },
@@ -761,7 +778,10 @@ export default function AdminChatUsersPanel({
         }
       } else if (src === 'channel' || src === 'broadcast_reply') {
         const res = await fetch(
-          `/api/chat/broadcast?messageId=${encodeURIComponent(deleteTarget.id)}`,
+          withClubQuery(
+            `/api/chat/broadcast?messageId=${encodeURIComponent(deleteTarget.id)}`,
+            clubId
+          ),
           { method: 'DELETE', headers: getAuthHeaders() }
         );
         ok = res.ok;
@@ -928,7 +948,7 @@ export default function AdminChatUsersPanel({
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        <div ref={messagesContainerRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
           {loadingThread && selectedUserId ? (
             <p className="py-8 text-center text-sm text-[#4a667a]">Loading conversation…</p>
           ) : visibleMessages.length === 0 ? (
@@ -1017,7 +1037,6 @@ export default function AdminChatUsersPanel({
                   </div>
                 );
               })}
-              <div ref={messagesEndRef} />
             </div>
           )}
         </div>

@@ -269,7 +269,17 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   };
 
   const goToDashboardPanel = useCallback(
-    (panel: 'identification-devices' | 'outcome-settings' | 'news' | 'suggest-movesbook') => {
+    (
+      panel:
+        | 'identification-devices'
+        | 'outcome-settings'
+        | 'news'
+        | 'suggest-movesbook'
+        | 'chat'
+        | 'club-news'
+        | 'club-news-ogp'
+        | 'club-global-news'
+    ) => {
       if (!hasFormClub) return;
       const clubId = selectedClubId ?? formClubs[0]?.id ?? null;
       if (!selectedClubId && clubId) {
@@ -354,6 +364,10 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onIdentificationDevicesClick={() => goToDashboardPanel('identification-devices')}
                 onAccessOutcomeSettingsClick={() => goToDashboardPanel('outcome-settings')}
                 onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
+                onClubChatClick={() => goToDashboardPanel('chat')}
+                onClubNewsSectionClick={() => goToDashboardPanel('club-news')}
+                onClubOgpNewsSectionClick={() => goToDashboardPanel('club-news-ogp')}
+                onClubGlobalNewsSectionClick={() => goToDashboardPanel('club-global-news')}
                 onCreateClubClick={openCreateClubFlow}
                 onMyFeedbacksStaffClick={() => {
                   setActiveTab('my-page');

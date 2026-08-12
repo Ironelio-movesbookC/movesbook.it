@@ -101,6 +101,8 @@ model User {
   procedurePaymentsAsOperator  ProcedurePayment[] @relation("ProcedurePaymentOperator")
   procedureReceiptsAsMember    ProcedureReceipt[] @relation("ProcedureReceiptMember")
   procedureReceiptsAsOperator  ProcedureReceipt[] @relation("ProcedureReceiptOperator")
+  clubSharedOgpArticles        ClubSharedOgpArticle[] @relation("ClubSharedOgpBy")
+  clubSharedNews               ClubSharedNews[]       @relation("ClubSharedNewsBy")
 
   @@map("users_new")
 }
@@ -199,10 +201,12 @@ model OgpArticle {
   visibilityCountries   String?   @db.Text // JSON array of country names
   visibilityLanguages   String?   @db.Text // JSON array of language codes e.g. ["en","de"]
   visibilitySports      String?   @db.Text // JSON array of SportType e.g. ["RUN","SWIM"]
+  inGlobalNews          Boolean   @default(false) // Super admin: shown in Global News merged feed
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy             User?     @relation("OgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   likes                 OgpArticleLike[]
   groupItems            OgpNewsGroupItem[]
+  clubShares            ClubSharedOgpArticle[]
 
   @@index([userId])
   @@index([userId, topic])
@@ -635,6 +639,8 @@ model ChatBroadcastMessage {
   content      String   @db.LongText
   mode         String   // all | group | subscribers | favourites | repliers | reply
   senderName   String   @default("Movesbook admin")
+  /// Null = platform Movesbook Channel. Set = Club Channel for that club.
+  clubId       String?
   /// JSON string[] of target user IDs. Null = all Telegram-linked users (mode=all).
   /// For mode=reply: JSON { parentId, senderUserId }.
   /// For mode=repliers: JSON string[] of users who replied to broadcasts (Chat users → All).
@@ -643,6 +649,7 @@ model ChatBroadcastMessage {
 
   @@index([createdAt])
   @@index([mode])
+  @@index([clubId])
   @@map("chat_broadcast_messages")
 }
 
@@ -1609,9 +1616,47 @@ model Club {
   outcomeSetting     ClubOutcomeSetting?
   customOutcomes     ClubCustomOutcome[]
   admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
+  sharedOgpArticles  ClubSharedOgpArticle[]
+  sharedNews         ClubSharedNews[]
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
   @@map("clubs_new")
+}
+
+/// OGP News article shared by a club admin into one of their clubs.
+model ClubSharedOgpArticle {
+  id           String     @id @default(cuid())
+  clubId       String
+  ogpArticleId String
+  sharedById   String
+  createdAt    DateTime   @default(now())
+  club         Club       @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  ogpArticle   OgpArticle @relation(fields: [ogpArticleId], references: [id], onDelete: Cascade)
+  sharedBy     User       @relation("ClubSharedOgpBy", fields: [sharedById], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, ogpArticleId])
+  @@index([clubId])
+  @@index([ogpArticleId])
+  @@index([sharedById])
+  @@map("club_shared_ogp_articles")
+}
+
+/// Editorial News article shared by a club admin into one of their clubs.
+model ClubSharedNews {
+  id         String   @id @default(cuid())
+  clubId     String
+  newsId     String
+  sharedById String
+  createdAt  DateTime @default(now())
+  club       Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  news       News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  sharedBy   User     @relation("ClubSharedNewsBy", fields: [sharedById], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, newsId])
+  @@index([clubId])
+  @@index([newsId])
+  @@index([sharedById])
+  @@map("club_shared_news")
 }
 
 /// Custom topics under “Topics available” in the club website editor (admin/staff).
@@ -2120,6 +2165,7 @@ model News {
   writerClubTeamName                        String?               // Club/Team name (for Team/Club writers)
   writerVerified                            Boolean               @default(false)
   showWriterImage                           Boolean               @default(false) // Show writer profile image on detail page
+  inGlobalNews                              Boolean               @default(false) // Super admin: shown in Global News merged feed
   createdAt                                DateTime              @default(now())
   updatedAt                                DateTime              @updatedAt
 
@@ -2130,6 +2176,7 @@ model News {
   relatedToArticles                        NewsRelatedArticle[]   @relation("ArticleRelated")
   languageTitles                           NewsLanguageTitle[]
   newsComments                             NewsComment[]
+  clubShares                               ClubSharedNews[]
 
   @@index([newsCategoryId])
   @@index([langValueId])

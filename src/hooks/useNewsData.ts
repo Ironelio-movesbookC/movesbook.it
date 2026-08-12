@@ -96,6 +96,8 @@ export interface UseNewsDataResult {
     }
   ) => Promise<void>;
   removeTypedArticle: (id: string) => Promise<void>;
+  /** Super admin: toggle OGP article in Global News feed. */
+  toggleOgpGlobalNews: (id: string, inGlobalNews: boolean) => Promise<void>;
 }
 
 export interface UseNewsDataOptions {
@@ -287,6 +289,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           isFavourite: a.isFavourite === true,
           languageCode: a.languageCode ?? undefined,
           savedAt: a.savedAt,
+          inGlobalNews: a.inGlobalNews === true,
           deletedAt: a.deletedAt,
           deletedByUserId: a.deletedByUserId,
           deletedByName: a.deletedByName,
@@ -914,6 +917,26 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     [effectiveUserId, getHeaders, apiBase]
   );
 
+  const toggleOgpGlobalNews = useCallback(
+    async (id: string, inGlobalNews: boolean) => {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+      if (!token) throw new Error('Not authenticated');
+      const res = await fetch(`/api/admin/global-news/ogp/${id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ inGlobalNews }),
+      });
+      if (!res.ok) throw new Error('Failed to update Global News');
+      setPastedArticles((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, inGlobalNews } : a)),
+      );
+    },
+    [],
+  );
+
   return {
     topics,
     customTopics,
@@ -946,5 +969,6 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     updateOgpNewsGroupSettings,
     addTypedArticle,
     removeTypedArticle,
+    toggleOgpGlobalNews,
   };
 }

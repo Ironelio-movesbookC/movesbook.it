@@ -8,6 +8,7 @@ import { deserializeMultiLanguageContent } from '@/lib/news/contentParser';
 import { LANGUAGE_ID_MAP, LANGUAGE_CODE_TO_ID_MAP } from '@/lib/news/mappings';
 import { useLanguage } from '@/contexts/LanguageContext';
 import NewsCarousel from './NewsCarousel';
+import { ShareInMyClubsButtonIfClub } from '@/components/club/ShareInMyClubsButton';
 
 const newsListStyles = `
   .section-slider::-webkit-scrollbar {
@@ -80,9 +81,23 @@ interface NewsListProps {
   onModeChange?: (mode: 'default' | 'list' | 'miniature' | 'section' | 'grid' | 'browser') => void;
   hideShowStatus?: boolean;
   onHideShowChange?: (status: boolean) => void;
+  /** Club admin: show Share in My Clubs on article cards. */
+  showShareInMyClubs?: boolean;
+  clubUserType?: string | null;
+  clubAdminUsername?: string | null;
 }
 
-export default function NewsList({ news, mode = 'default', currentLanguage: propCurrentLanguage = 'en', onModeChange, hideShowStatus = false, onHideShowChange }: NewsListProps) {
+export default function NewsList({
+  news,
+  mode = 'default',
+  currentLanguage: propCurrentLanguage = 'en',
+  onModeChange,
+  hideShowStatus = false,
+  onHideShowChange,
+  showShareInMyClubs = false,
+  clubUserType = null,
+  clubAdminUsername = null,
+}: NewsListProps) {
   const { t, currentLanguage: contextCurrentLanguage } = useLanguage();
   const [selectedLanguages, setSelectedLanguages] = useState<Record<string, string>>({});
   const sliderRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -518,11 +533,25 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
                 const truncatedTitle = title.length > 60 ? title.substring(0, 60) + '...' : title;
 
                 return (
-                  <Link
+                  <div
                     key={item.id}
-                    href={`/news-by-movesbook/${item.id}`}
-                    className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
+                    className="relative bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
                   >
+                    {showShareInMyClubs ? (
+                      <div className="absolute right-2 top-2 z-10">
+                        <ShareInMyClubsButtonIfClub
+                          userType={clubUserType}
+                          kind="news"
+                          itemId={item.id}
+                          itemTitle={title}
+                          adminUsername={clubAdminUsername ?? undefined}
+                        />
+                      </div>
+                    ) : null}
+                    <Link
+                      href={`/news-by-movesbook/${item.id}`}
+                      className="block"
+                    >
                     <div className="relative h-40">
                       <Image
                         src={imageUrl}
@@ -542,7 +571,8 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
                         {truncatedTitle}
                       </h3>
                     </div>
-                  </Link>
+                    </Link>
+                  </div>
                 );
               })}
             </div>
@@ -563,11 +593,25 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
                 const contentPreview = getContentPreview(item, currentLanguage, true);
 
                 return (
-                  <Link
+                  <div
                     key={item.id}
-                    href={`/news-by-movesbook/${item.id}`}
-                    className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
+                    className="relative bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
                   >
+                    {showShareInMyClubs ? (
+                      <div className="absolute right-2 top-2 z-10">
+                        <ShareInMyClubsButtonIfClub
+                          userType={clubUserType}
+                          kind="news"
+                          itemId={item.id}
+                          itemTitle={title}
+                          adminUsername={clubAdminUsername ?? undefined}
+                        />
+                      </div>
+                    ) : null}
+                    <Link
+                      href={`/news-by-movesbook/${item.id}`}
+                      className="block"
+                    >
                     <div className="relative h-48">
                       <Image
                         src={imageUrl}
@@ -611,7 +655,8 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
                         </div>
                       )}
                     </div>
-                  </Link>
+                    </Link>
+                  </div>
                 );
               })}
             </div>

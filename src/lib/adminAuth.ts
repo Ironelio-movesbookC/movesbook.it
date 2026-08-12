@@ -40,8 +40,17 @@ export async function requireAdmin(request: NextRequest): Promise<AdminAuthConte
 
   const user = await prisma.user.findUnique({
     where: { id: decoded.userId },
-    select: { id: true, userType: true },
+    select: { id: true, userType: true, superAdminId: true },
   });
+  if (user?.superAdminId) {
+    const linked = await prisma.superAdmin.findFirst({
+      where: { id: user.superAdminId, isActive: true },
+      select: { id: true },
+    });
+    if (linked) {
+      return { ok: true, adminUserId: user.id, isSuperAdmin: true };
+    }
+  }
   if (user?.userType === 'ADMIN') {
     return { ok: true, adminUserId: user.id, isSuperAdmin: false };
   }
