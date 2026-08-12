@@ -90,3 +90,54 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
+/** PATCH — toggle Club Global News for a News article already shared into a club. */
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  try {
+    const auth = await requireClubAdmin(request);
+    if (auth instanceof NextResponse) return auth;
+
+    const { id: newsId } = await context.params;
+    const body = (await request.json().catch(() => ({}))) as {
+      clubId?: string;
+      inClubGlobalNews?: boolean;
+    };
+    const clubId = body.clubId?.trim();
+    if (!clubId) {
+      return NextResponse.json({ error: 'clubId is required' }, { status: 400 });
+    }
+    if (typeof body.inClubGlobalNews !== 'boolean') {
+      return NextResponse.json(
+        { error: 'inClubGlobalNews (boolean) is required' },
+        { status: 400 },
+      );
+    }
+
+    const ownsClub = await verifyClubOwnership(auth.userId, clubId);
+    if (!ownsClub) {
+      return NextResponse.json({ error: 'Club not found or access denied' }, { status: 403 });
+    }
+
+    const existing = await prisma.clubSharedNews.findUnique({
+      where: { clubId_newsId: { clubId, newsId } },
+      select: { id: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'News article is not shared to this club' },
+        { status: 404 },
+      );
+    }
+
+    const updated = await prisma.clubSharedNews.update({
+      where: { clubId_newsId: { clubId, newsId } },
+      data: { inClubGlobalNews: body.inClubGlobalNews },
+      select: { id: true, clubId: true, newsId: true, inClubGlobalNews: true },
+    });
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error('PATCH club global news:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}

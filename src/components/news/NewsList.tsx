@@ -9,6 +9,7 @@ import { LANGUAGE_ID_MAP, LANGUAGE_CODE_TO_ID_MAP } from '@/lib/news/mappings';
 import { useLanguage } from '@/contexts/LanguageContext';
 import NewsCarousel from './NewsCarousel';
 import { ShareInMyClubsButtonIfClub } from '@/components/club/ShareInMyClubsButton';
+import ClubGlobalNewsToggleButton from '@/components/club/ClubGlobalNewsToggleButton';
 
 const newsListStyles = `
   .section-slider::-webkit-scrollbar {
@@ -72,6 +73,8 @@ interface NewsItem {
     firstname?: string | null;
     lastname?: string | null;
   } | null;
+  /** Club: promoted into Club Global News for the current club. */
+  inClubGlobalNews?: boolean;
 }
 
 interface NewsListProps {
@@ -85,6 +88,10 @@ interface NewsListProps {
   showShareInMyClubs?: boolean;
   clubUserType?: string | null;
   clubAdminUsername?: string | null;
+  /** Club admin: show Club Global News globe (requires clubId). */
+  showClubGlobalNews?: boolean;
+  clubGlobalNewsClubId?: string | null;
+  onToggleClubGlobalNews?: (id: string, inClubGlobalNews: boolean) => void;
 }
 
 export default function NewsList({
@@ -97,6 +104,9 @@ export default function NewsList({
   showShareInMyClubs = false,
   clubUserType = null,
   clubAdminUsername = null,
+  showClubGlobalNews = false,
+  clubGlobalNewsClubId = null,
+  onToggleClubGlobalNews,
 }: NewsListProps) {
   const { t, currentLanguage: contextCurrentLanguage } = useLanguage();
   const [selectedLanguages, setSelectedLanguages] = useState<Record<string, string>>({});
@@ -537,15 +547,27 @@ export default function NewsList({
                     key={item.id}
                     className="relative bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
                   >
-                    {showShareInMyClubs ? (
-                      <div className="absolute right-2 top-2 z-10">
-                        <ShareInMyClubsButtonIfClub
-                          userType={clubUserType}
-                          kind="news"
-                          itemId={item.id}
-                          itemTitle={title}
-                          adminUsername={clubAdminUsername ?? undefined}
-                        />
+                    {(showShareInMyClubs || (showClubGlobalNews && clubGlobalNewsClubId)) ? (
+                      <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
+                        {showShareInMyClubs ? (
+                          <ShareInMyClubsButtonIfClub
+                            userType={clubUserType}
+                            kind="news"
+                            itemId={item.id}
+                            itemTitle={title}
+                            adminUsername={clubAdminUsername ?? undefined}
+                          />
+                        ) : null}
+                        {showClubGlobalNews && clubGlobalNewsClubId ? (
+                          <ClubGlobalNewsToggleButton
+                            kind="news"
+                            itemId={item.id}
+                            clubId={clubGlobalNewsClubId}
+                            inClubGlobalNews={item.inClubGlobalNews === true}
+                            variant="overlay"
+                            onToggled={(next) => onToggleClubGlobalNews?.(item.id, next)}
+                          />
+                        ) : null}
                       </div>
                     ) : null}
                     <Link
@@ -597,15 +619,27 @@ export default function NewsList({
                     key={item.id}
                     className="relative bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
                   >
-                    {showShareInMyClubs ? (
-                      <div className="absolute right-2 top-2 z-10">
-                        <ShareInMyClubsButtonIfClub
-                          userType={clubUserType}
-                          kind="news"
-                          itemId={item.id}
-                          itemTitle={title}
-                          adminUsername={clubAdminUsername ?? undefined}
-                        />
+                    {(showShareInMyClubs || (showClubGlobalNews && clubGlobalNewsClubId)) ? (
+                      <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
+                        {showShareInMyClubs ? (
+                          <ShareInMyClubsButtonIfClub
+                            userType={clubUserType}
+                            kind="news"
+                            itemId={item.id}
+                            itemTitle={title}
+                            adminUsername={clubAdminUsername ?? undefined}
+                          />
+                        ) : null}
+                        {showClubGlobalNews && clubGlobalNewsClubId ? (
+                          <ClubGlobalNewsToggleButton
+                            kind="news"
+                            itemId={item.id}
+                            clubId={clubGlobalNewsClubId}
+                            inClubGlobalNews={item.inClubGlobalNews === true}
+                            variant="overlay"
+                            onToggled={(next) => onToggleClubGlobalNews?.(item.id, next)}
+                          />
+                        ) : null}
                       </div>
                     ) : null}
                     <Link

@@ -6,19 +6,33 @@ import NewsTopicBar, { type NewsTopic, ALL_TOPICS } from '@/app/news/components/
 import NewTopicModal from '@/app/news/components/NewTopicModal';
 import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
-import NewsArticlesList from '@/app/news/components/NewsArticlesList';
+import NewsArticlesList, { type ArticlePasted } from '@/app/news/components/NewsArticlesList';
 import { useAuth } from '@/hooks/useAuth';
 import { useNewsData } from '@/hooks/useNewsData';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import { canViewerSeeClubSharedOgp } from '@/lib/clubOgpAudience';
 
 interface NewsOGPPanelProps {
   onClose: () => void;
   embedded?: boolean;
   isExpanded?: boolean;
   onExpandReduce?: () => void;
+  /** Panel header title (default "News"). */
+  title?: string;
+  /** When set with sharedWithClubOnly, only show OGP articles shared to this club. */
+  clubId?: string | null;
+  sharedWithClubOnly?: boolean;
 }
 
-export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = false, onExpandReduce }: NewsOGPPanelProps) {
+export default function NewsOGPPanel({
+  onClose,
+  embedded = true,
+  isExpanded = false,
+  onExpandReduce,
+  title = 'News',
+  clubId = null,
+  sharedWithClubOnly = false,
+}: NewsOGPPanelProps) {
   const {
     topics,
     customTopics,
@@ -48,6 +62,8 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
   const isClubAdmin = user?.userType ? isClubAccountUserType(user.userType) : false;
 
   const [articleSharedClubIds, setArticleSharedClubIds] = useState<Record<string, string[]>>({});
+  const [clubSharedArticles, setClubSharedArticles] = useState<ArticlePasted[] | null>(null);
+  const [clubSharedLoading, setClubSharedLoading] = useState(false);
 
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>(null);
   const prevLoading = useRef(true);
@@ -58,12 +74,117 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
   const [showOgpForm, setShowOgpForm] = useState(false);
 
   // On reload: select the first topic from the user's sorted list so the OGP area shows its OGPs.
+  // Club shared view defaults to All so every shared article is visible regardless of topic.
   useEffect(() => {
     if (prevLoading.current && !loading && topics.length > 0) {
-      setActiveTopic(topics[0]);
+      setActiveTopic(sharedWithClubOnly ? ALL_TOPICS : topics[0]);
     }
     prevLoading.current = loading;
-  }, [loading, topics]);
+  }, [loading, topics, sharedWithClubOnly]);
+
+  const reloadClubSharedArticles = useCallback(async () => {
+    if (!sharedWithClubOnly || !clubId) {
+      setClubSharedArticles(null);
+      return;
+    }
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    setClubSharedLoading(true);
+    try {
+      const res = await fetch(
+        `/api/clubs/${encodeURIComponent(clubId)}/shared-news?type=ogp&detail=full`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error('Failed to load shared OGP News');
+      const data = (await res.json()) as { articles?: any[] };
+      const mapped: ArticlePasted[] = (data.articles ?? []).map((a) => ({
+        id: a.id,
+        userId: a.userId,
+        creatorUsername: a.creatorUsername ?? null,
+        creatorCountry: a.creatorCountry ?? null,
+        createdByCurrentUser: a.createdByCurrentUser === true,
+        createdBySuperAdmin: a.createdBySuperAdmin === true,
+        title: a.title,
+        image: a.image,
+        description: a.description,
+        url: a.url,
+        siteName: a.siteName,
+        type: a.type,
+        customDescription: a.customDescription,
+        topic: a.topic,
+        languageCode: a.languageCode ?? undefined,
+        savedAt: a.savedAt,
+        inGlobalNews: a.inGlobalNews === true,
+        inClubGlobalNews: a.inClubGlobalNews === true,
+        clubAudienceMode: a.clubAudienceMode ?? 'me-and-club-members',
+        deletedAt: a.deletedAt,
+        deletedByUserId: a.deletedByUserId,
+        sharedClubIds: a.sharedClubIds ?? [clubId],
+        visibility: {
+          userTypes: a.visibilityUserTypes ?? [],
+          countries: a.visibilityCountries ?? [],
+          languages: a.visibilityLanguages ?? [],
+          sports: a.visibilitySports ?? [],
+          expiresAt: a.expiresAt ?? null,
+        },
+      }));
+      setClubSharedArticles(mapped);
+      setArticleSharedClubIds((prev) => {
+        const next = { ...prev };
+        for (const article of mapped) {
+          const existing = next[article.id] ?? [];
+          if (!existing.includes(clubId)) next[article.id] = [...existing, clubId];
+        }
+        return next;
+      });
+    } catch {
+      setClubSharedArticles([]);
+    } finally {
+      setClubSharedLoading(false);
+    }
+  }, [sharedWithClubOnly, clubId]);
+
+  useEffect(() => {
+    if (!sharedWithClubOnly || !clubId) {
+      setClubSharedArticles(null);
+      return;
+    }
+    void reloadClubSharedArticles();
+  }, [sharedWithClubOnly, clubId, reloadClubSharedArticles]);
+
+  const handleArticleSharedClubIdsChange = useCallback(
+    (articleId: string, clubIds: string[]) => {
+      setArticleSharedClubIds((prev) => ({ ...prev, [articleId]: clubIds }));
+      if (sharedWithClubOnly && clubId && !clubIds.includes(clubId)) {
+        setClubSharedArticles((prev) =>
+          prev ? prev.filter((a) => a.id !== articleId) : prev,
+        );
+      }
+    },
+    [sharedWithClubOnly, clubId],
+  );
+
+  const handleToggleClubGlobalNews = useCallback(
+    (articleId: string, inClubGlobalNews: boolean) => {
+      setClubSharedArticles((prev) =>
+        prev
+          ? prev.map((a) => (a.id === articleId ? { ...a, inClubGlobalNews } : a))
+          : prev,
+      );
+    },
+    [],
+  );
+
+  const handleArticleClubAudienceModeChange = useCallback(
+    (articleId: string, mode: NonNullable<ArticlePasted['clubAudienceMode']>) => {
+      setClubSharedArticles((prev) =>
+        prev
+          ? prev.map((a) => (a.id === articleId ? { ...a, clubAudienceMode: mode } : a))
+          : prev,
+      );
+    },
+    [],
+  );
 
   const handleOpenTopicModal = useCallback(() => {
     setTopicModalEditing(activeTopic ?? null);
@@ -118,25 +239,86 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
   const handlePastedArticle = useCallback(
     async (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
       try {
-        await addPastedArticle(data, activeTopic ?? 'News');
+        const topicForSave =
+          activeTopic && activeTopic !== ALL_TOPICS
+            ? activeTopic
+            : topics.find((t) => t !== ALL_TOPICS) ?? 'News';
+        const shareToClubId =
+          sharedWithClubOnly && clubId && isClubAdmin ? clubId : null;
+        await addPastedArticle(data, topicForSave, { shareToClubId });
         setShowOgpForm(false);
+        if (shareToClubId) {
+          await reloadClubSharedArticles();
+        }
       } catch (e) {
         console.error(e);
         throw e;
       }
     },
-    [activeTopic, addPastedArticle]
+    [
+      activeTopic,
+      topics,
+      addPastedArticle,
+      sharedWithClubOnly,
+      clubId,
+      isClubAdmin,
+      reloadClubSharedArticles,
+    ]
+  );
+
+  const handleSaveOgpNewsGroup = useCallback(
+    async (payload: {
+      name: string;
+      topic: string;
+      articleIds: string[];
+      confirmExisting?: boolean;
+      coverImage?: string | null;
+    }) => {
+      const result = await saveOgpNewsGroup(payload);
+      // Groups appear when all members are already club-shared; refresh so UI stays in sync.
+      if (sharedWithClubOnly && clubId) {
+        await reloadClubSharedArticles();
+      }
+      return result;
+    },
+    [saveOgpNewsGroup, sharedWithClubOnly, clubId, reloadClubSharedArticles]
   );
 
   const handleUpdatePastedSettings = useCallback(
-    async (id: string, settings: { userTypes: string[]; countries: string[]; languages: string[]; sports: string[]; expiresAt: string | null }) => {
+    async (id: string, settings: {
+      userTypes: string[];
+      countries: string[];
+      languages: string[];
+      sports: string[];
+      expiresAt: string | null;
+    }) => {
       try {
         await updatePastedArticleSettings(id, settings);
+        if (sharedWithClubOnly) {
+          setClubSharedArticles((prev) =>
+            prev
+              ? prev.map((a) =>
+                  a.id === id
+                    ? {
+                        ...a,
+                        visibility: {
+                          userTypes: settings.userTypes ?? [],
+                          countries: settings.countries ?? [],
+                          languages: settings.languages ?? [],
+                          sports: settings.sports ?? [],
+                          expiresAt: settings.expiresAt ?? null,
+                        },
+                      }
+                    : a,
+                )
+              : prev,
+          );
+        }
       } catch (e) {
         console.error(e);
       }
     },
-    [updatePastedArticleSettings]
+    [updatePastedArticleSettings, sharedWithClubOnly]
   );
 
   const handleUpdatePastedTopic = useCallback(
@@ -185,14 +367,51 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
     [removeTypedArticle]
   );
 
-  const handleArticleSharedClubIdsChange = useCallback((articleId: string, clubIds: string[]) => {
-    setArticleSharedClubIds((prev) => ({ ...prev, [articleId]: clubIds }));
-  }, []);
-
   const pastedWithClubShares = pastedArticles.map((a) => ({
     ...a,
     sharedClubIds: articleSharedClubIds[a.id] ?? a.sharedClubIds,
   }));
+
+  const filterToClubShared = Boolean(sharedWithClubOnly && clubId);
+  const clubSharedIdSet = new Set((clubSharedArticles ?? []).map((a) => a.id));
+  const visiblePasted = filterToClubShared
+    ? (clubSharedArticles ?? []).map((a) => ({
+        ...a,
+        sharedClubIds: articleSharedClubIds[a.id] ?? a.sharedClubIds ?? [clubId],
+        isOgpGroup: false,
+      }))
+    : pastedWithClubShares;
+  /**
+   * Club OGP News feed = shared singles only.
+   * Groups shown only when every member is one of those shared singles
+   * (so users can still create/manage groups from shared OGP News).
+   * Audience radios apply the same visibility rules as singles for members.
+   */
+  const visibleGroups = filterToClubShared
+    ? ogpNewsGroups.filter((g) => {
+        if ((g.memberIds?.length ?? 0) === 0) return false;
+        if (!(g.memberIds ?? []).every((id) => clubSharedIdSet.has(id))) return false;
+        if (isClubAdmin) return true;
+        return canViewerSeeClubSharedOgp({
+          audienceMode: g.clubAudienceMode,
+          isClubAdmin: false,
+          isClubMember: true,
+          viewer: {
+            userType: user?.userType ?? '',
+            country: user?.country ?? null,
+            languageCode: 'en',
+            sports: [],
+          },
+          visibility: {
+            userTypes: g.visibility?.userTypes ?? [],
+            countries: g.visibility?.countries ?? [],
+            languages: g.visibility?.languages ?? [],
+            sports: g.visibility?.sports ?? [],
+            expiresAt: g.visibility?.expiresAt ?? null,
+          },
+        });
+      })
+    : ogpNewsGroups;
 
   return (
     <div
@@ -201,7 +420,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
       }`}
     >
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50">
-        <h2 className="text-lg font-semibold text-gray-900">News</h2>
+        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
         <button
           type="button"
           onClick={onClose}
@@ -213,7 +432,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
       </div>
 
       <div className="flex-1 p-4">
-        {loading && (
+        {(loading || clubSharedLoading) && (
           <p className="text-sm text-gray-500 mb-4">Loading news...</p>
         )}
         {error && (
@@ -290,8 +509,8 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
         )}
 
         <NewsArticlesList
-          pasted={pastedWithClubShares}
-          typed={typedArticles}
+          pasted={visiblePasted}
+          typed={filterToClubShared ? [] : typedArticles}
           activeTopic={activeTopic}
           topics={topics}
           onRemovePasted={handleRemovePasted}
@@ -301,18 +520,41 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           currentUserCountry={user?.country ?? null}
           onUpdatePastedSettings={handleUpdatePastedSettings}
           onUpdatePastedTopic={handleUpdatePastedTopic}
-          onAddClick={() => setShowOgpForm((prev) => !prev)}
-          addButtonDisabled={activeTopic === ALL_TOPICS}
-          ogpNewsGroups={ogpNewsGroups}
-          onSaveOgpNewsGroup={saveOgpNewsGroup}
+          onAddClick={
+            filterToClubShared && !isClubAdmin
+              ? undefined
+              : () => setShowOgpForm((prev) => !prev)
+          }
+          addButtonDisabled={
+            // Club OGP: allow Single even on "All" (topic resolved on save).
+            // Personal OGP: still require a concrete topic.
+            filterToClubShared && isClubAdmin
+              ? false
+              : activeTopic === ALL_TOPICS
+          }
+          ogpNewsGroups={visibleGroups}
+          onSaveOgpNewsGroup={
+            filterToClubShared && !isClubAdmin ? undefined : handleSaveOgpNewsGroup
+          }
           onCreateTopic={addTopic}
-          onRemoveOgpNewsGroup={removeOgpNewsGroup}
-          onUpdateOgpNewsGroup={updateOgpNewsGroup}
-          onUpdateOgpNewsGroupSettings={updateOgpNewsGroupSettings}
+          onRemoveOgpNewsGroup={
+            filterToClubShared && !isClubAdmin ? undefined : removeOgpNewsGroup
+          }
+          onUpdateOgpNewsGroup={
+            filterToClubShared && !isClubAdmin ? undefined : updateOgpNewsGroup
+          }
+          onUpdateOgpNewsGroupSettings={
+            filterToClubShared && !isClubAdmin ? undefined : updateOgpNewsGroupSettings
+          }
+          preferSingleNewsDefault={filterToClubShared}
           showShareInMyClubsButton={isClubAdmin}
+          showClubGlobalNewsButton={Boolean(isClubAdmin && filterToClubShared && clubId)}
+          clubGlobalNewsClubId={filterToClubShared ? clubId : null}
+          onToggleClubGlobalNews={handleToggleClubGlobalNews}
           currentUserType={user?.userType ?? null}
           clubAdminUsername={user?.username ?? null}
           onArticleSharedClubIdsChange={handleArticleSharedClubIdsChange}
+          onArticleClubAudienceModeChange={handleArticleClubAudienceModeChange}
         />
       </div>
     </div>

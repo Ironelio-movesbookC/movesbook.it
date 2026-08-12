@@ -82,6 +82,9 @@ import MyMusicPanel from '@/components/music/MyMusicPanel';
 import MusicOGPPanel from '@/components/music/MusicOGPPanel';
 import PostsPanel from '@/components/posts/PostsPanel';
 import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
+import ClubNewsArchivePanel from '@/components/club/ClubNewsArchivePanel';
+import ClubSharedNewsPanel from '@/components/club/ClubSharedNewsPanel';
+import ClubMovesbookNewsPanel from '@/components/club/ClubMovesbookNewsPanel';
 import AthleteLegacyBanner, {
   type AthleteLegacyBannerProfile,
 } from '@/components/athlete/AthleteLegacyBanner';
@@ -93,6 +96,13 @@ import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
 import AthleteMyClubRightSidebar from '@/components/dashboard/AthleteMyClubRightSidebar';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+
+type AthleteClubMainPanel =
+  | 'default'
+  | 'club-news'
+  | 'club-news-ogp'
+  | 'club-global-news'
+  | 'club-movesbook-news';
 
 function heroBannerStripBgUrl(p: AthleteLegacyBannerProfile | null): string {
   return getHeroBannerDisplayUrl(p);
@@ -136,6 +146,8 @@ function AthleteDashboardContent() {
   const [clubChatOpen, setClubChatOpen] = useState(false);
   /** After Telegram join, open club chat instead of My Page audience picker. */
   const [pendingClubChatOpen, setPendingClubChatOpen] = useState(false);
+  /** My Club → Club News panels (member view). */
+  const [clubMainPanel, setClubMainPanel] = useState<AthleteClubMainPanel>('default');
   
   // Entities athlete belongs to
   const [myCoaches, setMyCoaches] = useState<any[]>([]);
@@ -221,6 +233,7 @@ function AthleteDashboardContent() {
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
       setClubChatOpen(false);
+      setClubMainPanel('default');
     }
   }, [activeTab]);
 
@@ -228,8 +241,17 @@ function AthleteDashboardContent() {
     if (myClubs.length === 0 && activeTab === 'my-entity') {
       setActiveTab('my-page');
       setClubChatOpen(false);
+      setClubMainPanel('default');
     }
   }, [myClubs.length, activeTab]);
+
+  const openClubNewsPanel = useCallback((panel: Exclude<AthleteClubMainPanel, 'default'>) => {
+    setActiveTab('my-entity');
+    setClubChatOpen(false);
+    setClubAddSongsOgpOpen(false);
+    setClubAddSongsOgpExpanded(false);
+    setClubMainPanel(panel);
+  }, []);
 
   // Load entities the athlete belongs to
   useEffect(() => {
@@ -281,6 +303,7 @@ function AthleteDashboardContent() {
     }
     setActiveTab('my-entity');
     setClubAddSongsOgpOpen(false);
+    setClubMainPanel('default');
     setClubChatOpen(true);
   }, [selectedClubId, myClubs]);
 
@@ -846,8 +869,13 @@ function AthleteDashboardContent() {
                 onClubAddSongsPlaylistsClick={() => {
                   setActiveTab('my-entity');
                   setClubChatOpen(false);
+                  setClubMainPanel('default');
                   setClubAddSongsOgpOpen(true);
                 }}
+                onClubMovesbookNewsSectionClick={() => openClubNewsPanel('club-movesbook-news')}
+                onClubNewsSectionClick={() => openClubNewsPanel('club-news')}
+                onClubOgpNewsSectionClick={() => openClubNewsPanel('club-news-ogp')}
+                onClubGlobalNewsSectionClick={() => openClubNewsPanel('club-global-news')}
               />
             </div>
           )}
@@ -958,6 +986,66 @@ function AthleteDashboardContent() {
                     chatAudience="club-member"
                     onClose={() => setClubChatOpen(false)}
                   />
+                </div>
+              ) : clubMainPanel === 'club-news' ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {selectedClubId ?? myClubs[0]?.id ? (
+                    <ClubNewsArchivePanel
+                      clubId={(selectedClubId ?? myClubs[0]?.id)!}
+                      sharedWithClubOnly
+                      title="News"
+                      onClose={() => setClubMainPanel('default')}
+                    />
+                  ) : (
+                    <div className="rounded-lg border bg-white p-6 shadow-sm">
+                      <p className="py-12 text-center text-sm text-gray-600">
+                        Select a club in the sidebar to view shared News.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : clubMainPanel === 'club-news-ogp' ? (
+                <div className="flex min-h-0 flex-1 flex-col py-4">
+                  {selectedClubId ?? myClubs[0]?.id ? (
+                    <NewsOGPPanel
+                      title="OGP News"
+                      clubId={(selectedClubId ?? myClubs[0]?.id)!}
+                      sharedWithClubOnly
+                      onClose={() => {
+                        setClubMainPanel('default');
+                        setClubAddSongsOgpExpanded(false);
+                      }}
+                      embedded
+                      isExpanded={clubAddSongsOgpExpanded}
+                      onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
+                    />
+                  ) : (
+                    <div className="rounded-lg border bg-white p-6 shadow-sm">
+                      <p className="py-12 text-center text-sm text-gray-600">
+                        Select a club in the sidebar to view shared OGP News.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : clubMainPanel === 'club-global-news' ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {selectedClubId ?? myClubs[0]?.id ? (
+                    <ClubSharedNewsPanel
+                      clubId={(selectedClubId ?? myClubs[0]?.id)!}
+                      type="all"
+                      title="Club Global News"
+                    />
+                  ) : (
+                    <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
+                      <p className="py-12 text-center text-sm text-gray-600">
+                        Select a club in the sidebar to view Club Global News.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : clubMainPanel === 'club-movesbook-news' ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <ClubMovesbookNewsPanel title="Movesbook News" />
                 </div>
               ) : (
                 <div className="bg-white rounded-lg shadow-sm border p-8 pt-12 flex-1 flex items-start justify-center">
