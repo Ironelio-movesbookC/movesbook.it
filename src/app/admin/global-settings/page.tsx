@@ -66,6 +66,28 @@ function UserTypesPanel() {
         </button>
       </div>
 
+      <div className="border border-gray-200 mb-6 p-4 bg-[#fafafa]">
+        <h3 className="font-bold text-gray-800 mb-2 text-sm">Versions — promocode discount</h3>
+        <label className="flex items-start gap-3 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" className="mt-1" defaultChecked />
+          <span>
+            Check how much Discount will be done every 100 points (used when promocodes grant credits
+            that convert to subscription discount). Configure the discount percentage on each
+            promocode and on subscription versions.
+          </span>
+        </label>
+        <div className="mt-3 flex items-center gap-2 text-sm">
+          <span>Discount every 100 points (%)</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            defaultValue={0}
+            className="w-20 border border-gray-300 px-2 py-1 rounded-sm"
+          />
+        </div>
+      </div>
+
       <div className="border border-gray-200">
         <table className="w-full text-sm">
           <thead>
