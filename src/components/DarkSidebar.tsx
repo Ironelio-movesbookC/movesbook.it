@@ -141,6 +141,7 @@ import ClubSocialSubmenu from '@/components/club/ClubSocialSubmenu';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
+import MubSidebarBar from '@/components/mub/MubSidebarBar';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
 import { PERSONAL_WEBSITE_TOPICS_PATH } from '@/lib/personalWebsiteSettingsPaths';
@@ -363,6 +364,8 @@ interface DarkSidebarProps {
   onClubChatClick?: () => void;
   /** My Club → Club News → News (shared editorial news) */
   onClubNewsSectionClick?: () => void;
+  /** My Club → Club News → Movesbook News (superadmin Global News, read-only) */
+  onClubMovesbookNewsSectionClick?: () => void;
   /** My Club → Club News → OGP News (shared OGP news) */
   onClubOgpNewsSectionClick?: () => void;
   /** My Club → Club News → Club Global News (all shared) */
@@ -410,6 +413,7 @@ export default function DarkSidebar({
   onSuggestMovesbookClick,
   onClubChatClick,
   onClubNewsSectionClick,
+  onClubMovesbookNewsSectionClick,
   onClubOgpNewsSectionClick,
   onClubGlobalNewsSectionClick,
   activeTab = 'my-page',
@@ -1575,11 +1579,7 @@ export default function DarkSidebar({
             <span className="text-white text-xs">{t('sidebar_allow_visiting')}</span>
           </div>
 
-          {/* Most used buttons - Compact */}
-          <button className="w-full bg-red-600 hover:bg-red-700 text-white py-1.5 px-2 rounded mb-2 flex items-center justify-between transition-colors text-xs">
-            <span>{t('sidebar_most_used_buttons')}</span>
-            <Settings className="w-3 h-3" />
-          </button>
+          <MubSidebarBar variant="compact" />
 
           {/* Visitor Tracking - Compact */}
           <div className="space-y-1 mb-2">
@@ -2841,7 +2841,8 @@ export default function DarkSidebar({
                   </button>
                 )}
 
-                {userType === 'CLUB' ? (
+                {/* Club News submenus: club admin, or athlete who is a member of this club */}
+                {userType === 'CLUB' || (isAthleteUser && athleteHasClubMembership) ? (
                   <div className="w-full border-b border-teal-700">
                     <button
                       type="button"
@@ -2863,6 +2864,7 @@ export default function DarkSidebar({
                       <div className="bg-[#4a4a4a] text-white">
                         <button
                           type="button"
+                          onClick={() => onClubMovesbookNewsSectionClick?.()}
                           className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                         >
                           <BookOpen className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />

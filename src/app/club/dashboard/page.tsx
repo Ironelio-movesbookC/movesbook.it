@@ -13,7 +13,9 @@ import ClubBachecaMemberPanel from '@/components/club/websiteSettings/ClubBachec
 import ClubTopicMemberPanel from '@/components/club/websiteSettings/ClubTopicMemberPanel';
 import ClubDashboardTopicsHorizontalPanel from '@/components/club/ClubDashboardTopicsHorizontalPanel';
 import ClubChatPanel from '@/components/club/ClubChatPanel';
+import ClubNewsArchivePanel from '@/components/club/ClubNewsArchivePanel';
 import ClubSharedNewsPanel from '@/components/club/ClubSharedNewsPanel';
+import ClubMovesbookNewsPanel from '@/components/club/ClubMovesbookNewsPanel';
 import NotificationByPromocodeDashboardView from '@/components/promocodes/NotificationByPromocodeDashboard';
 import {
   getClubMyPageDisplayName,
@@ -51,6 +53,7 @@ function ClubDashboardContent() {
     | 'club-news'
     | 'club-news-ogp'
     | 'club-global-news'
+    | 'club-movesbook-news'
   >('default');
   const [clubTopicId, setClubTopicId] = useState<string | null>(null);
 
@@ -167,6 +170,14 @@ function ClubDashboardContent() {
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
       setClubMainPanel('club-global-news');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+    if (panel === 'club-movesbook-news') {
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('club-movesbook-news');
       router.replace('/club/dashboard', { scroll: false });
     }
     if (panel === 'bacheca') {
@@ -311,33 +322,47 @@ function ClubDashboardContent() {
           )}
         </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'club-news' ? (
-        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
+        <div className="flex min-h-0 flex-1 flex-col">
           {selectedClubId ?? activeClub?.id ? (
-            <ClubSharedNewsPanel
+            <ClubNewsArchivePanel
               clubId={(selectedClubId ?? activeClub?.id)!}
-              type="news"
+              sharedWithClubOnly
+              title="News"
+              onClose={() => setClubMainPanel('default')}
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-600">
-              Select a club in the sidebar to view shared News.
-            </p>
+            <div className="rounded-lg border bg-white p-6 shadow-sm">
+              <p className="py-12 text-center text-sm text-gray-600">
+                Select a club in the sidebar to view shared News.
+              </p>
+            </div>
           )}
         </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'club-news-ogp' ? (
-        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
+        <div className="flex min-h-0 flex-1 flex-col py-4">
           {selectedClubId ?? activeClub?.id ? (
-            <ClubSharedNewsPanel
+            <NewsOGPPanel
+              title="OGP News"
               clubId={(selectedClubId ?? activeClub?.id)!}
-              type="ogp"
+              sharedWithClubOnly
+              onClose={() => {
+                setClubMainPanel('default');
+                setClubAddSongsOgpExpanded(false);
+              }}
+              embedded
+              isExpanded={clubAddSongsOgpExpanded}
+              onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-600">
-              Select a club in the sidebar to view shared OGP News.
-            </p>
+            <div className="rounded-lg border bg-white p-6 shadow-sm">
+              <p className="py-12 text-center text-sm text-gray-600">
+                Select a club in the sidebar to view shared OGP News.
+              </p>
+            </div>
           )}
         </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'club-global-news' ? (
-        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
+        <div className="flex min-h-0 flex-1 flex-col">
           {selectedClubId ?? activeClub?.id ? (
             <ClubSharedNewsPanel
               clubId={(selectedClubId ?? activeClub?.id)!}
@@ -345,10 +370,16 @@ function ClubDashboardContent() {
               title="Club Global News"
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-600">
-              Select a club in the sidebar to view Club Global News.
-            </p>
+            <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
+              <p className="py-12 text-center text-sm text-gray-600">
+                Select a club in the sidebar to view Club Global News.
+              </p>
+            </div>
           )}
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'club-movesbook-news' ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <ClubMovesbookNewsPanel title="Movesbook News" />
         </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection ? (
         <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
