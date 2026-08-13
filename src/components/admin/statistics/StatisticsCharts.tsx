@@ -330,32 +330,6 @@ export function StatisticsVerticalCountryBars({
   const colorFor = (k: StatsUserKind) => STATS_KIND_COLORS[k];
   const labelFor = (k: StatsUserKind) => SIDE_TABLE_LABELS[k];
 
-  const data = rows.map((row) => {
-    const point: Record<string, string | number> = { country: row.country };
-    for (const k of kinds) point[k] = row.byKind[k] ?? 0;
-    return point;
-  });
-
-  const hostRef = useRef<HTMLDivElement>(null);
-  const [chartWidth, setChartWidth] = useState(640);
-
-  useEffect(() => {
-    const el = hostRef.current;
-    if (!el) return;
-    const update = () => {
-      const next = Math.floor(el.getBoundingClientRect().width);
-      if (next > 0) setChartWidth(next);
-    };
-    update();
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
-    ro?.observe(el);
-    window.addEventListener('resize', update);
-    return () => {
-      ro?.disconnect();
-      window.removeEventListener('resize', update);
-    };
-  }, [kinds.length, data.length]);
-
   const [hovered, setHovered] = useState<BarFocus | null>(null);
   const [selected, setSelected] = useState<BarFocus | null>(null);
   const active = hovered ?? selected;
@@ -363,14 +337,39 @@ export function StatisticsVerticalCountryBars({
   const showTotals = !singleKindMode;
   const colCount = kinds.length + (showTotals ? 1 : 0);
   const headerH = 28;
-  const axisBottomH = 36;
-  const rowHeight = singleKindMode ? 40 : 48;
-  const plotH = Math.max(data.length * rowHeight, rowHeight);
-  const chartAreaH = plotH + axisBottomH;
+  const axisBottomH = 28;
+  /** Tall enough for thick bars while keeping chart rows = side-table rows. */
+  const barTrackH = singleKindMode ? 32 : 14;
+  const barGap = singleKindMode ? 0 : 4;
+  const rowPadY = singleKindMode ? 8 : 10;
+  const rowHeight =
+    rowPadY * 2 +
+    kinds.length * barTrackH +
+    Math.max(0, kinds.length - 1) * barGap;
+  const labelColW = 120;
   const sideColWidth = Math.max(
     showTotals ? 280 : 200,
     colCount * (showTotals ? 52 : 56) + 8,
   );
+
+  const maxValue = useMemo(() => {
+    let max = 1;
+    for (const row of rows) {
+      for (const k of kinds) {
+        max = Math.max(max, row.byKind[k] ?? 0);
+      }
+    }
+    return max;
+  }, [rows, kinds]);
+
+  const axisTicks = useMemo(() => {
+    const nice = Math.ceil(maxValue);
+    const step = Math.max(1, Math.ceil(nice / 4));
+    const ticks: number[] = [];
+    for (let v = 0; v <= nice; v += step) ticks.push(v);
+    if (ticks[ticks.length - 1] !== nice) ticks.push(nice);
+    return ticks;
+  }, [maxValue]);
 
   const rowTotal = (row: { byKind: Record<StatsUserKind, number>; total: number }) =>
     kinds.reduce((s, k) => s + (row.byKind[k] ?? 0), 0) || row.total;
@@ -400,14 +399,13 @@ export function StatisticsVerticalCountryBars({
   const handleBarClick = (country: string, kind: StatsUserKind) => {
     if (!country) return;
     if (!singleKindMode) {
-      // Filter dropdown to this user type; hide the other 4 bars.
       onKindSelect?.(kind);
       return;
     }
     selectCountry(country, kind);
   };
 
-  if (data.length === 0) {
+  if (rows.length === 0) {
     return (
       <div className="bg-white border border-[#cfcfcf] p-8 text-center text-[#888]">No data</div>
     );
@@ -417,9 +415,8 @@ export function StatisticsVerticalCountryBars({
     <div className="bg-white border border-[#cfcfcf] p-3 overflow-x-auto">
       <div className="flex gap-3 items-start min-w-[720px]">
         <div className="flex-1 min-w-[420px]">
-          {/* Shared header band — same height as side-table header */}
           <div
-            className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] font-semibold"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] font-semibold border-b border-[#eee] box-border"
             style={{ height: headerH }}
           >
             {kinds.map((k) => (
@@ -431,7 +428,10 @@ export function StatisticsVerticalCountryBars({
                 onMouseLeave={() => setHovered(null)}
                 onClick={() => {
                   if (!singleKindMode) onKindSelect?.(k);
-                  else setSelected((prev) => (prev?.kind === k && !prev.country ? null : { kind: k }));
+                  else
+                    setSelected((prev) =>
+                      prev?.kind === k && !prev.country ? null : { kind: k },
+                    );
                 }}
               >
                 <span
@@ -444,80 +444,103 @@ export function StatisticsVerticalCountryBars({
             ))}
           </div>
 
-          <div ref={hostRef} style={{ height: chartAreaH }}>
-            <BarChart
-              width={Math.max(chartWidth, 320)}
-              height={chartAreaH}
-              data={data}
-              layout="vertical"
-              margin={{
-                top: 4,
-                right: singleKindMode ? 36 : 12,
-                left: 8,
-                bottom: axisBottomH - 4,
-              }}
-              barCategoryGap="22%"
-              barGap={2}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-              <XAxis type="number" allowDecimals={false} />
-              <YAxis
-                type="category"
-                dataKey="country"
-                width={120}
-                tick={{ fontSize: 11 }}
-                interval={0}
-              />
-              <Tooltip />
-              {kinds.map((k) => (
-                <Bar
-                  key={k}
-                  dataKey={k}
-                  name={labelFor(k)}
-                  fill={colorFor(k)}
-                  maxBarSize={singleKindMode ? 30 : 26}
-                  barSize={singleKindMode ? 26 : 22}
-                  cursor="pointer"
-                  label={
-                    singleKindMode
-                      ? {
-                          position: 'right',
-                          fill: '#333',
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }
-                      : false
-                  }
-                  onMouseEnter={(entry) => {
-                    const country = String((entry as { country?: string }).country ?? '');
-                    if (country) setHovered({ country, kind: k });
-                  }}
+          <div>
+            {rows.map((row) => {
+              const rowActive = active?.country === row.country;
+              return (
+                <div
+                  key={row.country}
+                  className={`flex items-stretch border-b border-[#eee] box-border ${
+                    rowActive ? 'bg-[#e8f4f5]' : 'bg-white'
+                  }`}
+                  style={{ height: rowHeight }}
+                  onMouseEnter={() => setHovered({ country: row.country })}
                   onMouseLeave={() => setHovered(null)}
-                  onClick={(entry) => {
-                    const country = String((entry as { country?: string }).country ?? '');
-                    handleBarClick(country, k);
-                  }}
                 >
-                  {data.map((row) => {
-                    const country = String(row.country);
-                    const activeCell = isCellActive(country, k);
-                    const dimmed = isCellDimmed(country, k);
-                    const color = colorFor(k);
-                    return (
-                      <Cell
-                        key={`${country}-${k}`}
-                        fill={color}
-                        fillOpacity={dimmed ? 0.28 : 1}
-                        stroke={activeCell ? color : 'transparent'}
-                        strokeWidth={activeCell ? 3 : 0}
-                        strokeOpacity={activeCell ? 1 : 0}
-                        style={{ transition: 'fill-opacity 120ms ease' }}
-                      />
-                    );
-                  })}
-                </Bar>
+                  <div
+                    className="shrink-0 flex items-center truncate text-[11px] text-[#333] px-1.5"
+                    style={{ width: labelColW }}
+                    title={row.country}
+                  >
+                    {row.country}
+                  </div>
+                  <div
+                    className="relative flex-1 min-w-0 px-1 flex flex-col justify-center"
+                    style={{ gap: barGap, paddingTop: rowPadY, paddingBottom: rowPadY }}
+                  >
+                    <div
+                      className="pointer-events-none absolute left-1 right-1"
+                      style={{ top: rowPadY, bottom: rowPadY }}
+                    >
+                      {axisTicks.map((t) => (
+                        <div
+                          key={`g-${row.country}-${t}`}
+                          className="absolute top-0 bottom-0 w-px bg-[#ececec]"
+                          style={{ left: `${(t / maxValue) * 100}%` }}
+                        />
+                      ))}
+                    </div>
+                    {kinds.map((k) => {
+                      const value = row.byKind[k] ?? 0;
+                      const pct = Math.max(0, Math.min(100, (value / maxValue) * 100));
+                      const dimmed = isCellDimmed(row.country, k);
+                      const cellActive = isCellActive(row.country, k);
+                      return (
+                        <button
+                          key={k}
+                          type="button"
+                          className="relative z-[1] flex items-center gap-1.5 w-full text-left shrink-0"
+                          style={{ height: barTrackH }}
+                          title={`${row.country} · ${labelFor(k)}: ${value}`}
+                          onMouseEnter={() => setHovered({ country: row.country, kind: k })}
+                          onMouseLeave={() => setHovered({ country: row.country })}
+                          onClick={() => handleBarClick(row.country, k)}
+                        >
+                          <div className="relative flex-1 h-full min-w-0 rounded-sm bg-[#ececec]">
+                            <div
+                              className="h-full rounded-sm transition-[width,opacity] duration-150"
+                              style={{
+                                width: `${pct}%`,
+                                minWidth: value > 0 ? 4 : 0,
+                                backgroundColor: colorFor(k),
+                                opacity: dimmed ? 0.28 : 1,
+                                boxShadow: cellActive
+                                  ? `inset 0 0 0 2px ${colorFor(k)}`
+                                  : undefined,
+                              }}
+                            />
+                          </div>
+                          {singleKindMode ? (
+                            <span className="w-8 shrink-0 text-right text-xs font-bold tabular-nums text-[#222]">
+                              {value}
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            className="flex border-t border-[#eee] text-[10px] text-[#666] tabular-nums"
+            style={{ height: axisBottomH }}
+          >
+            <div className="shrink-0" style={{ width: labelColW }} />
+            <div className="relative flex-1 min-w-0 px-1">
+              {axisTicks.map((t) => (
+                <span
+                  key={`tick-${t}`}
+                  className="absolute top-1.5 -translate-x-1/2"
+                  style={{ left: `${(t / maxValue) * 100}%` }}
+                >
+                  {t}
+                </span>
               ))}
-            </BarChart>
+            </div>
+            {singleKindMode ? <div className="w-8 shrink-0" /> : null}
           </div>
         </div>
 
@@ -526,7 +549,7 @@ export function StatisticsVerticalCountryBars({
           style={{ width: sideColWidth }}
         >
           <div
-            className="grid border-b border-[#ddd] bg-[#f0f0f0] text-[10px] font-semibold text-[#333] uppercase tracking-wide"
+            className="grid border-b border-[#ddd] bg-[#f0f0f0] text-[10px] font-semibold text-[#333] uppercase tracking-wide box-border"
             style={{
               gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
               height: headerH,
@@ -538,11 +561,7 @@ export function StatisticsVerticalCountryBars({
                 type="button"
                 className="flex items-center justify-center px-0.5 text-center border-l border-[#e0e0e0] first:border-l-0 hover:bg-[#e8e8e8]"
                 style={{ color: colorFor(k) }}
-                title={
-                  singleKindMode
-                    ? labelFor(k)
-                    : `Show only ${labelFor(k)}`
-                }
+                title={singleKindMode ? labelFor(k) : `Show only ${labelFor(k)}`}
                 onClick={() => {
                   if (!singleKindMode) onKindSelect?.(k);
                 }}
@@ -560,14 +579,14 @@ export function StatisticsVerticalCountryBars({
               </div>
             ) : null}
           </div>
-          <div style={{ height: plotH }} className="flex flex-col">
+          <div className="flex flex-col">
             {rows.map((row) => {
               const rowActive = active?.country === row.country;
               const total = rowTotal(row);
               return (
                 <div
                   key={row.country}
-                  className={`grid shrink-0 border-b border-[#eee] last:border-b-0 text-xs ${
+                  className={`grid shrink-0 border-b border-[#eee] text-xs box-border ${
                     rowActive ? 'bg-[#e8f4f5]' : 'bg-white'
                   }`}
                   style={{
@@ -608,7 +627,6 @@ export function StatisticsVerticalCountryBars({
               );
             })}
           </div>
-          {/* Match chart X-axis band so bottoms line up */}
           <div style={{ height: axisBottomH }} className="bg-[#fafafa] border-t border-[#eee]" />
         </div>
       </div>
