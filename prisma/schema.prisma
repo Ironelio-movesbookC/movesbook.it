@@ -293,6 +293,40 @@ model OgpNewsGroupLike {
   @@map("ogp_news_group_likes")
 }
 
+/// Singleton placement rules for OGP News sponsored cards (super admin).
+model OgpNewsSponsorSettings {
+  id           String           @id @default("default")
+  /// A: first sponsor row (1–5). If that row does not exist on a page, use the last row available.
+  startRow     Int              @default(2)
+  /// B: repeat every N rows after the first sponsor (3–99), counting across pages.
+  intervalRows Int              @default(12)
+  /// Rotation delay in milliseconds when more than one sponsor is configured.
+  delayMs      Int              @default(5000)
+  updatedAt    DateTime         @updatedAt
+  sponsors     OgpNewsSponsor[]
+
+  @@map("ogp_news_sponsor_settings")
+}
+
+model OgpNewsSponsor {
+  id          String                  @id @default(cuid())
+  settingsId  String                  @default("default")
+  image       String                  @db.Text
+  /// "single" (1 grid cell) or "double" (2 grid cells).
+  size        String                  @default("single")
+  hoverTitle  String?                 @db.Text
+  linkUrl     String                  @db.Text
+  /// "tab" (new browser tab) or "window" (new browser window).
+  linkTarget  String                  @default("tab")
+  sortOrder   Int                     @default(0)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  settings    OgpNewsSponsorSettings  @relation(fields: [settingsId], references: [id], onDelete: Cascade)
+
+  @@index([settingsId, sortOrder])
+  @@map("ogp_news_sponsors")
+}
+
 model NewsTypedArticle {
   id          String   @id @default(cuid())
   userId      String

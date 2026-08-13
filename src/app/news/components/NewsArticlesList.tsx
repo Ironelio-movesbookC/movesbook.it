@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
-import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2, List, Music2, Disc3, Heart, Globe, type LucideIcon } from 'lucide-react';
+import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2, List, Music2, Disc3, Heart, Globe, Megaphone, type LucideIcon } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
 import { ALL_TOPICS, ALL_USER_SECTORS, ALL_SUPER_ADMIN, NEWS_TOPIC_KEYS, NEWS_TOPICS } from './NewsTopicBar';
@@ -24,6 +24,16 @@ import RichTextEditor from '@/components/settings/RichTextEditor';
 import FeaturedNewsCard from './FeaturedNewsCard';
 import NewsHeadlinesPanel from './NewsHeadlinesPanel';
 import NewsHeadlinesExpandedView from './NewsHeadlinesExpandedView';
+import OgpSponsoredCard from './OgpSponsoredCard';
+import OgpSponsorsSettingsModal from './OgpSponsorsSettingsModal';
+import {
+  OGP_CARDS_PER_ROW,
+  maxSponsorCols,
+  paginateWithSponsors,
+  type OgpSponsorSettings,
+  type OgpSponsorSourceArticle,
+  type SponsoredPageCell,
+} from '@/lib/news/ogpSponsors';
 
 type MusicLibraryNavKey = 'recent' | 'playlist' | 'songs' | 'albums' | 'favourites';
 
@@ -215,7 +225,7 @@ function groupToFeedItem(g: OgpNewsGroupCard): ArticlePasted {
 }
 
 /** Number of OGP cards per row (each row = 6 OGPs). */
-const OGPS_PER_ROW = 6;
+const OGPS_PER_ROW = OGP_CARDS_PER_ROW;
 /** Dropdown options: number of rows to display per page. Items per page = rows × OGPS_PER_ROW. */
 const ROWS_PER_PAGE_OPTIONS = [3, 5, 10, 15, 20];
 const MAX_PAGE_BUTTONS = 9;
@@ -574,6 +584,24 @@ export default function NewsArticlesList({
   const [shareModalArticle, setShareModalArticle] = useState<ArticlePasted | null>(null);
   const ogpGridRef = useRef<HTMLDivElement>(null);
   const [ogpListMaxHeight, setOgpListMaxHeight] = useState<number | null>(null);
+  const [sponsorSettings, setSponsorSettings] = useState<OgpSponsorSettings | null>(null);
+  const [showSponsorsModal, setShowSponsorsModal] = useState(false);
+
+  const sponsorOgpArticles = useMemo((): OgpSponsorSourceArticle[] => {
+    const seen = new Set<string>();
+    const list: OgpSponsorSourceArticle[] = [];
+    for (const a of pasted) {
+      if (a.isOgpGroup || a.deletedAt || !a.image || seen.has(a.id)) continue;
+      seen.add(a.id);
+      list.push({
+        id: a.id,
+        title: a.title || a.url || 'OGP News',
+        image: a.image,
+        url: a.url || '',
+      });
+    }
+    return list.sort((x, y) => x.title.localeCompare(y.title, undefined, { sensitivity: 'base' }));
+  }, [pasted]);
 
   const isNewsOgp = apiBase === '/api/news';
 
@@ -586,6 +614,26 @@ export default function NewsArticlesList({
       /* ignore */
     }
   }, [showFeaturedControls]);
+
+  useEffect(() => {
+    if (!isNewsOgp) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/news/ogp-sponsors');
+        if (!res.ok) return;
+        const data = (await res.json()) as OgpSponsorSettings;
+        if (!cancelled && data && Array.isArray(data.sponsors)) {
+          setSponsorSettings(data);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isNewsOgp]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1197,6 +1245,13 @@ export default function NewsArticlesList({
     !viewingHeadlines &&
     headlinesArticles.length > 0;
 
+  const showSponsors =
+    isNewsOgp &&
+    !viewingOgpGroup &&
+    !isAddingToGroup &&
+    !viewingHeadlines &&
+    (sponsorSettings?.sponsors.length ?? 0) > 0;
+
   const getHeadlineViewCount = useCallback(
     (article: ArticlePasted) => viewCountOverrides[article.id] ?? article.viewCount ?? 0,
     [viewCountOverrides],
@@ -1244,7 +1299,22 @@ export default function NewsArticlesList({
     return sorted.filter((a) => !featuredIdSet.has(a.id));
   }, [sorted, showFeaturedHero, featuredIdSet]);
 
-  const totalPages = Math.max(1, Math.ceil(gridSorted.length / itemsPerPage));
+  const sponsoredPages = useMemo(() => {
+    if (!showSponsors || !sponsorSettings) return null;
+    return paginateWithSponsors(
+      gridSorted,
+      rowsPerPage,
+      OGPS_PER_ROW,
+      sponsorSettings.startRow,
+      sponsorSettings.intervalRows,
+      maxSponsorCols(sponsorSettings.sponsors),
+    );
+  }, [showSponsors, sponsorSettings, gridSorted, rowsPerPage]);
+
+  const totalPages = Math.max(
+    1,
+    sponsoredPages ? sponsoredPages.length : Math.ceil(gridSorted.length / itemsPerPage),
+  );
   const start = (currentPage - 1) * itemsPerPage;
 
   // Clamp current page when total pages shrinks (e.g. after filter or items-per-page change)
@@ -1256,6 +1326,13 @@ export default function NewsArticlesList({
     () => gridSorted.slice(start, start + itemsPerPage),
     [gridSorted, start, itemsPerPage]
   );
+
+  const pageCells: SponsoredPageCell<ArticlePasted>[] = useMemo(() => {
+    if (sponsoredPages) {
+      return sponsoredPages[currentPage - 1] ?? [];
+    }
+    return paginated.map((item) => ({ kind: 'news' as const, item }));
+  }, [sponsoredPages, currentPage, paginated]);
 
   // OGP list height = row1 + row2 + row3 (measure first element of row 4 relative to grid)
   const updateOgpListMaxHeight = useCallback(() => {
@@ -2006,6 +2083,17 @@ export default function NewsArticlesList({
                 </span>
               </label>
             )}
+            {isSuperAdmin && isNewsOgp && !superAdminReadOnlyOgpActions && (
+              <button
+                type="button"
+                onClick={() => setShowSponsorsModal(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500 text-amber-950 text-sm font-medium hover:bg-amber-400"
+                title="Configure sponsored news"
+              >
+                <Megaphone className="w-4 h-4" />
+                Sponsors
+              </button>
+            )}
             {apiBase !== '/api/music' && (
             <div className="flex items-center gap-1">
             <button
@@ -2056,7 +2144,7 @@ export default function NewsArticlesList({
           </div>
         </div>
         <div className="p-4 min-h-0 flex flex-col">
-          {filtered.length === 0 && !showFeaturedHero && !showHeadlinesPanel && !viewingHeadlines ? (
+          {filtered.length === 0 && !showFeaturedHero && !showHeadlinesPanel && !viewingHeadlines && !showSponsors ? (
             <p className="text-sm text-gray-500">
               {viewingOgpGroup
                 ? `No ${ogpLabel} in group "${viewingOgpGroup.name}".`
@@ -2113,7 +2201,14 @@ export default function NewsArticlesList({
                     onOpenArticle={handleOpenHeadlineArticle}
                   />
                 )}
-                {paginated.map((a) => (
+                {pageCells.map((cell, cellIndex) =>
+                cell.kind === 'sponsor' && sponsorSettings ? (
+                  <OgpSponsoredCard
+                    key={`sponsor-${currentPage}-${cellIndex}`}
+                    sponsors={sponsorSettings.sponsors}
+                    delayMs={sponsorSettings.delayMs}
+                  />
+                ) : cell.kind === 'news' ? ((a: ArticlePasted) => (
                 <article
                   key={a.isOgpGroup ? `group-${a.id}` : a.id}
                   className={`border rounded-lg p-3 group flex flex-col min-w-0 relative h-full min-h-0 ${
@@ -2606,12 +2701,23 @@ export default function NewsArticlesList({
                       )}
                   </div>
                 </article>
-              ))}
+                ))(cell.item) : null)}
               </div>
             </div>
           )}
         </div>
       </div>
+
+      <OgpSponsorsSettingsModal
+        isOpen={showSponsorsModal}
+        onClose={() => setShowSponsorsModal(false)}
+        initial={sponsorSettings}
+        ogpArticles={sponsorOgpArticles}
+        onSaved={(next) => {
+          setSponsorSettings(next);
+          setCurrentPage(1);
+        }}
+      />
 
       {settingsArticleId != null && (
         <NewsSettingModal
