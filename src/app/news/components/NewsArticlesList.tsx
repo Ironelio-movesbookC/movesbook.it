@@ -168,29 +168,36 @@ function hasAnyVisibilitySettings(a: ArticlePasted): boolean {
   return hasSelections || hasDuration;
 }
 
-function isNotExpired(a: ArticlePasted): boolean {
+function getExpiresAtMs(a: ArticlePasted): number | null {
   const exp = a.visibility?.expiresAt;
-  if (exp == null || String(exp).trim() === '') return true;
+  if (exp == null || String(exp).trim() === '') return null;
   try {
-    return new Date(exp).getTime() >= Date.now();
+    const t = new Date(exp).getTime();
+    return Number.isNaN(t) ? null : t;
   } catch {
-    return true;
+    return null;
   }
+}
+
+function isNotExpired(a: ArticlePasted): boolean {
+  const expMs = getExpiresAtMs(a);
+  if (expMs == null) return true;
+  return expMs >= Date.now();
 }
 
 function isExpiredOrNoExpiry(a: ArticlePasted): boolean {
-  const exp = a.visibility?.expiresAt;
-  if (exp == null || String(exp).trim() === '') return true;
-  try {
-    return new Date(exp).getTime() < Date.now();
-  } catch {
-    return true;
-  }
+  const expMs = getExpiresAtMs(a);
+  if (expMs == null) return true;
+  return expMs < Date.now();
 }
 
 function hasExpirationDateSet(a: ArticlePasted): boolean {
-  const exp = a.visibility?.expiresAt;
-  return exp != null && String(exp).trim() !== '';
+  return getExpiresAtMs(a) != null;
+}
+
+/** True when an expiration date is set and that date is in the past. */
+function isPastExpired(a: ArticlePasted): boolean {
+  return hasExpirationDateSet(a) && !isNotExpired(a);
 }
 
 function isActiveForNormalUser(a: ArticlePasted): boolean {
@@ -429,7 +436,7 @@ export default function NewsArticlesList({
   const isExercise = apiBase === '/api/exercises';
   const ogpLabel = isMusic ? 'OGP Music' : isExercise ? 'OGP Exercises' : 'OGP News';
   const singleLabel = isMusic ? 'Single Music' : isExercise ? 'Single Exercise' : 'Single News';
-  const groupsLabel = isMusic ? 'Groups of Music' : isExercise ? 'Groups of Exercises' : 'Groups of News';
+  const groupsLabel = isMusic ? 'Music Folders' : isExercise ? 'Groups of Exercises' : 'Groups of News';
   const topicsList = useMemo(
     () => (topicsProp.length > 0 ? topicsProp : [...FALLBACK_NEWS_TOPICS_LIST]),
     [topicsProp]
@@ -1122,13 +1129,33 @@ export default function NewsArticlesList({
       if (isSuperAdmin) {
         if (excludeExpiredAndDeleted) {
           groups = groups.filter((a) => !a.deletedAt && isNotExpired(a));
-        } else if (showDeletedTemporarily) {
-          groups = groups.filter((a) => !!a.deletedAt);
         } else {
-          groups = groups.filter((a) => !a.deletedAt);
+          if (showExpired) {
+            groups = groups.filter(isExpiredOrNoExpiry);
+            if (!showDeletedTemporarily) {
+              groups = groups.filter((a) => !a.deletedAt);
+            }
+          }
+          if (showDeletedTemporarily) {
+            groups = groups.filter((a) => !!a.deletedAt);
+          } else if (!showExpired) {
+            groups = groups.filter((a) => !a.deletedAt);
+          }
         }
-      } else if (!showDeletedTemporarily) {
-        groups = groups.filter((a) => !a.deletedAt);
+      } else {
+        groups = groups.filter((a) => {
+          if (canEditAsCreator(a)) {
+            if (a.deletedAt) return showDeletedTemporarily;
+            if (!showExpired && hasExpirationDateSet(a) && !isNotExpired(a)) {
+              return false;
+            }
+            return true;
+          }
+          const isActive = isActiveForNormalUser(a);
+          const includeExpired = showExpired && isExpiredOrNoExpiry(a) && !a.deletedAt;
+          const includeDeleted = showDeletedTemporarily && !!a.deletedAt;
+          return isActive || includeExpired || includeDeleted;
+        });
       }
       if (showOnlyLiked) {
         groups = groups.filter((a) => (likesMap[a.id]?.count ?? 0) >= 1);
@@ -1194,6 +1221,16 @@ export default function NewsArticlesList({
         return (likesMap[b.id]?.count ?? 0) - (likesMap[a.id]?.count ?? 0);
       }
 
+      // Expired filter: newest expiration date first (then newest savedAt).
+      if (showExpired) {
+        const expA = getExpiresAtMs(a);
+        const expB = getExpiresAtMs(b);
+        if (expA != null && expB != null && expA !== expB) return expB - expA;
+        if (expA != null && expB == null) return -1;
+        if (expA == null && expB != null) return 1;
+        return new Date(b.savedAt ?? 0).getTime() - new Date(a.savedAt ?? 0).getTime();
+      }
+
       // Alphabetical within each type (group name / article title).
       const alpha = label(a).localeCompare(label(b), undefined, { sensitivity: 'base' });
       if (sortOrder === 'alpha-desc') return -alpha;
@@ -1207,7 +1244,7 @@ export default function NewsArticlesList({
       return alpha;
     });
     return list;
-  }, [filtered, sortOrder, showOnlyLiked, likesMap]);
+  }, [filtered, sortOrder, showOnlyLiked, likesMap, showExpired]);
 
   const featuredArticles = useMemo(() => {
     if (!isNewsOgp || viewingOgpGroup || isAddingToGroup) return [];
@@ -2505,6 +2542,11 @@ export default function NewsArticlesList({
                       <p className="relative z-10 pointer-events-none text-xs text-amber-800 mt-1 font-medium">
                         Deleted on {formatDate(a.deletedAt)}
                         {a.deletedByName ? ` by ${a.deletedByName}` : ' by creator'}
+                      </p>
+                    )}
+                    {!a.deletedAt && isPastExpired(a) && (
+                      <p className="relative z-10 pointer-events-none text-xs text-amber-800 mt-1 font-medium">
+                        Expired on {formatDate(a.visibility?.expiresAt ?? undefined)}
                       </p>
                     )}
                     {showFeaturedControls && isNewsOgp && !a.isOgpGroup && onToggleOgpFeatured && (
