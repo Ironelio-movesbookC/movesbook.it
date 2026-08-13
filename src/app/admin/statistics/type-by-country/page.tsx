@@ -100,7 +100,7 @@ export default function TypeByCountryPage() {
           }
           slices={block?.countries ?? []}
           height={360}
-          uniformColor={typeAccent}
+          titleSwatchColor={typeAccent}
           onSelect={handleSelect}
         />
       </div>
