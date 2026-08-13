@@ -141,6 +141,7 @@ import ClubSocialSubmenu from '@/components/club/ClubSocialSubmenu';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
+import MubSidebarBar from '@/components/mub/MubSidebarBar';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
 import { PERSONAL_WEBSITE_TOPICS_PATH } from '@/lib/personalWebsiteSettingsPaths';
@@ -1578,11 +1579,7 @@ export default function DarkSidebar({
             <span className="text-white text-xs">{t('sidebar_allow_visiting')}</span>
           </div>
 
-          {/* Most used buttons - Compact */}
-          <button className="w-full bg-red-600 hover:bg-red-700 text-white py-1.5 px-2 rounded mb-2 flex items-center justify-between transition-colors text-xs">
-            <span>{t('sidebar_most_used_buttons')}</span>
-            <Settings className="w-3 h-3" />
-          </button>
+          <MubSidebarBar variant="compact" />
 
           {/* Visitor Tracking - Compact */}
           <div className="space-y-1 mb-2">
