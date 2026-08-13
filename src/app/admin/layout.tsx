@@ -19,6 +19,9 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const isAccessAudioSettings = pathname?.startsWith('/admin/access-audio-settings');
   const useSystemSidebar = isGlobalSettings || isAccessAudioSettings;
   const isChat = pathname?.startsWith('/admin/chat');
+  const isStatistics = pathname?.startsWith('/admin/statistics');
+  /** Fill viewport so left/right sidebars and main share one height (no short nested scroll). */
+  const fillViewport = isChat || isStatistics;
   const isLogin = pathname?.startsWith('/admin/login');
   /** Superadmin My Music panel — fill the central column at a fixed viewport height. */
   const isOgMusicPanel =

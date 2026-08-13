@@ -1,28 +1,77 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import StatisticsPageShell from '@/components/admin/statistics/StatisticsPageShell';
 import { StatisticsPieBlock } from '@/components/admin/statistics/StatisticsCharts';
+import VersionDistributionDrilldown from '@/components/admin/statistics/VersionDistributionDrilldown';
 import { useAdminStatistics } from '@/components/admin/statistics/useAdminStatistics';
+import { aggregateVersionsForScope } from '@/lib/admin/statisticsDrilldown';
+import {
+  STATS_KIND_LABELS,
+  type StatsUserKind,
+} from '@/lib/admin/statisticsKinds';
+import type { StatsSlice } from '@/lib/admin/buildStatistics';
+
+type Selection = {
+  country: string;
+  countryLabel: string;
+  kind: StatsUserKind;
+  countriesOut?: string[];
+};
 
 export default function TopCountriesDistributionPage() {
   const { authChecked, loading, error, data } = useAdminStatistics({
     topCountriesN: 8,
     enableCountry: false,
   });
+  const [selection, setSelection] = useState<Selection | null>(null);
+
+  const topCountryNames = useMemo(
+    () => (data?.topCountries ?? []).map((r) => r.country),
+    [data?.topCountries],
+  );
+
+  const drilldown = useMemo(() => {
+    if (!data?.usersLite || !selection) return null;
+    return aggregateVersionsForScope(data.usersLite, {
+      kind: selection.kind,
+      country:
+        selection.country === '__rest_of_world__' ? null : selection.country,
+      countriesOut: selection.countriesOut ?? null,
+    });
+  }, [data?.usersLite, selection]);
 
   if (!authChecked) return null;
+
+  const rest = data?.restOfWorld ?? null;
+
+  const makeKindHandler =
+    (country: string, countryLabel: string, countriesOut?: string[]) =>
+    (slice: StatsSlice | null) => {
+      const key = slice?.key;
+      if (key && (['single', 'coaches', 'teams', 'clubs', 'groups'] as string[]).includes(key)) {
+        setSelection({
+          country,
+          countryLabel,
+          kind: key as StatsUserKind,
+          countriesOut,
+        });
+      } else {
+        setSelection(null);
+      }
+    };
 
   return (
     <StatisticsPageShell
       title="Pie of distribution in the 8 Countries with higher registrations"
-      description="Two pies per row. Scroll to see all top countries."
+      description="Two pies per row for the top 8 countries. Below, Rest of the world. Click a user type to see version distribution for that country and type."
       totalUsers={data?.totalUsers ?? 0}
       incomeEuro={data?.incomeEuro ?? 0}
       loading={loading}
       error={error}
     >
-      <div className="max-h-[70vh] overflow-y-auto pr-1">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {(data?.topCountries ?? []).map((row) => (
             <StatisticsPieBlock
               key={row.country}
@@ -30,14 +79,47 @@ export default function TopCountriesDistributionPage() {
               subtitle={`${row.total} registrations`}
               slices={row.distribution.slices}
               kindColors
-              height={260}
+              height={240}
+              onSelect={makeKindHandler(row.country, row.country)}
             />
           ))}
         </div>
+
         {!loading && (data?.topCountries?.length ?? 0) === 0 ? (
           <div className="bg-white border border-[#cfcfcf] p-8 text-center text-[#888]">
             No country registrations yet.
           </div>
+        ) : null}
+
+        {rest ? (
+          <div className="pt-1">
+            <StatisticsPieBlock
+              title="Rest of the world"
+              subtitle={`${rest.total} registrations across ${rest.countryCount} other countr${
+                rest.countryCount === 1 ? 'y' : 'ies'
+              }`}
+              slices={rest.distribution.slices}
+              kindColors
+              height={260}
+              onSelect={makeKindHandler(
+                '__rest_of_world__',
+                'Rest of the world',
+                topCountryNames,
+              )}
+            />
+          </div>
+        ) : null}
+
+        {selection && drilldown ? (
+          <VersionDistributionDrilldown
+            title={`${STATS_KIND_LABELS[selection.kind]} — ${selection.countryLabel}`}
+            subtitle="Distribution of the versions"
+            total={drilldown.total}
+            bars={drilldown.bars}
+            slices={drilldown.slices}
+            userKind={selection.kind}
+            onClear={() => setSelection(null)}
+          />
         ) : null}
       </div>
     </StatisticsPageShell>

@@ -3,6 +3,9 @@ import { UserType } from '@prisma/client';
 /** Statistics user kinds shown in Super Admin charts. */
 export type StatsUserKind = 'single' | 'coaches' | 'teams' | 'clubs' | 'groups';
 
+/** Type-of-user selector on type-by-country (includes aggregate modes). */
+export type StatsTypeKindFilter = StatsUserKind | 'all' | 'except_groups';
+
 export const STATS_USER_KINDS: StatsUserKind[] = [
   'single',
   'coaches',
@@ -19,6 +22,27 @@ export const STATS_KIND_LABELS: Record<StatsUserKind, string> = {
   groups: 'Groups',
 };
 
+export const STATS_TYPE_KIND_FILTER_LABELS: Record<StatsTypeKindFilter, string> = {
+  all: 'ALL Users',
+  except_groups: 'All users except Groups',
+  ...STATS_KIND_LABELS,
+};
+
+export function isStatsTypeKindFilter(value: string | null | undefined): value is StatsTypeKindFilter {
+  if (!value) return false;
+  return value === 'all' || value === 'except_groups' || STATS_USER_KINDS.includes(value as StatsUserKind);
+}
+
+export function typeKindMatches(kind: StatsUserKind, filter: StatsTypeKindFilter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'except_groups') return kind !== 'groups';
+  return kind === filter;
+}
+
+export function typeKindLabel(filter: StatsTypeKindFilter): string {
+  return STATS_TYPE_KIND_FILTER_LABELS[filter];
+}
+
 export const STATS_KIND_TYPES: Record<StatsUserKind, UserType[]> = {
   single: [UserType.ATHLETE],
   coaches: [UserType.COACH],
@@ -28,11 +52,11 @@ export const STATS_KIND_TYPES: Record<StatsUserKind, UserType[]> = {
 };
 
 export const STATS_KIND_COLORS: Record<StatsUserKind, string> = {
-  single: '#058592',
-  coaches: '#941751',
-  teams: '#ff8d00',
-  clubs: '#2f6b3a',
-  groups: '#4a5d8c',
+  single: '#2563eb', // Athletes — blue
+  coaches: '#a16207', // Coaches — dark yellow
+  teams: '#ea580c', // Teams — orange
+  clubs: '#dc2626', // Clubs — red
+  groups: '#166534', // Groups — dark green
 };
 
 export const ALL_STATS_USER_TYPES: UserType[] = STATS_USER_KINDS.flatMap(

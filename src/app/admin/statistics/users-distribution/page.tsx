@@ -1,23 +1,49 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import StatisticsPageShell, {
   StatisticsSelect,
   countryFilterOptions,
 } from '@/components/admin/statistics/StatisticsPageShell';
 import { StatisticsPieBlock } from '@/components/admin/statistics/StatisticsCharts';
+import VersionDistributionDrilldown from '@/components/admin/statistics/VersionDistributionDrilldown';
 import { useAdminStatistics } from '@/components/admin/statistics/useAdminStatistics';
+import { aggregateVersionsForScope } from '@/lib/admin/statisticsDrilldown';
+import {
+  STATS_KIND_LABELS,
+  type StatsUserKind,
+} from '@/lib/admin/statisticsKinds';
+import type { StatsSlice } from '@/lib/admin/buildStatistics';
 
 export default function UsersDistributionPage() {
   const { authChecked, loading, error, data, filters, setFilters } = useAdminStatistics({
     enableCountry: true,
   });
+  const [selectedKind, setSelectedKind] = useState<StatsUserKind | null>(null);
+
+  const drilldown = useMemo(() => {
+    if (!data?.usersLite || !selectedKind) return null;
+    return aggregateVersionsForScope(data.usersLite, {
+      kind: selectedKind,
+      country: filters.country || null,
+    });
+  }, [data?.usersLite, selectedKind, filters.country]);
 
   if (!authChecked) return null;
+
+  const handleSelect = (slice: StatsSlice | null) => {
+    const key = slice?.key;
+    if (key && (['single', 'coaches', 'teams', 'clubs', 'groups'] as string[]).includes(key)) {
+      setSelectedKind(key as StatsUserKind);
+    } else {
+      setSelectedKind(null);
+    }
+  };
 
   return (
     <StatisticsPageShell
       title="Pie of distribution users"
-      description="Distribution of users among Athletes (Single users), Coaches, Teams, Clubs and Groups worldwide. Filter by country."
+      description="Distribution of users among Athletes (Single users), Coaches, Teams, Clubs and Groups. Filter by country. Click a user type to see version distribution."
       totalUsers={data?.totalUsers ?? 0}
       incomeEuro={data?.incomeEuro ?? 0}
       loading={loading}
@@ -27,7 +53,10 @@ export default function UsersDistributionPage() {
           id="country"
           label="Country"
           value={filters.country}
-          onChange={(country) => setFilters((f) => ({ ...f, country }))}
+          onChange={(country) => {
+            setSelectedKind(null);
+            setFilters((f) => ({ ...f, country }));
+          }}
           options={countryFilterOptions(data?.countries ?? [])}
         />
       }
@@ -43,14 +72,15 @@ export default function UsersDistributionPage() {
           slices={data?.worldDistribution.slices ?? []}
           kindColors
           height={340}
+          onSelect={handleSelect}
         />
       </div>
       {data && data.worldDistribution.total > 0 ? (
-        <div className="mt-4 bg-white border border-[#cfcfcf] p-4 text-sm">
-          <p className="font-semibold mb-2">
+        <div className="mt-4 bg-white border border-[#cfcfcf] p-4 text-base">
+          <p className="font-semibold mb-2 text-base">
             Current users = {data.worldDistribution.total}
           </p>
-          <ul className="space-y-1 text-[#333]">
+          <ul className="space-y-1.5 text-lg text-[#333]">
             {data.worldDistribution.slices.map((s) => (
               <li key={s.key}>
                 {s.label} {s.count} ({s.percent}%)
@@ -58,6 +88,17 @@ export default function UsersDistributionPage() {
             ))}
           </ul>
         </div>
+      ) : null}
+      {selectedKind && drilldown ? (
+        <VersionDistributionDrilldown
+          title={`${STATS_KIND_LABELS[selectedKind]} — versions`}
+          subtitle={filters.country ? filters.country : 'World'}
+          total={drilldown.total}
+          bars={drilldown.bars}
+          slices={drilldown.slices}
+          userKind={selectedKind}
+          onClear={() => setSelectedKind(null)}
+        />
       ) : null}
     </StatisticsPageShell>
   );
