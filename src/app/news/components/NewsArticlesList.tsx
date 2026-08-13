@@ -21,6 +21,7 @@ import OgpRichDescription, {
 import { ShareInMyClubsButtonIfClub } from '@/components/club/ShareInMyClubsButton';
 import ClubGlobalNewsToggleButton from '@/components/club/ClubGlobalNewsToggleButton';
 import RichTextEditor from '@/components/settings/RichTextEditor';
+import FeaturedNewsCard from './FeaturedNewsCard';
 
 type MusicLibraryNavKey = 'recent' | 'playlist' | 'songs' | 'albums' | 'favourites';
 
@@ -68,6 +69,10 @@ export type ArticlePasted = OGPData & {
   isOgpGroup?: boolean;
   /** Super admin: included in the Global News merged feed. */
   inGlobalNews?: boolean;
+  /** Super admin: promoted to the featured News Card (hero). */
+  isFeatured?: boolean;
+  /** Super admin: show in featured News Card when isFeatured (default true). */
+  displayInEvidence?: boolean;
   /** Club admin: promoted into this club's Club Global News feed. */
   inClubGlobalNews?: boolean;
   /** Club OGP News audience mode from club_shared_ogp_articles.audienceMode. */
@@ -325,6 +330,13 @@ interface NewsArticlesListProps {
   showGlobalNewsButton?: boolean;
   /** Super admin: toggle Global News flag for an OGP article. */
   onToggleGlobalNews?: (id: string, inGlobalNews: boolean) => void | Promise<void>;
+  /** Super admin: show featured News Card controls on OGP News cards. */
+  showFeaturedControls?: boolean;
+  /** Super admin: toggle featured / display-in-evidence flags. */
+  onToggleOgpFeatured?: (
+    id: string,
+    patch: { isFeatured?: boolean; displayInEvidence?: boolean },
+  ) => void | Promise<void>;
   /** Club admin: show "Share in Club Global News" globe on OGP cards. */
   showClubGlobalNewsButton?: boolean;
   /** Club id used when toggling Club Global News. */
@@ -385,6 +397,8 @@ export default function NewsArticlesList({
   onUpdateOgpNewsGroupSettings,
   showGlobalNewsButton = false,
   onToggleGlobalNews,
+  showFeaturedControls = false,
+  onToggleOgpFeatured,
   showClubGlobalNewsButton = false,
   clubGlobalNewsClubId = null,
   onToggleClubGlobalNews,
@@ -548,9 +562,32 @@ export default function NewsArticlesList({
   const [likesMap, setLikesMap] = useState<Record<string, { count: number; likedByMe: boolean }>>({});
   const [likeLoadingId, setLikeLoadingId] = useState<string | null>(null);
   const [globalNewsLoadingId, setGlobalNewsLoadingId] = useState<string | null>(null);
+  const [featuredLoadingId, setFeaturedLoadingId] = useState<string | null>(null);
+  const [showFeaturedInEvidence, setShowFeaturedInEvidence] = useState(true);
   const [shareModalArticle, setShareModalArticle] = useState<ArticlePasted | null>(null);
   const ogpGridRef = useRef<HTMLDivElement>(null);
   const [ogpListMaxHeight, setOgpListMaxHeight] = useState<number | null>(null);
+
+  const isNewsOgp = apiBase === '/api/news';
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !showFeaturedControls) return;
+    try {
+      const stored = localStorage.getItem('ogpShowFeaturedInEvidence');
+      if (stored === 'false') setShowFeaturedInEvidence(false);
+    } catch {
+      /* ignore */
+    }
+  }, [showFeaturedControls]);
+
+  const handleShowFeaturedInEvidenceChange = useCallback((checked: boolean) => {
+    setShowFeaturedInEvidence(checked);
+    try {
+      localStorage.setItem('ogpShowFeaturedInEvidence', checked ? 'true' : 'false');
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const toggleArticleExpanded = useCallback((articleId: string) => {
     setExpandedArticleIds((prev) => {
@@ -623,6 +660,19 @@ export default function NewsArticlesList({
       }
     },
     [onToggleGlobalNews],
+  );
+
+  const handleFeaturedToggle = useCallback(
+    async (articleId: string, patch: { isFeatured?: boolean; displayInEvidence?: boolean }) => {
+      if (!onToggleOgpFeatured) return;
+      setFeaturedLoadingId(articleId);
+      try {
+        await onToggleOgpFeatured(articleId, patch);
+      } finally {
+        setFeaturedLoadingId(null);
+      }
+    },
+    [onToggleOgpFeatured],
   );
 
   useEffect(() => {
@@ -1085,7 +1135,35 @@ export default function NewsArticlesList({
     return list;
   }, [filtered, sortOrder, showOnlyLiked, likesMap]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / itemsPerPage));
+  const featuredArticles = useMemo(() => {
+    if (!isNewsOgp || viewingOgpGroup || isAddingToGroup) return [];
+    return sorted.filter(
+      (a) =>
+        !a.isOgpGroup &&
+        a.isFeatured === true &&
+        a.displayInEvidence !== false &&
+        !a.deletedAt,
+    );
+  }, [sorted, isNewsOgp, viewingOgpGroup, isAddingToGroup]);
+
+  const featuredIdSet = useMemo(
+    () => new Set(featuredArticles.map((a) => a.id)),
+    [featuredArticles],
+  );
+
+  const showFeaturedHero =
+    isNewsOgp &&
+    !viewingOgpGroup &&
+    !isAddingToGroup &&
+    featuredArticles.length > 0 &&
+    (showFeaturedControls ? showFeaturedInEvidence : true);
+
+  const gridSorted = useMemo(() => {
+    if (!showFeaturedHero) return sorted;
+    return sorted.filter((a) => !featuredIdSet.has(a.id));
+  }, [sorted, showFeaturedHero, featuredIdSet]);
+
+  const totalPages = Math.max(1, Math.ceil(gridSorted.length / itemsPerPage));
   const start = (currentPage - 1) * itemsPerPage;
 
   // Clamp current page when total pages shrinks (e.g. after filter or items-per-page change)
@@ -1094,8 +1172,8 @@ export default function NewsArticlesList({
   }, [totalPages, currentPage]);
 
   const paginated = useMemo(
-    () => sorted.slice(start, start + itemsPerPage),
-    [sorted, start, itemsPerPage]
+    () => gridSorted.slice(start, start + itemsPerPage),
+    [gridSorted, start, itemsPerPage]
   );
 
   // OGP list height = row1 + row2 + row3 (measure first element of row 4 relative to grid)
@@ -1821,6 +1899,20 @@ export default function NewsArticlesList({
                 {isSuperAdmin ? 'Show deleted' : 'Show also deleted'}
               </span>
             </label>
+            {showFeaturedControls && isNewsOgp && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showFeaturedInEvidence}
+                  onChange={(e) => handleShowFeaturedInEvidenceChange(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-lime-400 focus:ring-lime-500"
+                  aria-label="Display news card"
+                />
+                <span className="text-lime-300 text-sm whitespace-nowrap font-medium">
+                  Display news card
+                </span>
+              </label>
+            )}
             {apiBase !== '/api/music' && (
             <div className="flex items-center gap-1">
             <button
@@ -1871,7 +1963,7 @@ export default function NewsArticlesList({
           </div>
         </div>
         <div className="p-4 min-h-0 flex flex-col">
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && !showFeaturedHero ? (
             <p className="text-sm text-gray-500">
               {viewingOgpGroup
                 ? `No ${ogpLabel} in group "${viewingOgpGroup.name}".`
@@ -1896,6 +1988,12 @@ export default function NewsArticlesList({
                 ref={ogpGridRef}
                 className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-4 w-full min-w-0 min-h-min"
               >
+                {showFeaturedHero && (
+                  <FeaturedNewsCard
+                    articles={featuredArticles}
+                    onPreview={(id) => setPreviewArticleId(id)}
+                  />
+                )}
                 {paginated.map((a) => (
                 <article
                   key={a.isOgpGroup ? `group-${a.id}` : a.id}
@@ -2189,6 +2287,23 @@ export default function NewsArticlesList({
                         Deleted on {formatDate(a.deletedAt)}
                         {a.deletedByName ? ` by ${a.deletedByName}` : ' by creator'}
                       </p>
+                    )}
+                    {showFeaturedControls && isNewsOgp && !a.isOgpGroup && onToggleOgpFeatured && (
+                      <div className="relative z-10 mt-2 pt-2 border-t border-gray-100 flex flex-col gap-1.5 flex-shrink-0">
+                        <label className="inline-flex items-center gap-2 text-xs text-gray-700 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={a.isFeatured === true}
+                            disabled={superAdminReadOnlyOgpActions || featuredLoadingId === a.id}
+                            onChange={(e) => {
+                              void handleFeaturedToggle(a.id, { isFeatured: e.target.checked });
+                            }}
+                            className="w-3.5 h-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            aria-label="Featured News Card"
+                          />
+                          <span>Featured News Card</span>
+                        </label>
+                      </div>
                     )}
                   </div>
                   {/* Action icons row below each OGP - compact so 6 fit within narrow cards */}

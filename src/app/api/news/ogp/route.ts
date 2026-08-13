@@ -243,6 +243,8 @@ export async function GET(request: NextRequest) {
       languageCode: a.languageCode ?? null,
       savedAt: a.savedAt.toISOString(),
       inGlobalNews: a.inGlobalNews === true,
+      isFeatured: a.isFeatured === true,
+      displayInEvidence: a.displayInEvidence !== false,
       visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
       visibilityCountries: parseJsonArray(a.visibilityCountries),
       visibilityLanguages: parseJsonArray(a.visibilityLanguages),

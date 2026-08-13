@@ -202,6 +202,8 @@ model OgpArticle {
   visibilityLanguages   String?   @db.Text // JSON array of language codes e.g. ["en","de"]
   visibilitySports      String?   @db.Text // JSON array of SportType e.g. ["RUN","SWIM"]
   inGlobalNews          Boolean   @default(false) // Super admin: shown in Global News merged feed
+  isFeatured            Boolean   @default(false) // Super admin: promoted to featured News Card (hero)
+  displayInEvidence     Boolean   @default(true) // Super admin: show/hide in featured News Card when isFeatured
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy             User?     @relation("OgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   likes                 OgpArticleLike[]
