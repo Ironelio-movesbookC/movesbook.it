@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuthWithUser, requireAuthForNews, getOrCreateUserForSuperAdmin, getSuperAdminCreatorIds } from '../auth';
+import { verifyClubOwnership } from '@/lib/clubNewsShareAuth';
 
 function parseJsonArray(str: string | null | undefined): string[] {
   if (str == null || str === '') return [];
@@ -263,7 +264,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
-  const { userId } = auth;
+  const { userId, userType } = auth;
 
   try {
     const body = await request.json();
@@ -282,10 +283,25 @@ export async function POST(request: NextRequest) {
       visibilityCountries,
       visibilityLanguages,
       visibilitySports,
+      shareToClubId,
     } = body;
     if (!url || typeof url !== 'string' || !url.trim()) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
+
+    const clubIdToShare =
+      typeof shareToClubId === 'string' && shareToClubId.trim() ? shareToClubId.trim() : null;
+    if (clubIdToShare) {
+      const isClubAdminType = userType === 'CLUB' || userType === 'CLUB_TRAINER';
+      if (!isClubAdminType) {
+        return NextResponse.json({ error: 'Club admin only' }, { status: 403 });
+      }
+      const ownsClub = await verifyClubOwnership(userId, clubIdToShare);
+      if (!ownsClub) {
+        return NextResponse.json({ error: 'Club not found or access denied' }, { status: 403 });
+      }
+    }
+
     const topicName = typeof topic === 'string' && topic.trim() ? topic.trim() : 'News';
     const created = await prisma.ogpArticle.create({
       data: {
@@ -306,6 +322,23 @@ export async function POST(request: NextRequest) {
         visibilitySports: Array.isArray(visibilitySports) ? JSON.stringify(visibilitySports) : null,
       },
     });
+
+    let sharedClubIds: string[] = [];
+    if (clubIdToShare) {
+      await prisma.clubSharedOgpArticle.upsert({
+        where: {
+          clubId_ogpArticleId: { clubId: clubIdToShare, ogpArticleId: created.id },
+        },
+        create: {
+          clubId: clubIdToShare,
+          ogpArticleId: created.id,
+          sharedById: userId,
+        },
+        update: { sharedById: userId },
+      });
+      sharedClubIds = [clubIdToShare];
+    }
+
     return NextResponse.json({
       id: created.id,
       title: created.title,
@@ -318,6 +351,7 @@ export async function POST(request: NextRequest) {
       topic: created.topic,
       languageCode: created.languageCode ?? null,
       savedAt: created.savedAt.toISOString(),
+      sharedClubIds,
     });
   } catch (e) {
     console.error('POST /api/news/ogp', e);

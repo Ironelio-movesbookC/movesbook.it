@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuthWithUser, getOrCreateUserForSuperAdmin } from '../../auth';
+import { isClubOgpAudienceMode } from '@/lib/clubOgpAudience';
 
 function parseJsonArray(value: unknown): string[] {
   if (value == null) return [];
@@ -98,6 +99,7 @@ export async function PATCH(
       visibilityLanguages?: string;
       visibilitySports?: string;
       expiresAt?: Date | null;
+      audienceMode?: string;
     } = {};
 
     if (body.topic !== undefined && typeof body.topic === 'string' && body.topic.trim()) {
@@ -135,6 +137,13 @@ export async function PATCH(
         const d = new Date(body.expiresAt);
         data.expiresAt = Number.isNaN(d.getTime()) ? null : d;
       }
+    }
+    const audienceRaw = body.audienceMode ?? body.clubAudienceMode;
+    if (audienceRaw !== undefined) {
+      if (!isClubOgpAudienceMode(audienceRaw)) {
+        return NextResponse.json({ error: 'Invalid audienceMode' }, { status: 400 });
+      }
+      data.audienceMode = audienceRaw;
     }
 
     if (Object.keys(data).length === 0) {

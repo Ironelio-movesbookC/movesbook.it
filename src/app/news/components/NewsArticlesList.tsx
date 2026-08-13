@@ -19,6 +19,7 @@ import OgpRichDescription, {
   ogpDescriptionPlainText,
 } from '@/components/shared/OgpRichDescription';
 import { ShareInMyClubsButtonIfClub } from '@/components/club/ShareInMyClubsButton';
+import ClubGlobalNewsToggleButton from '@/components/club/ClubGlobalNewsToggleButton';
 import RichTextEditor from '@/components/settings/RichTextEditor';
 
 type MusicLibraryNavKey = 'recent' | 'playlist' | 'songs' | 'albums' | 'favourites';
@@ -67,6 +68,10 @@ export type ArticlePasted = OGPData & {
   isOgpGroup?: boolean;
   /** Super admin: included in the Global News merged feed. */
   inGlobalNews?: boolean;
+  /** Club admin: promoted into this club's Club Global News feed. */
+  inClubGlobalNews?: boolean;
+  /** Club OGP News audience mode from club_shared_ogp_articles.audienceMode. */
+  clubAudienceMode?: OgpVisibilitySettings['clubAudienceMode'];
   /** Club admin: club ids this OGP article has been shared to. */
   sharedClubIds?: string[];
   groupName?: string;
@@ -101,6 +106,8 @@ export type OgpNewsGroupCard = {
   customDescription?: string | null;
   deletedAt?: string | null;
   visibility?: OgpVisibilitySettings;
+  /** Club OGP News audience mode. */
+  clubAudienceMode?: OgpVisibilitySettings['clubAudienceMode'];
   previewTopic?: string;
   previewCreatorUsername?: string | null;
 };
@@ -194,6 +201,7 @@ function groupToFeedItem(g: OgpNewsGroupCard): ArticlePasted {
     savedAt: g.savedAt,
     deletedAt: g.deletedAt ?? undefined,
     visibility: g.visibility,
+    clubAudienceMode: g.clubAudienceMode ?? null,
   };
 }
 
@@ -317,6 +325,12 @@ interface NewsArticlesListProps {
   showGlobalNewsButton?: boolean;
   /** Super admin: toggle Global News flag for an OGP article. */
   onToggleGlobalNews?: (id: string, inGlobalNews: boolean) => void | Promise<void>;
+  /** Club admin: show "Share in Club Global News" globe on OGP cards. */
+  showClubGlobalNewsButton?: boolean;
+  /** Club id used when toggling Club Global News. */
+  clubGlobalNewsClubId?: string | null;
+  /** Called after Club Global News toggle succeeds. */
+  onToggleClubGlobalNews?: (id: string, inClubGlobalNews: boolean) => void;
   /** Club admin: show "Share in My Clubs" on OGP News cards. */
   showShareInMyClubsButton?: boolean;
   /** Current user type (for club share button). */
@@ -325,6 +339,15 @@ interface NewsArticlesListProps {
   clubAdminUsername?: string | null;
   /** Called after share/unshare to update local sharedClubIds on an article. */
   onArticleSharedClubIdsChange?: (articleId: string, clubIds: string[]) => void;
+  /** Called after Club OGP audience mode is saved. */
+  onArticleClubAudienceModeChange?: (
+    articleId: string,
+    mode: NonNullable<OgpVisibilitySettings['clubAudienceMode']>,
+  ) => void;
+  /** Club shared OGP News: force single articles only; hide Groups UI. */
+  hideOgpGroups?: boolean;
+  /** Start with Single News checked so the default feed is singles only. */
+  preferSingleNewsDefault?: boolean;
 }
 
 export default function NewsArticlesList({
@@ -362,10 +385,16 @@ export default function NewsArticlesList({
   onUpdateOgpNewsGroupSettings,
   showGlobalNewsButton = false,
   onToggleGlobalNews,
+  showClubGlobalNewsButton = false,
+  clubGlobalNewsClubId = null,
+  onToggleClubGlobalNews,
   showShareInMyClubsButton = false,
   currentUserType = null,
   clubAdminUsername = null,
   onArticleSharedClubIdsChange,
+  onArticleClubAudienceModeChange,
+  hideOgpGroups = false,
+  preferSingleNewsDefault = false,
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
   const isMusic = apiBase === '/api/music';
@@ -460,7 +489,9 @@ export default function NewsArticlesList({
   const [showExpired, setShowExpired] = useState(false);
   const [showDeletedTemporarily, setShowDeletedTemporarily] = useState(false);
   const [showOnlyLiked, setShowOnlyLiked] = useState(false);
-  const [showSingleNews, setShowSingleNews] = useState(false);
+  const [showSingleNews, setShowSingleNews] = useState(
+    () => hideOgpGroups || preferSingleNewsDefault,
+  );
   const [showGroupsOfNews, setShowGroupsOfNews] = useState(false);
   const [isAddingToGroup, setIsAddingToGroup] = useState(false);
   const [viewSelectedOnly, setViewSelectedOnly] = useState(false);
@@ -931,8 +962,13 @@ export default function NewsArticlesList({
     }
 
     // Both off (or both on) → show all; only Single → singles; only Groups → groups.
-    const showArticles = showSingleNews || !showGroupsOfNews;
-    const showGroups = showGroupsOfNews || !showSingleNews;
+    // Club shared OGP News: always singles only (never groups).
+    const showArticles = hideOgpGroups
+      ? true
+      : showSingleNews || !showGroupsOfNews;
+    const showGroups = hideOgpGroups
+      ? false
+      : showGroupsOfNews || !showSingleNews;
 
     let articles: ArticlePasted[] = [];
     if (showArticles) {
@@ -1008,6 +1044,7 @@ export default function NewsArticlesList({
     musicLibraryNav,
     showSingleNews,
     showGroupsOfNews,
+    hideOgpGroups,
     isAddingToGroup,
     viewSelectedOnly,
     selectedForGroupIds,
@@ -1328,15 +1365,17 @@ export default function NewsArticlesList({
             <div className="flex items-center gap-3 flex-shrink-0 ml-1">
               <label
                 className={`flex items-center gap-1.5 select-none ${
-                  isAddingToGroup ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
+                  isAddingToGroup || hideOgpGroups
+                    ? 'cursor-not-allowed opacity-80'
+                    : 'cursor-pointer'
                 }`}
               >
                 <input
                   type="checkbox"
-                  checked={isAddingToGroup ? true : showSingleNews}
-                  disabled={isAddingToGroup}
+                  checked={hideOgpGroups || isAddingToGroup ? true : showSingleNews}
+                  disabled={isAddingToGroup || hideOgpGroups}
                   onChange={(e) => {
-                    if (isAddingToGroup) return;
+                    if (isAddingToGroup || hideOgpGroups) return;
                     setShowSingleNews(e.target.checked);
                     setCurrentPage(1);
                   }}
@@ -1345,7 +1384,7 @@ export default function NewsArticlesList({
                 />
                 <span className="text-sm text-gray-900 whitespace-nowrap">{singleLabel}</span>
               </label>
-              {!isAddingToGroup && (
+              {!isAddingToGroup && !hideOgpGroups && (
                 <label className="flex items-center gap-1.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -1425,6 +1464,7 @@ export default function NewsArticlesList({
                     <Plus className="w-5 h-5" />
                   </button>
                 </div>
+                {!hideOgpGroups && (
                 <div className="flex flex-col items-center gap-0.5">
                   <span className="text-sm text-gray-900 leading-tight whitespace-nowrap">
                     {isAddingToGroup ? 'Add to a group' : 'Add to a group'}
@@ -1493,6 +1533,7 @@ export default function NewsArticlesList({
                     </button>
                   )}
                 </div>
+                )}
               </div>
           ) : null}
         </div>
@@ -2120,6 +2161,19 @@ export default function NewsArticlesList({
                           }
                         />
                       ) : null}
+                      {showClubGlobalNewsButton &&
+                      clubGlobalNewsClubId &&
+                      !a.isOgpGroup &&
+                      !isMusic &&
+                      !isExercise ? (
+                        <ClubGlobalNewsToggleButton
+                          kind="ogp"
+                          itemId={a.id}
+                          clubId={clubGlobalNewsClubId}
+                          inClubGlobalNews={a.inClubGlobalNews === true}
+                          onToggled={(next) => onToggleClubGlobalNews?.(a.id, next)}
+                        />
+                      ) : null}
                       {a.isOgpGroup && (
                         <span
                           className="inline-flex items-center justify-center min-w-[1.5rem] h-7 px-1.5 rounded border border-gray-300 bg-white text-gray-800 text-sm font-semibold tabular-nums"
@@ -2324,21 +2378,68 @@ export default function NewsArticlesList({
         <NewsSettingModal
           isOpen={true}
           onClose={() => setSettingsArticleId(null)}
-          initialSettings={
-            pasted.find((a) => a.id === settingsArticleId)?.visibility ??
-            ogpNewsGroups.find((g) => g.id === settingsArticleId)?.visibility ??
-            defaultSettings
-          }
-          onSave={(settings) => {
+          initialSettings={(() => {
+            const fromPasted = pasted.find((a) => a.id === settingsArticleId);
+            const fromGroup = ogpNewsGroups.find((g) => g.id === settingsArticleId);
+            const visibility =
+              fromPasted?.visibility ?? fromGroup?.visibility ?? defaultSettings;
+            const clubAudienceMode =
+              fromPasted?.clubAudienceMode ?? fromGroup?.clubAudienceMode ?? null;
+            return {
+              ...visibility,
+              ...(clubGlobalNewsClubId ? { clubAudienceMode } : {}),
+            };
+          })()}
+          onSave={async (settings) => {
             const isGroup = ogpNewsGroups.some((g) => g.id === settingsArticleId);
-            if (isGroup) onUpdateOgpNewsGroupSettings?.(settingsArticleId, settings);
-            else onUpdatePastedSettings?.(settingsArticleId, settings);
+            if (isGroup) {
+              await onUpdateOgpNewsGroupSettings?.(settingsArticleId, settings);
+              if (settings.clubAudienceMode) {
+                onArticleClubAudienceModeChange?.(
+                  settingsArticleId,
+                  settings.clubAudienceMode,
+                );
+              }
+            } else {
+              onUpdatePastedSettings?.(settingsArticleId, settings);
+              if (clubGlobalNewsClubId && settings.clubAudienceMode) {
+                try {
+                  const token = localStorage.getItem('token');
+                  await fetch(
+                    `/api/clubs/shared-news/ogp/${encodeURIComponent(settingsArticleId)}`,
+                    {
+                      method: 'PATCH',
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        clubId: clubGlobalNewsClubId,
+                        audienceMode: settings.clubAudienceMode,
+                      }),
+                    },
+                  );
+                  onArticleClubAudienceModeChange?.(
+                    settingsArticleId,
+                    settings.clubAudienceMode,
+                  );
+                } catch (e) {
+                  console.error('Failed to save club audience mode', e);
+                }
+              }
+            }
             setSettingsArticleId(null);
           }}
           onDeleteSettings={() => {
             const isGroup = ogpNewsGroups.some((g) => g.id === settingsArticleId);
-            if (isGroup) onUpdateOgpNewsGroupSettings?.(settingsArticleId, defaultSettings);
-            else onUpdatePastedSettings?.(settingsArticleId, defaultSettings);
+            const cleared = {
+              ...defaultSettings,
+              ...(clubGlobalNewsClubId
+                ? { clubAudienceMode: 'me-and-club-members' as const }
+                : {}),
+            };
+            if (isGroup) onUpdateOgpNewsGroupSettings?.(settingsArticleId, cleared);
+            else onUpdatePastedSettings?.(settingsArticleId, cleared);
           }}
           options={settingsOptions}
           title={
@@ -2348,6 +2449,7 @@ export default function NewsArticlesList({
                 ? 'Music Setting'
                 : 'News Setting'
           }
+          showClubAudienceRadios={Boolean(clubGlobalNewsClubId)}
         />
       )}
 

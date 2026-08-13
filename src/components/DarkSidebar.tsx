@@ -364,6 +364,8 @@ interface DarkSidebarProps {
   onClubChatClick?: () => void;
   /** My Club → Club News → News (shared editorial news) */
   onClubNewsSectionClick?: () => void;
+  /** My Club → Club News → Movesbook News (superadmin Global News, read-only) */
+  onClubMovesbookNewsSectionClick?: () => void;
   /** My Club → Club News → OGP News (shared OGP news) */
   onClubOgpNewsSectionClick?: () => void;
   /** My Club → Club News → Club Global News (all shared) */
@@ -411,6 +413,7 @@ export default function DarkSidebar({
   onSuggestMovesbookClick,
   onClubChatClick,
   onClubNewsSectionClick,
+  onClubMovesbookNewsSectionClick,
   onClubOgpNewsSectionClick,
   onClubGlobalNewsSectionClick,
   activeTab = 'my-page',
@@ -2838,7 +2841,8 @@ export default function DarkSidebar({
                   </button>
                 )}
 
-                {userType === 'CLUB' ? (
+                {/* Club News submenus: club admin, or athlete who is a member of this club */}
+                {userType === 'CLUB' || (isAthleteUser && athleteHasClubMembership) ? (
                   <div className="w-full border-b border-teal-700">
                     <button
                       type="button"
@@ -2860,6 +2864,7 @@ export default function DarkSidebar({
                       <div className="bg-[#4a4a4a] text-white">
                         <button
                           type="button"
+                          onClick={() => onClubMovesbookNewsSectionClick?.()}
                           className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                         >
                           <BookOpen className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
