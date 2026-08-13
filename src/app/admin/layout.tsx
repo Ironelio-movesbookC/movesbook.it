@@ -18,6 +18,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isAccessAudioSettings = pathname?.startsWith('/admin/access-audio-settings');
   const useSystemSidebar = isGlobalSettings || isAccessAudioSettings;
   const isChat = pathname?.startsWith('/admin/chat');
+  const isStatistics = pathname?.startsWith('/admin/statistics');
+  /** Fill viewport so left/right sidebars and main share one height (no short nested scroll). */
+  const fillViewport = isChat || isStatistics;
   const isLogin = pathname?.startsWith('/admin/login');
   /** OGP News needs the full main column; Current Users sidebar crowds the card grid. */
   const isOgpNewsPage = pathname?.startsWith('/admin/news/links');
@@ -45,7 +48,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className={`bg-gray-50 flex flex-col ${isChat ? 'h-dvh overflow-hidden' : 'min-h-screen'}`}>
+    <div className={`bg-gray-50 flex flex-col ${fillViewport ? 'h-dvh overflow-hidden' : 'min-h-screen'}`}>
       <AdminNavbar
         onToggleLeft={() => setLeftOpen(!leftOpen)}
         onToggleRight={() => setRightOpen(!rightOpen)}
@@ -60,7 +63,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         <main
           className={`flex min-h-0 min-w-0 flex-1 flex-col bg-gray-50 ${
-            isChat ? 'overflow-hidden' : 'overflow-y-auto'
+            fillViewport ? 'overflow-hidden' : 'overflow-y-auto'
           }`}
         >
           {children}
@@ -71,7 +74,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         )}
       </div>
 
-      {!isChat && <ModernFooter />}
+      {!fillViewport && <ModernFooter />}
     </div>
   );
 }

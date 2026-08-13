@@ -70,8 +70,8 @@ export default function TopCountriesDistributionPage() {
       loading={loading}
       error={error}
     >
-      <div className="max-h-[75vh] overflow-y-auto pr-1 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {(data?.topCountries ?? []).map((row) => (
             <StatisticsPieBlock
               key={row.country}
@@ -79,7 +79,7 @@ export default function TopCountriesDistributionPage() {
               subtitle={`${row.total} registrations`}
               slices={row.distribution.slices}
               kindColors
-              height={260}
+              height={240}
               onSelect={makeKindHandler(row.country, row.country)}
             />
           ))}
@@ -92,7 +92,7 @@ export default function TopCountriesDistributionPage() {
         ) : null}
 
         {rest ? (
-          <div className="pt-2">
+          <div className="pt-1">
             <StatisticsPieBlock
               title="Rest of the world"
               subtitle={`${rest.total} registrations across ${rest.countryCount} other countr${
@@ -100,7 +100,7 @@ export default function TopCountriesDistributionPage() {
               }`}
               slices={rest.distribution.slices}
               kindColors
-              height={380}
+              height={260}
               onSelect={makeKindHandler(
                 '__rest_of_world__',
                 'Rest of the world',

@@ -76,11 +76,11 @@ export default function UsersDistributionPage() {
         />
       </div>
       {data && data.worldDistribution.total > 0 ? (
-        <div className="mt-4 bg-white border border-[#cfcfcf] p-4 text-sm">
-          <p className="font-semibold mb-2">
+        <div className="mt-4 bg-white border border-[#cfcfcf] p-4 text-base">
+          <p className="font-semibold mb-2 text-base">
             Current users = {data.worldDistribution.total}
           </p>
-          <ul className="space-y-1 text-[#333]">
+          <ul className="space-y-1.5 text-lg text-[#333]">
             {data.worldDistribution.slices.map((s) => (
               <li key={s.key}>
                 {s.label} {s.count} ({s.percent}%)

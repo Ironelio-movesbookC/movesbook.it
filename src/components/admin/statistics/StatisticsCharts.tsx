@@ -12,8 +12,8 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Legend,
   Sector,
+  LabelList,
 } from 'recharts';
 import {
   STATS_KIND_COLORS,
@@ -53,6 +53,8 @@ type PieBlockProps = {
   versionColors?: boolean;
   /** Paint every slice with one color (e.g. selected user-type accent). */
   uniformColor?: string;
+  /** Color chip shown above the title (user-type accent without recoloring slices). */
+  titleSwatchColor?: string;
   height?: number;
   /** Extra classes on the outer card (e.g. h-full for equal-height grids). */
   className?: string;
@@ -128,6 +130,7 @@ export function StatisticsPieBlock({
   kindColors,
   versionColors,
   uniformColor,
+  titleSwatchColor,
   height = 280,
   className,
   onSelect,
@@ -181,11 +184,19 @@ export function StatisticsPieBlock({
       className={`bg-white border border-[#cfcfcf] p-3 flex flex-col overflow-hidden ${className ?? ''}`}
     >
       <div className="mb-2 shrink-0">
-        <h3 className="font-bold text-[#222] text-sm">{title}</h3>
-        {subtitle ? <p className="text-xs text-[#666] mt-0.5">{subtitle}</p> : null}
+        {titleSwatchColor ? (
+          <span
+            className="mb-1.5 inline-block h-3.5 w-8 rounded-sm border border-black/10"
+            style={{ backgroundColor: titleSwatchColor }}
+            title="Type of user color"
+            aria-hidden
+          />
+        ) : null}
+        <h3 className="font-bold text-[#222] text-lg">{title}</h3>
+        {subtitle ? <p className="text-base text-[#666] mt-0.5">{subtitle}</p> : null}
       </div>
       {empty ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-[#888] min-h-[200px]">
+        <div className="flex-1 flex items-center justify-center text-base text-[#888] min-h-[200px]">
           No data
         </div>
       ) : (
@@ -235,7 +246,7 @@ export function StatisticsPieBlock({
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <ul className="mt-3 pt-3 border-t border-[#e8e8e8] grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-[#333]">
+          <ul className="mt-3 pt-3 border-t border-[#e8e8e8] grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-base text-[#333]">
             {legendData.map((entry, index) => {
               const isActive = activeKey === entry.key;
               const dimmed = activeKey != null && !isActive;
@@ -245,7 +256,7 @@ export function StatisticsPieBlock({
                 <li key={entry.key}>
                   <button
                     type="button"
-                    className={`w-full flex items-center gap-2 min-w-0 rounded px-1.5 py-1 text-left transition ${
+                    className={`w-full flex items-center gap-2 min-w-0 rounded px-1.5 py-1.5 text-left transition ${
                       isActive
                         ? 'bg-[#e8f4f5] ring-1 ring-[#058592]'
                         : 'hover:bg-[#f3f3f3]'
@@ -257,12 +268,16 @@ export function StatisticsPieBlock({
                     onClick={() => toggleSelect(entry.key)}
                   >
                     <span
-                      className="inline-block w-2.5 h-2.5 shrink-0 rounded-sm"
+                      className="inline-block w-3 h-3 shrink-0 rounded-sm"
                       style={{ backgroundColor: colorFor(entry, index) }}
                       aria-hidden
                     />
-                    <span className="truncate" title={`${entry.label} (${entry.percent}%)`}>
-                      {entry.label} ({entry.percent}%)
+                    <span
+                      className="truncate text-base"
+                      title={`${entry.label}: ${entry.count} (${entry.percent}%)`}
+                    >
+                      {entry.label} ({entry.percent}%){' '}
+                      <span className="font-bold text-[#111]">{entry.count}</span>
                     </span>
                   </button>
                 </li>
@@ -345,8 +360,20 @@ export function StatisticsVerticalCountryBars({
   const [selected, setSelected] = useState<BarFocus | null>(null);
   const active = hovered ?? selected;
 
-  const rowHeight = singleKindMode ? 44 : 52;
-  const chartHeight = Math.max(360, data.length * rowHeight + 56);
+  const showTotals = !singleKindMode;
+  const colCount = kinds.length + (showTotals ? 1 : 0);
+  const headerH = 28;
+  const axisBottomH = 36;
+  const rowHeight = singleKindMode ? 40 : 48;
+  const plotH = Math.max(data.length * rowHeight, rowHeight);
+  const chartAreaH = plotH + axisBottomH;
+  const sideColWidth = Math.max(
+    showTotals ? 280 : 200,
+    colCount * (showTotals ? 52 : 56) + 8,
+  );
+
+  const rowTotal = (row: { byKind: Record<StatsUserKind, number>; total: number }) =>
+    kinds.reduce((s, k) => s + (row.byKind[k] ?? 0), 0) || row.total;
 
   const isCellActive = (country: string, kind: string) => {
     if (!active) return false;
@@ -380,13 +407,6 @@ export function StatisticsVerticalCountryBars({
     selectCountry(country, kind);
   };
 
-  const kindFromLegendLabel = (value: unknown): StatsUserKind | undefined => {
-    const label = String(value ?? '');
-    return kinds.find(
-      (k) => labelFor(k) === label || STATS_KIND_LABELS[k] === label,
-    );
-  };
-
   if (data.length === 0) {
     return (
       <div className="bg-white border border-[#cfcfcf] p-8 text-center text-[#888]">No data</div>
@@ -395,105 +415,121 @@ export function StatisticsVerticalCountryBars({
 
   return (
     <div className="bg-white border border-[#cfcfcf] p-3 overflow-x-auto">
-      <div className="flex gap-3 items-stretch min-w-[720px]">
-        <div ref={hostRef} className="flex-1 min-w-[420px]" style={{ height: chartHeight }}>
-          <BarChart
-            width={Math.max(chartWidth, 320)}
-            height={chartHeight}
-            data={data}
-            layout="vertical"
-            margin={{ top: 28, right: singleKindMode ? 36 : 12, left: 8, bottom: 8 }}
-            barCategoryGap="18%"
-            barGap={3}
+      <div className="flex gap-3 items-start min-w-[720px]">
+        <div className="flex-1 min-w-[420px]">
+          {/* Shared header band — same height as side-table header */}
+          <div
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] font-semibold"
+            style={{ height: headerH }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-            <XAxis type="number" allowDecimals={false} />
-            <YAxis
-              type="category"
-              dataKey="country"
-              width={120}
-              tick={{ fontSize: 11 }}
-              interval={0}
-            />
-            <Tooltip />
-            <Legend
-              verticalAlign="top"
-              height={28}
-              onMouseEnter={(item) => {
-                const kind = kindFromLegendLabel(item.value);
-                if (kind) setHovered({ kind });
-              }}
-              onMouseLeave={() => setHovered(null)}
-              onClick={(item) => {
-                const kind = kindFromLegendLabel(item.value);
-                if (!kind) return;
-                if (!singleKindMode) {
-                  onKindSelect?.(kind);
-                  return;
-                }
-                setSelected((prev) => (prev?.kind === kind && !prev.country ? null : { kind }));
-              }}
-            />
             {kinds.map((k) => (
-              <Bar
+              <button
                 key={k}
-                dataKey={k}
-                name={labelFor(k)}
-                fill={colorFor(k)}
-                maxBarSize={singleKindMode ? 38 : 34}
-                barSize={singleKindMode ? 32 : 28}
-                cursor="pointer"
-                label={
-                  singleKindMode
-                    ? {
-                        position: 'right',
-                        fill: '#333',
-                        fontSize: 12,
-                        fontWeight: 600,
-                      }
-                    : false
-                }
-                onMouseEnter={(entry) => {
-                  const country = String((entry as { country?: string }).country ?? '');
-                  if (country) setHovered({ country, kind: k });
-                }}
+                type="button"
+                className="inline-flex items-center gap-1.5 hover:opacity-80"
+                onMouseEnter={() => setHovered({ kind: k })}
                 onMouseLeave={() => setHovered(null)}
-                onClick={(entry) => {
-                  const country = String((entry as { country?: string }).country ?? '');
-                  handleBarClick(country, k);
+                onClick={() => {
+                  if (!singleKindMode) onKindSelect?.(k);
+                  else setSelected((prev) => (prev?.kind === k && !prev.country ? null : { kind: k }));
                 }}
               >
-                {data.map((row) => {
-                  const country = String(row.country);
-                  const activeCell = isCellActive(country, k);
-                  const dimmed = isCellDimmed(country, k);
-                  const color = colorFor(k);
-                  return (
-                    <Cell
-                      key={`${country}-${k}`}
-                      fill={color}
-                      fillOpacity={dimmed ? 0.28 : 1}
-                      stroke={activeCell ? color : 'transparent'}
-                      strokeWidth={activeCell ? 3 : 0}
-                      strokeOpacity={activeCell ? 1 : 0}
-                      style={{ transition: 'fill-opacity 120ms ease' }}
-                    />
-                  );
-                })}
-              </Bar>
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-sm"
+                  style={{ backgroundColor: colorFor(k) }}
+                  aria-hidden
+                />
+                <span style={{ color: colorFor(k) }}>{labelFor(k)}</span>
+              </button>
             ))}
-          </BarChart>
+          </div>
+
+          <div ref={hostRef} style={{ height: chartAreaH }}>
+            <BarChart
+              width={Math.max(chartWidth, 320)}
+              height={chartAreaH}
+              data={data}
+              layout="vertical"
+              margin={{
+                top: 4,
+                right: singleKindMode ? 36 : 12,
+                left: 8,
+                bottom: axisBottomH - 4,
+              }}
+              barCategoryGap="22%"
+              barGap={2}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
+              <XAxis type="number" allowDecimals={false} />
+              <YAxis
+                type="category"
+                dataKey="country"
+                width={120}
+                tick={{ fontSize: 11 }}
+                interval={0}
+              />
+              <Tooltip />
+              {kinds.map((k) => (
+                <Bar
+                  key={k}
+                  dataKey={k}
+                  name={labelFor(k)}
+                  fill={colorFor(k)}
+                  maxBarSize={singleKindMode ? 30 : 26}
+                  barSize={singleKindMode ? 26 : 22}
+                  cursor="pointer"
+                  label={
+                    singleKindMode
+                      ? {
+                          position: 'right',
+                          fill: '#333',
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }
+                      : false
+                  }
+                  onMouseEnter={(entry) => {
+                    const country = String((entry as { country?: string }).country ?? '');
+                    if (country) setHovered({ country, kind: k });
+                  }}
+                  onMouseLeave={() => setHovered(null)}
+                  onClick={(entry) => {
+                    const country = String((entry as { country?: string }).country ?? '');
+                    handleBarClick(country, k);
+                  }}
+                >
+                  {data.map((row) => {
+                    const country = String(row.country);
+                    const activeCell = isCellActive(country, k);
+                    const dimmed = isCellDimmed(country, k);
+                    const color = colorFor(k);
+                    return (
+                      <Cell
+                        key={`${country}-${k}`}
+                        fill={color}
+                        fillOpacity={dimmed ? 0.28 : 1}
+                        stroke={activeCell ? color : 'transparent'}
+                        strokeWidth={activeCell ? 3 : 0}
+                        strokeOpacity={activeCell ? 1 : 0}
+                        style={{ transition: 'fill-opacity 120ms ease' }}
+                      />
+                    );
+                  })}
+                </Bar>
+              ))}
+            </BarChart>
+          </div>
         </div>
 
         <div
           className="shrink-0 border border-[#ddd] bg-[#fafafa] overflow-hidden"
-          style={{ width: Math.max(220, kinds.length * 56 + 8) }}
+          style={{ width: sideColWidth }}
         >
           <div
             className="grid border-b border-[#ddd] bg-[#f0f0f0] text-[10px] font-semibold text-[#333] uppercase tracking-wide"
             style={{
-              gridTemplateColumns: `repeat(${kinds.length}, minmax(0, 1fr))`,
-              height: 28,
+              gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
+              height: headerH,
             }}
           >
             {kinds.map((k) => (
@@ -514,17 +550,30 @@ export function StatisticsVerticalCountryBars({
                 {labelFor(k)}
               </button>
             ))}
+            {showTotals ? (
+              <div
+                className="flex items-center justify-center px-0.5 text-center border-l border-[#e0e0e0] font-bold"
+                style={{ color: '#dc2626' }}
+                title="Total users in country"
+              >
+                Totals
+              </div>
+            ) : null}
           </div>
-          <div style={{ height: chartHeight - 28 }} className="flex flex-col">
+          <div style={{ height: plotH }} className="flex flex-col">
             {rows.map((row) => {
               const rowActive = active?.country === row.country;
+              const total = rowTotal(row);
               return (
                 <div
                   key={row.country}
-                  className={`grid flex-1 min-h-0 border-b border-[#eee] last:border-b-0 text-xs ${
+                  className={`grid shrink-0 border-b border-[#eee] last:border-b-0 text-xs ${
                     rowActive ? 'bg-[#e8f4f5]' : 'bg-white'
                   }`}
-                  style={{ gridTemplateColumns: `repeat(${kinds.length}, minmax(0, 1fr))` }}
+                  style={{
+                    gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
+                    height: rowHeight,
+                  }}
                   onMouseEnter={() => setHovered({ country: row.country })}
                   onMouseLeave={() => setHovered(null)}
                 >
@@ -546,10 +595,21 @@ export function StatisticsVerticalCountryBars({
                       </button>
                     );
                   })}
+                  {showTotals ? (
+                    <div
+                      className="flex items-center justify-center border-l border-[#f0f0f0] font-bold tabular-nums"
+                      style={{ color: '#dc2626' }}
+                      title={`${row.country} · Total: ${total}`}
+                    >
+                      {total}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
           </div>
+          {/* Match chart X-axis band so bottoms line up */}
+          <div style={{ height: axisBottomH }} className="bg-[#fafafa] border-t border-[#eee]" />
         </div>
       </div>
     </div>
@@ -564,6 +624,33 @@ type VersionsBarsProps = {
   /** Override fill for all bars (e.g. selected user-type accent). */
   fillColor?: string;
 };
+
+function VersionAxisTick({
+  x = 0,
+  y = 0,
+  payload,
+  counts,
+}: {
+  x?: number | string;
+  y?: number | string;
+  payload?: { value?: string };
+  counts: Record<string, number>;
+}) {
+  const version = String(payload?.value ?? '');
+  const count = counts[version] ?? 0;
+  const tx = typeof x === 'number' ? x : Number(x) || 0;
+  const ty = typeof y === 'number' ? y : Number(y) || 0;
+  return (
+    <g transform={`translate(${tx},${ty})`}>
+      <text dy={14} textAnchor="middle" fill="#333" fontSize={12}>
+        {version}
+      </text>
+      <text dy={32} textAnchor="middle" fill="#941751" fontSize={14} fontWeight={800}>
+        {count}
+      </text>
+    </g>
+  );
+}
 
 export function StatisticsVersionsBars({
   rows,
@@ -599,6 +686,12 @@ export function StatisticsVersionsBars({
     fill: fillColor ?? STATS_VERSION_COLORS[r.version],
   }));
 
+  const countsByVersion = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const r of rows) map[r.version] = r.count;
+    return map;
+  }, [rows]);
+
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const activeKey = hoveredKey ?? selectedKey;
@@ -630,12 +723,20 @@ export function StatisticsVersionsBars({
           width={Math.max(width, 280)}
           height={chartHeight}
           data={data}
-          margin={{ top: 12, right: 24, left: 8, bottom: 8 }}
+          margin={{ top: 28, right: 24, left: 8, bottom: 40 }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-          <XAxis dataKey="version" />
+          <XAxis
+            dataKey="version"
+            interval={0}
+            tick={(props) => <VersionAxisTick {...props} counts={countsByVersion} />}
+            height={44}
+          />
           <YAxis allowDecimals={false} />
-          <Tooltip />
+          <Tooltip
+            formatter={(value) => [value, 'Users']}
+            labelFormatter={(label) => String(label)}
+          />
           <Bar
             dataKey="count"
             name="Users"
@@ -651,6 +752,13 @@ export function StatisticsVersionsBars({
               if (version) toggleSelect(version);
             }}
           >
+            <LabelList
+              dataKey="count"
+              position="top"
+              fill="#222"
+              fontSize={13}
+              fontWeight={700}
+            />
             {data.map((entry) => {
               const isActive = activeKey === entry.version;
               const dimmed = activeKey != null && !isActive;

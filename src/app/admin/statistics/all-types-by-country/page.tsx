@@ -80,8 +80,8 @@ export default function AllTypesByCountryPage() {
       loading={loading}
       error={error}
     >
-      <div className="max-h-[75vh] overflow-y-auto pr-1 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {blocks.map((block) => {
             const hasRest = block.countries.some(
               (c) => c.key === '__rest_of_world__' || c.key === '__others__',
@@ -94,7 +94,7 @@ export default function AllTypesByCountryPage() {
                   hasRest ? ' + Rest of the world' : ''
                 }`}
                 slices={block.countries}
-                height={280}
+                height={200}
                 uniformColor={STATS_KIND_COLORS[block.kind]}
                 onSelect={makeHandler(block.kind, block.label)}
               />
