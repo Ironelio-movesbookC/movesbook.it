@@ -343,6 +343,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           isFavourite: a.isFavourite === true,
           languageCode: a.languageCode ?? undefined,
           savedAt: a.savedAt,
+          viewCount: typeof a.viewCount === 'number' ? a.viewCount : Number(a.viewCount) || 0,
           inGlobalNews: a.inGlobalNews === true,
           isFeatured: a.isFeatured === true,
           displayInEvidence: a.displayInEvidence !== false,
@@ -561,6 +562,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           isFavourite: created.isFavourite ?? data.isFavourite ?? false,
           languageCode: created.languageCode ?? undefined,
           savedAt: created.savedAt,
+          viewCount: typeof created.viewCount === 'number' ? created.viewCount : 0,
           sharedClubIds,
           visibility: {
             userTypes: vis?.userTypes ?? [],

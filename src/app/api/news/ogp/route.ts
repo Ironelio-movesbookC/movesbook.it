@@ -1,7 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuthWithUser, requireAuthForNews, getOrCreateUserForSuperAdmin, getSuperAdminCreatorIds } from '../auth';
 import { verifyClubOwnership } from '@/lib/clubNewsShareAuth';
+
+/** Load viewCount even if Prisma client is stale (dev server locking generate). */
+async function loadOgpViewCounts(ids: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (ids.length === 0) return map;
+  try {
+    const rows = await prisma.$queryRaw<{ id: string; viewCount: number | null }[]>`
+      SELECT id, viewCount FROM ogp_articles WHERE id IN (${Prisma.join(ids)})
+    `;
+    for (const row of rows) {
+      map.set(row.id, typeof row.viewCount === 'number' ? row.viewCount : 0);
+    }
+  } catch {
+    /* column may not exist yet */
+  }
+  return map;
+}
 
 function parseJsonArray(str: string | null | undefined): string[] {
   if (str == null || str === '') return [];
@@ -116,6 +134,7 @@ export async function GET(request: NextRequest) {
 
       const superAdminCreatorIds = await getSuperAdminCreatorIds();
       const filtered = list.filter((a) => ogpVisibleToViewer(a, viewer));
+      const viewById = await loadOgpViewCounts(filtered.map((a) => a.id));
 
       const articles = filtered.map((a) => ({
         id: a.id,
@@ -134,6 +153,7 @@ export async function GET(request: NextRequest) {
         topic: a.topic,
         languageCode: a.languageCode ?? null,
         savedAt: a.savedAt.toISOString(),
+        viewCount: viewById.get(a.id) ?? (a as { viewCount?: number }).viewCount ?? 0,
         visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
         visibilityCountries: parseJsonArray(a.visibilityCountries),
         visibilityLanguages: parseJsonArray(a.visibilityLanguages),
@@ -188,6 +208,7 @@ export async function GET(request: NextRequest) {
 
     const now = new Date();
     const superAdminCreatorIds = await getSuperAdminCreatorIds();
+    const viewById = await loadOgpViewCounts(list.map((a) => a.id));
     const filtered = list.filter((a) => {
       const isCreator = a.userId === userId;
 
@@ -242,6 +263,7 @@ export async function GET(request: NextRequest) {
       topic: a.topic,
       languageCode: a.languageCode ?? null,
       savedAt: a.savedAt.toISOString(),
+      viewCount: viewById.get(a.id) ?? (a as { viewCount?: number }).viewCount ?? 0,
       inGlobalNews: a.inGlobalNews === true,
       isFeatured: a.isFeatured === true,
       displayInEvidence: a.displayInEvidence !== false,

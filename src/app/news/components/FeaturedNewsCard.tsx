@@ -19,6 +19,7 @@ function formatDate(iso?: string) {
 interface FeaturedNewsCardProps {
   articles: ArticlePasted[];
   onPreview?: (id: string) => void;
+  onView?: (id: string) => void;
 }
 
 const AUTO_ADVANCE_MS = 5000;
@@ -26,7 +27,7 @@ const AUTO_ADVANCE_MS = 5000;
 /**
  * MSN-style featured card: 2 OGP columns wide, same row height as a single OGP card.
  */
-export default function FeaturedNewsCard({ articles, onPreview }: FeaturedNewsCardProps) {
+export default function FeaturedNewsCard({ articles, onPreview, onView }: FeaturedNewsCardProps) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
@@ -102,6 +103,7 @@ export default function FeaturedNewsCard({ articles, onPreview }: FeaturedNewsCa
             rel="noopener noreferrer"
             className="absolute inset-0 z-[5] cursor-pointer"
             aria-label={`Open article: ${title}`}
+            onClick={() => onView?.(current.id)}
           />
         )}
 
@@ -142,6 +144,7 @@ export default function FeaturedNewsCard({ articles, onPreview }: FeaturedNewsCa
             type="button"
             className="text-left w-full min-w-0"
             onClick={() => {
+              onView?.(current.id);
               if (onPreview) {
                 onPreview(current.id);
               } else if (current.url && current.url !== '#') {

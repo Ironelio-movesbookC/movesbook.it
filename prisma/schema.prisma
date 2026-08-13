@@ -204,6 +204,8 @@ model OgpArticle {
   inGlobalNews          Boolean   @default(false) // Super admin: shown in Global News merged feed
   isFeatured            Boolean   @default(false) // Super admin: promoted to featured News Card (hero)
   displayInEvidence     Boolean   @default(true) // Super admin: show/hide in featured News Card when isFeatured
+  /// Times this OGP News was opened. Used for News Headlines / Top Stories ranking.
+  viewCount             Int       @default(0)
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy             User?     @relation("OgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   likes                 OgpArticleLike[]
@@ -213,6 +215,7 @@ model OgpArticle {
   @@index([userId])
   @@index([userId, topic])
   @@index([deletedAt])
+  @@index([viewCount])
   @@map("ogp_articles")
 }
 

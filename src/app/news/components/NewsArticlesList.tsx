@@ -22,6 +22,8 @@ import { ShareInMyClubsButtonIfClub } from '@/components/club/ShareInMyClubsButt
 import ClubGlobalNewsToggleButton from '@/components/club/ClubGlobalNewsToggleButton';
 import RichTextEditor from '@/components/settings/RichTextEditor';
 import FeaturedNewsCard from './FeaturedNewsCard';
+import NewsHeadlinesPanel from './NewsHeadlinesPanel';
+import NewsHeadlinesExpandedView from './NewsHeadlinesExpandedView';
 
 type MusicLibraryNavKey = 'recent' | 'playlist' | 'songs' | 'albums' | 'favourites';
 
@@ -73,6 +75,8 @@ export type ArticlePasted = OGPData & {
   isFeatured?: boolean;
   /** Super admin: show in featured News Card when isFeatured (default true). */
   displayInEvidence?: boolean;
+  /** Times this OGP News was opened (News Headlines / Top Stories ranking). */
+  viewCount?: number;
   /** Club admin: promoted into this club's Club Global News feed. */
   inClubGlobalNews?: boolean;
   /** Club OGP News audience mode from club_shared_ogp_articles.audienceMode. */
@@ -564,6 +568,9 @@ export default function NewsArticlesList({
   const [globalNewsLoadingId, setGlobalNewsLoadingId] = useState<string | null>(null);
   const [featuredLoadingId, setFeaturedLoadingId] = useState<string | null>(null);
   const [showFeaturedInEvidence, setShowFeaturedInEvidence] = useState(true);
+  const [viewingHeadlines, setViewingHeadlines] = useState(false);
+  const [headlinesDisplayPicture, setHeadlinesDisplayPicture] = useState(true);
+  const [viewCountOverrides, setViewCountOverrides] = useState<Record<string, number>>({});
   const [shareModalArticle, setShareModalArticle] = useState<ArticlePasted | null>(null);
   const ogpGridRef = useRef<HTMLDivElement>(null);
   const [ogpListMaxHeight, setOgpListMaxHeight] = useState<number | null>(null);
@@ -579,6 +586,25 @@ export default function NewsArticlesList({
       /* ignore */
     }
   }, [showFeaturedControls]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = localStorage.getItem('ogpHeadlinesDisplayPicture');
+      if (stored === 'false') setHeadlinesDisplayPicture(false);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleHeadlinesDisplayPictureChange = useCallback((next: boolean) => {
+    setHeadlinesDisplayPicture(next);
+    try {
+      localStorage.setItem('ogpHeadlinesDisplayPicture', next ? 'true' : 'false');
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const handleShowFeaturedInEvidenceChange = useCallback((checked: boolean) => {
     setShowFeaturedInEvidence(checked);
@@ -1155,8 +1181,63 @@ export default function NewsArticlesList({
     isNewsOgp &&
     !viewingOgpGroup &&
     !isAddingToGroup &&
+    !viewingHeadlines &&
     featuredArticles.length > 0 &&
     (showFeaturedControls ? showFeaturedInEvidence : true);
+
+  const headlinesArticles = useMemo(() => {
+    if (!isNewsOgp || viewingOgpGroup || isAddingToGroup) return [];
+    return sorted.filter((a) => !a.isOgpGroup && !a.deletedAt);
+  }, [sorted, isNewsOgp, viewingOgpGroup, isAddingToGroup]);
+
+  const showHeadlinesPanel =
+    isNewsOgp &&
+    !viewingOgpGroup &&
+    !isAddingToGroup &&
+    !viewingHeadlines &&
+    headlinesArticles.length > 0;
+
+  const getHeadlineViewCount = useCallback(
+    (article: ArticlePasted) => viewCountOverrides[article.id] ?? article.viewCount ?? 0,
+    [viewCountOverrides],
+  );
+
+  const handleRecordOgpView = useCallback(
+    async (articleId: string) => {
+      const token =
+        typeof window !== 'undefined'
+          ? adminContext
+            ? localStorage.getItem('adminToken')
+            : localStorage.getItem('token')
+          : null;
+      if (!token) return;
+      try {
+        const res = await fetch(`${apiBase}/ogp/${articleId}/view`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data && typeof data.viewCount === 'number') {
+          setViewCountOverrides((prev) => ({ ...prev, [articleId]: data.viewCount }));
+        }
+      } catch {
+        /* ignore */
+      }
+    },
+    [adminContext, apiBase],
+  );
+
+  const handleOpenHeadlineArticle = useCallback(
+    (article: ArticlePasted) => {
+      void handleRecordOgpView(article.id);
+      if (article.url && article.url !== '#') {
+        window.open(article.url, '_blank', 'noopener,noreferrer');
+      } else {
+        setPreviewArticleId(article.id);
+      }
+    },
+    [handleRecordOgpView],
+  );
 
   const gridSorted = useMemo(() => {
     if (!showFeaturedHero) return sorted;
@@ -1523,6 +1604,16 @@ export default function NewsArticlesList({
             >
               Exit
             </button>
+          ) : viewingHeadlines ? (
+            <button
+              type="button"
+              onClick={() => setViewingHeadlines(false)}
+              className="ml-auto flex-shrink-0 px-6 py-2 rounded-md border border-gray-400 bg-gradient-to-b from-gray-100 to-gray-300 text-sm font-semibold text-gray-900 hover:from-gray-200 hover:to-gray-400 shadow-sm"
+              title="Back to OGP News"
+              aria-label="Exit news headlines"
+            >
+              Exit
+            </button>
           ) : onAddClick != null && !superAdminReadOnlyOgpActions ? (
               <div className="flex items-end gap-3 flex-shrink-0 ml-auto">
                 <div className="flex flex-col items-center gap-0.5">
@@ -1723,6 +1814,8 @@ export default function NewsArticlesList({
                     {viewingOgpGroup.name}
                   </span>
                 </>
+              ) : viewingHeadlines ? (
+                <span className="text-white">News Headlines</span>
               ) : (
                 renderActiveTopicHeading('dark')
               )}
@@ -1963,7 +2056,7 @@ export default function NewsArticlesList({
           </div>
         </div>
         <div className="p-4 min-h-0 flex flex-col">
-          {filtered.length === 0 && !showFeaturedHero ? (
+          {filtered.length === 0 && !showFeaturedHero && !showHeadlinesPanel && !viewingHeadlines ? (
             <p className="text-sm text-gray-500">
               {viewingOgpGroup
                 ? `No ${ogpLabel} in group "${viewingOgpGroup.name}".`
@@ -1977,6 +2070,23 @@ export default function NewsArticlesList({
                       ? t('news_no_articles_for_topic').replace('{topic}', translateTopic(activeTopic))
                       : t('news_no_articles_default')}
             </p>
+          ) : viewingHeadlines ? (
+            <div
+              className="min-h-0 overflow-y-auto overscroll-contain"
+              role="region"
+              aria-label="News headlines"
+            >
+              <NewsHeadlinesExpandedView
+                articles={headlinesArticles}
+                getViewCount={getHeadlineViewCount}
+                likesMap={likesMap}
+                likeLoadingId={likeLoadingId}
+                onLike={(id) => handleLikeClick(id, false)}
+                onOpenArticle={handleOpenHeadlineArticle}
+                displayPicture={headlinesDisplayPicture}
+                onDisplayPictureChange={handleHeadlinesDisplayPictureChange}
+              />
+            </div>
           ) : (
             <div
               className="min-h-0 overflow-y-auto overscroll-contain"
@@ -1992,6 +2102,15 @@ export default function NewsArticlesList({
                   <FeaturedNewsCard
                     articles={featuredArticles}
                     onPreview={(id) => setPreviewArticleId(id)}
+                    onView={(id) => void handleRecordOgpView(id)}
+                  />
+                )}
+                {showHeadlinesPanel && (
+                  <NewsHeadlinesPanel
+                    articles={headlinesArticles}
+                    getViewCount={getHeadlineViewCount}
+                    onViewMore={() => setViewingHeadlines(true)}
+                    onOpenArticle={handleOpenHeadlineArticle}
                   />
                 )}
                 {paginated.map((a) => (
@@ -2037,7 +2156,10 @@ export default function NewsArticlesList({
                           target="_blank"
                           rel="noopener noreferrer"
                           className="block w-full flex-shrink-0 pointer-events-auto rounded mb-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset"
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!a.isOgpGroup) void handleRecordOgpView(a.id);
+                          }}
                           aria-label={`Open article: ${a.title || a.url}`}
                         >
                           <span className={`relative block w-full h-28 rounded overflow-hidden ${a.deletedAt ? 'opacity-75' : ''}`}>
@@ -2093,6 +2215,7 @@ export default function NewsArticlesList({
                         if (a.isOgpGroup) {
                           openOgpGroupView(a);
                         } else {
+                          void handleRecordOgpView(a.id);
                           setPreviewArticleId(a.id);
                         }
                       }}
@@ -2122,6 +2245,7 @@ export default function NewsArticlesList({
                             if (a.isOgpGroup) {
                               openOgpGroupView(a);
                             } else {
+                              void handleRecordOgpView(a.id);
                               setPreviewArticleId(a.id);
                             }
                           }
@@ -2733,6 +2857,9 @@ export default function NewsArticlesList({
                       rel="noopener noreferrer"
                       className="block w-full focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset cursor-pointer"
                       aria-label={`Open article: ${article.title || article.url}`}
+                      onClick={() => {
+                        if (!article.isOgpGroup) void handleRecordOgpView(article.id);
+                      }}
                     >
                       <span className="relative block w-full h-64 max-h-64">
                         <Image
