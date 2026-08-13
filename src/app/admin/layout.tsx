@@ -20,13 +20,12 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const useSystemSidebar = isGlobalSettings || isAccessAudioSettings;
   const isChat = pathname?.startsWith('/admin/chat');
   const isStatistics = pathname?.startsWith('/admin/statistics');
-  /** Fill viewport so left/right sidebars and main share one height (no short nested scroll). */
-  const fillViewport = isChat || isStatistics;
   const isLogin = pathname?.startsWith('/admin/login');
   /** Superadmin My Music panel — fill the central column at a fixed viewport height. */
   const isOgMusicPanel =
     pathname?.startsWith('/admin/dashboard') && searchParams?.get('panel') === 'og-music';
-  const fillViewport = isChat || isOgMusicPanel;
+  /** Fill viewport so left/right sidebars and main share one height (no short nested scroll). */
+  const fillViewport = isChat || isStatistics || isOgMusicPanel;
   /** OGP News needs the full main column; Current Users sidebar crowds the card grid. */
   const isOgpNewsPage = pathname?.startsWith('/admin/news/links');
   const isGlobalNewsPage = pathname?.startsWith('/admin/news/global');
