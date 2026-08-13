@@ -89,6 +89,11 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
     [data, checkedIds]
   );
 
+  const selectedMemberId = useMemo(
+    () => (selectedId ? data.find((r) => r.id === selectedId)?.memberId ?? null : null),
+    [data, selectedId]
+  );
+
   /** PHP: Pay deadlines selected requires 2+ rows, same member, all Rest > 0. */
   const canPaySelected = checkedRows.length > 1 && selectionIsPayable(checkedRows);
 
@@ -149,7 +154,7 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
     <ProcedureArchiveShell
       title={def.archiveTitles.deadlines}
       activeTab={activeTab}
-      tabs={getProcedureTabs(procedureCode, activeTab, selectedId)}
+      tabs={getProcedureTabs(procedureCode, activeTab, selectedId, selectedMemberId)}
       error={error}
       footerHint="Double-click a row with Rest > 0 to pay. Or check several (same member, Rest > 0) and use Pay deadlines selected."
       tabActions={

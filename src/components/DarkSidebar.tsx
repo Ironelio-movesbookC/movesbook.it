@@ -138,9 +138,11 @@ import {
 } from '@/utils/youtubeChannelUrl';
 import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
 import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
+import ClubSocialSubmenu from '@/components/club/ClubSocialSubmenu';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
+import MubSidebarBar from '@/components/mub/MubSidebarBar';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
 import { PERSONAL_WEBSITE_TOPICS_PATH } from '@/lib/personalWebsiteSettingsPaths';
@@ -294,7 +296,6 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)', path: '/clubs/movement_cash_details' },
   ],
   [
-    { kind: 'icon', Icon: CreditCard, label: 'Archive of Payments', path: '/clubs/archive_payments' },
     { kind: 'icon', Icon: ClipboardCheck, label: 'Archive of Receipts', path: '/clubs/archive_receipts' },
   ],
   [
@@ -360,6 +361,14 @@ interface DarkSidebarProps {
   onAccessOutcomeSettingsClick?: () => void;
   /** Communities → Suggest Movesbook (promocode invite dashboard) */
   onSuggestMovesbookClick?: () => void;
+  /** My Club → SOCIAL → Chat (club broadcast channel) */
+  onClubChatClick?: () => void;
+  /** My Club → Club News → News (shared editorial news) */
+  onClubNewsSectionClick?: () => void;
+  /** My Club → Club News → OGP News (shared OGP news) */
+  onClubOgpNewsSectionClick?: () => void;
+  /** My Club → Club News → Club Global News (all shared) */
+  onClubGlobalNewsSectionClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
@@ -401,6 +410,10 @@ export default function DarkSidebar({
   onIdentificationDevicesClick,
   onAccessOutcomeSettingsClick,
   onSuggestMovesbookClick,
+  onClubChatClick,
+  onClubNewsSectionClick,
+  onClubOgpNewsSectionClick,
+  onClubGlobalNewsSectionClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
@@ -691,6 +704,7 @@ export default function DarkSidebar({
   const [clubArchivesOpen, setClubArchivesOpen] = useState(false);
   const [clubUserGuidesOpen, setClubUserGuidesOpen] = useState(false);
   const [clubPostsOpen, setClubPostsOpen] = useState(false);
+  const [clubNewsOpen, setClubNewsOpen] = useState(false);
   const [musicForClubOpen, setMusicForClubOpen] = useState(false);
   const [clubInternetLinksOpen, setClubInternetLinksOpen] = useState(false);
   const [clubInternetMyClubsOpen, setClubInternetMyClubsOpen] = useState(true);
@@ -1484,6 +1498,7 @@ export default function DarkSidebar({
           onClubYoutubeSaved={handleClubYoutubeSaved}
           onClubBootstrapped={handleClubBootstrapped}
           onChangeLogo={() => setShowChangeProfilePhotoModal(true)}
+          onChatClick={onClubChatClick}
         />
       ) : (
         <div className="bg-gray-800 p-3 flex-shrink-0">
@@ -1565,11 +1580,7 @@ export default function DarkSidebar({
             <span className="text-white text-xs">{t('sidebar_allow_visiting')}</span>
           </div>
 
-          {/* Most used buttons - Compact */}
-          <button className="w-full bg-red-600 hover:bg-red-700 text-white py-1.5 px-2 rounded mb-2 flex items-center justify-between transition-colors text-xs">
-            <span>{t('sidebar_most_used_buttons')}</span>
-            <Settings className="w-3 h-3" />
-          </button>
+          <MubSidebarBar variant="compact" />
 
           {/* Visitor Tracking - Compact */}
           <div className="space-y-1 mb-2">
@@ -2515,16 +2526,7 @@ export default function DarkSidebar({
                       </div>
                     </div>
 
-                    {/* SOCIAL section header */}
-                    <div className="w-full bg-[#7a0d1c] text-white border-b border-teal-700">
-                      <div className="flex items-center justify-between py-2 px-3">
-                        <div className="flex items-center gap-2.5">
-                          <Bell className="w-5 h-5" />
-                          <span className="font-bold tracking-wide text-sm">SOCIAL</span>
-                        </div>
-                        <ChevronDown className="w-4 h-4 opacity-90" />
-                      </div>
-                    </div>
+                    <ClubSocialSubmenu onChatClick={onClubChatClick} />
 
                     {isClubAccountUserType(userType) ? (
                       <ClubMyClubInfoSubmenu
@@ -2842,16 +2844,72 @@ export default function DarkSidebar({
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Newspaper className="w-5 h-5 shrink-0" />
-                    <span className="font-semibold tracking-wide truncate">Club News</span>
+                {userType === 'CLUB' ? (
+                  <div className="w-full border-b border-teal-700">
+                    <button
+                      type="button"
+                      onClick={() => setClubNewsOpen((v) => !v)}
+                      aria-expanded={clubNewsOpen}
+                      className="flex w-full items-center justify-between bg-teal-800 py-2.5 px-3 text-white transition-colors hover:bg-teal-700"
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <Newspaper className="h-5 w-5 shrink-0" />
+                        <span className="truncate font-semibold tracking-wide">Club News</span>
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 opacity-90 transition-transform duration-200 ${
+                          clubNewsOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                    {clubNewsOpen && (
+                      <div className="bg-[#4a4a4a] text-white">
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <BookOpen className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                          <span className="min-w-0 leading-snug">Movesbook News</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onClubNewsSectionClick?.()}
+                          className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <Newspaper className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                          <span className="min-w-0 leading-snug">News</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onClubOgpNewsSectionClick?.()}
+                          className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <Link2 className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                          <span className="min-w-0 leading-snug">OGP News</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onClubGlobalNewsSectionClick?.()}
+                          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <Globe className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                          <span className="min-w-0 leading-snug">Club Global News</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <ChevronDown className="w-4 h-4 opacity-90" />
-                </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Newspaper className="w-5 h-5 shrink-0" />
+                      <span className="font-semibold tracking-wide truncate">Club News</span>
+                    </div>
+                    <ChevronDown className="w-4 h-4 opacity-90" />
+                  </button>
+                )}
 
                 <button
                   type="button"

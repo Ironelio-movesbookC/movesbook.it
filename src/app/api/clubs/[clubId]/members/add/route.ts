@@ -95,7 +95,8 @@ export async function POST(
       data: {
         clubId: clubId,
         memberId: userToAdd.id,
-        role: 'member'
+        role: 'member',
+        membershipType: 'Standard',
       },
       include: {
         member: {

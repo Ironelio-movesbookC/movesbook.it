@@ -12,6 +12,8 @@ import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettin
 import ClubBachecaMemberPanel from '@/components/club/websiteSettings/ClubBachecaMemberPanel';
 import ClubTopicMemberPanel from '@/components/club/websiteSettings/ClubTopicMemberPanel';
 import ClubDashboardTopicsHorizontalPanel from '@/components/club/ClubDashboardTopicsHorizontalPanel';
+import ClubChatPanel from '@/components/club/ClubChatPanel';
+import ClubSharedNewsPanel from '@/components/club/ClubSharedNewsPanel';
 import NotificationByPromocodeDashboardView from '@/components/promocodes/NotificationByPromocodeDashboard';
 import {
   getClubMyPageDisplayName,
@@ -45,6 +47,10 @@ function ClubDashboardContent() {
     | 'bacheca'
     | 'topic'
     | 'topics-horizontal'
+    | 'chat'
+    | 'club-news'
+    | 'club-news-ogp'
+    | 'club-global-news'
   >('default');
   const [clubTopicId, setClubTopicId] = useState<string | null>(null);
 
@@ -131,6 +137,38 @@ function ClubDashboardContent() {
       setClubMainPanel('suggest-movesbook');
       router.replace('/club/dashboard', { scroll: false });
     }
+    if (panel === 'chat') {
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('chat');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+    if (panel === 'club-news') {
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('club-news');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+    if (panel === 'club-news-ogp') {
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('club-news-ogp');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+    if (panel === 'club-global-news') {
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('club-global-news');
+      router.replace('/club/dashboard', { scroll: false });
+    }
     if (panel === 'bacheca') {
       const queryClubId = searchParams?.get('clubId');
       if (queryClubId) {
@@ -212,6 +250,21 @@ function ClubDashboardContent() {
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Suggest Movesbook to friends</h2>
           <NotificationByPromocodeDashboardView />
         </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'chat' ? (
+        <div className="flex min-h-0 w-full flex-col">
+          {selectedClubId ?? activeClub?.id ? (
+            <ClubChatPanel
+              clubId={(selectedClubId ?? activeClub?.id)!}
+              onCancelTelegram={() => setClubMainPanel('default')}
+            />
+          ) : (
+            <div className="rounded-lg border bg-white p-6 shadow-sm">
+              <p className="py-12 text-center text-sm text-gray-600">
+                Select a club in the sidebar to open Club Channel chat.
+              </p>
+            </div>
+          )}
+        </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'bacheca' ? (
         <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-4 shadow-sm">
           {selectedClubId ?? activeClub?.id ? (
@@ -254,6 +307,46 @@ function ClubDashboardContent() {
           ) : (
             <p className="py-12 text-center text-sm text-gray-600">
               Select a club in the sidebar to view this topic.
+            </p>
+          )}
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'club-news' ? (
+        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
+          {selectedClubId ?? activeClub?.id ? (
+            <ClubSharedNewsPanel
+              clubId={(selectedClubId ?? activeClub?.id)!}
+              type="news"
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-gray-600">
+              Select a club in the sidebar to view shared News.
+            </p>
+          )}
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'club-news-ogp' ? (
+        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
+          {selectedClubId ?? activeClub?.id ? (
+            <ClubSharedNewsPanel
+              clubId={(selectedClubId ?? activeClub?.id)!}
+              type="ogp"
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-gray-600">
+              Select a club in the sidebar to view shared OGP News.
+            </p>
+          )}
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'club-global-news' ? (
+        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
+          {selectedClubId ?? activeClub?.id ? (
+            <ClubSharedNewsPanel
+              clubId={(selectedClubId ?? activeClub?.id)!}
+              type="all"
+              title="Club Global News"
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-gray-600">
+              Select a club in the sidebar to view Club Global News.
             </p>
           )}
         </div>

@@ -70,6 +70,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import WorkoutSection from '@/components/workouts/WorkoutSection';
 import NutritionSection from '@/components/nutrition/NutritionSection';
 import ChatPanel from '@/components/chat/ChatPanel';
+import ChatAudienceSelectModal from '@/components/chat/ChatAudienceSelectModal';
+import type { ChatAudience } from '@/lib/chat/chatAudience';
 import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
@@ -125,9 +127,15 @@ function AthleteDashboardContent() {
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showChatAudienceModal, setShowChatAudienceModal] = useState(false);
+  const [chatAudience, setChatAudience] = useState<ChatAudience | null>(null);
   const [telegramAccount, setTelegramAccount] = useState('');
   const [userTelegramAccount, setUserTelegramAccount] = useState<string | null>(null);
   const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
+  /** Open Club Channel chat on My Club tab (member view). */
+  const [clubChatOpen, setClubChatOpen] = useState(false);
+  /** After Telegram join, open club chat instead of My Page audience picker. */
+  const [pendingClubChatOpen, setPendingClubChatOpen] = useState(false);
   
   // Entities athlete belongs to
   const [myCoaches, setMyCoaches] = useState<any[]>([]);
@@ -212,12 +220,14 @@ function AthleteDashboardContent() {
     if (activeTab !== 'my-entity') {
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
+      setClubChatOpen(false);
     }
   }, [activeTab]);
 
   useEffect(() => {
     if (myClubs.length === 0 && activeTab === 'my-entity') {
       setActiveTab('my-page');
+      setClubChatOpen(false);
     }
   }, [myClubs.length, activeTab]);
 
@@ -250,13 +260,48 @@ function AthleteDashboardContent() {
   };
 
   const handleChatPanelClick = () => {
+    setPendingClubChatOpen(false);
     if (userTelegramAccount) {
-      // User already joined, show chat in main content area
-      setActiveSection('chat');
+      // Ask who they want to chat with before opening the panel
+      setShowChatAudienceModal(true);
     } else {
       // User hasn't joined, show join modal
       setShowJoinModal(true);
     }
+  };
+
+  const openClubChat = useCallback(() => {
+    const clubId = selectedClubId ?? myClubs[0]?.id ?? null;
+    if (!clubId) {
+      alert('Join a club first to use Club Chat.');
+      return;
+    }
+    if (!selectedClubId) {
+      setSelectedClubId(clubId);
+    }
+    setActiveTab('my-entity');
+    setClubAddSongsOgpOpen(false);
+    setClubChatOpen(true);
+  }, [selectedClubId, myClubs]);
+
+  const handleClubChatClick = () => {
+    const clubId = selectedClubId ?? myClubs[0]?.id ?? null;
+    if (!clubId) {
+      alert('Join a club first to use Club Chat.');
+      return;
+    }
+    if (userTelegramAccount) {
+      openClubChat();
+    } else {
+      setPendingClubChatOpen(true);
+      setShowJoinModal(true);
+    }
+  };
+
+  const handleChatAudienceSelect = (audience: ChatAudience) => {
+    setChatAudience(audience);
+    setShowChatAudienceModal(false);
+    setActiveSection('chat');
   };
 
   const handleJoinChat = async () => {
@@ -288,8 +333,13 @@ function AthleteDashboardContent() {
           setUserTelegramAccount(formattedAccount);
           setShowJoinModal(false);
           setTelegramAccount('');
-          // Show chat in main content
-          setActiveSection('chat');
+          if (pendingClubChatOpen) {
+            setPendingClubChatOpen(false);
+            openClubChat();
+          } else {
+            // After joining Telegram, pick who to chat with
+            setShowChatAudienceModal(true);
+          }
         } else {
           alert(data.error || 'Failed to save Telegram account');
         }
@@ -795,8 +845,10 @@ function AthleteDashboardContent() {
                   setActiveSection('staff-feedbacks');
                 }}
                 onMyClubClick={() => setActiveTab('my-entity')}
+                onClubChatClick={handleClubChatClick}
                 onClubAddSongsPlaylistsClick={() => {
                   setActiveTab('my-entity');
+                  setClubChatOpen(false);
                   setClubAddSongsOgpOpen(true);
                 }}
                 onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
@@ -820,11 +872,16 @@ function AthleteDashboardContent() {
                 {activeSection === 'progress' && <AthleteProgress t={t} />}
                 {activeSection === 'settings' && <AthleteSettings t={t} />}
                 {activeSection === 'personal-settings' && <PersonalSettingsContent t={t} user={user} />}
-                {activeSection === 'chat' && (
+                {activeSection === 'chat' && chatAudience && (
                   <div className="flex-1 flex flex-col min-h-0 max-h-[75vh]">
                     <ChatPanel
+                      key={chatAudience}
                       embedded
-                      onClose={() => setActiveSection('overview')}
+                      chatAudience={chatAudience}
+                      onClose={() => {
+                        setActiveSection('overview');
+                        setChatAudience(null);
+                      }}
                     />
                   </div>
                 )}
@@ -894,6 +951,16 @@ function AthleteDashboardContent() {
                     embedded
                     isExpanded={clubAddSongsOgpExpanded}
                     onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
+                  />
+                </div>
+              ) : clubChatOpen && (selectedClubId ?? myClubs[0]?.id) ? (
+                <div className="flex-1 flex flex-col min-h-0 max-h-[75vh]">
+                  <ChatPanel
+                    key={`club-chat-${selectedClubId ?? myClubs[0]?.id}`}
+                    embedded
+                    clubId={selectedClubId ?? myClubs[0]?.id}
+                    chatAudience="club-member"
+                    onClose={() => setClubChatOpen(false)}
                   />
                 </div>
               ) : (
@@ -1090,6 +1157,7 @@ function AthleteDashboardContent() {
                   onClick={() => {
                     setShowJoinModal(false);
                     setTelegramAccount('');
+                    setPendingClubChatOpen(false);
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                 >
@@ -1106,6 +1174,13 @@ function AthleteDashboardContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {showChatAudienceModal && (
+        <ChatAudienceSelectModal
+          onSelect={handleChatAudienceSelect}
+          onCancel={() => setShowChatAudienceModal(false)}
+        />
       )}
 
     </div>

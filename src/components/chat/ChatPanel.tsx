@@ -11,7 +11,10 @@ import MovesbookChannel, {
   ChannelAvatar,
   loadChannelLeft,
   rejoinMovesbookChannel,
+  getChannelLeftEventName,
+  getChannelRejoinedEventName,
 } from './MovesbookChannel';
+import type { ChatAudience } from '@/lib/chat/chatAudience';
 
 /** Turn URLs in text into clickable links (http/https only). Returns array of React nodes. */
 function linkify(text: string, isOwn: boolean): (string | React.ReactNode)[] {
@@ -114,8 +117,18 @@ type ChatPanelProps = {
   onClose?: () => void;
   /** Auth token provider - if not given, uses localStorage token */
   getAuthHeaders?: () => Record<string, string>;
-  /** Show Movesbook broadcast channel (normal users). Default true. */
+  /** Show broadcast channel (Movesbook Channel or Club Channel). Default true. */
   showMovesbookChannel?: boolean;
+  /**
+   * Restrict 1:1 conversations / start-chat user list to this audience
+   * (e.g. Movesbook Staff vs Movesbook User).
+   */
+  chatAudience?: ChatAudience | null;
+  /**
+   * When set, shows Club Channel for this club and scopes 1:1 lists to that club's members
+   * when chatAudience is club-member / club-admin.
+   */
+  clubId?: string | null;
 };
 
 const defaultGetAuthHeaders = (): Record<string, string> => {
@@ -129,8 +142,13 @@ export default function ChatPanel({
   onClose,
   getAuthHeaders: getAuthHeadersProp,
   showMovesbookChannel = true,
+  chatAudience = null,
+  clubId = null,
 }: ChatPanelProps) {
   const getAuthHeaders = getAuthHeadersProp ?? defaultGetAuthHeaders;
+  const effectiveAudience: ChatAudience | null =
+    chatAudience ?? (clubId ? 'club-member' : null);
+  const channelTitle = clubId ? 'Club Channel' : 'Movesbook channel';
 
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [selectedOtherUser, setSelectedOtherUser] = useState<{ id: string; name: string } | null>(null);
@@ -170,7 +188,9 @@ export default function ChatPanel({
 
   useEffect(() => {
     if (!showMovesbookChannel) return;
-    setChannelLeft(loadChannelLeft());
+    setChannelLeft(loadChannelLeft(clubId));
+    const leftEvent = getChannelLeftEventName(clubId);
+    const rejoinedEvent = getChannelRejoinedEventName(clubId);
     const onLeft = () => {
       setChannelLeft(true);
       setChannelSelected(false);
@@ -183,13 +203,23 @@ export default function ChatPanel({
       setSelectedMessageIds(new Set());
       setReplyingTo(null);
     };
-    window.addEventListener('movesbook-channel-left', onLeft);
-    window.addEventListener('movesbook-channel-rejoined', onRejoined);
+    window.addEventListener(leftEvent, onLeft);
+    window.addEventListener(rejoinedEvent, onRejoined);
     return () => {
-      window.removeEventListener('movesbook-channel-left', onLeft);
-      window.removeEventListener('movesbook-channel-rejoined', onRejoined);
+      window.removeEventListener(leftEvent, onLeft);
+      window.removeEventListener(rejoinedEvent, onRejoined);
     };
-  }, [showMovesbookChannel]);
+  }, [showMovesbookChannel, clubId]);
+
+  // Reset selection when switching clubs
+  useEffect(() => {
+    setChannelSelected(false);
+    setSelectedConversationId(null);
+    setSelectedOtherUser(null);
+    setSelectedMessageIds(new Set());
+    setReplyingTo(null);
+    setChannelLeft(showMovesbookChannel ? loadChannelLeft(clubId) : false);
+  }, [clubId, showMovesbookChannel]);
 
   const selectChannel = () => {
     setChannelSelected(true);
@@ -208,7 +238,11 @@ export default function ChatPanel({
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true);
     try {
-      const res = await fetch('/api/chat/conversations', { headers: getAuthHeaders() });
+      const params = new URLSearchParams();
+      if (effectiveAudience) params.set('audience', effectiveAudience);
+      if (clubId) params.set('clubId', clubId);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`/api/chat/conversations${qs}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setConversations(data.conversations || []);
@@ -218,14 +252,16 @@ export default function ChatPanel({
     } finally {
       setLoadingConversations(false);
     }
-  }, [getAuthHeaders]);
+  }, [getAuthHeaders, effectiveAudience, clubId]);
 
   const loadUsers = useCallback(async (search?: string) => {
     try {
-      const url = search != null && search.trim() !== ''
-        ? `/api/chat/users?search=${encodeURIComponent(search.trim())}`
-        : '/api/chat/users';
-      const res = await fetch(url, { headers: getAuthHeaders() });
+      const params = new URLSearchParams();
+      if (search != null && search.trim() !== '') params.set('search', search.trim());
+      if (effectiveAudience) params.set('audience', effectiveAudience);
+      if (clubId) params.set('clubId', clubId);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`/api/chat/users${qs}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setUsers(data.users || []);
@@ -233,7 +269,7 @@ export default function ChatPanel({
     } catch (e) {
       console.error('Load users:', e);
     }
-  }, [getAuthHeaders]);
+  }, [getAuthHeaders, effectiveAudience, clubId]);
 
   useEffect(() => {
     loadConversations();
@@ -342,7 +378,11 @@ export default function ChatPanel({
       const res = await fetch('/api/chat/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ participantId: otherUser.id }),
+        body: JSON.stringify({
+          participantId: otherUser.id,
+          ...(effectiveAudience ? { audience: effectiveAudience } : {}),
+          ...(clubId ? { clubId } : {}),
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -591,18 +631,19 @@ export default function ChatPanel({
             getAuthHeaders={getAuthHeaders}
             selected={channelSelected}
             onSelect={selectChannel}
+            clubId={clubId}
           />
         )}
         {showMovesbookChannel && channelLeft && (
           <button
             type="button"
-            onClick={() => rejoinMovesbookChannel()}
+            onClick={() => rejoinMovesbookChannel(clubId)}
             className="flex w-full shrink-0 items-center gap-2.5 border-b border-[#15202b] bg-[#1a2332] px-3 py-2.5 text-left transition hover:bg-[#222b38]"
           >
-            <ChannelAvatar size={36} className="shadow-sm" />
+            <ChannelAvatar size={36} className="shadow-sm" alt={channelTitle} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[14px] font-semibold text-white">
-                Rejoin Movesbook channel
+                Rejoin {channelTitle}
               </span>
               <span className="mt-0.5 block text-[11px] text-[#8ab4d9]">
                 Tap to see broadcasts again
@@ -772,6 +813,7 @@ export default function ChatPanel({
             selected={channelSelected}
             onSelect={selectChannel}
             onCloseEmbedded={embedded ? onClose : undefined}
+            clubId={clubId}
           />
         ) : selectedConversationId ? (
           <>

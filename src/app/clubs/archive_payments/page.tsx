@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
@@ -34,7 +35,11 @@ const tabs: ProcedureTab[] = [
   { id: 'receipts', label: 'Archive of Receipts', href: '/clubs/archive_receipts' },
 ];
 
-export default function ArchivePaymentsPage() {
+function ArchivePaymentsPageInner() {
+  const searchParams = useSearchParams();
+  const memberId = searchParams.get('memberId');
+
+  const [scope, setScope] = useState<'member' | 'all'>(memberId ? 'member' : 'all');
   const [data, setData] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,7 +50,11 @@ export default function ArchivePaymentsPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetchClubArchive('payments', { page, pageSize: PAGE_SIZE });
+      const res = await fetchClubArchive('payments', {
+        page,
+        pageSize: PAGE_SIZE,
+        memberId: scope === 'member' && memberId ? memberId : undefined,
+      });
       setTotal(res.total);
       setData(res.items);
     } catch (e) {
@@ -53,7 +62,7 @@ export default function ArchivePaymentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, scope, memberId]);
 
   useEffect(() => {
     load();
@@ -64,6 +73,36 @@ export default function ArchivePaymentsPage() {
       title="Archive of Payments"
       activeTab="payments"
       tabs={tabs}
+      tabsTrailing={
+        memberId ? (
+          <div className="flex items-center gap-4 text-sm text-gray-700">
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="paymentsScope"
+                checked={scope === 'member'}
+                onChange={() => {
+                  setScope('member');
+                  setPage(1);
+                }}
+              />
+              Member selected
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="paymentsScope"
+                checked={scope === 'all'}
+                onChange={() => {
+                  setScope('all');
+                  setPage(1);
+                }}
+              />
+              All members
+            </label>
+          </div>
+        ) : undefined
+      }
       error={error}
       footerHint="All typologies (Services, Products, Expenses, Member debts, …)."
       pagination={
@@ -72,5 +111,13 @@ export default function ArchivePaymentsPage() {
     >
       <ProcedureArchiveTable columns={columns} rows={data} loading={loading} />
     </ProcedureArchiveShell>
+  );
+}
+
+export default function ArchivePaymentsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-500">Loading...</div>}>
+      <ArchivePaymentsPageInner />
+    </Suspense>
   );
 }

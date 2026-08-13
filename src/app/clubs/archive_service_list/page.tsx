@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Pencil, Trash2 } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
@@ -33,6 +33,7 @@ function mapPurchase(
 ): Member {
   return {
     id: p.id,
+    userId: p.userId,
     number: i + 1,
     name: p.memberName,
     typology: p.typology,
@@ -92,6 +93,11 @@ function ArchiveServiceListInner() {
   const [editTarget, setEditTarget] = useState<ServiceSalePurchase | null>(null);
   const [showDeletePasswordModal, setShowDeletePasswordModal] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+
+  const selectedMemberId = useMemo(
+    () => (selectedId ? data.find((r) => r.id === selectedId)?.userId ?? null : null),
+    [data, selectedId]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,7 +160,8 @@ function ArchiveServiceListInner() {
         'historical',
         selectedId,
         scopedIds.length > 0 ? scopedIds : null,
-        scopeQuery || null
+        scopeQuery || null,
+        selectedMemberId
       )}
       tabsTrailing={<DisplayAllArchivesCheckbox archiveLabel="historicals" />}
       headerAction={

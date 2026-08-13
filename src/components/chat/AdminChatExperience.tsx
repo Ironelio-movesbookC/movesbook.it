@@ -109,26 +109,27 @@ const SUBSCRIBERS_KEY = 'adminChatChannelSubscriberIds';
 /** Persisted channel admin user IDs (in addition to the owner). */
 const ADMINS_KEY = 'adminChatChannelAdminIds';
 
-function loadPinnedId(): string | null {
+function loadPinnedId(clubId?: string | null): string | null {
   try {
-    return localStorage.getItem(PIN_KEY);
+    return localStorage.getItem(storageKey(PIN_KEY, clubId));
   } catch {
     return null;
   }
 }
 
-function savePinnedId(id: string | null) {
+function savePinnedId(id: string | null, clubId?: string | null) {
   try {
-    if (id) localStorage.setItem(PIN_KEY, id);
-    else localStorage.removeItem(PIN_KEY);
+    const key = storageKey(PIN_KEY, clubId);
+    if (id) localStorage.setItem(key, id);
+    else localStorage.removeItem(key);
   } catch {
     /* ignore */
   }
 }
 
-function loadHiddenIds(): Set<string> {
+function loadHiddenIds(clubId?: string | null): Set<string> {
   try {
-    const raw = localStorage.getItem(HIDDEN_KEY);
+    const raw = localStorage.getItem(storageKey(HIDDEN_KEY, clubId));
     if (!raw) return new Set();
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return new Set();
@@ -138,9 +139,9 @@ function loadHiddenIds(): Set<string> {
   }
 }
 
-function saveHiddenIds(ids: Set<string>) {
+function saveHiddenIds(ids: Set<string>, clubId?: string | null) {
   try {
-    localStorage.setItem(HIDDEN_KEY, JSON.stringify([...ids]));
+    localStorage.setItem(storageKey(HIDDEN_KEY, clubId), JSON.stringify([...ids]));
   } catch {
     /* ignore */
   }
@@ -162,26 +163,26 @@ function saveIdList(key: string, ids: string[]) {
   localStorage.setItem(key, JSON.stringify([...new Set(ids)]));
 }
 
-function loadSubscriberIds(): string[] {
-  return loadIdList(SUBSCRIBERS_KEY);
+function loadSubscriberIds(clubId?: string | null): string[] {
+  return loadIdList(storageKey(SUBSCRIBERS_KEY, clubId));
 }
 
-function saveSubscriberIds(ids: string[]) {
-  saveIdList(SUBSCRIBERS_KEY, ids);
+function saveSubscriberIds(ids: string[], clubId?: string | null) {
+  saveIdList(storageKey(SUBSCRIBERS_KEY, clubId), ids);
 }
 
-function loadAdminIds(): string[] {
-  return loadIdList(ADMINS_KEY);
+function loadAdminIds(clubId?: string | null): string[] {
+  return loadIdList(storageKey(ADMINS_KEY, clubId));
 }
 
-function saveAdminIds(ids: string[]) {
-  saveIdList(ADMINS_KEY, ids);
+function saveAdminIds(ids: string[], clubId?: string | null) {
+  saveIdList(storageKey(ADMINS_KEY, clubId), ids);
 }
 
-function loadUserSettingsFromStorage(): ChatUserFilterSettings {
+function loadUserSettingsFromStorage(clubId?: string | null): ChatUserFilterSettings {
   try {
     if (typeof window === 'undefined') return defaultChatUserFilterSettings;
-    const saved = localStorage.getItem(SETTINGS_KEY);
+    const saved = localStorage.getItem(storageKey(SETTINGS_KEY, clubId));
     if (!saved) return defaultChatUserFilterSettings;
     const parsed = JSON.parse(saved) as Partial<ChatUserFilterSettings> | null;
     if (!parsed || typeof parsed !== 'object') return defaultChatUserFilterSettings;
@@ -195,20 +196,60 @@ function loadUserSettingsFromStorage(): ChatUserFilterSettings {
   }
 }
 
-const MODE_LABELS: Record<BroadcastMode, string> = {
+const PLATFORM_MODE_LABELS: Record<BroadcastMode, string> = {
   all: 'Start chat with all users',
   group: 'Start chat with group selected',
   subscribers: 'Start chat with subscribers',
   favourites: 'Start chat with favourites',
 };
 
+const CLUB_MODE_LABELS: Record<BroadcastMode, string> = {
+  all: 'Start chat with all members',
+  group: 'Start chat with group selected',
+  subscribers: 'Start chat with subscribers',
+  favourites: 'Start chat with favourites',
+};
+
 /** Audience label shown on each owner broadcast bubble. */
-const BROADCAST_SENT_LABELS: Record<BroadcastMode, string> = {
+const PLATFORM_SENT_LABELS: Record<BroadcastMode, string> = {
   all: 'Sent to all users',
   group: 'Sent to only group selected',
   subscribers: 'Sent to only subscribers',
   favourites: 'Sent to only favourites',
 };
+
+const CLUB_SENT_LABELS: Record<BroadcastMode, string> = {
+  all: 'Sent to all members',
+  group: 'Sent to only group selected',
+  subscribers: 'Sent to only subscribers',
+  favourites: 'Sent to only favourites',
+};
+
+/** Display handle under Scan QR code, e.g. "Movesbook" → "t.me/movesbook". */
+function channelNameToTelegramHandle(name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `t.me/${slug || 'channel'}`;
+}
+
+function storageKey(base: string, clubId?: string | null): string {
+  const id = typeof clubId === 'string' ? clubId.trim() : '';
+  return id ? `clubChat:${id}:${base}` : base;
+}
+
+function clubQuery(clubId?: string | null): string {
+  const id = typeof clubId === 'string' ? clubId.trim() : '';
+  return id ? `clubId=${encodeURIComponent(id)}` : '';
+}
+
+function withClubQuery(url: string, clubId?: string | null): string {
+  const q = clubQuery(clubId);
+  if (!q) return url;
+  return url.includes('?') ? `${url}&${q}` : `${url}?${q}`;
+}
 
 const AVATAR_COLORS = [
   '#e17076',
@@ -236,13 +277,30 @@ function subscriberAvatarColor(name: string): string {
 
 type AdminChatExperienceProps = {
   getAuthHeaders: () => Record<string, string>;
+  /** When set, scopes broadcast to this club's members (Club Channel). */
+  clubId?: string | null;
 };
 
-export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperienceProps) {
+export default function AdminChatExperience({
+  getAuthHeaders,
+  clubId = null,
+}: AdminChatExperienceProps) {
+  const isClubChannel = Boolean(clubId?.trim());
+  const MODE_LABELS = isClubChannel ? CLUB_MODE_LABELS : PLATFORM_MODE_LABELS;
+  const BROADCAST_SENT_LABELS = isClubChannel ? CLUB_SENT_LABELS : PLATFORM_SENT_LABELS;
+  const defaultSenderName = isClubChannel ? 'Club admin' : 'Movesbook admin';
+  const channelAvatarFallback = isClubChannel ? 'CC' : 'MB';
+  const histKey = storageKey(HISTORY_KEY, clubId);
+  const muteKey = storageKey(MUTE_KEY, clubId);
+  const photoKey = storageKey(PHOTO_KEY, clubId);
+  const signKey = storageKey(SIGN_MESSAGES_KEY, clubId);
+  const authorsKey = storageKey(SHOW_AUTHORS_KEY, clubId);
+  const settingsKey = storageKey(SETTINGS_KEY, clubId);
+
   const [mode, setMode] = useState<BroadcastMode>('all');
   const [message, setMessage] = useState('');
   const [history, setHistory] = useState<BroadcastMessage[]>([]);
-  /** Users with Telegram who replied to Movesbook broadcasts (Chat users inbox). */
+  /** Users with Telegram who replied to channel broadcasts (Chat users inbox). */
   const [chatUsersCount, setChatUsersCount] = useState(0);
   const [modeCounts, setModeCounts] = useState<Record<BroadcastMode, number>>({
     all: 0,
@@ -252,7 +310,9 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
   });
 
   const [showSettingsUsers, setShowSettingsUsers] = useState(false);
-  const [userSettings, setUserSettings] = useState<ChatUserFilterSettings>(loadUserSettingsFromStorage);
+  const [userSettings, setUserSettings] = useState<ChatUserFilterSettings>(() =>
+    loadUserSettingsFromStorage(clubId)
+  );
   const [options, setOptions] = useState<OptionsPayload | null>(null);
 
   const [showComposerMenu, setShowComposerMenu] = useState(false);
@@ -269,8 +329,9 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     'invite' | 'edit' | 'subscribers' | 'administrators' | 'addSubscribers' | 'addAdministrators'
   >('invite');
   const [channelPhoto, setChannelPhoto] = useState<string | null>(null);
-  const [channelName, setChannelName] = useState('movesbook');
+  const [channelName, setChannelName] = useState(isClubChannel ? 'Club Channel' : 'Movesbook channel');
   const [channelDescription, setChannelDescription] = useState('');
+  const [savingChannelSettings, setSavingChannelSettings] = useState(false);
   const [subscriberIds, setSubscriberIds] = useState<string[]>([]);
   const [subscribers, setSubscribers] = useState<ChannelSubscriber[]>([]);
   const [subscriberSearchOpen, setSubscriberSearchOpen] = useState(false);
@@ -281,7 +342,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
   const [addSearch, setAddSearch] = useState('');
   const [addLoading, setAddLoading] = useState(false);
   const [addAdminSearchOpen, setAddAdminSearchOpen] = useState(false);
-  const [ownerName, setOwnerName] = useState('Admin');
+  const [ownerName, setOwnerName] = useState(isClubChannel ? 'Club admin' : 'Admin');
   const [signMessages, setSignMessages] = useState(false);
   const [showAuthorsProfiles, setShowAuthorsProfiles] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -295,17 +356,17 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
 
   const composerMenuRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inviteUrl =
     typeof window !== 'undefined'
-      ? `${window.location.origin}/register?invite=movesbook-admin`
-      : 'https://movesbook.app/register?invite=movesbook-admin';
-  const publicInviteDisplay = 't.me/movesbook';
-
+      ? `${window.location.origin}/register?invite=${isClubChannel ? `club-${clubId}` : 'movesbook-admin'}`
+      : isClubChannel
+        ? 'https://movesbook.app/register?invite=club'
+        : 'https://movesbook.app/register?invite=movesbook-admin';
   useEffect(() => {
     try {
       // Settings are initialized from localStorage; refresh other persisted UI state here.
-      const hist = localStorage.getItem(HISTORY_KEY);
+      const hist = localStorage.getItem(histKey);
       if (hist) {
         const parsed = JSON.parse(hist) as unknown;
         if (Array.isArray(parsed)) {
@@ -320,19 +381,31 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
           );
         }
       }
-      setMuted(localStorage.getItem(MUTE_KEY) === '1');
-      setPinnedId(loadPinnedId());
-      setHiddenIds(loadHiddenIds());
-      const photo = localStorage.getItem(PHOTO_KEY);
+      setMuted(localStorage.getItem(muteKey) === '1');
+      setPinnedId(loadPinnedId(clubId));
+      setHiddenIds(loadHiddenIds(clubId));
+      const photo = localStorage.getItem(photoKey);
       if (photo) setChannelPhoto(photo);
-      setSignMessages(localStorage.getItem(SIGN_MESSAGES_KEY) === '1');
-      setShowAuthorsProfiles(localStorage.getItem(SHOW_AUTHORS_KEY) === '1');
-      setSubscriberIds(loadSubscriberIds());
-      setAdminIds(loadAdminIds());
-      const adminData = localStorage.getItem('adminUser');
-      if (adminData) {
-        const parsed = JSON.parse(adminData) as { name?: string; username?: string };
-        setOwnerName(parsed.name || parsed.username || 'Admin');
+      setSignMessages(localStorage.getItem(signKey) === '1');
+      setShowAuthorsProfiles(localStorage.getItem(authorsKey) === '1');
+      setSubscriberIds(loadSubscriberIds(clubId));
+      setAdminIds(loadAdminIds(clubId));
+      if (isClubChannel) {
+        try {
+          const raw = localStorage.getItem('user');
+          if (raw) {
+            const parsed = JSON.parse(raw) as { name?: string; username?: string };
+            setOwnerName(parsed.name || parsed.username || 'Club admin');
+          }
+        } catch {
+          setOwnerName('Club admin');
+        }
+      } else {
+        const adminData = localStorage.getItem('adminUser');
+        if (adminData) {
+          const parsed = JSON.parse(adminData) as { name?: string; username?: string };
+          setOwnerName(parsed.name || parsed.username || 'Admin');
+        }
       }
     } catch {
       /* ignore */
@@ -341,32 +414,40 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     // Prefer server-persisted channel photo so users see the same icon.
     void (async () => {
       try {
-        const res = await fetch('/api/chat/channel-settings', { headers: getAuthHeaders() });
+        const res = await fetch(withClubQuery('/api/chat/channel-settings', clubId), {
+          headers: getAuthHeaders(),
+        });
         if (!res.ok) return;
         const data = await res.json();
+        if (typeof data.channelName === 'string' && data.channelName.trim()) {
+          setChannelName(data.channelName.trim());
+        }
         if (typeof data.channelPhoto === 'string' && data.channelPhoto.trim()) {
           setChannelPhoto(data.channelPhoto);
           try {
-            localStorage.setItem(PHOTO_KEY, data.channelPhoto);
+            localStorage.setItem(photoKey, data.channelPhoto);
           } catch {
             /* ignore */
           }
           return;
         }
         // Migrate legacy localStorage-only photo to the server once.
-        const legacy = localStorage.getItem(PHOTO_KEY);
+        const legacy = localStorage.getItem(photoKey);
         if (legacy && legacy.startsWith('data:image/')) {
           const uploadRes = await fetch('/api/chat/channel-settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ photoDataUrl: legacy }),
+            body: JSON.stringify({
+              photoDataUrl: legacy,
+              ...(clubId ? { clubId } : {}),
+            }),
           });
           if (uploadRes.ok) {
             const uploaded = await uploadRes.json();
             if (typeof uploaded.channelPhoto === 'string' && uploaded.channelPhoto.trim()) {
               setChannelPhoto(uploaded.channelPhoto);
               try {
-                localStorage.setItem(PHOTO_KEY, uploaded.channelPhoto);
+                localStorage.setItem(photoKey, uploaded.channelPhoto);
               } catch {
                 /* ignore */
               }
@@ -383,7 +464,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
       try {
         let legacy: BroadcastMessage[] = [];
         try {
-          const raw = localStorage.getItem(HISTORY_KEY);
+          const raw = localStorage.getItem(histKey);
           if (raw) {
             const parsed = JSON.parse(raw) as unknown;
             if (Array.isArray(parsed)) {
@@ -405,17 +486,20 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({
+              ...(clubId ? { clubId } : {}),
               messages: legacy.map((m) => ({
                 content: m.content,
                 mode: m.mode,
                 createdAt: m.createdAt,
-                senderName: 'Movesbook admin',
+                senderName: defaultSenderName,
               })),
             }),
           });
         }
 
-        const res = await fetch('/api/chat/broadcast?all=1', { headers: getAuthHeaders() });
+        const res = await fetch(withClubQuery('/api/chat/broadcast?all=1', clubId), {
+          headers: getAuthHeaders(),
+        });
         if (!res.ok) return;
         const data = await res.json();
         const list = Array.isArray(data.messages) ? (data.messages as BroadcastMessage[]) : [];
@@ -429,11 +513,11 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
             senderName:
               typeof (m as { senderName?: string }).senderName === 'string'
                 ? (m as { senderName?: string }).senderName
-                : 'Movesbook admin',
+                : defaultSenderName,
           }));
         setHistory(normalized);
         try {
-          localStorage.setItem(HISTORY_KEY, JSON.stringify(normalized));
+          localStorage.setItem(histKey, JSON.stringify(normalized));
         } catch {
           /* ignore */
         }
@@ -441,7 +525,17 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
         /* ignore */
       }
     })();
-  }, [getAuthHeaders]);
+  }, [
+    getAuthHeaders,
+    clubId,
+    histKey,
+    muteKey,
+    photoKey,
+    signKey,
+    authorsKey,
+    isClubChannel,
+    defaultSenderName,
+  ]);
 
   const pingPresence = useCallback(async () => {
     try {
@@ -466,8 +560,8 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
 
   const loadStats = useCallback(async () => {
     try {
-      const subIds = loadSubscriberIds();
-      const admIds = loadAdminIds();
+      const subIds = loadSubscriberIds(clubId);
+      const admIds = loadAdminIds(clubId);
       // POST body carries group filters — a GET query with ~193 countries is too large and fails after refresh.
       const res = await fetch('/api/chat/admin-stats', {
         method: 'POST',
@@ -478,6 +572,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
           sports: userSettings.sports,
           userTypes: userSettings.userTypes,
           countries: userSettings.countries,
+          ...(clubId ? { clubId } : {}),
         }),
       });
       if (!res.ok) return;
@@ -502,11 +597,13 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     } catch {
       /* ignore */
     }
-  }, [getAuthHeaders, userSettings]);
+  }, [getAuthHeaders, userSettings, clubId]);
 
   const loadRepliersCount = useCallback(async () => {
     try {
-      const res = await fetch('/api/chat/broadcast/repliers', { headers: getAuthHeaders() });
+      const res = await fetch(withClubQuery('/api/chat/broadcast/repliers', clubId), {
+        headers: getAuthHeaders(),
+      });
       if (!res.ok) return;
       const data = await res.json();
       if (typeof data.count === 'number') setChatUsersCount(data.count);
@@ -514,18 +611,19 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     } catch {
       /* ignore */
     }
-  }, [getAuthHeaders]);
+  }, [getAuthHeaders, clubId]);
 
   const loadAddCandidates = useCallback(
     async (search: string, mode: 'subscribers' | 'admins' = 'subscribers') => {
       setAddLoading(true);
       try {
-        const subIds = loadSubscriberIds();
-        const admIds = loadAdminIds();
+        const subIds = loadSubscriberIds(clubId);
+        const admIds = loadAdminIds(clubId);
         const params = new URLSearchParams({ candidates: '1', candidateMode: mode });
         if (subIds.length > 0) params.set('subscriberIds', subIds.join(','));
         if (admIds.length > 0) params.set('adminIds', admIds.join(','));
         if (search.trim()) params.set('candidateSearch', search.trim());
+        if (clubId) params.set('clubId', clubId);
         const res = await fetch(`/api/chat/admin-stats?${params}`, { headers: getAuthHeaders() });
         if (!res.ok) return;
         const data = await res.json();
@@ -540,7 +638,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
         setAddLoading(false);
       }
     },
-    [getAuthHeaders]
+    [getAuthHeaders, clubId]
   );
 
   const addSubscriber = (user: ChannelSubscriber) => {
@@ -548,7 +646,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     setSubscriberIds((prev) => {
       if (prev.includes(id)) return prev;
       const next = [...prev, id];
-      saveSubscriberIds(next);
+      saveSubscriberIds(next, clubId);
       return next;
     });
     setSubscribers((prev) => (prev.some((s) => String(s.id) === id) ? prev : [...prev, user]));
@@ -559,7 +657,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     const id = String(userId);
     setSubscriberIds((prev) => {
       const next = prev.filter((x) => x !== id);
-      saveSubscriberIds(next);
+      saveSubscriberIds(next, clubId);
       return next;
     });
     setSubscribers((prev) => prev.filter((s) => String(s.id) !== id));
@@ -570,7 +668,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     setAdminIds((prev) => {
       if (prev.includes(id)) return prev;
       const next = [...prev, id];
-      saveAdminIds(next);
+      saveAdminIds(next, clubId);
       return next;
     });
     setChannelAdmins((prev) => (prev.some((s) => String(s.id) === id) ? prev : [...prev, user]));
@@ -581,7 +679,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     const id = String(userId);
     setAdminIds((prev) => {
       const next = prev.filter((x) => x !== id);
-      saveAdminIds(next);
+      saveAdminIds(next, clubId);
       return next;
     });
     setChannelAdmins((prev) => prev.filter((s) => String(s.id) !== id));
@@ -654,12 +752,12 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
 
   const saveUserSettings = (settings: ChatUserFilterSettings) => {
     setUserSettings(settings);
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    localStorage.setItem(settingsKey, JSON.stringify(settings));
   };
 
   const deleteUserSettings = () => {
     setUserSettings(defaultChatUserFilterSettings);
-    localStorage.removeItem(SETTINGS_KEY);
+    localStorage.removeItem(settingsKey);
   };
 
   // Keep subscriber mode count in sync when channel subscribers are added/removed locally.
@@ -671,15 +769,15 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
 
   const setMute = (value: boolean) => {
     setMuted(value);
-    localStorage.setItem(MUTE_KEY, value ? '1' : '0');
+    localStorage.setItem(muteKey, value ? '1' : '0');
   };
 
   const clearHistory = () => {
     setHistory([]);
-    localStorage.removeItem(HISTORY_KEY);
+    localStorage.removeItem(histKey);
     setShowComposerMenu(false);
     setShowMuteSubmenu(false);
-    void fetch(`/api/chat/broadcast?mode=${encodeURIComponent(mode)}`, {
+    void fetch(withClubQuery(`/api/chat/broadcast?mode=${encodeURIComponent(mode)}`, clubId), {
       method: 'DELETE',
       headers: getAuthHeaders(),
     }).catch(() => {});
@@ -726,6 +824,47 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     setAddAdminSearchOpen(false);
   };
 
+  const saveChannelName = async (name: string): Promise<boolean> => {
+    const trimmed = name.trim().replace(/\s+/g, ' ');
+    if (!trimmed) {
+      alert('Channel name cannot be empty.');
+      return false;
+    }
+    setSavingChannelSettings(true);
+    try {
+      const res = await fetch('/api/chat/channel-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          channelName: trimmed,
+          ...(clubId ? { clubId } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to save channel name');
+        return false;
+      }
+      const data = await res.json();
+      if (typeof data.channelName === 'string' && data.channelName.trim()) {
+        setChannelName(data.channelName.trim());
+      } else {
+        setChannelName(trimmed);
+      }
+      return true;
+    } catch {
+      alert('Failed to save channel name');
+      return false;
+    } finally {
+      setSavingChannelSettings(false);
+    }
+  };
+
+  const finishChannelSettingsEdit = async () => {
+    const ok = await saveChannelName(channelName);
+    if (ok) setBroadcastPanelView('invite');
+  };
+
   const onChannelPhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -735,7 +874,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
       const dataUrl = reader.result;
       setChannelPhoto(dataUrl);
       try {
-        localStorage.setItem(PHOTO_KEY, dataUrl);
+        localStorage.setItem(photoKey, dataUrl);
       } catch {
         /* ignore quota */
       }
@@ -744,14 +883,17 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
           const res = await fetch('/api/chat/channel-settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ photoDataUrl: dataUrl }),
+            body: JSON.stringify({
+              photoDataUrl: dataUrl,
+              ...(clubId ? { clubId } : {}),
+            }),
           });
           if (!res.ok) return;
           const data = await res.json();
           if (typeof data.channelPhoto === 'string' && data.channelPhoto.trim()) {
             setChannelPhoto(data.channelPhoto);
             try {
-              localStorage.setItem(PHOTO_KEY, data.channelPhoto);
+              localStorage.setItem(photoKey, data.channelPhoto);
             } catch {
               /* ignore */
             }
@@ -784,11 +926,12 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
         body: JSON.stringify({
           content,
           mode,
-          senderName: ownerName || 'Movesbook admin',
-          subscriberIds: mode === 'subscribers' ? loadSubscriberIds() : [],
+          senderName: ownerName || defaultSenderName,
+          subscriberIds: mode === 'subscribers' ? loadSubscriberIds(clubId) : [],
           sports: mode === 'group' ? userSettings.sports : [],
           userTypes: mode === 'group' ? userSettings.userTypes : [],
           countries: mode === 'group' ? userSettings.countries : [],
+          ...(clubId ? { clubId } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -804,12 +947,12 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
         content: created?.content || content,
         createdAt: created?.createdAt || new Date().toISOString(),
         mode: (created?.mode as BroadcastMode) || mode,
-        senderName: created?.senderName || ownerName || 'Movesbook admin',
+        senderName: created?.senderName || ownerName || defaultSenderName,
       };
       const next = [...history, entry];
       setHistory(next);
       try {
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+        localStorage.setItem(histKey, JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -848,12 +991,12 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     setHiddenIds((prev) => {
       const next = new Set(prev);
       next.add(messageId);
-      saveHiddenIds(next);
+      saveHiddenIds(next, clubId);
       return next;
     });
     if (pinnedId === messageId) {
       setPinnedId(null);
-      savePinnedId(null);
+      savePinnedId(null, clubId);
     }
   };
 
@@ -895,7 +1038,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     setContextMenu(null);
     const next = pinnedId === id ? null : id;
     setPinnedId(next);
-    savePinnedId(next);
+    savePinnedId(next, clubId);
   };
 
   const handleContextForward = async () => {
@@ -927,7 +1070,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     if (!forwardingMessage || forwarding) return;
     setForwarding(true);
     try {
-      const sender = forwardingMessage.senderName || ownerName || 'Movesbook admin';
+      const sender = forwardingMessage.senderName || ownerName || defaultSenderName;
       const content = isImageContent(forwardingMessage.content)
         ? forwardingMessage.content
         : `Forwarded from ${sender}: ${forwardingMessage.content}`;
@@ -961,14 +1104,17 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     setDeleting(true);
     try {
       const res = await fetch(
-        `/api/chat/broadcast?messageId=${encodeURIComponent(deleteTarget.id)}`,
+        withClubQuery(
+          `/api/chat/broadcast?messageId=${encodeURIComponent(deleteTarget.id)}`,
+          clubId
+        ),
         { method: 'DELETE', headers: getAuthHeaders() }
       );
       if (res.ok) {
         setHistory((prev) => {
           const next = prev.filter((m) => m.id !== deleteTarget.id);
           try {
-            localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+            localStorage.setItem(histKey, JSON.stringify(next));
           } catch {
             /* ignore */
           }
@@ -1000,7 +1146,10 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
     : null;
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    // Scroll only the messages pane — never the page (scrollIntoView causes a jump).
+    el.scrollTop = el.scrollHeight;
   }, [filteredHistory.length, mode]);
 
   const toolbarBtn =
@@ -1025,7 +1174,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
               // eslint-disable-next-line @next/next/no-img-element
               <img src={channelPhoto} alt="Broadcast" className="h-full w-full object-cover" />
             ) : (
-              'MB'
+              channelAvatarFallback
             )}
           </button>
           <button type="button" className={toolbarBtn} onClick={() => setShowQrModal(true)}>
@@ -1076,7 +1225,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
             }`}
             aria-pressed={mainView === 'chatUsers'}
           >
-            Chat users ({chatUsersCount})
+            Chat {isClubChannel ? 'members' : 'users'} ({chatUsersCount})
           </button>
           <div className="ml-auto">
             <button type="button" className="rounded p-1.5 text-[#7ec8e3] hover:bg-white/10" title="Notifications">
@@ -1091,6 +1240,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
               <AdminChatUsersPanel
                 getAuthHeaders={getAuthHeaders}
                 onCountChange={setChatUsersCount}
+                clubId={clubId}
               />
             </div>
           ) : mainView === 'broadcast' ? (
@@ -1103,18 +1253,20 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                   <div className="flex items-center justify-between px-3 py-2.5">
                     <button
                       type="button"
-                      className="rounded p-1 text-[#8ab4d9] hover:bg-white/10"
+                      className="rounded p-1 text-[#8ab4d9] hover:bg-white/10 disabled:opacity-50"
                       onClick={() => setBroadcastPanelView('invite')}
                       title="Back"
+                      disabled={savingChannelSettings}
                     >
                       <ArrowLeft className="h-5 w-5" />
                     </button>
-                    <span className="text-[16px] font-medium">Edit</span>
+                    <span className="text-[16px] font-medium">Channel Settings</span>
                     <button
                       type="button"
-                      className="rounded p-1 text-[#8ab4d9] hover:bg-white/10"
-                      onClick={() => setBroadcastPanelView('invite')}
-                      title="Done"
+                      className="rounded p-1 text-[#8ab4d9] hover:bg-white/10 disabled:opacity-50"
+                      onClick={() => void finishChannelSettingsEdit()}
+                      title="Save"
+                      disabled={savingChannelSettings}
                     >
                       <Check className="h-5 w-5" />
                     </button>
@@ -1130,9 +1282,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={channelPhoto} alt="Channel" className="h-full w-full object-cover" />
                         ) : (
-                          <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-white">
-                            MB
-                          </span>
+                          <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-white">{channelAvatarFallback}</span>
                         )}
                         <span className="absolute inset-x-0 bottom-0 bg-black/45 py-1 text-center text-[10px] text-white">
                           Edit
@@ -1144,6 +1294,14 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                       <input
                         value={channelName}
                         onChange={(e) => setChannelName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void finishChannelSettingsEdit();
+                          }
+                        }}
+                        maxLength={64}
+                        placeholder={isClubChannel ? 'Club Channel' : 'Movesbook channel'}
                         className="w-full rounded-lg border-0 bg-[#2b3645] px-3 py-2.5 text-sm text-white outline-none ring-1 ring-transparent focus:ring-[#50a2e9]"
                       />
                     </label>
@@ -1157,6 +1315,9 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                         className="w-full resize-none rounded-lg border-0 bg-[#2b3645] px-3 py-2.5 text-sm text-white outline-none ring-1 ring-transparent placeholder:text-white/30 focus:ring-[#50a2e9]"
                       />
                     </label>
+                    {savingChannelSettings && (
+                      <p className="text-center text-[12px] text-[#8ab4d9]">Saving…</p>
+                    )}
                   </div>
                 </>
               ) : broadcastPanelView === 'subscribers' ? (
@@ -1447,7 +1608,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                         onClick={() => {
                           setSignMessages((v) => {
                             const next = !v;
-                            localStorage.setItem(SIGN_MESSAGES_KEY, next ? '1' : '0');
+                            localStorage.setItem(signKey, next ? '1' : '0');
                             return next;
                           });
                         }}
@@ -1477,7 +1638,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                             onClick={() => {
                               setShowAuthorsProfiles((v) => {
                                 const next = !v;
-                                localStorage.setItem(SHOW_AUTHORS_KEY, next ? '1' : '0');
+                                localStorage.setItem(authorsKey, next ? '1' : '0');
                                 return next;
                               });
                             }}
@@ -1592,86 +1753,90 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                   </div>
                 </>
               ) : (
-                <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4">
+                <div className="relative flex min-h-0 flex-1 flex-col">
                   <button
                     type="button"
-                    className="absolute right-2 top-2 rounded p-1 text-[#8ab4d9]/80 hover:bg-white/10 hover:text-[#8ab4d9]"
+                    className="absolute right-2 top-2 z-10 rounded p-1 text-[#8ab4d9]/80 hover:bg-white/10 hover:text-[#8ab4d9]"
                     onClick={closeBroadcastPanel}
                     title="Close"
                   >
                     <X className="h-4 w-4" />
                   </button>
 
-                  {/* Photo + Set New Photo */}
-                  <div className="mb-5 flex items-center gap-3 rounded border border-[#4a7ab0]/70 bg-transparent p-2">
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      className="flex h-[52px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded bg-[#2b3645]"
-                    >
-                      {channelPhoto ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={channelPhoto} alt="Channel" className="h-full w-full object-cover" />
-                      ) : (
-                        <User className="h-7 w-7 text-white/85" strokeWidth={1.25} />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      className="inline-flex items-center gap-2 text-[14px] font-medium text-[#50a2e9] hover:text-[#7ec8e3]"
-                    >
-                      <span className="relative inline-flex">
-                        <Camera className="h-5 w-5" />
-                        <span className="absolute -bottom-0.5 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-[#50a2e9] text-[9px] leading-none font-bold text-[#1c242f]">
-                          +
+                  <div className="min-h-0 flex-1 overflow-y-auto scrollbar-hide px-4 pb-3 pt-4">
+                    {/* Photo + Set New Photo */}
+                    <div className="mb-5 flex items-center gap-3 rounded border border-[#4a7ab0]/70 bg-transparent p-2">
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        className="flex h-[52px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded bg-[#2b3645]"
+                      >
+                        {channelPhoto ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={channelPhoto} alt="Channel" className="h-full w-full object-cover" />
+                        ) : (
+                          <User className="h-7 w-7 text-white/85" strokeWidth={1.25} />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        className="inline-flex items-center gap-2 text-[14px] font-medium text-[#50a2e9] hover:text-[#7ec8e3]"
+                      >
+                        <span className="relative inline-flex">
+                          <Camera className="h-5 w-5" />
+                          <span className="absolute -bottom-0.5 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-[#50a2e9] text-[9px] leading-none font-bold text-[#1c242f]">
+                            +
+                          </span>
                         </span>
-                      </span>
-                      Set New Photo
-                    </button>
-                  </div>
+                        Set New Photo
+                      </button>
+                    </div>
 
-                  <p className="mb-3 text-center text-[14px] text-[#b8c0c8]">Invite by QR Code</p>
+                    <p className="mb-3 text-center text-[14px] text-[#b8c0c8]">Invite by QR Code</p>
 
-                  <div className="mx-auto mb-3 flex h-[190px] w-[190px] items-center justify-center bg-white p-2.5">
-                    <div className="relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=170x170&data=${encodeURIComponent(inviteUrl)}`}
-                        alt="Invite QR code"
-                        width={170}
-                        height={170}
-                        className="block"
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2AABEE] shadow">
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="white" aria-hidden>
-                            <path d="M9.78 14.25l-.3 4.2c.43 0 .62-.18.85-.4l2.04-1.96 4.23 3.11c.78.43 1.33.2 1.54-.72l2.8-13.17h.01c.25-1.16-.42-1.62-1.18-1.34L3.3 10.1c-1.13.44-1.11 1.07-.19 1.35l4.6 1.44 10.68-6.73c.5-.33.96-.15.58.21" />
-                          </svg>
+                    <div className="mx-auto mb-3 flex h-[190px] w-[190px] items-center justify-center bg-white p-2.5">
+                      <div className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=170x170&data=${encodeURIComponent(inviteUrl)}`}
+                          alt="Invite QR code"
+                          width={170}
+                          height={170}
+                          className="block"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2AABEE] shadow">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="white" aria-hidden>
+                              <path d="M9.78 14.25l-.3 4.2c.43 0 .62-.18.85-.4l2.04-1.96 4.23 3.11c.78.43 1.33.2 1.54-.72l2.8-13.17h.01c.25-1.16-.42-1.62-1.18-1.34L3.3 10.1c-1.13.44-1.11 1.07-.19 1.35l4.6 1.44 10.68-6.73c.5-.33.96-.15.58.21" />
+                            </svg>
+                          </div>
                         </div>
                       </div>
                     </div>
+
+                    <p className="mb-5 px-1 text-center text-[12px] leading-snug text-[#8a94a0]">
+                      Everyone on Telegram can scan this code to write to your channel.
+                    </p>
+
+                    <div className="mb-2">
+                      <p className="mb-0.5 text-[13px] text-[#8a94a0]">Scan QR code</p>
+                      <p className="text-[14px] tracking-tight text-[#b8c0c8]">
+                        {channelNameToTelegramHandle(channelName)}
+                      </p>
+                      <button
+                        type="button"
+                        className="mt-0.5 text-[14px] font-medium text-[#50a2e9] hover:underline"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(inviteUrl);
+                        }}
+                      >
+                        Invite Link
+                      </button>
+                    </div>
                   </div>
 
-                  <p className="mb-5 px-1 text-center text-[12px] leading-snug text-[#8a94a0]">
-                    Everyone on Telegram can scan this code to write to your channel.
-                  </p>
-
-                  <div className="mb-5">
-                    <p className="mb-0.5 text-[13px] text-[#8a94a0]">Scan QR code</p>
-                    <p className="text-[16px] font-semibold tracking-tight text-white">{publicInviteDisplay}</p>
-                    <button
-                      type="button"
-                      className="mt-0.5 text-[14px] font-medium text-[#50a2e9] hover:underline"
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(inviteUrl);
-                      }}
-                    >
-                      Invite Link
-                    </button>
-                  </div>
-
-                  <div className="mt-auto overflow-hidden rounded-xl bg-[#232d3b]">
+                  <div className="shrink-0 overflow-hidden rounded-xl bg-[#232d3b] mx-4 mb-4">
                     <button
                       type="button"
                       className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-white/5"
@@ -1792,7 +1957,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                   className="shrink-0 text-amber-700 hover:underline"
                   onClick={() => {
                     setPinnedId(null);
-                    savePinnedId(null);
+                    savePinnedId(null, clubId);
                   }}
                 >
                   Unpin
@@ -1800,7 +1965,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
               </div>
             )}
 
-            <div className="relative min-h-0 flex-1 overflow-y-auto">
+            <div ref={messagesContainerRef} className="relative min-h-0 flex-1 overflow-y-auto">
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-[0.09]">
                 <div className="relative text-[#9a9a9a]">
                   <svg width="240" height="240" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.7">
@@ -1843,12 +2008,11 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                     </div>
                   ))
                 )}
-                <div ref={messagesEndRef} />
               </div>
             </div>
 
             {/* Broadcast composer */}
-            <div className="relative shrink-0 border-t border-[#cfcfcf] bg-white px-2 py-2" ref={composerMenuRef}>
+            <div className="relative shrink-0 border-t border-[#cfcfcf] bg-white px-2 py-1.5" ref={composerMenuRef}>
               {showComposerMenu && (
                 <div className="absolute bottom-full left-2 z-20 mb-1 min-w-[180px] rounded border border-[#ccc] bg-white py-1 shadow-lg">
                   {!showMuteSubmenu ? (
@@ -1923,10 +2087,10 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                 </div>
               )}
 
-              <div className="flex items-center gap-2 rounded border border-[#cfcfcf] bg-white px-2 py-1.5">
+              <div className="flex items-end gap-1.5 rounded border border-[#cfcfcf] bg-white px-1.5 py-1">
                 <button
                   type="button"
-                  className="rounded p-1.5 text-[#555] hover:bg-[#e8e8e8]"
+                  className="mb-0.5 shrink-0 rounded p-1 text-[#555] hover:bg-[#e8e8e8]"
                   onClick={() => {
                     setShowComposerMenu((v) => !v);
                     setShowMuteSubmenu(false);
@@ -1935,7 +2099,7 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                 >
                   <Settings className="h-4 w-4" />
                 </button>
-                <input
+                <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   onPaste={handlePaste}
@@ -1945,17 +2109,22 @@ export default function AdminChatExperience({ getAuthHeaders }: AdminChatExperie
                       void sendBroadcast();
                     }
                   }}
+                  rows={1}
                   placeholder="Broadcast (paste image to send)"
-                  className="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none placeholder:text-gray-400"
+                  className="max-h-28 min-h-[28px] min-w-0 flex-1 resize-none border-0 bg-transparent py-1 text-sm leading-5 outline-none placeholder:text-gray-400 scrollbar-hide"
                 />
-                <button type="button" className="rounded p-1.5 text-[#555] hover:bg-[#e8e8e8]" title="Notifications">
+                <button
+                  type="button"
+                  className="mb-0.5 shrink-0 rounded p-1 text-[#555] hover:bg-[#e8e8e8]"
+                  title="Notifications"
+                >
                   <Bell className="h-4 w-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => void sendBroadcast()}
                   disabled={!message.trim()}
-                  className="rounded bg-[#8b1a1a] p-1.5 text-white hover:bg-[#6e1414] disabled:opacity-40"
+                  className="mb-0.5 shrink-0 rounded bg-[#8b1a1a] p-1 text-white hover:bg-[#6e1414] disabled:opacity-40"
                   title="Send broadcast"
                 >
                   <Send className="h-4 w-4" />

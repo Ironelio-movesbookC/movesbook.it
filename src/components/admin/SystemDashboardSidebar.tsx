@@ -330,11 +330,11 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
           hasSubmenu: true,
           id: 'system_topbanner',
           subItems: [
-            { label: 'Why Movesbook' },
-            { label: 'Newsletters' },
-            { label: 'References' },
-            { label: 'About us' },
-            { label: 'Product infos' }
+            { label: 'Why Movesbook', href: '/admin/global-settings/why-movesbook' },
+            { label: 'Newsletters', href: '/admin/global-settings/newsletters' },
+            { label: 'References', href: '/admin/global-settings/newsletters' },
+            { label: 'About us', href: '/admin/global-settings/about-us' },
+            { label: 'Product infos', href: '/admin/global-settings/newsletters' }
           ]
         },
         { 

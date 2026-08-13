@@ -77,6 +77,8 @@ export type ProcedureReceiptDto = {
   annotations: string | null;
   typology: string;
   operatorName: string;
+  /** True when another receipt in the club shares the same document type + number. */
+  isDuplicate?: boolean;
 };
 
 export type TaxDocumentInput = {

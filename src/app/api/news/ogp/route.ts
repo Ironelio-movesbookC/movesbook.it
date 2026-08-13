@@ -241,6 +241,7 @@ export async function GET(request: NextRequest) {
       topic: a.topic,
       languageCode: a.languageCode ?? null,
       savedAt: a.savedAt.toISOString(),
+      inGlobalNews: a.inGlobalNews === true,
       visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
       visibilityCountries: parseJsonArray(a.visibilityCountries),
       visibilityLanguages: parseJsonArray(a.visibilityLanguages),

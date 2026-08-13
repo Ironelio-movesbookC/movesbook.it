@@ -75,8 +75,10 @@ export default function ProcedureArchiveTable({
             return (
               <tr
                 key={row.id ?? `${row.name}-${row.insertDate}`}
-                className={`border-t cursor-pointer hover:bg-teal-50 ${
-                  isChecked ? 'bg-amber-50' : isSelected ? 'bg-amber-100' : 'bg-white'
+                className={`border-t cursor-pointer ${
+                  row.isDuplicate
+                    ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                    : `hover:bg-teal-50 ${isChecked ? 'bg-amber-50' : isSelected ? 'bg-amber-100' : 'bg-white'}`
                 }`}
                 onClick={() => onRowClick?.(row)}
                 onDoubleClick={() => onRowDoubleClick?.(row)}

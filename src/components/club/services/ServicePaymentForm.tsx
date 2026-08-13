@@ -16,6 +16,7 @@ import {
   type InstallmentRow,
 } from '@/lib/club/archives/clubArchiveClient';
 import { PAY_MODE_OPTIONS } from '@/lib/procedures/payModes';
+import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import { formatEuro } from '@/lib/club/servicePurchasesClient';
 import type { ServiceSaleFormOptions, ServiceSalePayment, ServiceSalePurchase } from '@/lib/club/serviceSaleClient';
 import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
@@ -246,6 +247,8 @@ export default function ServicePaymentForm({
   const [newForm, setNewForm] = useState({ balance: '', expireDate: '', description: '' });
   const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<'new' | 'delete' | null>(null);
+  /** Which "new" flow triggered the admin-password gate: split the selected deadline, or add an independent one. */
+  const [newAction, setNewAction] = useState<'divide' | 'add'>('add');
 
   useEffect(() => {
     if (multiDeadlineMode) {
@@ -432,15 +435,8 @@ export default function ServicePaymentForm({
     setAmountPaid(clampAmountPaid(raw));
   }
 
-  /** Pay with ≤ selected rest is treated as the payment amount (common operator habit). */
   function handlePayWithChange(raw: string) {
     setPayWith(raw);
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n < 0) return;
-    if (n > 0 && n <= selectedTotalRest) {
-      amountPaidTouchedRef.current = true;
-      setAmountPaid(String(Number(n.toFixed(2))));
-    }
   }
 
   async function reloadInstallments() {
@@ -448,21 +444,44 @@ export default function ServicePaymentForm({
     setInstallments(rows);
   }
 
-  function handleNewInstallment() {
-    // Client: always allow New with exactly one selected deadline (any rest), then admin password.
-    // If there are no deadline rows yet, still allow New after admin password.
-    if (installmentRows.length > 0) {
-      if (selectedInstallmentIds.size !== 1) {
-        setInstallmentError('Select exactly one deadline to add a new one.');
-        return;
-      }
+  function handleDivideInstallment() {
+    // Divide always needs exactly one existing deadline selected — that's what gets split.
+    if (selectedInstallmentIds.size !== 1) {
+      setInstallmentError('Select exactly one deadline to divide.');
+      return;
     }
     setInstallmentError('');
+    setNewAction('divide');
+    setPendingAction('new');
+    setShowAdminPasswordModal(true);
+  }
+
+  function handleAddNewInstallment() {
+    // Add new: always allowed — creates an independent deadline, not derived from the selection.
+    setInstallmentError('');
+    setNewAction('add');
     setPendingAction('new');
     setShowAdminPasswordModal(true);
   }
 
   function openNewFormAfterAdminAuth() {
+    if (newAction === 'add') {
+      const selectedId = firstSelectedId();
+      const selectedRow = selectedId && selectedId !== 'current'
+        ? installments.find((r) => r.id === selectedId)
+        : null;
+      if (selectedRow) {
+        // Reply the selected deadline's own content — this creates a brand new deadline from scratch,
+        // it does not touch or divide the one it was copied from.
+        setNewForm({
+          balance: String(selectedRow.balance),
+          expireDate: selectedRow.expireDate?.slice(0, 10) ?? '',
+          description: selectedRow.description ?? (description || sectionLabel),
+        });
+        setNewFormOpen(true);
+        return;
+      }
+    }
     setNewForm({ balance: '', expireDate: '', description: description || sectionLabel });
     setNewFormOpen(true);
   }
@@ -476,8 +495,24 @@ export default function ServicePaymentForm({
     }
     setNewFormSaving(true);
     try {
-      // No value limit: bump record total/rest by the new deadline amount.
-      if (onAddToRecordTotal) {
+      if (newAction === 'divide') {
+        const selectedId = firstSelectedId();
+        const selectedRow = selectedId ? installmentRows.find((r) => r.id === selectedId) : null;
+        if (selectedRow && selectedId && selectedId !== 'current') {
+          // Divide: split the amount off the selected deadline's own rest — total owed stays the same.
+          if (deadlineValue > selectedRow.balance + 0.001) {
+            setInstallmentError(
+              `Divide amount cannot exceed the selected deadline's rest (${formatEuro(selectedRow.balance)}).`
+            );
+            setNewFormSaving(false);
+            return;
+          }
+          await updateInstallment(procedureType, purchase.id, selectedId, {
+            balance: Math.round((selectedRow.balance - deadlineValue) * 100) / 100,
+          });
+        }
+      } else if (onAddToRecordTotal) {
+        // Add new: no value limit — bump record total/rest by the new deadline amount.
         await onAddToRecordTotal(deadlineValue);
       }
       await createInstallment(procedureType, purchase.id, {
@@ -671,10 +706,11 @@ export default function ServicePaymentForm({
   }
 
   const selectedInstallmentId = firstSelectedId();
-  /** New: exactly one selected when rows exist; always free when no rows yet. */
-  const canNewDeadline =
-    !multiDeadlineMode &&
-    (installmentRows.length === 0 || selectedInstallmentIds.size === 1);
+  /** Divide always needs exactly one checked deadline — that's the one it splits. */
+  const canDivideDeadline = !multiDeadlineMode && selectedInstallmentIds.size === 1;
+  /** Add new is independent of the selection — it creates a deadline from scratch. */
+  const canAddNewDeadline = !multiDeadlineMode;
+  const selectedDivideRow = installmentRows.find((r) => r.id === selectedInstallmentId) ?? null;
   const canModifyDelete =
     !multiDeadlineMode &&
     Boolean(selectedInstallmentId) &&
@@ -718,8 +754,8 @@ export default function ServicePaymentForm({
         )}
         {!hasPayableRest && !multiDeadlineMode && (
           <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            No open rest to pay. You can still select one deadline and use <strong>New</strong> (admin
-            password) to add more debt with any amount.
+            No open rest to pay. You can still use <strong>Add new</strong> (admin password) to add more debt
+            with any amount.
           </div>
         )}
         <ProcedureFormSection title="Deadlines">
@@ -778,7 +814,7 @@ export default function ServicePaymentForm({
                   </li>
                 ))}
                 {installmentRows.length === 0 && (
-                  <li className="text-gray-500">No deadlines yet. Use New to add one.</li>
+                  <li className="text-gray-500">No deadlines yet. Use Add new to add one.</li>
                 )}
               </ul>
             </div>
@@ -786,11 +822,11 @@ export default function ServicePaymentForm({
             <div className="flex flex-col gap-2 md:w-28">
               <button
                 type="button"
-                onClick={handleNewInstallment}
-                disabled={!canNewDeadline}
+                onClick={handleDivideInstallment}
+                disabled={!canDivideDeadline}
                 className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
               >
-                New
+                Divide deadlines
               </button>
               <button
                 type="button"
@@ -807,6 +843,14 @@ export default function ServicePaymentForm({
                 className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
               >
                 Delete
+              </button>
+              <button
+                type="button"
+                onClick={handleAddNewInstallment}
+                disabled={!canAddNewDeadline}
+                className="mt-2 rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
+              >
+                Add new
               </button>
             </div>
             )}
@@ -886,34 +930,45 @@ export default function ServicePaymentForm({
 
         <div className="rounded border border-gray-300 p-4 space-y-4">
           {/*
-            Same structure in every column: label line + control line.
-            Empty label spacers keep Tax doc / Open form / Password on the input baseline.
+            Labels and controls live in two separate grid rows so a long/wrapping
+            label (e.g. the "Amount paid" hint) can never push its control out of
+            line with the controls in the other columns.
           */}
-          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-            <label className="flex min-w-0 flex-col">
-              <span className="mb-1 block min-h-[1.25rem] text-gray-600">
+          <div>
+            <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              <label htmlFor="servicePaymentAmountPaid" className="mb-1 block min-w-0 text-gray-600">
                 Amount paid
                 {selectedTotalRest > 0 && (
                   <span className="ml-1 font-normal text-gray-400">
                     (type e.g. 3 — max {formatEuro(selectedTotalRest)}; oldest first)
                   </span>
                 )}
+              </label>
+              <label htmlFor="servicePaymentPayMode" className="mb-1 block min-w-0 text-gray-600">
+                Pay mode
+              </label>
+              <span className="mb-1 block min-w-0" aria-hidden>
+                &nbsp;
               </span>
+              <span className="mb-1 block min-w-0" aria-hidden>
+                &nbsp;
+              </span>
+            </div>
+            <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
               <input
+                id="servicePaymentAmountPaid"
                 type="number"
                 min="0"
                 step="0.01"
                 max={selectedTotalRest}
-                className={`h-10 ${procedureHighlightInputClass}`}
+                className={`h-10 min-w-0 ${procedureHighlightInputClass}`}
                 value={amountPaid}
                 onChange={(e) => handleAmountPaidChange(e.target.value)}
                 onBlur={(e) => handleAmountPaidChange(e.target.value)}
               />
-            </label>
-            <label className="flex min-w-0 flex-col">
-              <span className="mb-1 block min-h-[1.25rem] text-gray-600">Pay mode</span>
               <select
-                className={`h-10 ${procedureInputClass}`}
+                id="servicePaymentPayMode"
+                className={`h-10 min-w-0 ${procedureInputClass}`}
                 value={payMode}
                 onChange={(e) => setPayMode(e.target.value)}
               >
@@ -924,12 +979,7 @@ export default function ServicePaymentForm({
                   </option>
                 ))}
               </select>
-            </label>
-            <div className="flex min-w-0 flex-col">
-              <span className="mb-1 block min-h-[1.25rem]" aria-hidden>
-                &nbsp;
-              </span>
-              <div className="flex h-10 items-center gap-2">
+              <div className="flex h-10 min-w-0 items-center gap-2">
                 <input
                   type="checkbox"
                   checked={taxDoc}
@@ -944,19 +994,16 @@ export default function ServicePaymentForm({
                   <span className="text-xs text-teal-700">· receipt ready at Confirm</span>
                 )}
               </div>
-            </div>
-            <div className="flex min-w-0 flex-col">
-              <span className="mb-1 block min-h-[1.25rem]" aria-hidden>
-                &nbsp;
-              </span>
-              <button
-                type="button"
-                onClick={() => setTaxModalOpen(true)}
-                disabled={!taxDoc}
-                className="h-10 rounded bg-gray-200 px-3 text-sm hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Open form
-              </button>
+              <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setTaxModalOpen(true)}
+                  disabled={!taxDoc}
+                  className="h-10 rounded bg-gray-200 px-3 text-sm hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Open form
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1201,9 +1248,15 @@ export default function ServicePaymentForm({
             onSubmit={(e) => { e.preventDefault(); void performNewInstallment(); }}
             className="bg-white rounded-lg shadow-lg w-full max-w-md p-5 space-y-3 text-sm"
           >
-            <h3 className="text-lg font-medium text-gray-900">New deadline</h3>
+            <h3 className="text-lg font-medium text-gray-900">
+              {newAction === 'add' ? 'Add new deadline' : 'Divide deadline'}
+            </h3>
             <p className="text-xs text-gray-500">
-              Amount may exceed current rest — record total will increase by this value.
+              {newAction === 'add'
+                ? 'A brand new, independent deadline — amount may exceed current rest; record total will increase by this value.'
+                : `Split this amount off the selected deadline's rest${
+                    selectedDivideRow ? ` (max ${formatEuro(selectedDivideRow.balance)})` : ''
+                  } into a new deadline — the total owed stays the same.`}
             </p>
             <label className="block">
               <span className="text-gray-600">Deadline</span>
@@ -1211,6 +1264,7 @@ export default function ServicePaymentForm({
                 type="number"
                 step="0.01"
                 min="0.01"
+                max={newAction === 'divide' && selectedDivideRow ? selectedDivideRow.balance : undefined}
                 className={`mt-1 ${procedureInputClass}`}
                 value={newForm.balance}
                 onChange={(e) => setNewForm((f) => ({ ...f, balance: e.target.value }))}

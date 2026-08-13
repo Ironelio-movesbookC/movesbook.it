@@ -207,7 +207,9 @@ const TAB_LABELS: Record<ProcedureArchiveTabId, string> = {
 export function getProcedureTabs(
   code: ProcedureTypeCode,
   active: ProcedureArchiveTabId,
-  selectedRecordId?: string | null
+  selectedRecordId?: string | null,
+  /** Member of the selected row — scopes the Payments/Receipts tabs to "this member" by default. */
+  selectedMemberId?: string | null
 ): ProcedureTab[] {
   const def = PROCEDURE_DEFINITIONS[code];
   // For service sales, Deadlines always lists SERVICES deadlines (payment form is separate).
@@ -217,9 +219,9 @@ export function getProcedureTabs(
       : selectedRecordId
         ? def.routes.paymentDetail(selectedRecordId)
         : def.routes.deadlines;
-  const paymentsHref = selectedRecordId
-    ? `${def.routes.payments}?recordId=${encodeURIComponent(selectedRecordId)}`
-    : def.routes.payments;
+  const memberQuery = selectedMemberId ? `?memberId=${encodeURIComponent(selectedMemberId)}` : '';
+  const paymentsHref = `${def.routes.payments}${memberQuery}`;
+  const receiptsHref = `${def.routes.receipts}${memberQuery}`;
 
   return (['records', 'deadlines', 'payments', 'receipts'] as const).map((tabId) => ({
     id: tabId,
@@ -231,6 +233,6 @@ export function getProcedureTabs(
           ? deadlineHref
           : tabId === 'payments'
             ? paymentsHref
-            : def.routes.receipts,
+            : receiptsHref,
   }));
 }

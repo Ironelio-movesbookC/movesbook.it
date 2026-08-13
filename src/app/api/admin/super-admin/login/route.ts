@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
       username: superAdmin.username,
       email: superAdmin.email ?? '',
       userType: 'ADMIN' as const,
+      isSuperAdmin: true,
     };
 
     return NextResponse.json({

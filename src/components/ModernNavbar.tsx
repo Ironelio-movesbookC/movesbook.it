@@ -40,6 +40,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 import { clearClubWorkspaceSessionOnLogout } from '@/lib/club/clearClubWorkspaceSession';
 import SuggestMovesbookLoginPrompt from '@/components/promocodes/SuggestMovesbookLoginPrompt';
+import { persistAdminLoginSession } from '@/lib/panelSession';
 
 // Map language codes to flag file names
 const getFlagFileName = (code: string): string => {
@@ -565,6 +566,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
     localStorage.removeItem('user');
     localStorage.removeItem('adminUser');
     localStorage.removeItem('adminToken');
+    localStorage.removeItem('superAdminUser');
     clearClubWorkspaceSessionOnLogout();
 
     setIsLoggingIn(true);
@@ -593,8 +595,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
         data = await response.json();
 
         if (response.ok && data.user) {
-          localStorage.setItem('adminToken', data.token);
-          localStorage.setItem('adminUser', JSON.stringify(data.user));
+          persistAdminLoginSession(data.token, data.user);
           setLoginUsername('');
           setLoginPassword('');
           setLoginError('');
@@ -633,8 +634,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
         data = await response.json();
 
         if (response.ok && data.user) {
-          localStorage.setItem('adminToken', data.token);
-          localStorage.setItem('adminUser', JSON.stringify(data.user));
+          persistAdminLoginSession(data.token, data.user);
           setLoginUsername('');
           setLoginPassword('');
           setLoginError('');

@@ -41,6 +41,10 @@ const publicApiRoutes = [
   '/api/auth/register',
   '/api/auth/reset-password',
   '/api/auth/reset-username',
+  /** Super Admin bootstrap (exists check + first login/register; no token yet) */
+  '/api/admin/super-admin/exists',
+  '/api/admin/super-admin/login',
+  '/api/admin/super-admin/register',
   /** Outcome audio for <audio src> — no Authorization header on GET */
   '/api/outcome-messages',
   /** Public read APIs (editorial news, shared OGP groups, etc.) */
