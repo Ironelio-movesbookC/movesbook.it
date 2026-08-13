@@ -352,8 +352,10 @@ interface DarkSidebarProps {
   onPostsClick?: () => void;
   /** Messages → My feedbacks for Staff — swap center section (keep left/right sidebars) */
   onMyFeedbacksStaffClick?: () => void;
-  /** My Club → Music for the club → opens OGP-style panel in dashboard main area */
+  /** My Club → Music for the club → Add songs & playlists (same as navbar "Add Songs") */
   onClubAddSongsPlaylistsClick?: () => void;
+  /** My Club → Music for the club → Music Panel (same as navbar "Music Panel") */
+  onClubMusicPanelClick?: () => void;
   /** General settings → Identification devices (card readers list in dashboard) */
   onIdentificationDevicesClick?: () => void;
   /** General settings → Access of outcome settings (dashboard panel) */
@@ -408,6 +410,7 @@ export default function DarkSidebar({
   onPostsClick,
   onMyFeedbacksStaffClick,
   onClubAddSongsPlaylistsClick,
+  onClubMusicPanelClick,
   onIdentificationDevicesClick,
   onAccessOutcomeSettingsClick,
   onSuggestMovesbookClick,
@@ -2631,6 +2634,7 @@ export default function DarkSidebar({
                       </button>
                       <button
                         type="button"
+                        onClick={() => onClubMusicPanelClick?.()}
                         className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                       >
                         <Users className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />

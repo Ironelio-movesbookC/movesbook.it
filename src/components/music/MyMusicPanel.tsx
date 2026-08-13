@@ -198,9 +198,11 @@ function filterMusicByNav(
     return articles.filter((a) => (a.artist ?? '').trim() !== '');
   }
   if (filterNav === 'favourites') {
-    // Public shared My Music: all returned rows are the owner's — just isFavourite.
+    // Owner's favourites only (public feed may also include others' visible tracks).
     if (opts?.publicOwnerView) {
-      return articles.filter((a) => a.isFavourite === true);
+      return articles.filter(
+        (a) => a.isFavourite === true && a.createdByCurrentUser === true
+      );
     }
     return articles.filter(
       (a) =>
@@ -259,7 +261,8 @@ function buildHomeSectionArticles(
   articles: MusicOgpItem[],
   section: HomeFeedSectionKey,
   likesMap: LikesMap,
-  listenOrderIds: string[]
+  listenOrderIds: string[],
+  opts?: { publicOwnerView?: boolean }
 ): MusicOgpItem[] {
   switch (section) {
     case 'suggested':
@@ -286,7 +289,13 @@ function buildHomeSectionArticles(
       return picked;
     }
     case 'listen-again': {
-      if (listenOrderIds.length === 0) return [];
+      if (listenOrderIds.length === 0) {
+        // Public share has no listen history — show newest instead of empty black tiles.
+        if (opts?.publicOwnerView) {
+          return buildHomeSectionArticles(articles, 'last-insertion', likesMap, []);
+        }
+        return [];
+      }
       const byId = new Map(articles.map((a) => [a.id, a]));
       const ordered: MusicOgpItem[] = [];
       for (const id of listenOrderIds) {
@@ -1083,8 +1092,11 @@ function MusicSuggestedSection({
     setCreatorLoading(true);
     setCreatorError(null);
     setCreatorInfo(null);
-    const headers = getAuthHeaders(adminContext);
-    fetch(`${MUSIC_API_BASE}/ogp/${creatorModalArticleId}/creator`, { headers })
+    const url = isPublicView
+      ? `/api/public/music/ogp/${encodeURIComponent(creatorModalArticleId)}/creator`
+      : `${MUSIC_API_BASE}/ogp/${creatorModalArticleId}/creator`;
+    const headers = isPublicView ? undefined : getAuthHeaders(adminContext);
+    fetch(url, headers ? { headers } : undefined)
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to load creator');
@@ -1108,7 +1120,7 @@ function MusicSuggestedSection({
     return () => {
       cancelled = true;
     };
-  }, [creatorModalArticleId, adminContext]);
+  }, [creatorModalArticleId, adminContext, isPublicView]);
 
   /** Suggested / Home sections / filter navs / Music Folder members. */
   const displayed = useMemo(() => {
@@ -1127,9 +1139,13 @@ function MusicSuggestedSection({
       });
     }
     if (homeSection) {
-      return buildHomeSectionArticles(articles, homeSection, likesMap, listenOrderIds);
+      return buildHomeSectionArticles(articles, homeSection, likesMap, listenOrderIds, {
+        publicOwnerView: isPublicView,
+      });
     }
-    return buildHomeSectionArticles(articles, 'suggested', likesMap, listenOrderIds);
+    return buildHomeSectionArticles(articles, 'suggested', likesMap, listenOrderIds, {
+      publicOwnerView: isPublicView,
+    });
   }, [
     articles,
     likesMap,
@@ -1888,9 +1904,15 @@ function MusicFoldersSection({
       setSelectedFolder(null);
       try {
         if (publicUserKey) {
-          if (!cancelled) {
-            setFolders([]);
-          }
+          const res = await fetch(
+            `/api/public/music/${encodeURIComponent(publicUserKey)}/folders`
+          );
+          if (!res.ok) throw new Error('Failed to load music folders');
+          const data = await res.json();
+          const list: MusicFolderItem[] = (Array.isArray(data) ? data : [])
+            .map((g: Record<string, unknown>) => mapMusicFolderFromApi(g))
+            .filter(isActiveMusicFolder);
+          if (!cancelled) setFolders(list);
           return;
         }
         const headers = getAuthHeaders(adminContext);
@@ -1991,6 +2013,8 @@ export default function MyMusicPanel({
   const [showMusicEditor, setShowMusicEditor] = useState(false);
   const [sharePanelOpen, setSharePanelOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  /** Owner display name for public Get Link header: "My Music of {name}". */
+  const [publicOwnerName, setPublicOwnerName] = useState<string | null>(null);
 
   /** Public share key (username preferred) — same pattern as OGP News group public links. */
   const shareUserKey = useMemo(() => {
@@ -2005,6 +2029,30 @@ export default function MyMusicPanel({
     () => (shareUserKey ? getMyMusicShareUrl(shareUserKey) : ''),
     [shareUserKey]
   );
+
+  useEffect(() => {
+    if (!publicUserKey?.trim()) {
+      setPublicOwnerName(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/public/music/${encodeURIComponent(publicUserKey.trim())}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.owner) return;
+        const name =
+          (typeof data.owner.name === 'string' && data.owner.name.trim()) ||
+          (typeof data.owner.username === 'string' && data.owner.username.trim()) ||
+          '';
+        setPublicOwnerName(name || null);
+      })
+      .catch(() => {
+        if (!cancelled) setPublicOwnerName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [publicUserKey]);
 
   /** Copy the public My Music URL to the clipboard (user pastes it in a new tab). */
   const handleGetLink = useCallback(() => {
@@ -2041,7 +2089,12 @@ export default function MyMusicPanel({
         <div className="flex items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-2.5 min-w-0">
             <Headphones className="w-7 h-7 shrink-0" strokeWidth={1.75} aria-hidden />
-            <h2 className="text-xl sm:text-2xl font-bold tracking-wide truncate">My Music</h2>
+            <h2 className="text-xl sm:text-2xl font-bold tracking-wide truncate">
+              My Music
+              {isPublicView && publicOwnerName ? (
+                <span className="font-bold text-yellow-400"> of {publicOwnerName}</span>
+              ) : null}
+            </h2>
           </div>
 
           <div className="flex items-center gap-4 sm:gap-6 shrink-0">

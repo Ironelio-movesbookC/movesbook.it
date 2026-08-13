@@ -867,10 +867,24 @@ function AthleteDashboardContent() {
                 onMyClubClick={() => setActiveTab('my-entity')}
                 onClubChatClick={handleClubChatClick}
                 onClubAddSongsPlaylistsClick={() => {
-                  setActiveTab('my-entity');
+                  // Same as navbar "Add Songs" → Music OGP editor
+                  setActiveTab('my-page');
                   setClubChatOpen(false);
+                  setClubAddSongsOgpOpen(false);
+                  setClubAddSongsOgpExpanded(false);
                   setClubMainPanel('default');
-                  setClubAddSongsOgpOpen(true);
+                  setActiveSection('music-editor');
+                  setMusicExpanded(false);
+                }}
+                onClubMusicPanelClick={() => {
+                  // Same as navbar "Music Panel" → My Music panel
+                  setActiveTab('my-page');
+                  setClubChatOpen(false);
+                  setClubAddSongsOgpOpen(false);
+                  setClubAddSongsOgpExpanded(false);
+                  setClubMainPanel('default');
+                  setActiveSection('music');
+                  setMusicExpanded(false);
                 }}
                 onClubMovesbookNewsSectionClick={() => openClubNewsPanel('club-movesbook-news')}
                 onClubNewsSectionClick={() => openClubNewsPanel('club-news')}

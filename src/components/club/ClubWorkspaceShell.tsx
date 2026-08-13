@@ -361,7 +361,8 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onTabChange={handleTabChange}
                 onMyPageClick={handleMyPageTabClick}
                 onMyClubClick={handleMyClubTabClick}
-                onClubAddSongsPlaylistsClick={() => goToDashboardPanel('news')}
+                onClubAddSongsPlaylistsClick={() => router.push('/add-songs')}
+                onClubMusicPanelClick={() => router.push('/music-panel')}
                 onIdentificationDevicesClick={() => goToDashboardPanel('identification-devices')}
                 onAccessOutcomeSettingsClick={() => goToDashboardPanel('outcome-settings')}
                 onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
