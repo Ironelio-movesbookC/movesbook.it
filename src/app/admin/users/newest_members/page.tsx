@@ -136,16 +136,6 @@ export default function AdminNewestMembersPage() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Failed to send message');
-      if (body.mailtoFallback && Array.isArray(body.recipients)) {
-        const email = body.recipients[0]?.email?.trim();
-        if (email) {
-          const subj = encodeURIComponent(msgSubject.trim() || 'Message from Movesbook Admin');
-          const b = encodeURIComponent(message);
-          window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subj}&body=${b}`;
-        }
-        setMsgOpen(false);
-        return;
-      }
       setMsgOpen(false);
       window.alert('Message sent.');
     } catch (e) {
