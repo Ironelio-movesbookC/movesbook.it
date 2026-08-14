@@ -5,6 +5,8 @@ export const PROCEDURE_TYPE_CODES = {
   EXPENSE: 'expense',
   PRODUCT_SALE: 'product_sale',
   MEMBER_DEBT: 'member_debt',
+  MEMBERSHIP: 'membership',
+  COURSE_SUBSCRIPTION: 'course_subscription',
 } as const;
 
 export type ProcedureTypeCode =

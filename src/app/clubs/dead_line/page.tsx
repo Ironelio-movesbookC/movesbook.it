@@ -23,7 +23,7 @@ function sameMemberAndOpenRest(rows: Member[]): boolean {
 function DeadLinePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const memberId = searchParams.get('memberId');
+  const memberId = searchParams?.get('memberId');
   const [scope, setScope] = useState<'member' | 'all'>(memberId ? 'member' : 'all');
   const [data, setData] = useState<Member[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -130,7 +130,7 @@ function DeadLinePageInner() {
     {
       id: 'deadline',
       label: 'Archive of Deadlines',
-      href: '/clubs/dead_line',
+      href: `/clubs/dead_line${memberQuery}`,
     },
     {
       id: 'pay-selected',

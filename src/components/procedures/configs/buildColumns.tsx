@@ -78,6 +78,12 @@ export function buildProcedureColumns(def: ProcedureDefinition) {
     primaryCol,
     { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
     { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
+    {
+      key: 'originalDebt',
+      header: 'OF..',
+      render: (_, row) =>
+        `${Number(row.residualDebt ?? 0).toFixed(2)} / ${Number(row.originalDebt ?? 0).toFixed(2)}`,
+    },
     { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
     { key: 'casual', header: 'Notes' },
     { key: 'operator', header: 'Operator' },

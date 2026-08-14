@@ -170,11 +170,71 @@ const MEMBER_DEBT: ProcedureDefinition = {
   },
 };
 
+const MEMBERSHIP: ProcedureDefinition = {
+  code: PROCEDURE_TYPE_CODES.MEMBERSHIP,
+  name: 'Membership',
+  typologyLabel: 'MEMBERSHIPS',
+  pageSize: 25,
+  metadataKeys: { primary: 'membershipName', secondary: 'planName' },
+  columnHeaders: { primary: 'Membership', secondary: 'Plan' },
+  routes: {
+    form: '/clubs/memberships/new',
+    records: '/clubs/memberships/archive',
+    deadlines: '/clubs/memberships/deadlines',
+    payments: '/clubs/memberships/payments',
+    receipts: '/clubs/memberships/receipts',
+    paymentDetail: (id) => `/clubs/memberships/payment_detail/${id}`,
+  },
+  archiveTitles: {
+    records: 'Archive of Memberships',
+    deadlines: 'Membership Deadlines',
+    payments: 'Membership Payments',
+    receipts: 'Membership Receipts',
+    paymentForm: 'Payment — Membership',
+    newRecordButton: '+ New membership',
+  },
+  form: {
+    title: 'Club Memberships',
+    subtitle: 'Register a new membership subscription.',
+  },
+};
+
+const COURSE_SUBSCRIPTION: ProcedureDefinition = {
+  code: PROCEDURE_TYPE_CODES.COURSE_SUBSCRIPTION,
+  name: 'Course Subscription',
+  typologyLabel: 'COURSES',
+  pageSize: 25,
+  metadataKeys: { primary: 'courseName', secondary: 'instructorName' },
+  columnHeaders: { primary: 'Course', secondary: 'Instructor' },
+  routes: {
+    form: '/clubs/courses/new',
+    records: '/clubs/courses/archive',
+    deadlines: '/clubs/courses/deadlines',
+    payments: '/clubs/courses/payments',
+    receipts: '/clubs/courses/receipts',
+    paymentDetail: (id) => `/clubs/courses/payment_detail/${id}`,
+  },
+  archiveTitles: {
+    records: 'Archive of Course Subscriptions',
+    deadlines: 'Course Deadlines',
+    payments: 'Course Payments',
+    receipts: 'Course Receipts',
+    paymentForm: 'Payment — Course',
+    newRecordButton: '+ New course sub',
+  },
+  form: {
+    title: 'Course Subscriptions',
+    subtitle: 'Subscribe a member to a course.',
+  },
+};
+
 export const PROCEDURE_DEFINITIONS: Record<ProcedureTypeCode, ProcedureDefinition> = {
   [PROCEDURE_TYPE_CODES.SERVICE_SALE]: SERVICE_SALE,
   [PROCEDURE_TYPE_CODES.EXPENSE]: EXPENSE,
   [PROCEDURE_TYPE_CODES.PRODUCT_SALE]: PRODUCT_SALE,
   [PROCEDURE_TYPE_CODES.MEMBER_DEBT]: MEMBER_DEBT,
+  [PROCEDURE_TYPE_CODES.MEMBERSHIP]: MEMBERSHIP,
+  [PROCEDURE_TYPE_CODES.COURSE_SUBSCRIPTION]: COURSE_SUBSCRIPTION,
 };
 
 export const ALL_PROCEDURE_CODES = Object.values(PROCEDURE_TYPE_CODES);
@@ -214,11 +274,9 @@ export function getProcedureTabs(
   const def = PROCEDURE_DEFINITIONS[code];
   // For service sales, Deadlines always lists SERVICES deadlines (payment form is separate).
   const deadlineHref =
-    code === PROCEDURE_TYPE_CODES.SERVICE_SALE
-      ? def.routes.deadlines
-      : selectedRecordId
-        ? def.routes.paymentDetail(selectedRecordId)
-        : def.routes.deadlines;
+    selectedRecordId
+      ? def.routes.paymentDetail(selectedRecordId)
+      : def.routes.deadlines;
   const memberQuery = selectedMemberId ? `?memberId=${encodeURIComponent(selectedMemberId)}` : '';
   const paymentsHref = `${def.routes.payments}${memberQuery}`;
   const receiptsHref = `${def.routes.receipts}${memberQuery}`;

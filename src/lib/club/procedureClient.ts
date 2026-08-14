@@ -19,6 +19,7 @@ export type ProcedureRecordView = {
   memberName: string;
   memberImage: string | null;
   typology: string;
+  procedureType: string;
   primaryLabel: string;
   secondaryLabel: string;
   paydate: string | null;
@@ -68,6 +69,7 @@ export type ListParams = {
   pageSize?: number;
   recordId?: string;
   memberId?: string;
+  includePaid?: boolean;
 };
 
 export type PaginatedResult<T> = {
@@ -95,6 +97,7 @@ function mapRecord(def: ProcedureDefinition, record: ProcedureRecordDto): Proced
     memberName: record.memberName,
     memberImage: record.memberImage ?? null,
     typology: getProcedureTypology(def.code),
+    procedureType: record.procedureType,
     primaryLabel: metaString(metadata, def.metadataKeys.primary) || '-',
     secondaryLabel: def.metadataKeys.secondary
       ? metaString(metadata, def.metadataKeys.secondary) || '-'
@@ -155,6 +158,7 @@ function buildQuery(params?: ListParams & { view?: string }): string {
   if (params?.view) qs.set('view', params.view);
   if (params?.recordId) qs.set('recordId', params.recordId);
   if (params?.memberId) qs.set('memberId', params.memberId);
+  if (params?.includePaid) qs.set('includePaid', 'true');
   return qs.toString();
 }
 
