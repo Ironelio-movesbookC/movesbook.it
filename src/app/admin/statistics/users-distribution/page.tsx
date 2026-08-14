@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import StatisticsPageShell, {
   StatisticsSelect,
   countryFilterOptions,
@@ -16,10 +17,15 @@ import {
 import type { StatsSlice } from '@/lib/admin/buildStatistics';
 
 export default function UsersDistributionPage() {
+  const router = useRouter();
   const { authChecked, loading, error, data, filters, setFilters } = useAdminStatistics({
     enableCountry: true,
   });
   const [selectedKind, setSelectedKind] = useState<StatsUserKind | null>(null);
+
+  useEffect(() => {
+    setSelectedKind(null);
+  }, [filters.country]);
 
   const drilldown = useMemo(() => {
     if (!data?.usersLite || !selectedKind) return null;
@@ -56,6 +62,11 @@ export default function UsersDistributionPage() {
           onChange={(country) => {
             setSelectedKind(null);
             setFilters((f) => ({ ...f, country }));
+            router.replace(
+              country
+                ? `/admin/statistics/users-distribution?country=${encodeURIComponent(country)}`
+                : '/admin/statistics/users-distribution',
+            );
           }}
           options={countryFilterOptions(data?.countries ?? [])}
         />
@@ -63,6 +74,7 @@ export default function UsersDistributionPage() {
     >
       <div className="max-w-2xl mx-auto">
         <StatisticsPieBlock
+          key={filters.country || '__world__'}
           title={filters.country ? `Distribution — ${filters.country}` : 'Distribution — World'}
           subtitle={
             data
@@ -91,6 +103,7 @@ export default function UsersDistributionPage() {
       ) : null}
       {selectedKind && drilldown ? (
         <VersionDistributionDrilldown
+          key={`${filters.country}-${selectedKind}`}
           title={`${STATS_KIND_LABELS[selectedKind]} — versions`}
           subtitle={filters.country ? filters.country : 'World'}
           total={drilldown.total}

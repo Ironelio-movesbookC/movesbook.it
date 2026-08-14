@@ -1,6 +1,6 @@
 import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { readNetworkSubscriptionHistory, isActiveMembershipPeriod } from '@/lib/admin/networkSubscriptionHistory';
+import { readNetworkSubscriptionHistory, isActiveMembershipPeriod, hasActiveLastSubscription, pickLatestSubscriptionByExpiry } from '@/lib/admin/networkSubscriptionHistory';
 import {
   ALL_STATS_USER_TYPES,
   STATS_KIND_LABELS,
@@ -119,10 +119,11 @@ function resolveCurrentVersion(
   fallbackVersion?: string | null,
 ): string {
   const periods = readNetworkSubscriptionHistory(adminSettings);
-  const active = periods.find((p) => isActiveMembershipPeriod(p.dateEnd, p.status));
-  if (active?.version?.trim()) return active.version.trim();
-  const latest = [...periods].sort((a, b) => b.dateStart.localeCompare(a.dateStart))[0];
-  if (latest?.version?.trim()) return latest.version.trim();
+  // Only the last subscription (highest expiry) counts.
+  const last = pickLatestSubscriptionByExpiry(periods);
+  if (last && isActiveMembershipPeriod(last.dateEnd, last.status) && last.version?.trim()) {
+    return last.version.trim();
+  }
   if (fallbackVersion?.trim()) return fallbackVersion.trim();
   return defaultVersionForKind(kind);
 }
@@ -339,6 +340,8 @@ export async function buildStatisticsPayload(
   for (const u of rawUsers) {
     const kind = kindFromUserType(u.userType);
     if (!kind) continue;
+    // Current users / graphs: only users whose last subscription is not expired.
+    if (!hasActiveLastSubscription(u.adminSettings)) continue;
 
     const country = u.country || 'Unknown';
     const versionName = resolveCurrentVersion(u.adminSettings, kind, u.resolvedVersion);
@@ -402,6 +405,7 @@ export async function buildStatisticsPayload(
     for (const u of rawUsers) {
       const k = kindFromUserType(u.userType);
       if (!k || !typeKindMatches(k, kindFilter)) continue;
+      if (!hasActiveLastSubscription(u.adminSettings)) continue;
       if (countryFilter && (u.country ?? '').toLowerCase() !== countryFilter.toLowerCase()) continue;
       const c = u.country || 'Unknown';
       counts.set(c, (counts.get(c) ?? 0) + 1);
@@ -515,6 +519,41 @@ export async function buildStatisticsPayload(
       typeCountriesN,
     },
   };
+}
+
+/**
+ * User ids that contribute to a statistics bar — same rules as buildStatisticsPayload
+ * (active last subscription + country/kind/version classification).
+ */
+export async function resolveStatsBarUserIds(options: {
+  country?: string | null;
+  kind?: StatsTypeKindFilter | null;
+  version?: StatsVersionBucket | null;
+}): Promise<string[]> {
+  const countryFilter = options.country?.trim() || null;
+  const kindFilter: StatsTypeKindFilter = options.kind ?? 'all';
+  const versionFilter = options.version ?? null;
+  const rawUsers = await loadRawUsers();
+  const ids: string[] = [];
+
+  for (const u of rawUsers) {
+    const kind = kindFromUserType(u.userType);
+    if (!kind) continue;
+    if (!hasActiveLastSubscription(u.adminSettings)) continue;
+    if (!typeKindMatches(kind, kindFilter)) continue;
+
+    const country = u.country || 'Unknown';
+    if (countryFilter && country !== countryFilter) continue;
+
+    if (versionFilter) {
+      const versionName = resolveCurrentVersion(u.adminSettings, kind, u.resolvedVersion);
+      if (classifyVersionBucket(versionName) !== versionFilter) continue;
+    }
+
+    ids.push(u.id);
+  }
+
+  return ids;
 }
 
 /** Helper for pages that need only types belonging to a kind filter. */

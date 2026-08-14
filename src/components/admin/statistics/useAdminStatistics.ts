@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
 import type { StatisticsPayload } from '@/lib/admin/buildStatistics';
 import {
@@ -35,14 +35,24 @@ export function useAdminStatistics(options?: {
   initial?: Partial<StatisticsFilters>;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const countryFromUrl = searchParams.get('country')?.trim() || '';
   const [authChecked, setAuthChecked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<StatisticsPayload | null>(null);
-  const [filters, setFilters] = useState<StatisticsFilters>({
+  const [filters, setFilters] = useState<StatisticsFilters>(() => ({
     ...DEFAULT_FILTERS,
     ...options?.initial,
-  });
+    ...(countryFromUrl ? { country: countryFromUrl } : {}),
+  }));
+
+  // Keep country filter in sync when sidebar links change ?country=…
+  useEffect(() => {
+    setFilters((prev) =>
+      prev.country === countryFromUrl ? prev : { ...prev, country: countryFromUrl },
+    );
+  }, [countryFromUrl]);
 
   useEffect(() => {
     const adminData = localStorage.getItem('adminUser');

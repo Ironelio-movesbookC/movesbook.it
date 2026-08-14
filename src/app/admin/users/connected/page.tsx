@@ -1,18 +1,15 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Mail, User } from 'lucide-react';
 import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
-import type { LastLoggedUserRow, LastLoggedPayload } from '@/lib/admin/lastLoggedShared';
-import {
-  LAST_LOGGED_DATE_OPTIONS,
-  parseLastLoggedDatePreset,
-  parseLastLoggedUserType,
-  type LastLoggedDatePreset,
-} from '@/lib/admin/lastLoggedShared';
+import type {
+  ConnectedUserRow,
+  UsersConnectedPayload,
+} from '@/lib/admin/buildUsersConnected';
 import {
   STATS_KIND_LABELS,
   STATS_USER_KINDS,
@@ -24,7 +21,13 @@ const TYPE_OPTIONS: Array<{ value: StatsUserKind | 'all'; label: string }> = [
   ...STATS_USER_KINDS.map((k) => ({ value: k, label: STATS_KIND_LABELS[k] })),
 ];
 
-function GenderOrPhoto({ user }: { user: LastLoggedUserRow }) {
+function GenderOrPhoto({
+  user,
+  accentClass,
+}: {
+  user: ConnectedUserRow;
+  accentClass: string;
+}) {
   if (user.imageUrl) {
     return (
       <div className="relative h-10 w-10 shrink-0 overflow-hidden border border-[#ccc] bg-white">
@@ -39,44 +42,29 @@ function GenderOrPhoto({ user }: { user: LastLoggedUserRow }) {
       </div>
     );
   }
-  const symbol = user.gender === 'male' ? '♂' : user.gender === 'female' ? '♀' : null;
+  const symbol =
+    user.gender === 'male' ? '♂' : user.gender === 'female' ? '♀' : null;
   return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-[#ccc] bg-white text-xl font-bold text-[#333]">
-      {symbol ?? <User className="h-5 w-5 text-[#333]" />}
+    <div
+      className={`flex h-10 w-10 shrink-0 items-center justify-center border border-[#ccc] bg-white text-xl font-bold ${accentClass}`}
+      title={user.gender || 'No photo'}
+    >
+      {symbol ?? <User className={`h-5 w-5 ${accentClass}`} />}
     </div>
   );
 }
 
-function formatLoginAt(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-}
-
-function AdminLoggedUsersContent() {
+export default function AdminUsersConnectedPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [authOk, setAuthOk] = useState(false);
-  const [date, setDate] = useState<LastLoggedDatePreset>(() =>
-    parseLastLoggedDatePreset(searchParams?.get('date')),
-  );
-  const [userType, setUserType] = useState<StatsUserKind | 'all'>(() =>
-    parseLastLoggedUserType(searchParams?.get('userType')),
-  );
-  const [country, setCountry] = useState(() => searchParams?.get('country')?.trim() || '');
-  const [data, setData] = useState<LastLoggedPayload | null>(null);
+  const [userType, setUserType] = useState<StatsUserKind | 'all'>('all');
+  const [country, setCountry] = useState('');
+  const [data, setData] = useState<UsersConnectedPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [msgOpen, setMsgOpen] = useState(false);
-  const [msgUser, setMsgUser] = useState<LastLoggedUserRow | null>(null);
+  const [msgUser, setMsgUser] = useState<ConnectedUserRow | null>(null);
   const [msgSubject, setMsgSubject] = useState('Message from Movesbook Admin');
   const [msgDraft, setMsgDraft] = useState('');
   const [msgSending, setMsgSending] = useState(false);
@@ -90,13 +78,6 @@ function AdminLoggedUsersContent() {
     setAuthOk(true);
   }, [router]);
 
-  // Keep filters in sync when arriving from sidebar View All.
-  useEffect(() => {
-    setDate(parseLastLoggedDatePreset(searchParams?.get('date')));
-    setUserType(parseLastLoggedUserType(searchParams?.get('userType')));
-    setCountry(searchParams?.get('country')?.trim() || '');
-  }, [searchParams]);
-
   const load = useCallback(async () => {
     const token = getAdminBearerToken();
     if (!token) {
@@ -108,27 +89,34 @@ function AdminLoggedUsersContent() {
     setError(null);
     try {
       const qs = new URLSearchParams();
-      qs.set('date', date);
       if (userType !== 'all') qs.set('userType', userType);
       if (country) qs.set('country', country);
-      const res = await fetch(`/api/admin/last-logged?${qs}`, {
+      const res = await fetch(`/api/admin/users-connected?${qs}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: 'no-store',
       });
       if (!res.ok) throw new Error('Failed to load');
-      setData((await res.json()) as LastLoggedPayload);
+      setData((await res.json()) as UsersConnectedPayload);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, [date, userType, country]);
+  }, [userType, country]);
 
   useEffect(() => {
     if (!authOk) return;
     void load();
   }, [authOk, load]);
+
+  const openMessage = (user: ConnectedUserRow) => {
+    setMsgUser(user);
+    setMsgSubject('Message from Movesbook Admin');
+    setMsgDraft('');
+    setMsgError('');
+    setMsgOpen(true);
+  };
 
   const sendMessage = async () => {
     if (!msgUser) return;
@@ -160,6 +148,7 @@ function AdminLoggedUsersContent() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Failed to send message');
+
       if (body.mailtoFallback && Array.isArray(body.recipients)) {
         const email = body.recipients[0]?.email?.trim();
         if (email) {
@@ -187,28 +176,13 @@ function AdminLoggedUsersContent() {
         <p className="text-xs font-semibold uppercase tracking-wide text-[#058592]">
           Super Admin
         </p>
-        <h1 className="mt-1 text-2xl font-bold text-[#222]">Last Logged</h1>
+        <h1 className="mt-1 text-2xl font-bold text-[#222]">Users Connected</h1>
         <p className="mt-1 text-sm text-[#555]">
-          Users who logged in on the selected date · same list as the right sidebar.
-          Click a username to open the User Panel.
+          Green = online now · Orange = connected today but not online
         </p>
       </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 border border-[#cfcfcf] bg-white p-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-semibold text-[#333]">Date login</span>
-          <select
-            className="border border-[#bbb] bg-white px-2 py-1.5"
-            value={date}
-            onChange={(e) => setDate(e.target.value as LastLoggedDatePreset)}
-          >
-            {LAST_LOGGED_DATE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-semibold text-[#333]">Type of user</span>
           <select
@@ -230,7 +204,7 @@ function AdminLoggedUsersContent() {
             value={country}
             onChange={(e) => setCountry(e.target.value)}
           >
-            <option value="">All Countries</option>
+            <option value="">All country</option>
             {(data?.countries ?? []).map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -238,8 +212,13 @@ function AdminLoggedUsersContent() {
             ))}
           </select>
         </label>
-        <div className="ml-auto text-sm font-semibold text-[#333]">
-          Total: {data?.total ?? 0}
+        <div className="ml-auto flex gap-4 text-sm">
+          <span className="font-semibold text-green-700">
+            Online: {data?.onlineCount ?? 0}
+          </span>
+          <span className="font-semibold text-orange-600">
+            Today: {data?.todayOfflineCount ?? 0}
+          </span>
         </div>
       </div>
 
@@ -253,43 +232,46 @@ function AdminLoggedUsersContent() {
         {loading ? (
           <div className="p-8 text-center text-[#666]">Loading…</div>
         ) : !data?.users.length ? (
-          <div className="p-8 text-center text-[#888]">No logins for this date.</div>
+          <div className="p-8 text-center text-[#888]">No connected users today.</div>
         ) : (
           <ul className="divide-y divide-[#eee]">
-            {data.users.map((user) => (
-              <li key={user.id} className="flex gap-3 px-4 py-3">
-                <GenderOrPhoto user={user} />
-                <div className="min-w-0 flex-1">
-                  <Link
-                    href={`/admin/all?openUser=${encodeURIComponent(user.id)}`}
-                    className="font-bold text-[#222] hover:underline"
-                  >
-                    {user.username}
-                  </Link>
-                  {user.location ? (
-                    <div className="text-sm text-[#333]">{user.location}</div>
-                  ) : null}
-                  <div className="text-sm font-semibold text-[#0088cc]">{user.roleLabel}</div>
-                  <div className="text-xs text-[#666]">
-                    Last login: {formatLoginAt(user.lastLoginAt)}
+            {data.users.map((user) => {
+              const online = user.presence === 'online';
+              const accent = online ? 'text-green-700' : 'text-orange-600';
+              return (
+                <li key={user.id} className="flex gap-3 px-4 py-3">
+                  <GenderOrPhoto user={user} accentClass={accent} />
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      href={`/admin/all?openUser=${encodeURIComponent(user.id)}`}
+                      className={`font-bold hover:underline ${accent}`}
+                    >
+                      {user.username}
+                    </Link>
+                    <div className="text-sm text-[#555]">
+                      {user.location || '—'} · {user.kindLabel}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openMessage(user)}
+                      className="mt-1 inline-flex items-center gap-1 text-sm text-[#333] hover:underline"
+                    >
+                      <Mail className="h-3.5 w-3.5" />
+                      Send Message
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMsgUser(user);
-                      setMsgSubject('Message from Movesbook Admin');
-                      setMsgDraft('');
-                      setMsgError('');
-                      setMsgOpen(true);
-                    }}
-                    className="mt-1 inline-flex items-center gap-1 text-sm text-[#333] hover:underline"
+                  <span
+                    className={`shrink-0 self-start rounded px-2 py-0.5 text-xs font-bold ${
+                      online
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-orange-100 text-orange-800'
+                    }`}
                   >
-                    <Mail className="h-3.5 w-3.5" />
-                    Send Message
-                  </button>
-                </div>
-              </li>
-            ))}
+                    {online ? 'Online' : 'Today'}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -335,13 +317,5 @@ function AdminLoggedUsersContent() {
         </div>
       ) : null}
     </div>
-  );
-}
-
-export default function AdminLoggedUsersPage() {
-  return (
-    <Suspense fallback={<div className="p-8 text-center text-[#666]">Loading…</div>}>
-      <AdminLoggedUsersContent />
-    </Suspense>
   );
 }
