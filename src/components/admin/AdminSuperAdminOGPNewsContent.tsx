@@ -62,6 +62,7 @@ export default function AdminSuperAdminOGPNewsContent({
     addTypedArticle,
     removeTypedArticle,
     toggleOgpGlobalNews,
+    toggleOgpFeatured,
   } = useNewsData({ adminContext: true, viewAsUsername });
 
   const prevLoading = useRef(true);
@@ -441,6 +442,8 @@ export default function AdminSuperAdminOGPNewsContent({
             superAdminReadOnlyOgpActions={!!viewAsUsername}
             showGlobalNewsButton={isSuperAdmin && !viewAsUsername}
             onToggleGlobalNews={isSuperAdmin && !viewAsUsername ? toggleOgpGlobalNews : undefined}
+            showFeaturedControls={isSuperAdmin && !viewAsUsername}
+            onToggleOgpFeatured={isSuperAdmin && !viewAsUsername ? toggleOgpFeatured : undefined}
           />
         </div>
       </div>

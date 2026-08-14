@@ -111,6 +111,11 @@ export interface UseNewsDataResult {
   removeTypedArticle: (id: string) => Promise<void>;
   /** Super admin: toggle OGP article in Global News feed. */
   toggleOgpGlobalNews: (id: string, inGlobalNews: boolean) => Promise<void>;
+  /** Super admin: toggle featured News Card flags on an OGP article. */
+  toggleOgpFeatured: (
+    id: string,
+    patch: { isFeatured?: boolean; displayInEvidence?: boolean },
+  ) => Promise<void>;
 }
 
 export interface UseNewsDataOptions {
@@ -338,7 +343,10 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           isFavourite: a.isFavourite === true,
           languageCode: a.languageCode ?? undefined,
           savedAt: a.savedAt,
+          viewCount: typeof a.viewCount === 'number' ? a.viewCount : Number(a.viewCount) || 0,
           inGlobalNews: a.inGlobalNews === true,
+          isFeatured: a.isFeatured === true,
+          displayInEvidence: a.displayInEvidence !== false,
           deletedAt: a.deletedAt,
           deletedByUserId: a.deletedByUserId,
           deletedByName: a.deletedByName,
@@ -554,6 +562,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           isFavourite: created.isFavourite ?? data.isFavourite ?? false,
           languageCode: created.languageCode ?? undefined,
           savedAt: created.savedAt,
+          viewCount: typeof created.viewCount === 'number' ? created.viewCount : 0,
           sharedClubIds,
           visibility: {
             userTypes: vis?.userTypes ?? [],
@@ -938,6 +947,43 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     [],
   );
 
+  const toggleOgpFeatured = useCallback(
+    async (id: string, patch: { isFeatured?: boolean; displayInEvidence?: boolean }) => {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+      if (!token) throw new Error('Not authenticated');
+      const res = await fetch(`/api/admin/ogp-featured/${id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error('Failed to update featured flags');
+      const updated = await res.json();
+      setPastedArticles((prev) =>
+        prev.map((a) =>
+          a.id === id
+            ? {
+                ...a,
+                ...(typeof updated.isFeatured === 'boolean'
+                  ? { isFeatured: updated.isFeatured }
+                  : patch.isFeatured !== undefined
+                    ? { isFeatured: patch.isFeatured }
+                    : {}),
+                ...(typeof updated.displayInEvidence === 'boolean'
+                  ? { displayInEvidence: updated.displayInEvidence }
+                  : patch.displayInEvidence !== undefined
+                    ? { displayInEvidence: patch.displayInEvidence }
+                    : {}),
+              }
+            : a,
+        ),
+      );
+    },
+    [],
+  );
+
   return {
     topics,
     customTopics,
@@ -971,5 +1017,6 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     addTypedArticle,
     removeTypedArticle,
     toggleOgpGlobalNews,
+    toggleOgpFeatured,
   };
 }

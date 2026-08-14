@@ -4,10 +4,69 @@ import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
+function parseJsonArray(str: string | null | undefined): string[] {
+  if (str == null || str === '') return [];
+  try {
+    const a = JSON.parse(str);
+    return Array.isArray(a) ? a : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Same visibility rules as authenticated My Music (non-admin branch). */
+function ogpVisibleToViewer(
+  a: {
+    userId: string;
+    deletedAt: Date | null;
+    expiresAt: Date | null;
+    visibilityUserTypes: string | null;
+    visibilityCountries: string | null;
+    visibilityLanguages: string | null;
+    visibilitySports: string | null;
+  },
+  viewer: {
+    userId: string;
+    userType: string;
+    country: string | null;
+    userSports: string[];
+    languageCode: string;
+  }
+): boolean {
+  if (a.userId === viewer.userId) return true;
+  const now = new Date();
+  if (a.deletedAt) return false;
+  if (a.expiresAt && a.expiresAt < now) return false;
+  const vUserTypes = parseJsonArray(a.visibilityUserTypes);
+  const vCountries = parseJsonArray(a.visibilityCountries);
+  const vLanguages = parseJsonArray(a.visibilityLanguages);
+  const vSports = parseJsonArray(a.visibilitySports);
+  const hasNoVisibilitySet =
+    vUserTypes.length === 0 &&
+    vCountries.length === 0 &&
+    vLanguages.length === 0 &&
+    vSports.length === 0 &&
+    !a.expiresAt;
+  if (hasNoVisibilitySet) return true;
+  if (vUserTypes.length > 0 && !vUserTypes.includes(viewer.userType)) return false;
+  if (vCountries.length > 0 && !vCountries.includes(viewer.country ?? '')) return false;
+  if (vLanguages.length > 0) {
+    const lang = viewer.languageCode.slice(0, 2).toLowerCase();
+    if (!vLanguages.some((l: string) => l.toLowerCase() === lang)) return false;
+  }
+  if (vSports.length > 0 && !vSports.some((s: string) => viewer.userSports.includes(s))) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * GET /api/public/music/[userKey]
- * Public (no auth) — owner's My Music OGP articles for share links.
+ * Public (no auth) — same OGP set the owner sees in My Music (for Get Link / Share).
  * userKey may be username or user id.
+ *
+ * - Admin / superadmin-linked owners: all non-deleted, non-expired OGPs (matches admin panel).
+ * - Everyone else: OGPs visible to that owner (own + visibility-matching), matching athlete My Music.
  */
 export async function GET(
   _request: NextRequest,
@@ -29,6 +88,9 @@ export async function GET(
         username: true,
         name: true,
         country: true,
+        userType: true,
+        superAdminId: true,
+        settings: { select: { language: true } },
       },
     });
 
@@ -37,29 +99,96 @@ export async function GET(
     }
 
     const now = new Date();
-    const list = await prisma.musicOgpArticle.findMany({
-      where: {
+    const isPrivileged =
+      owner.userType === 'ADMIN' || Boolean(owner.superAdminId);
+
+    const select = {
+      id: true,
+      userId: true,
+      title: true,
+      artist: true,
+      image: true,
+      description: true,
+      url: true,
+      siteName: true,
+      customDescription: true,
+      topic: true,
+      genre: true,
+      registrationType: true,
+      isFavourite: true,
+      savedAt: true,
+      expiresAt: true,
+      deletedAt: true,
+      visibilityUserTypes: true,
+      visibilityCountries: true,
+      visibilityLanguages: true,
+      visibilitySports: true,
+      user: { select: { username: true } },
+    } as const;
+
+    let list: Array<{
+      id: string;
+      userId: string;
+      title: string | null;
+      artist: string | null;
+      image: string | null;
+      description: string | null;
+      url: string;
+      siteName: string | null;
+      customDescription: string | null;
+      topic: string;
+      genre: string | null;
+      registrationType: string | null;
+      isFavourite: boolean;
+      savedAt: Date;
+      expiresAt: Date | null;
+      deletedAt: Date | null;
+      visibilityUserTypes: string | null;
+      visibilityCountries: string | null;
+      visibilityLanguages: string | null;
+      visibilitySports: string | null;
+      user: { username: string } | null;
+    }>;
+
+    if (isPrivileged) {
+      // Match admin My Music: full catalog, but never expose deleted/expired on a public link.
+      list = await prisma.musicOgpArticle.findMany({
+        where: {
+          deletedAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+        orderBy: { savedAt: 'desc' },
+        select,
+      });
+    } else {
+      const sportsRows = await prisma.userMainSport.findMany({
+        where: { userId: owner.id },
+        select: { sport: true },
+      });
+      const viewer = {
         userId: owner.id,
-        deletedAt: null,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      },
-      orderBy: { savedAt: 'desc' },
-      select: {
-        id: true,
-        title: true,
-        artist: true,
-        image: true,
-        description: true,
-        url: true,
-        siteName: true,
-        customDescription: true,
-        topic: true,
-        genre: true,
-        registrationType: true,
-        isFavourite: true,
-        savedAt: true,
-      },
-    });
+        userType: owner.userType,
+        country: owner.country,
+        userSports: sportsRows.map((s) => s.sport),
+        languageCode: ((owner.settings?.language ?? 'en').slice(0, 2).toLowerCase() ||
+          'en') as string,
+      };
+
+      const candidates = await prisma.musicOgpArticle.findMany({
+        where: {
+          OR: [{ deletedAt: null }, { userId: owner.id }],
+        },
+        orderBy: { savedAt: 'desc' },
+        select,
+      });
+      list = candidates.filter((a) => ogpVisibleToViewer(a, viewer));
+      // Public share: hide deleted/expired even for the owner's own rows.
+      list = list.filter((a) => {
+        if (a.deletedAt) return false;
+        if (a.expiresAt && a.expiresAt < now) return false;
+        return true;
+      });
+    }
 
     let viewRows: { id: string; viewCount: number }[] = [];
     if (list.length > 0) {
@@ -89,9 +218,9 @@ export async function GET(
       isFavourite: a.isFavourite === true,
       viewCount: viewById.get(a.id) ?? 0,
       savedAt: a.savedAt.toISOString(),
-      creatorUsername: owner.username,
-      userId: owner.id,
-      createdByCurrentUser: false,
+      creatorUsername: a.user?.username ?? null,
+      userId: a.userId,
+      createdByCurrentUser: a.userId === owner.id,
     }));
 
     const ownerName = (owner.name && owner.name.trim()) || owner.username || null;

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 import AdminNavbar from '@/components/AdminNavbar';
 import AdminLeftSidebar from '@/components/admin/AdminLeftSidebar';
 import AdminRightSidebar from '@/components/admin/AdminRightSidebar';
@@ -9,8 +9,9 @@ import SystemDashboardSidebar from '@/components/admin/SystemDashboardSidebar';
 import ModernFooter from '@/components/ModernFooter';
 import { ADMIN_OGP_EXPAND_EVENT } from '@/lib/adminOgpExpand';
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
 
@@ -19,9 +20,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const useSystemSidebar = isGlobalSettings || isAccessAudioSettings;
   const isChat = pathname?.startsWith('/admin/chat');
   const isStatistics = pathname?.startsWith('/admin/statistics');
-  /** Fill viewport so left/right sidebars and main share one height (no short nested scroll). */
-  const fillViewport = isChat || isStatistics;
   const isLogin = pathname?.startsWith('/admin/login');
+  /** Superadmin My Music panel — fill the central column at a fixed viewport height. */
+  const isOgMusicPanel =
+    pathname?.startsWith('/admin/dashboard') && searchParams?.get('panel') === 'og-music';
+  /** Fill viewport so left/right sidebars and main share one height (no short nested scroll). */
+  const fillViewport = isChat || isStatistics || isOgMusicPanel;
   /** OGP News needs the full main column; Current Users sidebar crowds the card grid. */
   const isOgpNewsPage = pathname?.startsWith('/admin/news/links');
   const isGlobalNewsPage = pathname?.startsWith('/admin/news/global');
@@ -76,5 +80,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {!fillViewport && <ModernFooter />}
     </div>
+  );
+}
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>
+      <AdminLayoutInner>{children}</AdminLayoutInner>
+    </Suspense>
   );
 }
