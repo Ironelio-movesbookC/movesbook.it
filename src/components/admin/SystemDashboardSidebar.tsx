@@ -343,7 +343,7 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
           hasSubmenu: true,
           id: 'system_mainbanner',
           subItems: [
-            { label: 'Banner Tours' },
+            { label: 'Banner Tours', href: '/admin/global-settings/banner-tours' },
             { label: 'Sport banners' }
           ]
         }
