@@ -676,22 +676,6 @@ export default function AdminRegisteredUsersList({
     window.print();
   }, []);
 
-  const handleSendMail = useCallback(() => {
-    const targets = requireActionTargets();
-    if (!targets) return;
-    const emails = targets.map((t) => t.email.trim()).filter(Boolean);
-    if (emails.length === 0) {
-      window.alert('Selected users have no email address.');
-      return;
-    }
-    if (emails.length === 1) {
-      window.location.href = `mailto:${encodeURIComponent(emails[0]!)}`;
-      return;
-    }
-    const bcc = emails.map((e) => encodeURIComponent(e)).join(',');
-    window.location.href = `mailto:?bcc=${bcc}`;
-  }, [requireActionTargets]);
-
   const openSendMsgModal = useCallback(() => {
     const targets = requireActionTargets();
     if (!targets) return;
@@ -733,26 +717,6 @@ export default function AdminRegisteredUsersList({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to send message');
-
-      if (data.mailtoFallback && Array.isArray(data.recipients)) {
-        const emails = data.recipients
-          .map((r: { email?: string }) => r.email?.trim())
-          .filter(Boolean) as string[];
-        if (emails.length === 0) {
-          throw new Error('No email addresses for selected users.');
-        }
-        const body = encodeURIComponent(message);
-        const subj = encodeURIComponent(msgSubject.trim() || 'Message from Movesbook Admin');
-        if (emails.length === 1) {
-          window.location.href = `mailto:${encodeURIComponent(emails[0]!)}?subject=${subj}&body=${body}`;
-        } else {
-          const bcc = emails.map((e) => encodeURIComponent(e)).join(',');
-          window.location.href = `mailto:?bcc=${bcc}&subject=${subj}&body=${body}`;
-        }
-        setMsgModalOpen(false);
-        window.alert('Email service is not configured. Your mail client will open with the message prefilled.');
-        return;
-      }
 
       const sent = typeof data.sent === 'number' ? data.sent : 0;
       const failed = Array.isArray(data.failed) ? data.failed.length : 0;
@@ -931,14 +895,6 @@ export default function AdminRegisteredUsersList({
     if (!targets) return;
     await deleteSubscriptionsForTargets(targets, true);
   }, [requireActionTargets, deleteSubscriptionsForTargets]);
-
-  const handleProfileSendMail = useCallback(() => {
-    if (!profileActionTarget?.email) {
-      window.alert('This user has no email address.');
-      return;
-    }
-    window.location.href = `mailto:${encodeURIComponent(profileActionTarget.email)}`;
-  }, [profileActionTarget]);
 
   const openProfileSendMsgModal = useCallback(() => {
     if (!profileActionTarget) return;
@@ -1369,7 +1325,7 @@ export default function AdminRegisteredUsersList({
                   <button type="button" onClick={openProfileSendMsgModal} className="hover:text-blue-950">
                     Send Msg
                   </button>
-                  <button type="button" onClick={handleProfileSendMail} className="hover:text-blue-950">
+                  <button type="button" onClick={openProfileSendMsgModal} className="hover:text-blue-950">
                     Send Mail
                   </button>
                 </div>
@@ -1843,7 +1799,7 @@ export default function AdminRegisteredUsersList({
           </button>
           <button
             type="button"
-            onClick={handleSendMail}
+            onClick={openSendMsgModal}
             disabled={actionBusy}
             className="hover:text-blue-950 disabled:opacity-50"
           >
