@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { User } from 'lucide-react';
 import {
   OperatorFilterPopover,
@@ -10,6 +11,21 @@ import {
   matchesOperatorRoleFilter,
   type OperatorLoginFilter,
 } from '@/components/operators/OperatorFilterPopover';
+import {
+  parseLastLoggedDatePreset,
+  parseLastLoggedUserType,
+  resolveLastLoggedDateRange,
+  type LastLoggedDatePreset,
+} from '@/lib/admin/lastLoggedShared';
+import type { StatsUserKind } from '@/lib/admin/statisticsKinds';
+
+const STATS_KIND_TO_LOGIN_LABEL: Record<StatsUserKind, string> = {
+  single: 'Single User',
+  coaches: 'Coach',
+  teams: 'Team admin',
+  clubs: 'Club admin',
+  groups: 'Group admin',
+};
 
 export type LogType = 'in' | 'out' | 'both';
 
@@ -79,18 +95,89 @@ export default function AdminLoginLogsPanel({
   emptyMessage = 'No login rows in this range. Adjust dates or wait for new logins.',
   listTitle = 'Login list',
 }: AdminLoginLogsPanelProps) {
+  const searchParams = useSearchParams();
+
+  const initialFromUrl = useMemo(() => {
+    if (variant !== 'users') return null;
+    const dateRaw = searchParams?.get('date');
+    const fromRaw = searchParams?.get('from');
+    const toRaw = searchParams?.get('to');
+    const typeRaw = (searchParams?.get('type') || '').toLowerCase();
+    const userType = parseLastLoggedUserType(searchParams?.get('userType'));
+    const country = searchParams?.get('country')?.trim() || '';
+    const hasSidebarParams = Boolean(dateRaw || fromRaw || toRaw || userType !== 'all' || country);
+    if (!hasSidebarParams && !typeRaw) return null;
+
+    let from: Date;
+    let to: Date;
+    let datePreset: LastLoggedDatePreset | null = null;
+    if (dateRaw) {
+      datePreset = parseLastLoggedDatePreset(dateRaw);
+      const range = resolveLastLoggedDateRange(datePreset);
+      from = range.from;
+      to = range.to;
+    } else if (fromRaw || toRaw) {
+      from = fromRaw ? new Date(fromRaw) : new Date();
+      to = toRaw ? new Date(toRaw) : new Date();
+      if (Number.isNaN(from.getTime())) {
+        from = new Date();
+        from.setDate(from.getDate() - 30);
+        from.setHours(0, 0, 0, 0);
+      }
+      if (Number.isNaN(to.getTime())) {
+        to = new Date();
+        to.setHours(23, 59, 0, 0);
+      }
+    } else if (hasSidebarParams) {
+      const range = resolveLastLoggedDateRange('today');
+      from = range.from;
+      to = range.to;
+      datePreset = 'today';
+    } else {
+      return null;
+    }
+
+    const logType: LogType =
+      typeRaw === 'in' || typeRaw === 'out' || typeRaw === 'both'
+        ? typeRaw
+        : dateRaw
+          ? 'in'
+          : 'both';
+
+    return {
+      dateFrom: toDatetimeLocalValue(from),
+      dateTo: toDatetimeLocalValue(to),
+      logType,
+      datePreset,
+      userType,
+      country,
+      filterType: userType === 'all' ? 'all' : STATS_KIND_TO_LOGIN_LABEL[userType],
+    };
+  }, [searchParams, variant]);
+
   const [dateFrom, setDateFrom] = useState(() => {
+    if (initialFromUrl) return initialFromUrl.dateFrom;
     const t = new Date();
     t.setDate(t.getDate() - 30);
     t.setHours(0, 0, 0, 0);
     return toDatetimeLocalValue(t);
   });
   const [dateTo, setDateTo] = useState(() => {
+    if (initialFromUrl) return initialFromUrl.dateTo;
     const t = new Date();
     t.setHours(23, 59, 0, 0);
     return toDatetimeLocalValue(t);
   });
-  const [logType, setLogType] = useState<LogType>('both');
+  const [logType, setLogType] = useState<LogType>(
+    () => initialFromUrl?.logType ?? 'both',
+  );
+  const [urlDatePreset, setUrlDatePreset] = useState<LastLoggedDatePreset | null>(
+    () => initialFromUrl?.datePreset ?? null,
+  );
+  const [urlUserType, setUrlUserType] = useState<StatsUserKind | 'all'>(
+    () => initialFromUrl?.userType ?? 'all',
+  );
+  const [urlCountry, setUrlCountry] = useState(() => initialFromUrl?.country ?? '');
 
   const [rows, setRows] = useState<AdminLoginLogRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,20 +185,42 @@ export default function AdminLoginLogsPanel({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [filterCountry, setFilterCountry] = useState('all');
+  const [filterCountry, setFilterCountry] = useState(
+    () => (initialFromUrl?.country ? initialFromUrl.country : 'all'),
+  );
   const [filterRole, setFilterRole] = useState('all');
   const [filterLogin, setFilterLogin] = useState<OperatorLoginFilter>('all');
-  const [filterType, setFilterType] = useState('all');
+  const [filterType, setFilterType] = useState(() => initialFromUrl?.filterType ?? 'all');
+
+  useEffect(() => {
+    if (!initialFromUrl) return;
+    setDateFrom(initialFromUrl.dateFrom);
+    setDateTo(initialFromUrl.dateTo);
+    setLogType(initialFromUrl.logType);
+    setUrlDatePreset(initialFromUrl.datePreset);
+    setUrlUserType(initialFromUrl.userType);
+    setUrlCountry(initialFromUrl.country);
+    setFilterType(initialFromUrl.filterType);
+    setFilterCountry(initialFromUrl.country ? initialFromUrl.country : 'all');
+  }, [initialFromUrl]);
 
   const queryString = useMemo(() => {
-    const from = dateFrom ? new Date(dateFrom).toISOString() : '';
-    const to = dateTo ? new Date(dateTo).toISOString() : '';
     const qs = new URLSearchParams();
-    if (from) qs.set('from', from);
-    if (to) qs.set('to', to);
+    if (urlDatePreset && variant === 'users') {
+      qs.set('date', urlDatePreset);
+    } else {
+      const from = dateFrom ? new Date(dateFrom).toISOString() : '';
+      const to = dateTo ? new Date(dateTo).toISOString() : '';
+      if (from) qs.set('from', from);
+      if (to) qs.set('to', to);
+    }
     qs.set('type', logType);
+    if (variant === 'users') {
+      if (urlUserType !== 'all') qs.set('userType', urlUserType);
+      if (urlCountry) qs.set('country', urlCountry);
+    }
     return qs.toString();
-  }, [dateFrom, dateTo, logType]);
+  }, [dateFrom, dateTo, logType, urlCountry, urlDatePreset, urlUserType, variant]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,6 +253,11 @@ export default function AdminLoginLogsPanel({
 
   const handleProceed = () => {
     setFilterOpen(false);
+  };
+
+  const onApplyDates = () => {
+    setUrlDatePreset(null);
+    void load();
   };
 
   const filteredRows = useMemo(() => {
@@ -213,7 +327,12 @@ export default function AdminLoginLogsPanel({
       return (
         <select
           value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setFilterType(v);
+            const entry = Object.entries(STATS_KIND_TO_LOGIN_LABEL).find(([, label]) => label === v);
+            setUrlUserType(entry ? (entry[0] as StatsUserKind) : 'all');
+          }}
           className="px-3 py-2.5 border border-gray-300 rounded bg-white text-gray-800 min-w-[160px] focus:outline-none focus:ring-2 focus:ring-[#005c99]"
           aria-label="Filter by user type"
         >
@@ -257,7 +376,10 @@ export default function AdminLoginLogsPanel({
               <input
                 type="datetime-local"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e) => {
+                  setUrlDatePreset(null);
+                  setDateFrom(e.target.value);
+                }}
                 className="px-3 py-2 border border-gray-300 rounded bg-white text-gray-900 text-sm"
               />
             </div>
@@ -266,7 +388,10 @@ export default function AdminLoginLogsPanel({
               <input
                 type="datetime-local"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e) => {
+                  setUrlDatePreset(null);
+                  setDateTo(e.target.value);
+                }}
                 className="px-3 py-2 border border-gray-300 rounded bg-white text-gray-900 text-sm"
               />
             </div>
@@ -284,7 +409,7 @@ export default function AdminLoginLogsPanel({
             </div>
             <button
               type="button"
-              onClick={() => void load()}
+              onClick={onApplyDates}
               className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded"
             >
               Apply
@@ -301,7 +426,12 @@ export default function AdminLoginLogsPanel({
             open={filterOpen}
             onOpenChange={setFilterOpen}
             country={filterCountry}
-            onCountryChange={setFilterCountry}
+            onCountryChange={(c) => {
+              setFilterCountry(c);
+              if (variant === 'users') {
+                setUrlCountry(c === 'all' ? '' : c);
+              }
+            }}
             role={filterRole}
             onRoleChange={setFilterRole}
             login={filterLogin}
@@ -311,6 +441,7 @@ export default function AdminLoginLogsPanel({
               setFilterCountry('all');
               setFilterRole('all');
               setFilterLogin('all');
+              if (variant === 'users') setUrlCountry('');
             }}
           />
 
@@ -379,6 +510,11 @@ export default function AdminLoginLogsPanel({
                 filteredRows.map((row) => {
                   const { account } = row;
                   const isOpen = !row.logoutAt;
+                  const profileHref =
+                    row.profileHref ||
+                    (variant === 'users'
+                      ? `/admin/all?openUser=${encodeURIComponent(account.id)}`
+                      : null);
                   return (
                     <tr key={row.id} className="hover:bg-gray-50 transition">
                       <td className="px-4 py-3">
@@ -417,9 +553,9 @@ export default function AdminLoginLogsPanel({
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        {row.profileHref ? (
+                        {profileHref ? (
                           <Link
-                            href={row.profileHref}
+                            href={profileHref}
                             className="text-red-600 font-medium hover:underline"
                           >
                             {account.username}

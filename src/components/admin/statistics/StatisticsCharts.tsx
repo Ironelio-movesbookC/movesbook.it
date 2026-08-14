@@ -301,6 +301,11 @@ type VerticalCountryBarsProps = {
    * parent should set the Type of user dropdown to this kind.
    */
   onKindSelect?: (kind: StatsUserKind) => void;
+  /**
+   * Open the admin/all list for the users counted in this bar.
+   * When set, bar clicks navigate to that list (legend still uses onKindSelect).
+   */
+  onOpenBarList?: (country: string, kind: StatsUserKind) => void;
 };
 
 type BarFocus = { country?: string; kind?: string };
@@ -318,6 +323,7 @@ export function StatisticsVerticalCountryBars({
   onlyKind = 'all',
   onCountrySelect,
   onKindSelect,
+  onOpenBarList,
 }: VerticalCountryBarsProps) {
   const kinds =
     onlyKind === 'all' || onlyKind === 'except_groups'
@@ -387,22 +393,20 @@ export function StatisticsVerticalCountryBars({
     return !isCellActive(country, kind);
   };
 
-  const selectCountry = (country: string, kind: StatsUserKind) => {
-    setSelected((prev) => {
-      const cleared =
-        prev?.country === country && prev?.kind === kind ? null : { country, kind };
-      onCountrySelect?.(cleared?.country ?? null);
-      return cleared;
-    });
-  };
-
   const handleBarClick = (country: string, kind: StatsUserKind) => {
     if (!country) return;
     if (!singleKindMode) {
       onKindSelect?.(kind);
+      onOpenBarList?.(country, kind);
       return;
     }
-    selectCountry(country, kind);
+    setSelected((prev) => {
+      const cleared =
+        prev?.country === country && prev?.kind === kind ? null : { country, kind };
+      onCountrySelect?.(cleared?.country ?? null);
+      if (cleared) onOpenBarList?.(country, kind);
+      return cleared;
+    });
   };
 
   if (rows.length === 0) {
@@ -637,6 +641,8 @@ export function StatisticsVerticalCountryBars({
 type VersionsBarsProps = {
   rows: Array<{ version: StatsVersionBucket; count: number }>;
   onVersionSelect?: (version: StatsVersionBucket | null) => void;
+  /** Open admin/all for users counted in this version bar. */
+  onOpenBarList?: (version: StatsVersionBucket) => void;
   height?: number;
   className?: string;
   /** Override fill for all bars (e.g. selected user-type accent). */
@@ -673,6 +679,7 @@ function VersionAxisTick({
 export function StatisticsVersionsBars({
   rows,
   onVersionSelect,
+  onOpenBarList,
   height = 360,
   className,
   fillColor,
@@ -717,9 +724,8 @@ export function StatisticsVersionsBars({
   const toggleSelect = (key: string) => {
     setSelectedKey((prev) => {
       const next = prev === key ? null : key;
-      if (onVersionSelect) {
-        onVersionSelect(next as StatsVersionBucket | null);
-      }
+      onVersionSelect?.(next as StatsVersionBucket | null);
+      if (next) onOpenBarList?.(next as StatsVersionBucket);
       return next;
     });
   };

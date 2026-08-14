@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { closeOpenUserLoginLog } from '@/lib/loginLogSession';
 
 export const dynamic = 'force-dynamic';
@@ -18,6 +19,15 @@ export async function POST(request: NextRequest) {
 
   try {
     await closeOpenUserLoginLog(decoded.userId);
+    // Drop heartbeat so lastSeen-based UIs also flip offline immediately.
+    try {
+      await prisma.user.update({
+        where: { id: decoded.userId },
+        data: { lastSeenAt: new Date(Date.now() - 60_000) },
+      });
+    } catch {
+      /* optional */
+    }
   } catch {
     /* login log optional */
   }

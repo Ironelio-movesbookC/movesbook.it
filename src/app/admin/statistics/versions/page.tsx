@@ -8,8 +8,10 @@ import StatisticsPageShell, {
 } from '@/components/admin/statistics/StatisticsPageShell';
 import { StatisticsVersionsBars } from '@/components/admin/statistics/StatisticsCharts';
 import UserTypeDistributionDrilldown from '@/components/admin/statistics/UserTypeDistributionDrilldown';
+import StatisticsBarUsersSection from '@/components/admin/statistics/StatisticsBarUsersSection';
 import { useAdminStatistics } from '@/components/admin/statistics/useAdminStatistics';
 import { aggregateKindsForVersion } from '@/lib/admin/statisticsDrilldown';
+import type { StatsBarScope } from '@/components/admin/AdminRegisteredUsersList';
 import type { StatsUserKind, StatsVersionBucket } from '@/lib/admin/statisticsKinds';
 
 export default function VersionsByCountryPage() {
@@ -18,6 +20,7 @@ export default function VersionsByCountryPage() {
     enableUserType: true,
   });
   const [selectedVersion, setSelectedVersion] = useState<StatsVersionBucket | null>(null);
+  const [barScope, setBarScope] = useState<StatsBarScope | null>(null);
 
   const drilldown = useMemo(() => {
     if (!data?.usersLite || !selectedVersion) return null;
@@ -35,9 +38,7 @@ export default function VersionsByCountryPage() {
 
   if (!authChecked) return null;
 
-  const scopeLabel = filters.country
-    ? filters.country
-    : 'World';
+  const scopeLabel = filters.country ? filters.country : 'World';
   const typeLabel =
     filters.userType === 'all'
       ? 'all types'
@@ -48,7 +49,7 @@ export default function VersionsByCountryPage() {
   return (
     <StatisticsPageShell
       title="Bargraph versions for country"
-      description="Bars for subscription versions (Trial, Base, Premium, Professional). Filter by country and/or type of user. Click a version to see its distribution among user types."
+      description="Bars for subscription versions (Trial, Base, Premium, Professional). Filter by country and/or type of user. Click a version to see its distribution among user types, and the matching users list below (same grid as All Users)."
       totalUsers={data?.totalUsers ?? 0}
       incomeEuro={data?.incomeEuro ?? 0}
       loading={loading}
@@ -61,6 +62,7 @@ export default function VersionsByCountryPage() {
             value={filters.country}
             onChange={(country) => {
               setSelectedVersion(null);
+              setBarScope(null);
               setFilters((f) => ({ ...f, country }));
             }}
             options={countryFilterOptions(data?.countries ?? [])}
@@ -71,6 +73,7 @@ export default function VersionsByCountryPage() {
             value={filters.userType}
             onChange={(userType) => {
               setSelectedVersion(null);
+              setBarScope(null);
               setFilters((f) => ({
                 ...f,
                 userType: userType as StatsUserKind | 'all',
@@ -83,7 +86,17 @@ export default function VersionsByCountryPage() {
     >
       <StatisticsVersionsBars
         rows={data?.versions ?? []}
-        onVersionSelect={setSelectedVersion}
+        onVersionSelect={(version) => {
+          setSelectedVersion(version);
+          if (!version) setBarScope(null);
+        }}
+        onOpenBarList={(version: StatsVersionBucket) => {
+          setBarScope({
+            country: filters.country || null,
+            kind: filters.userType,
+            version,
+          });
+        }}
       />
       {selectedVersion && drilldown ? (
         <UserTypeDistributionDrilldown
@@ -91,7 +104,16 @@ export default function VersionsByCountryPage() {
           subtitle={`${selectedVersion} · ${typeLabel}`}
           total={drilldown.total}
           slices={drilldown.slices}
-          onClear={() => setSelectedVersion(null)}
+          onClear={() => {
+            setSelectedVersion(null);
+            setBarScope(null);
+          }}
+        />
+      ) : null}
+      {barScope ? (
+        <StatisticsBarUsersSection
+          scope={barScope}
+          onClear={() => setBarScope(null)}
         />
       ) : null}
     </StatisticsPageShell>
