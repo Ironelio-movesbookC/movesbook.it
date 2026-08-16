@@ -4,7 +4,6 @@ import Image from 'next/image';
 import {
   UserCircle,
   BookOpen,
-  Bell,
   Building2,
   Eye,
   ChevronDown,
@@ -13,10 +12,12 @@ import {
 import { useLanguage } from '@/contexts/LanguageContext';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
+import ClubSocialSubmenu from '@/components/club/ClubSocialSubmenu';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import { canManageClubWebsite } from '@/lib/club/clubWebsitePermissions';
 import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
 import { useAuth } from '@/hooks/useAuth';
+import MubSidebarBar from '@/components/mub/MubSidebarBar';
 
 type ClubEntity = {
   id?: string;
@@ -61,6 +62,7 @@ export default function SidebarClubMyEntityTop({
   onClubYoutubeSaved,
   onClubBootstrapped,
   onChangeLogo,
+  onChatClick,
 }: {
   personName: string;
   club: ClubEntity | null;
@@ -74,6 +76,7 @@ export default function SidebarClubMyEntityTop({
     youtubeChannelUrl?: string | null;
   }) => void;
   onChangeLogo?: () => void;
+  onChatClick?: () => void;
 }) {
   const { t } = useLanguage();
   const { user } = useAuth();
@@ -149,14 +152,7 @@ export default function SidebarClubMyEntityTop({
             </div>
           </div>
         </div>
-        {/* "Most used buttons" (reference red gradient row) */}
-        <button
-          type="button"
-          className="relative w-full border-y border-red-900/40 bg-gradient-to-b from-[#ff6a6a] to-[#c81414] mb-3 py-2.5 text-center text-xs font-bold text-white/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:from-[#ff7474] hover:to-[#b80f0f] transition-colors"
-        >
-          {t('sidebar_most_used_buttons')}
-          <Settings className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" />
-        </button>
+        <MubSidebarBar variant="gradient" />
 
       </div>
 
@@ -186,15 +182,7 @@ export default function SidebarClubMyEntityTop({
           </div>
         </div>
 
-        <div className="w-full bg-[#7a0d1c] text-white border-b border-teal-700">
-          <div className="flex items-center justify-between py-2 px-3">
-            <div className="flex items-center gap-2.5">
-              <Bell className="w-5 h-5" />
-              <span className="font-bold tracking-wide text-sm">SOCIAL</span>
-            </div>
-            <ChevronDown className="w-4 h-4 opacity-90" />
-          </div>
-        </div>
+        <ClubSocialSubmenu onChatClick={onChatClick} />
 
         {isClubAccountUserType(userType) ? (
           <ClubMyClubInfoSubmenu clubId={club?.id} />

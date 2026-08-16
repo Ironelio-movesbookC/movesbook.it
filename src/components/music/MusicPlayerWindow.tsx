@@ -16,6 +16,7 @@ import { extractYouTubeVideoId } from '@/constants/tools.constants';
 export type MusicPlayerTrack = {
   id: string;
   title: string | null;
+  artist?: string | null;
   image: string | null;
   url: string;
   siteName: string | null;
@@ -117,12 +118,15 @@ interface MusicPlayerWindowProps {
   tracks: MusicPlayerTrack[];
   initialTrackId: string;
   onClose: () => void;
+  /** Fired when the current track changes (open / next / prev) so callers can record listens. */
+  onTrackListen?: (trackId: string) => void;
 }
 
 export default function MusicPlayerWindow({
   tracks,
   initialTrackId,
   onClose,
+  onTrackListen,
 }: MusicPlayerWindowProps) {
   const initialIndex = Math.max(
     0,
@@ -138,15 +142,26 @@ export default function MusicPlayerWindow({
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const pendingPlayRef = useRef(false);
   const mediaKindRef = useRef<MediaKind>('external');
+  const lastReportedTrackIdRef = useRef<string | null>(null);
+  const onTrackListenRef = useRef(onTrackListen);
+  onTrackListenRef.current = onTrackListen;
 
   const playlist = tracks.length > 0 ? tracks : [];
   const current = playlist[currentIndex] ?? null;
   const mediaKind = current ? detectMediaKind(current.url) : 'external';
   mediaKindRef.current = mediaKind;
 
+  // Report once per track id while this player instance is open (next/prev only).
+  useEffect(() => {
+    if (!current?.id || !onTrackListenRef.current) return;
+    if (lastReportedTrackIdRef.current === current.id) return;
+    lastReportedTrackIdRef.current = current.id;
+    onTrackListenRef.current(current.id);
+  }, [current?.id]);
+
   const displayTitle = current?.title || current?.url || 'Unknown track';
   const displaySubtitle =
-    current?.siteName || current?.creatorUsername || current?.description || '';
+    current?.artist || current?.siteName || current?.creatorUsername || current?.description || '';
 
   const ytId = current ? extractYouTubeVideoId(current.url) : null;
   const tiktokId = current ? extractTikTokVideoId(current.url) : null;
@@ -550,7 +565,7 @@ export default function MusicPlayerWindow({
           <h2 id="music-player-title" className="text-lg font-bold tracking-wide shrink-0">
             My Music
           </h2>
-          <div className="mx-2 flex-1 rounded-sm border border-sky-300/40 bg-sky-200/90 px-3 py-2 text-center text-sm font-medium text-sky-950">
+          <div className="mx-2 flex-1 flex items-center justify-center min-h-[72px] sm:min-h-[88px] rounded-sm border border-sky-300/40 bg-sky-200/90 px-3 py-4 text-center text-sm font-medium text-sky-950">
             Advertising here
           </div>
           <button

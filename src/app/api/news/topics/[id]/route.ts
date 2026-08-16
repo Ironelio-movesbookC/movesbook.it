@@ -27,16 +27,19 @@ export async function PATCH(
     if (oldName === name) {
       return NextResponse.json(existing);
     }
-    const [updated] = await prisma.$transaction([
-      prisma.userNewsTopic.update({
+    // Interactive tx: batch $transaction([...]) requires PrismaPromises; our prisma proxy wraps
+    // model calls as plain Promises, so we run sequential updates on the real tx client.
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.userNewsTopic.update({
         where: { id },
         data: { name },
-      }),
-      prisma.ogpArticle.updateMany({
+      });
+      await tx.ogpArticle.updateMany({
         where: { userId: existing.userId, topic: oldName },
         data: { topic: name },
-      }),
-    ]);
+      });
+      return result;
+    });
     return NextResponse.json(updated);
   } catch (e: any) {
     if (e?.code === 'P2002') {

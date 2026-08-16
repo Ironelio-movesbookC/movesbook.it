@@ -137,9 +137,11 @@ import {
 } from '@/utils/youtubeChannelUrl';
 import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
 import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
+import ClubSocialSubmenu from '@/components/club/ClubSocialSubmenu';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
+import MubSidebarBar from '@/components/mub/MubSidebarBar';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
 import { PERSONAL_WEBSITE_TOPICS_PATH } from '@/lib/personalWebsiteSettingsPaths';
@@ -350,14 +352,28 @@ interface DarkSidebarProps {
   onMyGroupClick?: () => void;
   onMyCoachingGroupClick?: () => void;
   onPostsClick?: () => void;
-  /** My Club → Music for the club → opens OGP-style panel in dashboard main area */
+  /** Messages → My feedbacks for Staff — swap center section (keep left/right sidebars) */
+  onMyFeedbacksStaffClick?: () => void;
+  /** My Club → Music for the club → Add songs & playlists (same as navbar "Add Songs") */
   onClubAddSongsPlaylistsClick?: () => void;
+  /** My Club → Music for the club → Music Panel (same as navbar "Music Panel") */
+  onClubMusicPanelClick?: () => void;
   /** General settings → Identification devices (card readers list in dashboard) */
   onIdentificationDevicesClick?: () => void;
   /** General settings → Access of outcome settings (dashboard panel) */
   onAccessOutcomeSettingsClick?: () => void;
   /** Communities → Suggest Movesbook (promocode invite dashboard) */
   onSuggestMovesbookClick?: () => void;
+  /** My Club → SOCIAL → Chat (club broadcast channel) */
+  onClubChatClick?: () => void;
+  /** My Club → Club News → News (shared editorial news) */
+  onClubNewsSectionClick?: () => void;
+  /** My Club → Club News → Movesbook News (superadmin Global News, read-only) */
+  onClubMovesbookNewsSectionClick?: () => void;
+  /** My Club → Club News → OGP News (shared OGP news) */
+  onClubOgpNewsSectionClick?: () => void;
+  /** My Club → Club News → Club Global News (all shared) */
+  onClubGlobalNewsSectionClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
@@ -394,10 +410,17 @@ export default function DarkSidebar({
   onMyGroupClick,
   onMyCoachingGroupClick,
   onPostsClick,
+  onMyFeedbacksStaffClick,
   onClubAddSongsPlaylistsClick,
+  onClubMusicPanelClick,
   onIdentificationDevicesClick,
   onAccessOutcomeSettingsClick,
   onSuggestMovesbookClick,
+  onClubChatClick,
+  onClubNewsSectionClick,
+  onClubMovesbookNewsSectionClick,
+  onClubOgpNewsSectionClick,
+  onClubGlobalNewsSectionClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
@@ -434,6 +457,9 @@ export default function DarkSidebar({
   const [myClubsOpen, setMyClubsOpen] = useState(false);
   const [clubAdminInfoOpen, setClubAdminInfoOpen] = useState(false);
   const [memberInfoOpen, setMemberInfoOpen] = useState(false);
+  const [myPageForVisitorsOpen, setMyPageForVisitorsOpen] = useState(false);
+  const [bannerMenuItems, setBannerMenuItems] = useState<Array<{name: string, icon: string}>>([]);
+  const [bannerCheckedItems, setBannerCheckedItems] = useState<boolean[]>([]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -453,6 +479,78 @@ export default function DarkSidebar({
       }
     })();
   }, [user?.id]);
+
+  // Load banner menu items from localStorage (saved from TopBar.tsx)
+  const loadBannerItems = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const savedBannerItems = localStorage.getItem('topbar_banner_menu');
+      const savedCheckedBanner = localStorage.getItem('topbar_checked_banner');
+      
+      if (savedBannerItems) {
+        const items = JSON.parse(savedBannerItems);
+        setBannerMenuItems(items);
+      }
+      
+      if (savedCheckedBanner) {
+        const checked = JSON.parse(savedCheckedBanner);
+        setBannerCheckedItems(checked);
+      }
+    } catch (error) {
+      console.error('Error loading banner menu items:', error);
+    }
+  }, []);
+
+  // Load banner items on mount
+  useEffect(() => {
+    loadBannerItems();
+  }, [loadBannerItems]);
+
+  // Listen for localStorage changes and custom events to update banner items in real-time
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleStorageChange = (event: StorageEvent) => {
+      // Check if the changed key is banner menu related
+      if (event.key === 'topbar_banner_menu' || event.key === 'topbar_checked_banner') {
+        loadBannerItems();
+      }
+    };
+
+    const handleBannerMenuUpdated = (event: Event) => {
+      // Update banner items immediately when custom event is received
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail && customEvent.detail.items && customEvent.detail.checked) {
+        // Ensure arrays have same length before updating
+        if (customEvent.detail.items.length === customEvent.detail.checked.length) {
+          console.log('DarkSidebar received banner update:', {
+            itemCount: customEvent.detail.items.length,
+            checkedCount: customEvent.detail.checked.filter(Boolean).length
+          });
+          setBannerMenuItems(customEvent.detail.items);
+          setBannerCheckedItems(customEvent.detail.checked);
+        } else {
+          console.error('Banner menu update received with mismatched array lengths:', {
+            itemsLength: customEvent.detail.items.length,
+            checkedLength: customEvent.detail.checked.length,
+            items: customEvent.detail.items.map((i: any) => i.name),
+            checked: customEvent.detail.checked
+          });
+          // Fallback to loading from localStorage
+          loadBannerItems();
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('bannerMenuUpdated', handleBannerMenuUpdated as EventListener);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('bannerMenuUpdated', handleBannerMenuUpdated as EventListener);
+    };
+  }, [loadBannerItems]);
 
   const formCreatedClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(entities),
@@ -612,6 +710,7 @@ export default function DarkSidebar({
   const [clubArchivesOpen, setClubArchivesOpen] = useState(false);
   const [clubUserGuidesOpen, setClubUserGuidesOpen] = useState(false);
   const [clubPostsOpen, setClubPostsOpen] = useState(false);
+  const [clubNewsOpen, setClubNewsOpen] = useState(false);
   const [musicForClubOpen, setMusicForClubOpen] = useState(false);
   const [clubInternetLinksOpen, setClubInternetLinksOpen] = useState(false);
   const [clubInternetMyClubsOpen, setClubInternetMyClubsOpen] = useState(true);
@@ -1403,6 +1502,7 @@ export default function DarkSidebar({
           onClubYoutubeSaved={handleClubYoutubeSaved}
           onClubBootstrapped={handleClubBootstrapped}
           onChangeLogo={() => setShowChangeProfilePhotoModal(true)}
+          onChatClick={onClubChatClick}
         />
       ) : (
         <div className="bg-gray-800 p-3 flex-shrink-0">
@@ -1484,11 +1584,7 @@ export default function DarkSidebar({
             <span className="text-white text-xs">{t('sidebar_allow_visiting')}</span>
           </div>
 
-          {/* Most used buttons - Compact */}
-          <button className="w-full bg-red-600 hover:bg-red-700 text-white py-1.5 px-2 rounded mb-2 flex items-center justify-between transition-colors text-xs">
-            <span>{t('sidebar_most_used_buttons')}</span>
-            <Settings className="w-3 h-3" />
-          </button>
+          <MubSidebarBar variant="compact" />
 
           {/* Visitor Tracking - Compact */}
           <div className="space-y-1 mb-2">
@@ -1901,16 +1997,61 @@ export default function DarkSidebar({
               </div>
             )}
 
-            <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
-              <div className="flex items-center gap-3">
-                <Eye className="w-5 h-5" />
-                <span>My page for visitors</span>
+            <div className="border-b border-teal-700">
+              <div className="flex w-full items-stretch bg-teal-800 text-white">
+                <button
+                  type="button"
+                  onClick={() => setMyPageForVisitorsOpen((v) => !v)}
+                  aria-expanded={myPageForVisitorsOpen}
+                  className="flex flex-1 items-center gap-3 min-w-0 py-3 pl-4 pr-2 text-left hover:bg-teal-700 transition-colors"
+                >
+                  <Eye className="w-5 h-5 shrink-0" />
+                  <span className="truncate">My page for visitors</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMyPageForVisitorsOpen((v) => !v)}
+                  aria-label={myPageForVisitorsOpen ? 'Collapse' : 'Expand'}
+                  className="shrink-0 px-4 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 opacity-80 transition-transform duration-200 ${myPageForVisitorsOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
               </div>
-              <div className="flex items-center gap-2">
-                <ChevronDown className="w-4 h-4 opacity-80" />
-                <Settings className="w-4 h-4 text-gray-300" />
-              </div>
-            </button>
+              {myPageForVisitorsOpen && bannerMenuItems.length > 0 && (
+                <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40">
+                  {/* Banner menu items selected in TopBar */}
+                  {bannerMenuItems.map((item, index) => {
+                    // Safety check: ensure checked items array has this index
+                    const isChecked = index < bannerCheckedItems.length ? bannerCheckedItems[index] : false;
+                    
+                    // Only show checked/selected items
+                    if (isChecked) {
+                      return (
+                        <div 
+                          key={index}
+                          className="flex items-center gap-3 px-4 py-2.5 border-t border-black/25 hover:bg-zinc-700/90 transition-colors"
+                        >
+                          <span className="text-sm">{item.icon}</span>
+                          <span className="truncate">{item.name}</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }).filter(Boolean)}
+                  
+                  {/* Show message if no items are selected */}
+                  {bannerMenuItems.filter((_, index) => 
+                    index < bannerCheckedItems.length ? bannerCheckedItems[index] : false
+                  ).length === 0 && (
+                    <div className="px-4 py-3 text-gray-400 text-sm italic">
+                      No items selected in Banner menu
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="border-b border-teal-700">
               <div className="flex w-full items-stretch bg-teal-800 text-white">
@@ -2052,6 +2193,10 @@ export default function DarkSidebar({
                   <button
                     type="button"
                     onClick={() => {
+                      if (onMyFeedbacksStaffClick) {
+                        onMyFeedbacksStaffClick();
+                        return;
+                      }
                       if (user?.id) {
                         router.push(legacyUserBugProblemUrl(String(user.id)));
                       }
@@ -2383,16 +2528,7 @@ export default function DarkSidebar({
                       </div>
                     </div>
 
-                    {/* SOCIAL section header */}
-                    <div className="w-full bg-[#7a0d1c] text-white border-b border-teal-700">
-                      <div className="flex items-center justify-between py-2 px-3">
-                        <div className="flex items-center gap-2.5">
-                          <Bell className="w-5 h-5" />
-                          <span className="font-bold tracking-wide text-sm">SOCIAL</span>
-                        </div>
-                        <ChevronDown className="w-4 h-4 opacity-90" />
-                      </div>
-                    </div>
+                    <ClubSocialSubmenu onChatClick={onClubChatClick} />
 
                     {isClubAccountUserType(userType) ? (
                       <ClubMyClubInfoSubmenu
@@ -2500,6 +2636,7 @@ export default function DarkSidebar({
                       </button>
                       <button
                         type="button"
+                        onClick={() => onClubMusicPanelClick?.()}
                         className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                       >
                         <Users className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
@@ -2564,6 +2701,10 @@ export default function DarkSidebar({
                       <button
                         type="button"
                         onClick={() => {
+                          if (onMyFeedbacksStaffClick) {
+                            onMyFeedbacksStaffClick();
+                            return;
+                          }
                           if (user?.id) {
                             router.push(legacyUserBugProblemUrl(String(user.id)));
                           }
@@ -2706,16 +2847,74 @@ export default function DarkSidebar({
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Newspaper className="w-5 h-5 shrink-0" />
-                    <span className="font-semibold tracking-wide truncate">Club News</span>
+                {/* Club News submenus: club admin, or athlete who is a member of this club */}
+                {userType === 'CLUB' || (isAthleteUser && athleteHasClubMembership) ? (
+                  <div className="w-full border-b border-teal-700">
+                    <button
+                      type="button"
+                      onClick={() => setClubNewsOpen((v) => !v)}
+                      aria-expanded={clubNewsOpen}
+                      className="flex w-full items-center justify-between bg-teal-800 py-2.5 px-3 text-white transition-colors hover:bg-teal-700"
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <Newspaper className="h-5 w-5 shrink-0" />
+                        <span className="truncate font-semibold tracking-wide">Club News</span>
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 opacity-90 transition-transform duration-200 ${
+                          clubNewsOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                    {clubNewsOpen && (
+                      <div className="bg-[#4a4a4a] text-white">
+                        <button
+                          type="button"
+                          onClick={() => onClubMovesbookNewsSectionClick?.()}
+                          className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <BookOpen className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                          <span className="min-w-0 leading-snug">Movesbook News</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onClubNewsSectionClick?.()}
+                          className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <Newspaper className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                          <span className="min-w-0 leading-snug">News</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onClubOgpNewsSectionClick?.()}
+                          className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <Link2 className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                          <span className="min-w-0 leading-snug">OGP News</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onClubGlobalNewsSectionClick?.()}
+                          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <Globe className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                          <span className="min-w-0 leading-snug">Club Global News</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <ChevronDown className="w-4 h-4 opacity-90" />
-                </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Newspaper className="w-5 h-5 shrink-0" />
+                      <span className="font-semibold tracking-wide truncate">Club News</span>
+                    </div>
+                    <ChevronDown className="w-4 h-4 opacity-90" />
+                  </button>
+                )}
 
                 <button
                   type="button"

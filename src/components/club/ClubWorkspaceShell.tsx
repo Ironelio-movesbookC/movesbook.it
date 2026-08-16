@@ -33,6 +33,8 @@ import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/Ch
 import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import { ClubWorkspaceContext } from '@/contexts/ClubWorkspaceContext';
+import TopBar from '@/app/club/dashboard/components/topbar/TopBar';
+import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 
 function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -61,6 +63,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
   const [createClubModalKey, setCreateClubModalKey] = useState(0);
   const [createClubSaving, setCreateClubSaving] = useState(false);
+  const [showStaffFeedbacks, setShowStaffFeedbacks] = useState(false);
 
   const formClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(clubs),
@@ -266,7 +269,18 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   };
 
   const goToDashboardPanel = useCallback(
-    (panel: 'identification-devices' | 'outcome-settings' | 'news' | 'suggest-movesbook') => {
+    (
+      panel:
+        | 'identification-devices'
+        | 'outcome-settings'
+        | 'news'
+        | 'suggest-movesbook'
+        | 'chat'
+        | 'club-news'
+        | 'club-news-ogp'
+        | 'club-global-news'
+        | 'club-movesbook-news'
+    ) => {
       if (!hasFormClub) return;
       const clubId = selectedClubId ?? formClubs[0]?.id ?? null;
       if (!selectedClubId && clubId) {
@@ -334,7 +348,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
           />
         )}
 
-        <div className="flex-1 flex gap-0 min-h-0">
+        <div className="flex-1 flex gap-0 min-h-0 py-2 px-4">
           {showLeftSidebar && (
             <aside className="w-80 flex-shrink-0 sticky top-0 self-start">
               <DarkSidebar
@@ -347,17 +361,32 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onTabChange={handleTabChange}
                 onMyPageClick={handleMyPageTabClick}
                 onMyClubClick={handleMyClubTabClick}
-                onClubAddSongsPlaylistsClick={() => goToDashboardPanel('news')}
+                onClubAddSongsPlaylistsClick={() => router.push('/add-songs')}
+                onClubMusicPanelClick={() => router.push('/music-panel')}
                 onIdentificationDevicesClick={() => goToDashboardPanel('identification-devices')}
                 onAccessOutcomeSettingsClick={() => goToDashboardPanel('outcome-settings')}
                 onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
+                onClubChatClick={() => goToDashboardPanel('chat')}
+                onClubNewsSectionClick={() => goToDashboardPanel('club-news')}
+                onClubMovesbookNewsSectionClick={() => goToDashboardPanel('club-movesbook-news')}
+                onClubOgpNewsSectionClick={() => goToDashboardPanel('club-news-ogp')}
+                onClubGlobalNewsSectionClick={() => goToDashboardPanel('club-global-news')}
                 onCreateClubClick={openCreateClubFlow}
+                onMyFeedbacksStaffClick={() => {
+                  setActiveTab('my-page');
+                  setShowStaffFeedbacks(true);
+                }}
               />
             </aside>
           )}
 
           <main className="flex-1 min-w-0 flex flex-col px-4 overflow-y-auto">
-            {children}
+            <TopBar/>
+            {showStaffFeedbacks ? (
+              <MyStaffFeedbacksPanel onClose={() => setShowStaffFeedbacks(false)} />
+            ) : (
+              children
+            )}
           </main>
 
           {showRightSidebar && (

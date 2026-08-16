@@ -25,9 +25,10 @@ import DisplayOptionsToolbar from './components/DisplayOptionsToolbar';
 import PersonalBanner from './components/PersonalBanner';
 import RightSidebar from './components/RightSidebar';
 import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
+import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 
 export default function MyPage() {
-  const [activeSection, setActiveSection] = useState<'workouts' | 'progress' | 'settings'>('workouts');
+  const [activeSection, setActiveSection] = useState<'workouts' | 'progress' | 'settings' | 'staff-feedbacks'>('workouts');
   const {
     showAdBanner,
     showPersonalBanner,
@@ -193,6 +194,10 @@ export default function MyPage() {
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
                 onMyPageClick={() => setActiveTab('my-page')}
+                onMyFeedbacksStaffClick={() => {
+                  setActiveTab('my-page');
+                  setActiveSection('staff-feedbacks');
+                }}
                 onMyClubClick={() => {
                   if (!hasClubProfile) return;
                   setActiveTab('my-entity');
@@ -226,6 +231,9 @@ export default function MyPage() {
 
           {/* Main Content - Stretched to fill remaining space */}
           <div className="flex-1 min-w-0 flex flex-col px-4">
+            {activeSection === 'staff-feedbacks' && (
+              <MyStaffFeedbacksPanel onClose={() => setActiveSection('workouts')} />
+            )}
             {activeSection === 'workouts' && <WorkoutsSection />}
             {activeSection === 'progress' && <ProgressSection />}
             {activeSection === 'settings' && <SettingsSection />}

@@ -57,6 +57,34 @@ export function isActiveMembershipPeriod(
   return end.getTime() >= Date.now();
 }
 
+/**
+ * Last valid subscription to inspect = the period with the highest expiry date
+ * (open-ended / null dateEnd ranks highest). Ties broken by latest start.
+ */
+export function pickLatestSubscriptionByExpiry(
+  periods: NetworkSubscriptionPeriod[],
+): NetworkSubscriptionPeriod | null {
+  if (periods.length === 0) return null;
+  return [...periods].sort((a, b) => {
+    const ae = a.dateEnd?.trim() ? parseYmdMs(a.dateEnd) : Number.MAX_SAFE_INTEGER;
+    const be = b.dateEnd?.trim() ? parseYmdMs(b.dateEnd) : Number.MAX_SAFE_INTEGER;
+    if (be !== ae) return be - ae;
+    return parseYmdMs(b.dateStart) - parseYmdMs(a.dateStart);
+  })[0]!;
+}
+
+/** True only when the user’s last subscription (highest expiry) is still active. */
+export function hasActiveLastSubscription(
+  adminSettingsRaw: string | null | undefined,
+): boolean {
+  const periods = readNetworkSubscriptionHistory(adminSettingsRaw);
+  // Legacy accounts with no history yet: keep counted (cannot prove expiry).
+  if (periods.length === 0) return true;
+  const last = pickLatestSubscriptionByExpiry(periods);
+  if (!last) return true;
+  return isActiveMembershipPeriod(last.dateEnd, last.status);
+}
+
 export function readNetworkSubscriptionHistory(
   adminSettingsRaw: string | null | undefined,
 ): NetworkSubscriptionPeriod[] {

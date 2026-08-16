@@ -1,4 +1,10 @@
 import { prisma } from '@/lib/prisma';
+import {
+  mergeNetworkSubscriptionHistory,
+  periodDisplayStatus,
+  readNetworkSubscriptionHistory,
+  type NetworkSubscriptionPeriod,
+} from '@/lib/admin/networkSubscriptionHistory';
 import { hashPasswordCakePHP } from '@/lib/auth';
 import { UserType } from '@prisma/client';
 import { sendIonosEmail } from '@/lib/ionosEmail';
@@ -639,6 +645,66 @@ function quickRegisterUserType(roleId: string): UserType {
   return roleId === '8' ? UserType.CLUB : UserType.ATHLETE;
 }
 
+async function upsertQuickRegisterSubscriptionVersion(params: {
+  userId: string;
+  versionName: string;
+  dateStart: string;
+  dateEnd: string;
+}) {
+  const versionName = params.versionName.trim();
+  if (!versionName) return;
+
+  const existing = await prisma.userSettings.findUnique({
+    where: { userId: params.userId },
+    select: { adminSettings: true },
+  });
+
+  const history = readNetworkSubscriptionHistory(existing?.adminSettings);
+  const period: NetworkSubscriptionPeriod = {
+    id: `quick-register-${Date.now()}`,
+    dateStart: params.dateStart.slice(0, 10),
+    dateEnd: params.dateEnd.slice(0, 10) || null,
+    version: versionName,
+    status: periodDisplayStatus(params.dateEnd),
+  };
+
+  // Replace any previous active quick-register period with the new one; keep archived history.
+  const kept = history.filter((p) => {
+    if (!p.version?.trim()) return true;
+    return !(p.id.startsWith('quick-register-') && p.dateEnd === period.dateEnd && p.dateStart === period.dateStart);
+  });
+  const withoutSameWindow = kept.filter(
+    (p) => !(p.dateStart === period.dateStart && (p.dateEnd ?? '') === (period.dateEnd ?? '')),
+  );
+  const adminSettings = mergeNetworkSubscriptionHistory(existing?.adminSettings, [
+    ...withoutSameWindow,
+    period,
+  ]);
+
+  if (existing) {
+    await prisma.userSettings.update({
+      where: { userId: params.userId },
+      data: { adminSettings },
+    });
+    return;
+  }
+
+  await prisma.userSettings.create({
+    data: {
+      userId: params.userId,
+      widgetArrangement: '{}',
+      colorSettings: '{}',
+      adminSettings,
+      favouritesSettings: '{}',
+      myBestSettings: '{}',
+      notificationSettings: '{}',
+      socialSettings: '{}',
+      toolsSettings: '{}',
+      workoutPreferences: '{}',
+    },
+  });
+}
+
 async function syncQuickRegisterUserNew(params: {
   legacyUserId: number;
   username: string;
@@ -648,6 +714,10 @@ async function syncQuickRegisterUserNew(params: {
   country: string;
   gender: string;
   createdAt?: Date;
+  /** Selected subscription_settings.subscription_name from quick register. */
+  versionName?: string;
+  subscriptionStart?: string;
+  subscriptionEnd?: string;
 }) {
   const username = params.username.trim();
   const email = params.email.trim();
@@ -674,21 +744,33 @@ async function syncQuickRegisterUserNew(params: {
     updatedAt: new Date(),
   };
 
+  let userId: string;
   if (existing) {
     await prisma.user.update({
       where: { id: existing.id },
       data,
     });
-    return;
+    userId = existing.id;
+  } else {
+    const created = await prisma.user.create({
+      data: {
+        id: `legacy_${params.legacyUserId}`,
+        ...data,
+        createdAt: params.createdAt ?? new Date(),
+      },
+      select: { id: true },
+    });
+    userId = created.id;
   }
 
-  await prisma.user.create({
-    data: {
-      id: `legacy_${params.legacyUserId}`,
-      ...data,
-      createdAt: params.createdAt ?? new Date(),
-    },
-  });
+  if (params.versionName?.trim() && params.subscriptionStart && params.subscriptionEnd) {
+    await upsertQuickRegisterSubscriptionVersion({
+      userId,
+      versionName: params.versionName,
+      dateStart: params.subscriptionStart,
+      dateEnd: params.subscriptionEnd,
+    });
+  }
 }
 
 export type QuickRegisterPayload = {
@@ -759,6 +841,28 @@ async function completeAlreadyRegisteredPromocodeRetry(params: {
   payload: QuickRegisterPayload;
   hashedPassword: string;
 }): Promise<{ success: boolean; message: string }> {
+  let versionName = '';
+  let subscriptionStart = todayYmd();
+  let subscriptionEnd = addDays(subscriptionStart, 365);
+  try {
+    const subTable = await getSubscriptionSettingsTable();
+    const versionId = params.payload.version_id?.trim();
+    if (subTable && versionId) {
+      const subRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+        `SELECT * FROM \`${subTable}\` WHERE id = ? LIMIT 1`,
+        Number(versionId)
+      );
+      const sub = subRows[0];
+      if (sub) {
+        versionName = rowString(sub, 'subscription_name') || rowString(sub, 'short_name');
+        const durationDays = rowNumber(sub, 'days_duration') ?? 365;
+        subscriptionEnd = addDays(subscriptionStart, durationDays);
+      }
+    }
+  } catch {
+    /* optional enrichment */
+  }
+
   await syncQuickRegisterUserNew({
     legacyUserId: params.userId,
     username: params.payload.username,
@@ -767,6 +871,9 @@ async function completeAlreadyRegisteredPromocodeRetry(params: {
     usertype: params.payload.usertype,
     country: params.payload.country,
     gender: params.payload.gender,
+    versionName: versionName || undefined,
+    subscriptionStart: versionName ? subscriptionStart : undefined,
+    subscriptionEnd: versionName ? subscriptionEnd : undefined,
   });
 
   const applyColumns = await getTableColumns(params.appliesTable);
@@ -1078,6 +1185,9 @@ export async function quickRegisterUser(
     usertype: payload.usertype,
     country: payload.country,
     gender: payload.gender,
+    versionName: rowString(subSettings, 'subscription_name') || rowString(subSettings, 'short_name'),
+    subscriptionStart: currentDate,
+    subscriptionEnd: endDate,
   });
 
   const profileTable =

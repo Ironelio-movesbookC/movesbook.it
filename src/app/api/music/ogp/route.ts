@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuthWithUser, requireAuthForNews, getOrCreateUserForSuperAdmin, getSuperAdminCreatorIds } from '../auth';
 
@@ -10,6 +11,52 @@ function parseJsonArray(str: string | null | undefined): string[] {
   } catch {
     return [];
   }
+}
+
+/** Load artist / registrationType / viewCount even if Prisma client is stale (dev server locking generate). */
+async function loadMusicOgpExtras(
+  ids: string[]
+): Promise<
+  Map<
+    string,
+    {
+      artist: string | null;
+      registrationType: string | null;
+      isFavourite: boolean;
+      viewCount: number;
+    }
+  >
+> {
+  const map = new Map<
+    string,
+    {
+      artist: string | null;
+      registrationType: string | null;
+      isFavourite: boolean;
+      viewCount: number;
+    }
+  >();
+  if (ids.length === 0) return map;
+  const rows = await prisma.$queryRaw<
+    {
+      id: string;
+      artist: string | null;
+      registrationType: string | null;
+      isFavourite: number | boolean;
+      viewCount: number | null;
+    }[]
+  >`
+    SELECT id, artist, registrationType, isFavourite, viewCount FROM music_ogp_articles WHERE id IN (${Prisma.join(ids)})
+  `;
+  for (const row of rows) {
+    map.set(row.id, {
+      artist: row.artist,
+      registrationType: row.registrationType,
+      isFavourite: row.isFavourite === true || row.isFavourite === 1,
+      viewCount: typeof row.viewCount === 'number' ? row.viewCount : 0,
+    });
+  }
+  return map;
 }
 
 /** Same rules as non-admin branch in GET: what OGPs can this user see (excluding admin bypass). */
@@ -115,6 +162,7 @@ export async function GET(request: NextRequest) {
 
       const superAdminCreatorIds = await getSuperAdminCreatorIds();
       const filtered = list.filter((a) => ogpVisibleToViewer(a, viewer));
+      const artistById = await loadMusicOgpExtras(filtered.map((a) => a.id));
 
       const articles = filtered.map((a) => ({
         id: a.id,
@@ -124,6 +172,7 @@ export async function GET(request: NextRequest) {
         createdByCurrentUser: a.userId === targetUser.id,
         createdBySuperAdmin: superAdminCreatorIds.includes(a.userId),
         title: a.title,
+        artist: artistById.get(a.id)?.artist ?? (a as { artist?: string | null }).artist ?? null,
         image: a.image,
         description: a.description,
         url: a.url,
@@ -132,6 +181,15 @@ export async function GET(request: NextRequest) {
         customDescription: a.customDescription,
         topic: a.topic,
         genre: (a as { genre?: string | null }).genre ?? null,
+        registrationType:
+          artistById.get(a.id)?.registrationType ??
+          (a as { registrationType?: string | null }).registrationType ??
+          null,
+        isFavourite: artistById.get(a.id)?.isFavourite ?? false,
+        viewCount:
+          artistById.get(a.id)?.viewCount ??
+          (a as { viewCount?: number }).viewCount ??
+          0,
         languageCode: a.languageCode ?? null,
         savedAt: a.savedAt.toISOString(),
         visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
@@ -222,6 +280,7 @@ export async function GET(request: NextRequest) {
       if (vSports.length > 0 && !vSports.some((s: string) => userSports.includes(s))) return false;
       return true;
     });
+    const artistById = await loadMusicOgpExtras(filtered.map((a) => a.id));
 
     const articles = filtered.map((a) => ({
       id: a.id,
@@ -233,6 +292,7 @@ export async function GET(request: NextRequest) {
       /** When true, article was posted by a Super Admin account (show MB badge instead of trash). */
       createdBySuperAdmin: superAdminCreatorIds.includes(a.userId),
       title: a.title,
+      artist: artistById.get(a.id)?.artist ?? (a as { artist?: string | null }).artist ?? null,
       image: a.image,
       description: a.description,
       url: a.url,
@@ -241,6 +301,15 @@ export async function GET(request: NextRequest) {
       customDescription: a.customDescription,
       topic: a.topic,
       genre: (a as { genre?: string | null }).genre ?? null,
+      registrationType:
+        artistById.get(a.id)?.registrationType ??
+        (a as { registrationType?: string | null }).registrationType ??
+        null,
+      isFavourite: artistById.get(a.id)?.isFavourite ?? false,
+      viewCount:
+        artistById.get(a.id)?.viewCount ??
+        (a as { viewCount?: number }).viewCount ??
+        0,
       languageCode: a.languageCode ?? null,
       savedAt: a.savedAt.toISOString(),
       visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
@@ -270,6 +339,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       title,
+      artist,
+      musicTitle,
       image,
       description,
       url,
@@ -278,6 +349,8 @@ export async function POST(request: NextRequest) {
       customDescription,
       topic,
       genre,
+      registrationType,
+      isFavourite,
       languageCode,
       expiresAt,
       visibilityUserTypes,
@@ -291,10 +364,21 @@ export async function POST(request: NextRequest) {
     const topicName = typeof topic === 'string' && topic.trim() ? topic.trim() : 'Songs';
     const genreName =
       typeof genre === 'string' && genre.trim() ? genre.trim() : null;
+    const artistName =
+      typeof artist === 'string' && artist.trim() ? artist.trim() : null;
+    const registrationTypeName =
+      typeof registrationType === 'string' && registrationType.trim()
+        ? registrationType.trim()
+        : null;
+    const isFavouriteValue = isFavourite === true;
+    const resolvedTitle =
+      typeof musicTitle === 'string' && musicTitle.trim()
+        ? musicTitle.trim()
+        : title ?? null;
     const created = await prisma.musicOgpArticle.create({
       data: {
         userId,
-        title: title ?? null,
+        title: resolvedTitle,
         image: image ?? null,
         description: description ?? null,
         url: url.trim(),
@@ -310,14 +394,20 @@ export async function POST(request: NextRequest) {
         visibilitySports: Array.isArray(visibilitySports) ? JSON.stringify(visibilitySports) : null,
       },
     });
-    if (genreName) {
+    if (genreName || artistName || registrationTypeName || isFavouriteValue) {
       await prisma.$executeRaw`
-        UPDATE music_ogp_articles SET genre = ${genreName} WHERE id = ${created.id}
+        UPDATE music_ogp_articles
+        SET genre = COALESCE(${genreName}, genre),
+            artist = COALESCE(${artistName}, artist),
+            registrationType = COALESCE(${registrationTypeName}, registrationType),
+            isFavourite = ${isFavouriteValue}
+        WHERE id = ${created.id}
       `;
     }
     return NextResponse.json({
       id: created.id,
       title: created.title,
+      artist: artistName,
       image: created.image,
       description: created.description,
       url: created.url,
@@ -326,6 +416,8 @@ export async function POST(request: NextRequest) {
       customDescription: created.customDescription,
       topic: created.topic,
       genre: genreName,
+      registrationType: registrationTypeName,
+      isFavourite: isFavouriteValue,
       languageCode: created.languageCode ?? null,
       savedAt: created.savedAt.toISOString(),
     });

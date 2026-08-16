@@ -24,6 +24,11 @@ import {
   buildMovesbookUserTextSearchOr,
   segmentShouldMatchOwnedClubs,
 } from '@/lib/admin/movesbookUserTextSearch';
+import { resolveStatsBarUserIds } from '@/lib/admin/buildStatistics';
+import {
+  parseStatsKindParam,
+  parseStatsVersionParam,
+} from '@/lib/admin/statsBarListHref';
 
 export const dynamic = 'force-dynamic';
 
@@ -123,12 +128,19 @@ export async function GET(request: NextRequest) {
   const membershipSort =
     (url.searchParams.get('order') || '').trim() ||
     getDefaultMembershipSortOrder(membershipMode);
+  const statsBar = url.searchParams.get('statsBar') === '1';
+  const statsKind = parseStatsKindParam(url.searchParams.get('statsKind'));
+  const subscriptionVersion = parseStatsVersionParam(
+    url.searchParams.get('subscriptionVersion'),
+  );
 
   let finalTypes = types;
   if (userTypeCategory && USER_TYPE_CATEGORY_TYPES[userTypeCategory]) {
     finalTypes = types.filter((t) => USER_TYPE_CATEGORY_TYPES[userTypeCategory].includes(t));
   }
-  if (version) {
+  // Stats-bar lists already constrain by statsKind via user ids — skip account-type "version" filter
+  // unless this is a normal (non-stats) list request.
+  if (version && !statsBar) {
     finalTypes = finalTypes.filter((t) => versionLabel(t) === version);
   }
   if (finalTypes.length === 0) {
@@ -142,6 +154,15 @@ export async function GET(request: NextRequest) {
 
   const andClauses: Prisma.UserWhereInput[] = [{ userType: { in: finalTypes } }];
 
+  if (statsBar) {
+    const ids = await resolveStatsBarUserIds({
+      country: country || null,
+      kind: statsKind ?? 'all',
+      version: subscriptionVersion,
+    });
+    andClauses.push({ id: { in: ids.length > 0 ? ids : ['__no_stats_bar_match__'] } });
+  }
+
   if (search) {
     andClauses.push(
       buildMovesbookUserTextSearchOr(search, {
@@ -150,7 +171,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (country) {
+  // When statsBar=1, country is applied inside resolveStatsBarUserIds (incl. "Unknown").
+  if (country && !statsBar) {
     andClauses.push({ country });
   }
 

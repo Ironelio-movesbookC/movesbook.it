@@ -9,6 +9,7 @@ function mapGroupResponse(
     name: string;
     topic: string;
     customDescription: string | null;
+    coverImage: string | null;
     savedAt: Date;
     expiresAt: Date | null;
     deletedAt: Date | null;
@@ -16,6 +17,7 @@ function mapGroupResponse(
     visibilityCountries: string | null;
     visibilityLanguages: string | null;
     visibilitySports: string | null;
+    audienceMode?: string | null;
     user: { username: string; name: string | null; country: string | null } | null;
     items: Array<{
       ogpArticleId: string;
@@ -75,15 +77,17 @@ function mapGroupResponse(
     creatorCountry: g.user?.country ?? null,
     createdByCurrentUser,
     customDescription: g.customDescription ?? first?.customDescription ?? null,
+    coverImage: g.coverImage ?? null,
     deletedAt: g.deletedAt?.toISOString() ?? null,
     visibilityUserTypes: parseVis(g.visibilityUserTypes),
     visibilityCountries: parseVis(g.visibilityCountries),
     visibilityLanguages: parseVis(g.visibilityLanguages),
     visibilitySports: parseVis(g.visibilitySports),
     expiresAt: g.expiresAt?.toISOString() ?? null,
-    // Preview fields from the 1st OGP News in the group
+    audienceMode: g.audienceMode ?? 'me-and-club-members',
+    // Custom cover when set; otherwise preview from the 1st OGP News in the group
     title: first?.title ?? g.name,
-    image: first?.image ?? null,
+    image: g.coverImage ?? first?.image ?? null,
     description: first?.description ?? null,
     url: first?.url ?? '',
     siteName: first?.siteName ?? null,
@@ -140,23 +144,25 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/news/ogp-groups — create a group or merge into an existing one by name.
- * Body: { name, topic, articleIds: string[], confirmExisting?: boolean }
+ * Body: { name, topic, articleIds: string[], confirmExisting?: boolean, coverImage?: string | null }
  * If name exists and confirmExisting is not true → 409 { exists: true, group }
  */
 export async function POST(request: NextRequest) {
+  // requireAuthForNews already resolves SuperAdmin → users_new id.
   const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
 
-  let userId = auth.userId;
-  if (auth.isSuperAdmin) {
-    userId = await getOrCreateUserForSuperAdmin(auth.userId);
-  }
+  const userId = auth.userId;
 
   try {
     const body = await request.json();
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const topic = typeof body.topic === 'string' ? body.topic.trim() : '';
     const confirmExisting = body.confirmExisting === true;
+    const coverImage =
+      typeof body.coverImage === 'string' && body.coverImage.trim()
+        ? body.coverImage.trim()
+        : null;
     const rawIds = Array.isArray(body.articleIds) ? body.articleIds : [];
     const articleIds = [
       ...new Set(
@@ -221,7 +227,11 @@ export async function POST(request: NextRequest) {
         }
         await tx.ogpNewsGroup.update({
           where: { id: existing.id },
-          data: { topic, savedAt: now },
+          data: {
+            topic,
+            savedAt: now,
+            ...(coverImage ? { coverImage } : {}),
+          },
         });
       });
 
@@ -237,6 +247,7 @@ export async function POST(request: NextRequest) {
         userId,
         name,
         topic,
+        coverImage,
         savedAt: now,
         items: {
           create: articleIds.map((ogpArticleId, i) => ({

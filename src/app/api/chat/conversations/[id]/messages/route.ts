@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
 
 /** GET - List messages for a conversation (current user must be participant). */
 export async function GET(
@@ -18,7 +19,10 @@ export async function GET(
     if (!decoded?.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
-    const myId = decoded.userId;
+    const myId = await resolveMessageDatabaseUserId(decoded.userId, decoded.userType);
+    if (!myId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
     const { id: conversationId } = await params;
 
     const conv = await prisma.chatConversation.findUnique({
@@ -74,7 +78,10 @@ export async function POST(
     if (!decoded?.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
-    const myId = decoded.userId;
+    const myId = await resolveMessageDatabaseUserId(decoded.userId, decoded.userType);
+    if (!myId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
     const { id: conversationId } = await params;
     const body = await request.json();
     const rawContent = typeof body?.content === 'string' ? body.content : '';
@@ -104,7 +111,7 @@ export async function POST(
       const preview = content.startsWith('data:image/') ? '[Image]' : content;
       const sent = await sendTelegramMessage(
         other.telegramChatId,
-        `${conv.user1Id === myId ? conv.user2.name : conv.user1.name}: ${preview}`
+        `${msg.sender.name}: ${preview}`
       );
       if (sent?.messageId) {
         await prisma.chatMessage.update({

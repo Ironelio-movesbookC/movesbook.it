@@ -2,6 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import {
+  isClubOgpAudienceMode,
+  type ClubOgpAudienceMode,
+} from '@/lib/clubOgpAudience';
+
+export type { ClubOgpAudienceMode };
 
 export interface OgpVisibilitySettings {
   userTypes: string[];
@@ -9,6 +15,8 @@ export interface OgpVisibilitySettings {
   languages: string[];
   sports: string[];
   expiresAt: string | null; // ISO date string or null
+  /** Club OGP News audience radio (only used when showClubAudienceRadios). */
+  clubAudienceMode?: ClubOgpAudienceMode | null;
 }
 
 const defaultSettings: OgpVisibilitySettings = {
@@ -17,6 +25,7 @@ const defaultSettings: OgpVisibilitySettings = {
   languages: [],
   sports: [],
   expiresAt: null,
+  clubAudienceMode: null,
 };
 
 /** Normalize ISO or date string to YYYY-MM-DD for <input type="date">. */
@@ -56,7 +65,20 @@ interface NewsSettingModalProps {
   } | null;
   /** Modal heading; defaults to "News Setting". Music section passes "Music Setting". */
   title?: string;
+  /**
+   * Club OGP News: show audience radios (Only me / club members / members + filters).
+   */
+  showClubAudienceRadios?: boolean;
 }
+
+const CLUB_AUDIENCE_OPTIONS: { value: ClubOgpAudienceMode; label: string }[] = [
+  { value: 'only-me', label: 'Only me' },
+  { value: 'me-and-club-members', label: 'Me and members of my clubs' },
+  {
+    value: 'me-club-members-and-filters',
+    label: 'Me, members of my clubs and users who match these parameters here below',
+  },
+];
 
 export default function NewsSettingModal({
   isOpen,
@@ -66,6 +88,7 @@ export default function NewsSettingModal({
   onDeleteSettings,
   options,
   title = 'News Setting',
+  showClubAudienceRadios = false,
 }: NewsSettingModalProps) {
   const [userTypes, setUserTypes] = useState<string[]>([]);
   const [countries, setCountries] = useState<string[]>([]);
@@ -76,6 +99,11 @@ export default function NewsSettingModal({
   const [enableCountries, setEnableCountries] = useState(false);
   const [enableLanguages, setEnableLanguages] = useState(false);
   const [enableSports, setEnableSports] = useState(false);
+  const [clubAudienceMode, setClubAudienceMode] =
+    useState<ClubOgpAudienceMode>('me-and-club-members');
+
+  const filtersEnabled =
+    !showClubAudienceRadios || clubAudienceMode === 'me-club-members-and-filters';
 
   useEffect(() => {
     if (isOpen) {
@@ -95,6 +123,11 @@ export default function NewsSettingModal({
       );
       setEnableLanguages((s.languages?.length ?? 0) > 0);
       setEnableSports((s.sports?.length ?? 0) > 0);
+      setClubAudienceMode(
+        isClubOgpAudienceMode(s.clubAudienceMode)
+          ? s.clubAudienceMode
+          : 'me-and-club-members',
+      );
     }
   }, [isOpen, initialSettings, options]);
 
@@ -106,6 +139,7 @@ export default function NewsSettingModal({
       languages: enableLanguages ? languages : [],
       sports: enableSports ? sports : [],
       expiresAt: expiresAt.trim() || null,
+      ...(showClubAudienceRadios ? { clubAudienceMode } : {}),
     });
     onClose();
   };
@@ -123,6 +157,7 @@ export default function NewsSettingModal({
   };
 
   const toggleCountry = (value: string) => {
+    if (!filtersEnabled) return;
     const next = countries.includes(value)
       ? countries.filter((x) => x !== value)
       : [...countries, value];
@@ -131,12 +166,18 @@ export default function NewsSettingModal({
   };
 
   const handleDeleteSettings = () => {
-    onSave(defaultSettings);
+    onSave({
+      ...defaultSettings,
+      ...(showClubAudienceRadios
+        ? { clubAudienceMode: 'me-and-club-members' as ClubOgpAudienceMode }
+        : {}),
+    });
     onDeleteSettings?.();
     onClose();
   };
 
   const toggle = (list: string[], value: string, set: (v: string[]) => void) => {
+    if (!filtersEnabled) return;
     if (list.includes(value)) set(list.filter((x) => x !== value));
     else set([...list, value]);
   };
@@ -181,12 +222,36 @@ export default function NewsSettingModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Duration */}
-
           <p className="text-sm font-medium text-gray-700">Who can see it?</p>
-          
+
+          {showClubAudienceRadios && (
+            <fieldset className="space-y-2.5">
+              <legend className="sr-only">Who can see this article in the club</legend>
+              {CLUB_AUDIENCE_OPTIONS.map((opt) => (
+                <label
+                  key={opt.value}
+                  className="flex items-start gap-2.5 cursor-pointer select-none"
+                >
+                  <input
+                    type="radio"
+                    name="club-audience-mode"
+                    value={opt.value}
+                    checked={clubAudienceMode === opt.value}
+                    onChange={() => setClubAudienceMode(opt.value)}
+                    className="mt-0.5 h-4 w-4 shrink-0 border-gray-400 text-cyan-600 focus:ring-cyan-500"
+                  />
+                  <span className="text-sm text-gray-900 leading-snug drop-shadow-sm">
+                    {opt.label}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Duration (expiration date)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Duration (expiration date)
+            </label>
             <div className="flex items-center gap-2">
               <input
                 type="date"
@@ -211,17 +276,23 @@ export default function NewsSettingModal({
           </div>
 
           {options && (
-            <>
+            <div
+              className={`space-y-4 ${
+                filtersEnabled ? '' : 'opacity-50 pointer-events-none select-none'
+              }`}
+              aria-disabled={!filtersEnabled}
+            >
               {/* Users Sports */}
               <div>
                 <label className="flex items-center gap-2 mb-2">
                   <input
                     type="checkbox"
                     checked={enableSports}
+                    disabled={!filtersEnabled}
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableSports(checked);
-                      if (checked) setSports(options.sports.map((s) => s.value));
+                      if (checked) setSports((options.sports ?? []).map((s) => s.value));
                     }}
                     className="rounded border-gray-300"
                   />
@@ -229,13 +300,13 @@ export default function NewsSettingModal({
                 </label>
                 <div className="border border-gray-200 rounded-lg p-3 max-h-32 overflow-y-auto">
                   <div className="flex flex-wrap gap-2">
-                    {options.sports.map((s) => (
+                    {(options.sports ?? []).map((s) => (
                       <label key={s.value} className="flex items-center gap-1.5 text-sm">
                         <input
                           type="checkbox"
                           checked={sports.includes(s.value)}
                           onChange={() => toggle(sports, s.value, setSports)}
-                          disabled={!enableSports}
+                          disabled={!filtersEnabled || !enableSports}
                           className="rounded border-gray-300"
                         />
                         {s.label}
@@ -251,10 +322,11 @@ export default function NewsSettingModal({
                   <input
                     type="checkbox"
                     checked={enableUserTypes}
+                    disabled={!filtersEnabled}
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableUserTypes(checked);
-                      if (checked) setUserTypes(options.userTypes.map((t) => t.value));
+                      if (checked) setUserTypes((options.userTypes ?? []).map((t) => t.value));
                     }}
                     className="rounded border-gray-300"
                   />
@@ -262,13 +334,13 @@ export default function NewsSettingModal({
                 </label>
                 <div className="border border-gray-200 rounded-lg p-3 max-h-32 overflow-y-auto">
                   <div className="flex flex-wrap gap-2">
-                    {options.userTypes.map((t) => (
+                    {(options.userTypes ?? []).map((t) => (
                       <label key={t.value} className="flex items-center gap-1.5 text-sm">
                         <input
                           type="checkbox"
                           checked={userTypes.includes(t.value)}
                           onChange={() => toggle(userTypes, t.value, setUserTypes)}
-                          disabled={!enableUserTypes}
+                          disabled={!filtersEnabled || !enableUserTypes}
                           className="rounded border-gray-300"
                         />
                         {t.label}
@@ -284,10 +356,11 @@ export default function NewsSettingModal({
                   <input
                     type="checkbox"
                     checked={enableLanguages}
+                    disabled={!filtersEnabled}
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableLanguages(checked);
-                      if (checked) setLanguages(options.languages.map((l) => l.value));
+                      if (checked) setLanguages((options.languages ?? []).map((l) => l.value));
                     }}
                     className="rounded border-gray-300"
                   />
@@ -295,13 +368,13 @@ export default function NewsSettingModal({
                 </label>
                 <div className="border border-gray-200 rounded-lg p-3 max-h-32 overflow-y-auto">
                   <div className="flex flex-wrap gap-2">
-                    {options.languages.map((l) => (
+                    {(options.languages ?? []).map((l) => (
                       <label key={l.value} className="flex items-center gap-1.5 text-sm">
                         <input
                           type="checkbox"
                           checked={languages.includes(l.value)}
                           onChange={() => toggle(languages, l.value, setLanguages)}
-                          disabled={!enableLanguages}
+                          disabled={!filtersEnabled || !enableLanguages}
                           className="rounded border-gray-300"
                         />
                         {l.label}
@@ -317,10 +390,11 @@ export default function NewsSettingModal({
                   <input
                     type="checkbox"
                     checked={enableCountries}
+                    disabled={!filtersEnabled}
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setEnableCountries(checked);
-                      setCountries(checked ? options.countries.slice() : []);
+                      setCountries(checked ? (options.countries ?? []).slice() : []);
                     }}
                     className="rounded border-gray-300"
                   />
@@ -328,24 +402,25 @@ export default function NewsSettingModal({
                 </label>
                 <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto">
                   <div className="flex flex-col gap-1.5">
-                    {options.countries.map((c) => (
+                    {(options.countries ?? []).map((c) => (
                       <label key={c} className="flex items-center gap-1.5 text-sm">
                         <input
                           type="checkbox"
                           checked={countries.includes(c)}
                           onChange={() => toggleCountry(c)}
+                          disabled={!filtersEnabled}
                           className="rounded border-gray-300"
                         />
                         {c}
                       </label>
                     ))}
-                    {options.countries.length === 0 && (
+                    {(options.countries ?? []).length === 0 && (
                       <p className="text-xs text-gray-500">No countries available.</p>
                     )}
                   </div>
                 </div>
               </div>
-            </>
+            </div>
           )}
         </div>
 

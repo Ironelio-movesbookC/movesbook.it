@@ -132,16 +132,23 @@ export async function requireAuthWithUser(request: NextRequest): Promise<
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, userType: true, country: true },
+      select: { id: true, userType: true, country: true, superAdminId: true },
     });
     if (user) {
       const isAdmin = user.userType === 'ADMIN';
+      const linkedSuperAdmin =
+        user.superAdminId != null
+          ? await prisma.superAdmin.findFirst({
+              where: { id: user.superAdminId, isActive: true },
+              select: { id: true },
+            })
+          : null;
       return {
         userId: user.id,
         userType: user.userType,
         country: user.country,
         isAdmin,
-        isSuperAdmin: false,
+        isSuperAdmin: Boolean(linkedSuperAdmin),
       };
     }
     // Token may be from Super Admin (admin panel login)

@@ -9,6 +9,8 @@ import NewTopicModal from '@/app/news/components/NewTopicModal';
 import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
 import NewsArticlesList from '@/app/news/components/NewsArticlesList';
+import { ADMIN_OGP_EXPAND_EVENT } from '@/lib/adminOgpExpand';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 export interface AdminSuperAdminOGPNewsContentProps {
   /** Target for the header close (X) link — default returns to admin home without query params */
@@ -59,6 +61,8 @@ export default function AdminSuperAdminOGPNewsContent({
     updateOgpNewsGroupSettings,
     addTypedArticle,
     removeTypedArticle,
+    toggleOgpGlobalNews,
+    toggleOgpFeatured,
   } = useNewsData({ adminContext: true, viewAsUsername });
 
   const prevLoading = useRef(true);
@@ -73,6 +77,14 @@ export default function AdminSuperAdminOGPNewsContent({
     );
     return visible.filter((t) => !insertedByOthers.has(t));
   }, [topics, hiddenTopics, userInsertedTopics, viewAsUsername]);
+
+  const topicsForSortModal = useMemo(
+    () =>
+      isSuperAdmin && topicNamesCreatedByNormalUsers.length > 0
+        ? topics.filter((t) => !topicNamesCreatedByNormalUsers.includes(t))
+        : topics,
+    [isSuperAdmin, topicNamesCreatedByNormalUsers, topics]
+  );
 
   // On reload (and whenever data finishes loading): select the first topic so the OGP area shows its OGPs.
   useEffect(() => {
@@ -107,15 +119,7 @@ export default function AdminSuperAdminOGPNewsContent({
         setAdminUser(u?.id ? { id: u.id, name: u.name } : null);
         if (!u?.id) router.replace('/admin/dashboard');
         else {
-          const superRaw = localStorage.getItem('superAdminUser');
-          if (superRaw) {
-            try {
-              const su = JSON.parse(superRaw);
-              if (su?.id != null && u?.id != null && String(su.id) === String(u.id)) setIsSuperAdmin(true);
-            } catch {
-              /* ignore */
-            }
-          }
+          setIsSuperAdmin(resolveIsSuperAdminFromStorage(u));
         }
       } catch {
         router.replace('/admin/dashboard');
@@ -284,8 +288,8 @@ export default function AdminSuperAdminOGPNewsContent({
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-[1920px] mx-auto">
-      <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+    <div className="p-4 md:p-6 w-full min-w-0 max-w-full box-border">
+      <div className="bg-white rounded-xl shadow-md border border-gray-200 w-full min-w-0 overflow-x-auto">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 gap-2 flex-wrap">
           {viewAsUsername ? (
             <>
@@ -312,7 +316,7 @@ export default function AdminSuperAdminOGPNewsContent({
           </a>
         </div>
 
-        <div className="p-4">
+        <div className="p-4 min-w-0">
           {loading && <p className="text-sm text-gray-500 mb-2">Loading news...</p>}
           {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
 
@@ -323,7 +327,17 @@ export default function AdminSuperAdminOGPNewsContent({
             onAddNewTopic={handleOpenTopicModal}
             onAddTopic={handleOpenAddTopicModal}
             isExpanded={isExpanded}
-            onExpandReduce={() => setIsExpanded((e) => !e)}
+            onExpandReduce={() => {
+              setIsExpanded((e) => {
+                const next = !e;
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(
+                    new CustomEvent(ADMIN_OGP_EXPAND_EVENT, { detail: { expanded: next } })
+                  );
+                }
+                return next;
+              });
+            }}
             onOpenTopicSort={() => setShowTopicSortModal(true)}
             topicNamesCreatedByNormalUsers={topicNamesCreatedByNormalUsers}
             userInsertedTopics={userInsertedTopics}
@@ -349,11 +363,7 @@ export default function AdminSuperAdminOGPNewsContent({
           <NewsTopicSortModal
             isOpen={showTopicSortModal}
             onClose={() => setShowTopicSortModal(false)}
-            topics={
-              isSuperAdmin && topicNamesCreatedByNormalUsers.length > 0
-                ? topics.filter((t) => !topicNamesCreatedByNormalUsers.includes(t))
-                : topics
-            }
+            topics={topicsForSortModal}
             savedHiddenTopics={hiddenTopics}
             onSave={async (ordered, _genreOrder, hidden) => {
               await saveTopicOrder(ordered, undefined, hidden);
@@ -425,10 +435,15 @@ export default function AdminSuperAdminOGPNewsContent({
             viewerScopedOgpList={!!viewAsUsername}
             ogpNewsGroups={ogpNewsGroups}
             onSaveOgpNewsGroup={viewAsUsername ? undefined : saveOgpNewsGroup}
+            onCreateTopic={viewAsUsername ? undefined : addTopic}
             onRemoveOgpNewsGroup={viewAsUsername ? undefined : removeOgpNewsGroup}
             onUpdateOgpNewsGroup={viewAsUsername ? undefined : updateOgpNewsGroup}
             onUpdateOgpNewsGroupSettings={viewAsUsername ? undefined : updateOgpNewsGroupSettings}
             superAdminReadOnlyOgpActions={!!viewAsUsername}
+            showGlobalNewsButton={isSuperAdmin && !viewAsUsername}
+            onToggleGlobalNews={isSuperAdmin && !viewAsUsername ? toggleOgpGlobalNews : undefined}
+            showFeaturedControls={isSuperAdmin && !viewAsUsername}
+            onToggleOgpFeatured={isSuperAdmin && !viewAsUsername ? toggleOgpFeatured : undefined}
           />
         </div>
       </div>

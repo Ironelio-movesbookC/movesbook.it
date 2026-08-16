@@ -41,6 +41,8 @@ interface NewsTopicSortModalProps {
   onAfterDeleteOgNews?: () => void | Promise<void>;
   /** API prefix for delete-by-topics. Defaults to `/api/news`; Music uses `/api/music`. */
   apiBase?: string;
+  /** My Library of Exercises: library category for scoped delete-by-topics. */
+  category?: string | null;
   /** Music: genres grouped by topic (from articles). Enables nested genre sorting. */
   topicGenres?: Record<string, string[]>;
   /** Music: saved genre order per topic from user settings. */
@@ -53,6 +55,11 @@ interface NewsTopicSortModalProps {
 
 const TOPIC_ID_PREFIX = 'topic:';
 const GENRE_ID_PREFIX = 'genre:';
+
+/** Stable empty defaults so useEffect deps do not thrash when props are omitted (News path). */
+const EMPTY_HIDDEN_TOPICS: string[] = [];
+const EMPTY_HIDDEN_GENRES: Record<string, string[]> = {};
+const EMPTY_GENRE_ORDER: Record<string, string[]> = {};
 
 function topicSortId(name: string) {
   return `${TOPIC_ID_PREFIX}${encodeURIComponent(name)}`;
@@ -104,7 +111,11 @@ function HideCheckbox({
   label: string;
 }) {
   return (
-    <label className="ml-auto flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
+    <label
+      className="ml-auto flex items-center gap-1.5 shrink-0 cursor-pointer select-none"
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       <input
         type="checkbox"
         checked={checked}
@@ -318,16 +329,17 @@ export default function NewsTopicSortModal({
   isSuperAdmin = false,
   onAfterDeleteOgNews,
   apiBase = '/api/news',
+  category = null,
   topicGenres,
   savedGenreOrder,
-  savedHiddenTopics = [],
-  savedHiddenGenres = {},
+  savedHiddenTopics = EMPTY_HIDDEN_TOPICS,
+  savedHiddenGenres = EMPTY_HIDDEN_GENRES,
 }: NewsTopicSortModalProps) {
   const musicMode = topicGenres != null;
   const [ordered, setOrdered] = useState<string[]>([]);
-  const [genreOrder, setGenreOrder] = useState<Record<string, string[]>>({});
+  const [genreOrder, setGenreOrder] = useState<Record<string, string[]>>(EMPTY_GENRE_ORDER);
   const [hiddenTopics, setHiddenTopics] = useState<string[]>([]);
-  const [hiddenGenres, setHiddenGenres] = useState<Record<string, string[]>>({});
+  const [hiddenGenres, setHiddenGenres] = useState<Record<string, string[]>>(EMPTY_HIDDEN_GENRES);
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -340,27 +352,32 @@ export default function NewsTopicSortModal({
   const [autoDeleteConfig, setAutoDeleteConfig] = useState<AutoDeleteConfig | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Initialize only when the modal opens so hide/drag local state is not wiped on re-render.
   useEffect(() => {
-    if (isOpen && topics.length > 0) {
-      setOrdered([...topics]);
-      if (musicMode && topicGenres) {
-        setGenreOrder(mergeGenreOrder(topicGenres, savedGenreOrder));
-      } else {
-        setGenreOrder({});
-      }
-      setHiddenTopics([...savedHiddenTopics]);
-      setHiddenGenres(
-        Object.fromEntries(
-          Object.entries(savedHiddenGenres).map(([topic, genres]) => [
-            topic,
-            [...genres],
-          ])
-        )
-      );
-      setSelectedTopics([]);
-      setDeleteWarning('');
+    if (!isOpen) return;
+    setOrdered([...topics]);
+    if (musicMode && topicGenres) {
+      setGenreOrder(mergeGenreOrder(topicGenres, savedGenreOrder));
+    } else {
+      setGenreOrder(EMPTY_GENRE_ORDER);
     }
-  }, [isOpen, topics, musicMode, topicGenres, savedGenreOrder, savedHiddenTopics, savedHiddenGenres]);
+    setHiddenTopics([...savedHiddenTopics]);
+    setHiddenGenres(
+      Object.fromEntries(
+        Object.entries(savedHiddenGenres).map(([topic, genres]) => [topic, [...genres]])
+      )
+    );
+    setSelectedTopics([]);
+    setDeleteWarning('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-seed only on open
+  }, [isOpen]);
+
+  // If topics arrive after the modal was already open (slow fetch), seed once when empty.
+  useEffect(() => {
+    if (!isOpen || ordered.length > 0 || topics.length === 0) return;
+    setOrdered([...topics]);
+    setHiddenTopics([...savedHiddenTopics]);
+  }, [isOpen, ordered.length, topics, savedHiddenTopics]);
 
   const toggleTopicHidden = (topic: string) => {
     setHiddenTopics((prev) =>
@@ -414,8 +431,9 @@ export default function NewsTopicSortModal({
       return;
     }
 
-    const activeTopic = musicMode ? parseTopicSortId(activeId) : (activeId as string);
-    const overTopic = musicMode ? parseTopicSortId(overId) : (overId as string);
+    // Prefer prefixed topic IDs (Music + News); fall back to raw id for safety.
+    const activeTopic = parseTopicSortId(activeId) ?? activeId;
+    const overTopic = parseTopicSortId(overId) ?? overId;
     if (!activeTopic || !overTopic) return;
 
     setOrdered((prev) => {
@@ -473,10 +491,11 @@ export default function NewsTopicSortModal({
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const body: { topics: string[]; toDate: string } = {
+      const body: { topics: string[]; toDate: string; category?: string } = {
         topics,
         toDate,
       };
+      if (category) body.category = category;
 
       const res = await fetch(`${apiBase}/ogp/delete-by-topics`, {
         method: 'POST',
@@ -534,9 +553,12 @@ export default function NewsTopicSortModal({
       const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const body: { topics: string[]; fromDate?: string; toDate?: string } = { topics: selectedTopics };
+      const body: { topics: string[]; fromDate?: string; toDate?: string; category?: string } = {
+        topics: selectedTopics,
+      };
       if (fromDate.trim()) body.fromDate = fromDate.trim();
       if (toDate.trim()) body.toDate = toDate.trim();
+      if (category) body.category = category;
       const res = await fetch(`${apiBase}/ogp/delete-by-topics`, {
         method: 'POST',
         headers,
@@ -575,9 +597,7 @@ export default function NewsTopicSortModal({
     setShowAutoDeleteModal(false);
   };
 
-  const sortableTopicIds = musicMode
-    ? ordered.map((name) => topicSortId(name))
-    : ordered;
+  const sortableTopicIds = ordered.map((name) => topicSortId(name));
 
   if (!isOpen) return null;
 
@@ -613,7 +633,7 @@ export default function NewsTopicSortModal({
                 {ordered.map((name) =>
                   musicMode ? (
                     <SortableTopicItem
-                      key={name}
+                      key={topicSortId(name)}
                       id={topicSortId(name)}
                       name={name}
                       showCheckbox={isSuperAdmin}
@@ -627,8 +647,8 @@ export default function NewsTopicSortModal({
                     />
                   ) : (
                     <SortableTopicItemLegacy
-                      key={name}
-                      id={name}
+                      key={topicSortId(name)}
+                      id={topicSortId(name)}
                       name={name}
                       showCheckbox={isSuperAdmin}
                       checked={isSuperAdmin ? selectedTopics.includes(name) : undefined}

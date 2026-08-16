@@ -11,6 +11,8 @@ import {
   MUSICAL_GENRES,
   MUSIC_REGISTRATION_TYPES,
 } from '@/constants/musicGenres.constants';
+import RichTextEditor from '@/components/settings/RichTextEditor';
+import { hasRichTextContent } from '@/utils/richTextTranslation';
 
 export interface OGPData {
   title: string | null;
@@ -23,6 +25,28 @@ export interface OGPData {
 
 export type OgpVisibilitySettingsExport = OgpVisibilitySettings;
 
+export type MusicOgpFormMeta = {
+  artist?: string | null;
+  musicTitle?: string | null;
+  musicalGenre?: string | null;
+  registrationType?: string | null;
+  isFavourite?: boolean;
+};
+
+/** Prefill values when editing an existing OGP (Music pencil → Add Music modal). */
+export type OGPFormInitialValues = {
+  url?: string;
+  description?: string;
+  languageCode?: string | null;
+  artist?: string | null;
+  musicTitle?: string | null;
+  musicalGenre?: string | null;
+  registrationType?: string | null;
+  visibility?: OgpVisibilitySettings;
+  /** Existing OGP preview (title/image/description/url) so Save works without re-fetch. */
+  og?: OGPData | null;
+};
+
 interface OGPFormProps {
   onPastedArticle: (
     data: OGPData & {
@@ -30,12 +54,24 @@ interface OGPFormProps {
       visibility?: OgpVisibilitySettings;
       languageCode?: string | null;
       musicalGenre?: string | null;
+      artist?: string | null;
+      musicTitle?: string | null;
+      registrationType?: string | null;
+      isFavourite?: boolean;
     }
   ) => void;
-  onSaveTyped?: (description: string, musicalGenre?: string | null) => void;
+  onSaveTyped?: (
+    description: string,
+    musicalGenre?: string | null,
+    meta?: MusicOgpFormMeta
+  ) => void;
   onCancel?: () => void;
   /** Music modal: Artist / Title / Genre / Registration fields and “Who will see the music”. */
   variant?: 'news' | 'music';
+  /** Controlled value: whether "Put in my favourites" is checked (managed by parent). */
+  isFavourite?: boolean;
+  /** When set, form opens prefilled for editing an existing entry. */
+  initialValues?: OGPFormInitialValues | null;
 }
 
 export default function OGPForm({
@@ -43,20 +79,37 @@ export default function OGPForm({
   onSaveTyped,
   onCancel,
   variant = 'news',
+  isFavourite = false,
+  initialValues = null,
 }: OGPFormProps) {
   const isMusic = variant === 'music';
-  const [url, setUrl] = useState('');
-  const [description, setDescription] = useState('');
-  const [languageCode, setLanguageCode] = useState<string>('');
-  const [artist, setArtist] = useState('');
-  const [musicTitle, setMusicTitle] = useState('');
-  const [musicalGenre, setMusicalGenre] = useState('');
-  const [registrationType, setRegistrationType] = useState('');
+  const [url, setUrl] = useState(() => initialValues?.url ?? '');
+  const [description, setDescription] = useState(() => initialValues?.description ?? '');
+  const [languageCode, setLanguageCode] = useState<string>(() => initialValues?.languageCode ?? '');
+  const [artist, setArtist] = useState(() => initialValues?.artist ?? '');
+  const [musicTitle, setMusicTitle] = useState(() => initialValues?.musicTitle ?? '');
+  const [musicalGenre, setMusicalGenre] = useState(() => initialValues?.musicalGenre ?? '');
+  const [registrationType, setRegistrationType] = useState(
+    () => initialValues?.registrationType ?? ''
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fetchedOg, setFetchedOg] = useState<OGPData | null>(null);
+  const [fetchedOg, setFetchedOg] = useState<OGPData | null>(() => {
+    if (initialValues?.og) return initialValues.og;
+    if (initialValues?.url) {
+      return {
+        title: initialValues.musicTitle ?? null,
+        image: null,
+        description: null,
+        url: initialValues.url,
+      };
+    }
+    return null;
+  });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [visibility, setVisibility] = useState<OgpVisibilitySettings>(defaultSettings);
+  const [visibility, setVisibility] = useState<OgpVisibilitySettings>(
+    () => initialValues?.visibility ?? defaultSettings
+  );
   const [settingsOptions, setSettingsOptions] = useState<{
     userTypes: { value: string; label: string }[];
     countries: string[];
@@ -65,11 +118,28 @@ export default function OGPForm({
   } | null>(null);
 
   useEffect(() => {
-    if (showSettingsModal && !settingsOptions) {
-      fetch('/api/news/ogp-settings-options')
-        .then((r) => r.json())
-        .then((data) => setSettingsOptions(data))
-        .catch(() => setSettingsOptions({ userTypes: [], countries: [], languages: [], sports: [] }));
+    if (showSettingsModal && (!settingsOptions || !Array.isArray(settingsOptions.sports))) {
+      const empty = { userTypes: [], countries: [], languages: [], sports: [] };
+      const token =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('token') || localStorage.getItem('adminToken')
+          : null;
+      const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      fetch('/api/news/ogp-settings-options', { headers })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) {
+            setSettingsOptions(empty);
+            return;
+          }
+          setSettingsOptions({
+            userTypes: data.userTypes ?? [],
+            countries: data.countries ?? [],
+            languages: data.languages ?? [],
+            sports: data.sports ?? [],
+          });
+        })
+        .catch(() => setSettingsOptions(empty));
     }
   }, [showSettingsModal, settingsOptions]);
 
@@ -79,7 +149,13 @@ export default function OGPForm({
     setError(null);
     setFetchedOg(null);
     try {
-      const res = await fetch(`/api/ogp?url=${encodeURIComponent(urlToFetch.trim())}`);
+      const token =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('token') || localStorage.getItem('adminToken')
+          : null;
+      const res = await fetch(`/api/ogp?url=${encodeURIComponent(urlToFetch.trim())}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'Failed to fetch link preview');
@@ -113,13 +189,22 @@ export default function OGPForm({
 
   const handleSave = () => {
     const genreToSave = isMusic && musicalGenre.trim() ? musicalGenre.trim() : null;
+    const artistToSave = isMusic && artist.trim() ? artist.trim() : null;
+    const musicTitleToSave = isMusic && musicTitle.trim() ? musicTitle.trim() : null;
+    const registrationTypeToSave =
+      isMusic && registrationType.trim() ? registrationType.trim() : null;
+    const descriptionToSave = hasRichTextContent(description) ? description.trim() : '';
     if (fetchedOg) {
       onPastedArticle({
         ...fetchedOg,
-        customDescription: description.trim() || undefined,
+        customDescription: descriptionToSave || undefined,
         visibility,
         languageCode: languageCode || undefined,
         musicalGenre: genreToSave,
+        artist: artistToSave,
+        musicTitle: musicTitleToSave,
+        registrationType: registrationTypeToSave,
+        isFavourite: isMusic ? isFavourite : undefined,
       });
       setUrl('');
       setDescription('');
@@ -128,8 +213,14 @@ export default function OGPForm({
       setError(null);
       setVisibility(defaultSettings);
       if (isMusic) resetMusicFields();
-    } else if (description.trim() && onSaveTyped) {
-      onSaveTyped(description.trim(), genreToSave);
+    } else if (descriptionToSave && onSaveTyped) {
+      onSaveTyped(descriptionToSave, genreToSave, {
+        artist: artistToSave,
+        musicTitle: musicTitleToSave,
+        musicalGenre: genreToSave,
+        registrationType: registrationTypeToSave,
+        isFavourite: isMusic ? isFavourite : undefined,
+      });
       setDescription('');
       if (isMusic) resetMusicFields();
     }
@@ -148,6 +239,8 @@ export default function OGPForm({
 
   const fieldSelectClass =
     'w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500';
+  const fieldInputClass =
+    'w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500';
 
   return (
     <div
@@ -208,41 +301,43 @@ export default function OGPForm({
 
       {isMusic && (
         <>
-          {/* Artist / Title — behaviour wired later */}
+          {/* Artist / Title — free-text fields saved with the music entry */}
           <div className="mb-4 rounded-xl bg-gray-100 border border-gray-200 p-4">
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
                 <label htmlFor="music-artist" className="w-16 shrink-0 text-sm font-medium text-gray-700">
                   Artist
                 </label>
-                <select
+                <input
                   id="music-artist"
+                  type="text"
                   value={artist}
                   onChange={(e) => setArtist(e.target.value)}
-                  className={fieldSelectClass}
+                  className={fieldInputClass}
+                  placeholder="Artist name"
                   aria-label="Artist"
-                >
-                  <option value=""></option>
-                </select>
+                  autoComplete="off"
+                />
               </div>
               <div className="flex items-center gap-3">
                 <label htmlFor="music-title" className="w-16 shrink-0 text-sm font-medium text-gray-700">
                   Title
                 </label>
-                <select
+                <input
                   id="music-title"
+                  type="text"
                   value={musicTitle}
                   onChange={(e) => setMusicTitle(e.target.value)}
-                  className={fieldSelectClass}
+                  className={fieldInputClass}
+                  placeholder="Song / track title"
                   aria-label="Title"
-                >
-                  <option value=""></option>
-                </select>
+                  autoComplete="off"
+                />
               </div>
             </div>
           </div>
 
-          {/* Musical genre / Type of registration — behaviour wired later */}
+          {/* Musical genre / Type of registration */}
           <div className="mb-4 rounded-xl bg-gray-100 border border-gray-200 p-4">
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
@@ -281,7 +376,7 @@ export default function OGPForm({
                   className={fieldSelectClass}
                   aria-label="Type of registration"
                 >
-                  <option value="">Song - Album - Playlist</option>
+                  <option value=""></option>
                   {MUSIC_REGISTRATION_TYPES.map((type) => (
                     <option key={type} value={type}>
                       {type}
@@ -299,12 +394,11 @@ export default function OGPForm({
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Type here a brief description...
         </label>
-        <textarea
+        <RichTextEditor
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           placeholder="Brief description..."
-          rows={6}
-          className="w-full min-h-[120px] px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-gray-900 placeholder-gray-400 resize-y"
+          minHeight="120px"
         />
       </div>
 

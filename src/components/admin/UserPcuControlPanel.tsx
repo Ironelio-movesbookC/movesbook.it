@@ -2055,22 +2055,6 @@ export default function UserPcuControlPanel({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to send mail');
 
-      if (data.mailtoFallback) {
-        const hint =
-          typeof data.message === 'string' && data.message.trim()
-            ? data.message
-            : 'RESEND_API_KEY is not set. Add it to .env and restart npm run dev.';
-        setMailError(hint);
-        if (!data.emailNotConfigured) {
-          const params = new URLSearchParams();
-          params.set('subject', mailSubject.trim() || 'Message from Movesbook Admin');
-          params.set('body', message);
-          window.location.href = `mailto:${encodeURIComponent(to)}?${params.toString()}`;
-          setMailModalOpen(false);
-        }
-        return;
-      }
-
       const failed = Array.isArray(data.failed) ? data.failed : [];
       if (failed.length > 0) {
         const first = failed[0] as { error?: string };
@@ -2128,18 +2112,7 @@ export default function UserPcuControlPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to send message');
-      if (data.mailtoFallback && Array.isArray(data.recipients) && data.recipients.length > 0) {
-        const emails = data.recipients
-          .map((r: { email?: string }) => r.email?.trim())
-          .filter(Boolean) as string[];
-        if (emails.length === 1) {
-          window.location.href = `mailto:${encodeURIComponent(emails[0]!)}`;
-        } else if (emails.length > 1) {
-          window.location.href = `mailto:?bcc=${emails.map((e) => encodeURIComponent(e)).join(',')}`;
-        }
-      } else {
-        window.alert(`Message sent to ${data.sent ?? 0} user(s).`);
-      }
+      window.alert(`Message sent to ${data.sent ?? 0} user(s).`);
       setMsgModalOpen(false);
     } catch (e: unknown) {
       setMsgError(e instanceof Error ? e.message : 'Failed to send message');

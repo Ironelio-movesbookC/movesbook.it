@@ -54,12 +54,14 @@ import {
   Search,
   UserPlus,
   BookUser,
-  Users2
+  Users2,
+  PieChart,
+  BarChart3,
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
-import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
+import { usePathname } from 'next/navigation';
 import {
   DndContext, 
   closestCenter,
@@ -77,6 +79,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 function SortableItem(props: { id: string, children: React.ReactNode }) {
   const {
@@ -105,6 +108,7 @@ interface AdminSidebarProps {
 }
 
 export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps) {
+  const pathname = usePathname() || '';
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     stats: true,
     promo: false,
@@ -128,6 +132,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
 
   const [lastViewedCount, setLastViewedCount] = useState("1");
   const [adminUserId, setAdminUserId] = useState<string | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [myFeedbackCount, setMyFeedbackCount] = useState(0);
   const [lastViewedToggles, setLastViewedToggles] = useState({
     singleUsers: true,
@@ -136,7 +141,9 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
     clubs: true
   });
 
-  const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({});
+  const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({
+    stats_super_admin: true,
+  });
   const [internalIsOpen, setInternalIsOpen] = useState(true);
   const [isDndMounted, setIsDndMounted] = useState(false);
   const isSidebarOpen = isOpen !== undefined ? isOpen : internalIsOpen;
@@ -147,6 +154,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    setIsSuperAdmin(resolveIsSuperAdminFromStorage());
     const adminData = localStorage.getItem('adminUser');
     if (!adminData) return;
     try {
@@ -254,7 +262,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
               onClick={() => toggleSection('stats')}
               className="w-full bg-[#058592] px-4 py-2 font-bold text-sm text-white flex items-center justify-between hover:bg-[#046c76] transition cursor-move"
             >
-              <span>Totals and statistics</span>
+              <span>Statistics</span>
               <Triangle className="w-4 h-4 text-white fill-[#ff8d00] rotate-180" />
             </button>
             
@@ -276,6 +284,79 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   <Bookmark className="w-4 h-4 text-white" />
                   <span>Access to advertisings</span>
                 </Link>
+
+                {/* General graphs — nested menu */}
+                <div className="space-y-1 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleSubSection('stats_super_admin')}
+                    className="w-full flex items-center justify-between px-3 py-2 bg-[#058592] border border-[#aeaeae] hover:bg-[#046c76] transition text-sm text-white font-semibold"
+                  >
+                    <div className="flex items-center gap-3">
+                      <PieChart className="w-4 h-4 text-white shrink-0" />
+                      <span>General graphs</span>
+                    </div>
+                    <Triangle
+                      className={`w-3 h-3 text-white fill-[#ff8d00] transition-transform ${
+                        openSubSections['stats_super_admin'] ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+                  {openSubSections['stats_super_admin'] && (
+                    <div className="w-[92%] ml-auto space-y-1">
+                      {(
+                        [
+                          {
+                            href: '/admin/statistics/users-distribution',
+                            label: 'Pie of distribution users',
+                            Icon: PieChart,
+                          },
+                          {
+                            href: '/admin/statistics/top-countries',
+                            label: 'Pie — top 8 countries',
+                            Icon: PieChart,
+                          },
+                          {
+                            href: '/admin/statistics/type-by-country',
+                            label: 'Pie — one type of user',
+                            Icon: PieChart,
+                          },
+                          {
+                            href: '/admin/statistics/all-types-by-country',
+                            label: 'Pie — all types of users',
+                            Icon: PieChart,
+                          },
+                          {
+                            href: '/admin/statistics/users-by-country',
+                            label: 'Vertical bars — users by country',
+                            Icon: BarChart3,
+                          },
+                          {
+                            href: '/admin/statistics/versions',
+                            label: 'Bargraph versions for country',
+                            Icon: BarChart3,
+                          },
+                        ] as const
+                      ).map(({ href, label, Icon }) => {
+                        const active = pathname === href || pathname.startsWith(`${href}/`);
+                        return (
+                          <Link
+                            key={href}
+                            href={href}
+                            className={`flex items-center gap-3 px-3 py-2 border border-[#aeaeae] transition text-sm text-white ${
+                              active
+                                ? 'bg-[#941751] hover:bg-[#7a1343]'
+                                : 'bg-[#4f4f4f] hover:bg-[#3d3d3d]'
+                            }`}
+                          >
+                            <Icon className="w-4 h-4 text-white shrink-0" />
+                            <span>{label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </>
@@ -534,7 +615,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
               <div className="bg-[#2b2b2b] mt-1 space-y-1">
                 {adminUserId ? (
                   <Link
-                    href={legacyUserBugProblemUrl(adminUserId, 'feedback')}
+                    href="/admin/dashboard?panel=my-feedbacks"
                     className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white"
                   >
                     <Users2 className="w-4 h-4 shrink-0 opacity-95" />
@@ -666,16 +747,27 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                    <AlertCircle className="w-4 h-4 text-white" />
                    <span>News Archive</span>
                 </Link>
+
+                {isSuperAdmin && (
+                  <Link href="/admin/news/global" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
+                     <Globe className="w-4 h-4 text-white" />
+                     <span>Global News</span>
+                  </Link>
+                )}
                 
-                <Link href="/news-by-movesbook/indexall" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
-                   <AlertCircle className="w-4 h-4 text-white" />
-                   <span>News</span>
-                </Link>
-                
-                <Link href="/news-by-movesbook/indexall" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
-                   <Globe className="w-4 h-4 text-white" />
-                   <span>News through links</span>
-                </Link>
+                {!isSuperAdmin && (
+                  <>
+                    <Link href="/news-by-movesbook/indexall" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
+                       <AlertCircle className="w-4 h-4 text-white" />
+                       <span>News</span>
+                    </Link>
+                    
+                    <Link href="/news-by-movesbook/indexall" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
+                       <Globe className="w-4 h-4 text-white" />
+                       <span>News through links</span>
+                    </Link>
+                  </>
+                )}
 
                 <Link href="/admin/news/links" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
                    <Globe className="w-4 h-4 text-white" />

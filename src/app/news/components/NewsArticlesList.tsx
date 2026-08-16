@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
-import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2, List, Music2, Disc3, Heart, type LucideIcon } from 'lucide-react';
+import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2, List, Music2, Disc3, Heart, Globe, Megaphone, type LucideIcon } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
 import { ALL_TOPICS, ALL_USER_SECTORS, ALL_SUPER_ADMIN, NEWS_TOPIC_KEYS, NEWS_TOPICS } from './NewsTopicBar';
@@ -14,8 +14,31 @@ import NewsSettingModal, { type OgpVisibilitySettings, defaultSettings } from '.
 import OgpShareModal from './OgpShareModal';
 import CreateOgpNewsGroupModal from './CreateOgpNewsGroupModal';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { getOgpGroupShareUrl } from '@/lib/ogpGroupShareUrl';
+import OgpRichDescription, {
+  ogpDescriptionPlainText,
+} from '@/components/shared/OgpRichDescription';
+import { ShareInMyClubsButtonIfClub } from '@/components/club/ShareInMyClubsButton';
+import ClubGlobalNewsToggleButton from '@/components/club/ClubGlobalNewsToggleButton';
+import RichTextEditor from '@/components/settings/RichTextEditor';
+import FeaturedNewsCard from './FeaturedNewsCard';
+import NewsHeadlinesPanel from './NewsHeadlinesPanel';
+import NewsHeadlinesExpandedView from './NewsHeadlinesExpandedView';
+import OgpSponsoredCard from './OgpSponsoredCard';
+import OgpSponsorsSettingsModal from './OgpSponsorsSettingsModal';
+import {
+  OGP_CARDS_PER_ROW,
+  maxSponsorCols,
+  paginateWithSponsors,
+  type OgpSponsorSettings,
+  type OgpSponsorSourceArticle,
+  type SponsoredPageCell,
+} from '@/lib/news/ogpSponsors';
 
 type MusicLibraryNavKey = 'recent' | 'playlist' | 'songs' | 'albums' | 'favourites';
+
+/** Mutually exclusive poster filter (radio). `'none'` = no poster filter. */
+type PostedByFilter = 'none' | 'movesbook' | 'myCountry' | 'me';
 
 const MUSIC_LIBRARY_NAV: { key: MusicLibraryNavKey; label: string; icon: LucideIcon }[] = [
   { key: 'recent', label: 'Recent', icon: Clock },
@@ -48,8 +71,28 @@ export type ArticlePasted = OGPData & {
   createdBySuperAdmin?: boolean;
   /** Musical genre (Music OGP only). */
   genre?: string | null;
+  /** Artist name entered in Add Music (Music OGP only). */
+  artist?: string | null;
+  /** Song / Album / Playlist selected in Add Music (Music OGP only). */
+  registrationType?: string | null;
+  /** True when the creator saved this entry with "Put in my favourites" checked. */
+  isFavourite?: boolean;
   /** When true, this card represents an OGP News group (preview = first member). */
   isOgpGroup?: boolean;
+  /** Super admin: included in the Global News merged feed. */
+  inGlobalNews?: boolean;
+  /** Super admin: promoted to the featured News Card (hero). */
+  isFeatured?: boolean;
+  /** Super admin: show in featured News Card when isFeatured (default true). */
+  displayInEvidence?: boolean;
+  /** Times this OGP News was opened (News Headlines / Top Stories ranking). */
+  viewCount?: number;
+  /** Club admin: promoted into this club's Club Global News feed. */
+  inClubGlobalNews?: boolean;
+  /** Club OGP News audience mode from club_shared_ogp_articles.audienceMode. */
+  clubAudienceMode?: OgpVisibilitySettings['clubAudienceMode'];
+  /** Club admin: club ids this OGP article has been shared to. */
+  sharedClubIds?: string[];
   groupName?: string;
   memberCount?: number;
   memberIds?: string[];
@@ -73,6 +116,8 @@ export type OgpNewsGroupCard = {
   createdByCurrentUser?: boolean;
   title?: string | null;
   image?: string | null;
+  /** Custom group cover when set; otherwise `image` falls back to 1st member. */
+  coverImage?: string | null;
   description?: string | null;
   url: string;
   siteName?: string | null;
@@ -80,11 +125,20 @@ export type OgpNewsGroupCard = {
   customDescription?: string | null;
   deletedAt?: string | null;
   visibility?: OgpVisibilitySettings;
+  /** Club OGP News audience mode. */
+  clubAudienceMode?: OgpVisibilitySettings['clubAudienceMode'];
   previewTopic?: string;
   previewCreatorUsername?: string | null;
 };
 
-export type ArticleTyped = { id: string; description: string };
+export type ArticleTyped = {
+  id: string;
+  description: string;
+  artist?: string | null;
+  title?: string | null;
+  registrationType?: string | null;
+  isFavourite?: boolean;
+};
 
 const FALLBACK_NEWS_TOPICS_LIST = [
   'News',
@@ -114,29 +168,36 @@ function hasAnyVisibilitySettings(a: ArticlePasted): boolean {
   return hasSelections || hasDuration;
 }
 
-function isNotExpired(a: ArticlePasted): boolean {
+function getExpiresAtMs(a: ArticlePasted): number | null {
   const exp = a.visibility?.expiresAt;
-  if (exp == null || String(exp).trim() === '') return true;
+  if (exp == null || String(exp).trim() === '') return null;
   try {
-    return new Date(exp).getTime() >= Date.now();
+    const t = new Date(exp).getTime();
+    return Number.isNaN(t) ? null : t;
   } catch {
-    return true;
+    return null;
   }
+}
+
+function isNotExpired(a: ArticlePasted): boolean {
+  const expMs = getExpiresAtMs(a);
+  if (expMs == null) return true;
+  return expMs >= Date.now();
 }
 
 function isExpiredOrNoExpiry(a: ArticlePasted): boolean {
-  const exp = a.visibility?.expiresAt;
-  if (exp == null || String(exp).trim() === '') return true;
-  try {
-    return new Date(exp).getTime() < Date.now();
-  } catch {
-    return true;
-  }
+  const expMs = getExpiresAtMs(a);
+  if (expMs == null) return true;
+  return expMs < Date.now();
 }
 
 function hasExpirationDateSet(a: ArticlePasted): boolean {
-  const exp = a.visibility?.expiresAt;
-  return exp != null && String(exp).trim() !== '';
+  return getExpiresAtMs(a) != null;
+}
+
+/** True when an expiration date is set and that date is in the past. */
+function isPastExpired(a: ArticlePasted): boolean {
+  return hasExpirationDateSet(a) && !isNotExpired(a);
 }
 
 function isActiveForNormalUser(a: ArticlePasted): boolean {
@@ -166,11 +227,12 @@ function groupToFeedItem(g: OgpNewsGroupCard): ArticlePasted {
     savedAt: g.savedAt,
     deletedAt: g.deletedAt ?? undefined,
     visibility: g.visibility,
+    clubAudienceMode: g.clubAudienceMode ?? null,
   };
 }
 
 /** Number of OGP cards per row (each row = 6 OGPs). */
-const OGPS_PER_ROW = 6;
+const OGPS_PER_ROW = OGP_CARDS_PER_ROW;
 /** Dropdown options: number of rows to display per page. Items per page = rows × OGPS_PER_ROW. */
 const ROWS_PER_PAGE_OPTIONS = [3, 5, 10, 15, 20];
 const MAX_PAGE_BUTTONS = 9;
@@ -185,6 +247,12 @@ function formatDate(iso?: string) {
   } catch {
     return '';
   }
+}
+
+/** Share/copy URL: group → public Movesbook group page; single → external OGP URL. */
+function getArticleShareUrl(a: ArticlePasted, kind: 'news' | 'music' = 'news'): string {
+  if (a.isOgpGroup) return getOgpGroupShareUrl(a.id, undefined, kind);
+  return a.url || '';
 }
 
 /** Wraps case-insensitive matches of `query` in `text` with <mark>. */
@@ -227,6 +295,8 @@ interface NewsArticlesListProps {
   topics?: string[];
   /** Called when creator changes an OGP's topic and/or description (Pencil button). */
   onUpdatePastedTopic?: (id: string, topic: string, customDescription?: string) => void | Promise<void>;
+  /** Music: pencil opens Add Music for full edit instead of Change topic. */
+  onEditPasted?: (article: ArticlePasted) => void;
   /** When true, use adminToken for API calls (e.g. creator fetch) so super admin can use User button. */
   adminContext?: boolean;
   /** When true (super admin), show all OGPs for the selected topic including expired, no News Setting, and deleted. */
@@ -255,15 +325,18 @@ interface NewsArticlesListProps {
   activeMusicalGenre?: string | null;
   /** Music: called when the musical genre dropdown changes. Pass null for "All". */
   onMusicalGenreSelect?: (genre: string | null) => void;
-  /** Saved OGP News groups (News only). */
+  /** Saved OGP News/Music groups. */
   ogpNewsGroups?: OgpNewsGroupCard[];
-  /** Persist a new/merged OGP News group. */
+  /** Persist a new/merged OGP News/Music group. */
   onSaveOgpNewsGroup?: (payload: {
     name: string;
     topic: string;
     articleIds: string[];
     confirmExisting?: boolean;
+    coverImage?: string | null;
   }) => Promise<{ merged: boolean; group: OgpNewsGroupCard }>;
+  /** Create a new topic from the create-group modal. */
+  onCreateTopic?: (name: string) => void | Promise<void>;
   /** Delete an OGP News group. */
   onRemoveOgpNewsGroup?: (id: string) => void | Promise<void>;
   /** Update group topic and/or description (pencil). */
@@ -274,6 +347,40 @@ interface NewsArticlesListProps {
   ) => void | Promise<void>;
   /** Update group visibility settings (gear). */
   onUpdateOgpNewsGroupSettings?: (id: string, settings: OgpVisibilitySettings) => void | Promise<void>;
+  /** Super admin: show "Share in Global News" on OGP News cards (news section only). */
+  showGlobalNewsButton?: boolean;
+  /** Super admin: toggle Global News flag for an OGP article. */
+  onToggleGlobalNews?: (id: string, inGlobalNews: boolean) => void | Promise<void>;
+  /** Super admin: show featured News Card controls on OGP News cards. */
+  showFeaturedControls?: boolean;
+  /** Super admin: toggle featured / display-in-evidence flags. */
+  onToggleOgpFeatured?: (
+    id: string,
+    patch: { isFeatured?: boolean; displayInEvidence?: boolean },
+  ) => void | Promise<void>;
+  /** Club admin: show "Share in Club Global News" globe on OGP cards. */
+  showClubGlobalNewsButton?: boolean;
+  /** Club id used when toggling Club Global News. */
+  clubGlobalNewsClubId?: string | null;
+  /** Called after Club Global News toggle succeeds. */
+  onToggleClubGlobalNews?: (id: string, inClubGlobalNews: boolean) => void;
+  /** Club admin: show "Share in My Clubs" on OGP News cards. */
+  showShareInMyClubsButton?: boolean;
+  /** Current user type (for club share button). */
+  currentUserType?: string | null;
+  /** Club admin username for password confirm copy. */
+  clubAdminUsername?: string | null;
+  /** Called after share/unshare to update local sharedClubIds on an article. */
+  onArticleSharedClubIdsChange?: (articleId: string, clubIds: string[]) => void;
+  /** Called after Club OGP audience mode is saved. */
+  onArticleClubAudienceModeChange?: (
+    articleId: string,
+    mode: NonNullable<OgpVisibilitySettings['clubAudienceMode']>,
+  ) => void;
+  /** Club shared OGP News: force single articles only; hide Groups UI. */
+  hideOgpGroups?: boolean;
+  /** Start with Single News checked so the default feed is singles only. */
+  preferSingleNewsDefault?: boolean;
 }
 
 export default function NewsArticlesList({
@@ -288,6 +395,7 @@ export default function NewsArticlesList({
   onUpdatePastedSettings,
   topics: topicsProp = EMPTY_TOPICS,
   onUpdatePastedTopic,
+  onEditPasted,
   adminContext = false,
   isSuperAdmin = false,
   topicNamesCreatedByNormalUsers = EMPTY_TOPIC_NAMES,
@@ -304,11 +412,31 @@ export default function NewsArticlesList({
   onMusicalGenreSelect,
   ogpNewsGroups = EMPTY_GROUPS,
   onSaveOgpNewsGroup,
+  onCreateTopic,
   onRemoveOgpNewsGroup,
   onUpdateOgpNewsGroup,
   onUpdateOgpNewsGroupSettings,
+  showGlobalNewsButton = false,
+  onToggleGlobalNews,
+  showFeaturedControls = false,
+  onToggleOgpFeatured,
+  showClubGlobalNewsButton = false,
+  clubGlobalNewsClubId = null,
+  onToggleClubGlobalNews,
+  showShareInMyClubsButton = false,
+  currentUserType = null,
+  clubAdminUsername = null,
+  onArticleSharedClubIdsChange,
+  onArticleClubAudienceModeChange,
+  hideOgpGroups = false,
+  preferSingleNewsDefault = false,
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
+  const isMusic = apiBase === '/api/music';
+  const isExercise = apiBase === '/api/exercises';
+  const ogpLabel = isMusic ? 'OGP Music' : isExercise ? 'OGP Exercises' : 'OGP News';
+  const singleLabel = isMusic ? 'Single Music' : isExercise ? 'Single Exercise' : 'Single News';
+  const groupsLabel = isMusic ? 'Music Folders' : isExercise ? 'Groups of Exercises' : 'Groups of News';
   const topicsList = useMemo(
     () => (topicsProp.length > 0 ? topicsProp : [...FALLBACK_NEWS_TOPICS_LIST]),
     [topicsProp]
@@ -391,13 +519,14 @@ export default function NewsArticlesList({
   const sortedLanguages = useMemo(() => [...ALL_LANGUAGES].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })), []);
   const [search, setSearch] = useState('');
   const [highlightMatches, setHighlightMatches] = useState(false);
-  const [showOnlyMyOgNews, setShowOnlyMyOgNews] = useState(false);
+  const [postedByFilter, setPostedByFilter] = useState<PostedByFilter>('none');
+  const [excludeExpiredAndDeleted, setExcludeExpiredAndDeleted] = useState(false);
   const [showExpired, setShowExpired] = useState(false);
   const [showDeletedTemporarily, setShowDeletedTemporarily] = useState(false);
-  const [showPostedByMovesbook, setShowPostedByMovesbook] = useState(false);
-  const [showPostedByMyCountry, setShowPostedByMyCountry] = useState(false);
   const [showOnlyLiked, setShowOnlyLiked] = useState(false);
-  const [showSingleNews, setShowSingleNews] = useState(false);
+  const [showSingleNews, setShowSingleNews] = useState(
+    () => hideOgpGroups || preferSingleNewsDefault,
+  );
   const [showGroupsOfNews, setShowGroupsOfNews] = useState(false);
   const [isAddingToGroup, setIsAddingToGroup] = useState(false);
   const [viewSelectedOnly, setViewSelectedOnly] = useState(false);
@@ -422,7 +551,7 @@ export default function NewsArticlesList({
   // The visual height of the list is still limited to 3 rows using `ogpListMaxHeight`,
   // so when rowsPerPage > 3 the extra rows are reachable via scrolling.
   const itemsPerPage = rowsPerPage * OGPS_PER_ROW;
-  const [sortOrder, setSortOrder] = useState<SortOrder>('date-desc');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('alpha-asc');
   const [settingsArticleId, setSettingsArticleId] = useState<string | null>(null);
   const [settingsOptions, setSettingsOptions] = useState<{
     userTypes: { value: string; label: string }[];
@@ -453,9 +582,93 @@ export default function NewsArticlesList({
   const [previewCreatorUsername, setPreviewCreatorUsername] = useState<string | null>(null);
   const [likesMap, setLikesMap] = useState<Record<string, { count: number; likedByMe: boolean }>>({});
   const [likeLoadingId, setLikeLoadingId] = useState<string | null>(null);
+  const [globalNewsLoadingId, setGlobalNewsLoadingId] = useState<string | null>(null);
+  const [featuredLoadingId, setFeaturedLoadingId] = useState<string | null>(null);
+  const [showFeaturedInEvidence, setShowFeaturedInEvidence] = useState(true);
+  const [viewingHeadlines, setViewingHeadlines] = useState(false);
+  const [headlinesDisplayPicture, setHeadlinesDisplayPicture] = useState(true);
+  const [viewCountOverrides, setViewCountOverrides] = useState<Record<string, number>>({});
   const [shareModalArticle, setShareModalArticle] = useState<ArticlePasted | null>(null);
   const ogpGridRef = useRef<HTMLDivElement>(null);
   const [ogpListMaxHeight, setOgpListMaxHeight] = useState<number | null>(null);
+  const [sponsorSettings, setSponsorSettings] = useState<OgpSponsorSettings | null>(null);
+  const [showSponsorsModal, setShowSponsorsModal] = useState(false);
+
+  const sponsorOgpArticles = useMemo((): OgpSponsorSourceArticle[] => {
+    const seen = new Set<string>();
+    const list: OgpSponsorSourceArticle[] = [];
+    for (const a of pasted) {
+      if (a.isOgpGroup || a.deletedAt || !a.image || seen.has(a.id)) continue;
+      seen.add(a.id);
+      list.push({
+        id: a.id,
+        title: a.title || a.url || 'OGP News',
+        image: a.image,
+        url: a.url || '',
+      });
+    }
+    return list.sort((x, y) => x.title.localeCompare(y.title, undefined, { sensitivity: 'base' }));
+  }, [pasted]);
+
+  const isNewsOgp = apiBase === '/api/news';
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !showFeaturedControls) return;
+    try {
+      const stored = localStorage.getItem('ogpShowFeaturedInEvidence');
+      if (stored === 'false') setShowFeaturedInEvidence(false);
+    } catch {
+      /* ignore */
+    }
+  }, [showFeaturedControls]);
+
+  useEffect(() => {
+    if (!isNewsOgp) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/news/ogp-sponsors');
+        if (!res.ok) return;
+        const data = (await res.json()) as OgpSponsorSettings;
+        if (!cancelled && data && Array.isArray(data.sponsors)) {
+          setSponsorSettings(data);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isNewsOgp]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = localStorage.getItem('ogpHeadlinesDisplayPicture');
+      if (stored === 'false') setHeadlinesDisplayPicture(false);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleHeadlinesDisplayPictureChange = useCallback((next: boolean) => {
+    setHeadlinesDisplayPicture(next);
+    try {
+      localStorage.setItem('ogpHeadlinesDisplayPicture', next ? 'true' : 'false');
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleShowFeaturedInEvidenceChange = useCallback((checked: boolean) => {
+    setShowFeaturedInEvidence(checked);
+    try {
+      localStorage.setItem('ogpShowFeaturedInEvidence', checked ? 'true' : 'false');
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const toggleArticleExpanded = useCallback((articleId: string) => {
     setExpandedArticleIds((prev) => {
@@ -517,6 +730,32 @@ export default function NewsArticlesList({
     }
   }, [adminContext, apiBase]);
 
+  const handleGlobalNewsToggle = useCallback(
+    async (articleId: string, currentlyShared: boolean) => {
+      if (!onToggleGlobalNews) return;
+      setGlobalNewsLoadingId(articleId);
+      try {
+        await onToggleGlobalNews(articleId, !currentlyShared);
+      } finally {
+        setGlobalNewsLoadingId(null);
+      }
+    },
+    [onToggleGlobalNews],
+  );
+
+  const handleFeaturedToggle = useCallback(
+    async (articleId: string, patch: { isFeatured?: boolean; displayInEvidence?: boolean }) => {
+      if (!onToggleOgpFeatured) return;
+      setFeaturedLoadingId(articleId);
+      try {
+        await onToggleOgpFeatured(articleId, patch);
+      } finally {
+        setFeaturedLoadingId(null);
+      }
+    },
+    [onToggleOgpFeatured],
+  );
+
   useEffect(() => {
     if (creatorModalArticleId != null) {
       const isGroup = ogpNewsGroups.some((g) => g.id === creatorModalArticleId);
@@ -557,17 +796,39 @@ export default function NewsArticlesList({
   }, [previewArticleId, adminContext, apiBase, ogpNewsGroups]);
 
   useEffect(() => {
-    if (settingsArticleId != null && !settingsOptions) {
-      fetch('/api/news/ogp-settings-options')
-        .then((r) => r.json())
-        .then((data) => setSettingsOptions(data))
-        .catch(() => setSettingsOptions({ userTypes: [], countries: [], languages: [], sports: [] }));
+    if (
+      settingsArticleId != null &&
+      (!settingsOptions || !Array.isArray(settingsOptions.sports))
+    ) {
+      const empty = { userTypes: [], countries: [], languages: [], sports: [] };
+      const token =
+        typeof window !== 'undefined'
+          ? adminContext
+            ? localStorage.getItem('adminToken')
+            : localStorage.getItem('token')
+          : null;
+      const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      fetch('/api/news/ogp-settings-options', { headers })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) {
+            setSettingsOptions(empty);
+            return;
+          }
+          setSettingsOptions({
+            userTypes: data.userTypes ?? [],
+            countries: data.countries ?? [],
+            languages: data.languages ?? [],
+            sports: data.sports ?? [],
+          });
+        })
+        .catch(() => setSettingsOptions(empty));
     }
-  }, [settingsArticleId, settingsOptions]);
+  }, [settingsArticleId, settingsOptions, adminContext]);
 
   useEffect(() => {
     setCurrentPage(1);
-    setShowOnlyMyOgNews(false);
+    setPostedByFilter('none');
     setViewingOgpGroup(null);
   }, [activeTopic, activeMusicalGenre]);
 
@@ -692,16 +953,32 @@ export default function NewsArticlesList({
    */
   const canFilterByMyOgNews = !!currentUserId;
 
+  /** Super-admin default: "my country". Viewing a user's topic / view-as-user: "user country". */
+  const postedByCountryLabel = useMemo(() => {
+    const viewingAsUser = !!showOnlyMyOgNewsLabelUsername?.trim();
+    const viewingUserInsertedTopic =
+      activeTopic === ALL_USER_SECTORS ||
+      (!!activeTopic &&
+        (topicNamesCreatedByNormalUsers.includes(activeTopic) ||
+          !!userInsertedTopics?.some((t) => t.name === activeTopic)));
+    return viewingAsUser || viewingUserInsertedTopic
+      ? 'posted by user country'
+      : 'posted by my country';
+  }, [
+    showOnlyMyOgNewsLabelUsername,
+    activeTopic,
+    topicNamesCreatedByNormalUsers,
+    userInsertedTopics,
+  ]);
+
   const filtered = useMemo(() => {
     const applyArticleFilters = (source: ArticlePasted[]) => {
       let list = source;
-      if (showOnlyMyOgNews && canFilterByMyOgNews) {
+      if (postedByFilter === 'me' && canFilterByMyOgNews) {
         list = list.filter(canEditAsCreator);
-      }
-      if (showPostedByMovesbook) {
+      } else if (postedByFilter === 'movesbook') {
         list = list.filter((a) => a.createdBySuperAdmin === true);
-      }
-      if (showPostedByMyCountry) {
+      } else if (postedByFilter === 'myCountry') {
         const myCountry = (currentUserCountry ?? '').trim().toLowerCase();
         list = list.filter((a) => {
           const creatorCountry = (a.creatorCountry ?? '').trim().toLowerCase();
@@ -709,20 +986,28 @@ export default function NewsArticlesList({
         });
       }
       if (isSuperAdmin) {
-        if (showExpired) {
-          list = list.filter(isExpiredOrNoExpiry);
-          if (!showDeletedTemporarily) {
-            list = list.filter((a) => !a.deletedAt);
+        if (excludeExpiredAndDeleted) {
+          // Hide soft-deleted and past-expiry OGPs (items with no expiry stay visible).
+          list = list.filter((a) => !a.deletedAt && isNotExpired(a));
+        } else {
+          if (showExpired) {
+            list = list.filter(isExpiredOrNoExpiry);
+            if (!showDeletedTemporarily) {
+              list = list.filter((a) => !a.deletedAt);
+            }
           }
-        }
-        if (showDeletedTemporarily) {
-          list = list.filter((a) => !!a.deletedAt);
+          if (showDeletedTemporarily) {
+            list = list.filter((a) => !!a.deletedAt);
+          }
         }
       } else {
         list = list.filter((a) => {
-          // Creators always see their own OGPs (except deleted unless that filter is on).
           if (canEditAsCreator(a)) {
             if (a.deletedAt) return showDeletedTemporarily;
+            // Creator's own OGPs: hide expired unless "Show also expired" is checked.
+            if (!showExpired && hasExpirationDateSet(a) && !isNotExpired(a)) {
+              return false;
+            }
             return true;
           }
           const isActive = isActiveForNormalUser(a);
@@ -741,7 +1026,7 @@ export default function NewsArticlesList({
         list = list.filter((a) => (a.visibility?.languages ?? []).includes(selectedLanguage));
       }
       if (
-        apiBase === '/api/music' &&
+        isMusic &&
         activeMusicalGenre != null &&
         activeMusicalGenre.trim() !== ''
       ) {
@@ -752,21 +1037,43 @@ export default function NewsArticlesList({
         list = list.filter(
           (a) =>
             (a.title || '').toLowerCase().includes(q) ||
-            (a.description || '').toLowerCase().includes(q) ||
+            ogpDescriptionPlainText(null, a.description).toLowerCase().includes(q) ||
             (a.url || '').toLowerCase().includes(q) ||
-            (a.customDescription || '').toLowerCase().includes(q) ||
+            ogpDescriptionPlainText(a.customDescription).toLowerCase().includes(q) ||
             (a.groupName || '').toLowerCase().includes(q)
         );
       }
       return list;
     };
 
-    // Music (and any non-news base): keep prior single-article behavior (no group filters).
-    if (apiBase === '/api/music') {
-      return applyArticleFilters(byTopic);
+    // Music: apply library-nav filters to the article base (registrationType / favourites / recent).
+    let articleBase = byTopic;
+    if (isMusic) {
+      const registrationTypeByNav: Partial<Record<MusicLibraryNavKey, string>> = {
+        playlist: 'Playlist',
+        songs: 'Song',
+        albums: 'Album',
+      };
+      if (musicLibraryNav === 'favourites') {
+        articleBase = byTopic.filter(
+          (a) => a.isFavourite === true && canEditAsCreator(a)
+        );
+      } else if (musicLibraryNav === 'recent') {
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+        const cutoff = oneMonthAgo.getTime();
+        articleBase = byTopic.filter((a) => {
+          if (!a.savedAt) return false;
+          const t = new Date(a.savedAt).getTime();
+          return !Number.isNaN(t) && t >= cutoff;
+        });
+      } else if (musicLibraryNav && registrationTypeByNav[musicLibraryNav]) {
+        const wanted = registrationTypeByNav[musicLibraryNav];
+        articleBase = byTopic.filter((a) => (a.registrationType ?? '').trim() === wanted);
+      }
     }
 
-    // Group session: show only OGP News that belong to the selected group.
+    // Group session: show only OGP items that belong to the selected group.
     if (viewingOgpGroup) {
       const byId = new Map(pasted.filter((a) => !a.isOgpGroup).map((a) => [a.id, a]));
       const members = viewingOgpGroup.memberIds
@@ -786,12 +1093,17 @@ export default function NewsArticlesList({
     }
 
     // Both off (or both on) → show all; only Single → singles; only Groups → groups.
-    const showArticles = showSingleNews || !showGroupsOfNews;
-    const showGroups = showGroupsOfNews || !showSingleNews;
+    // Club shared OGP News: always singles only (never groups).
+    const showArticles = hideOgpGroups
+      ? true
+      : showSingleNews || !showGroupsOfNews;
+    const showGroups = hideOgpGroups
+      ? false
+      : showGroupsOfNews || !showSingleNews;
 
     let articles: ArticlePasted[] = [];
     if (showArticles) {
-      articles = applyArticleFilters(byTopic.filter((a) => !a.isOgpGroup));
+      articles = applyArticleFilters(articleBase.filter((a) => !a.isOgpGroup));
     }
 
     let groups: ArticlePasted[] = [];
@@ -810,18 +1122,40 @@ export default function NewsArticlesList({
         groupSource = groupSource.filter((g) => g.topic.toLowerCase() === selectedSport.toLowerCase());
       }
       groups = groupSource.map(groupToFeedItem);
-      if (showOnlyMyOgNews && canFilterByMyOgNews) {
+      if (postedByFilter === 'me' && canFilterByMyOgNews) {
         groups = groups.filter(canEditAsCreator);
       }
-      // Mirror article deleted visibility for groups.
+      // Mirror article deleted/expired visibility for groups.
       if (isSuperAdmin) {
-        if (showDeletedTemporarily) {
-          groups = groups.filter((a) => !!a.deletedAt);
+        if (excludeExpiredAndDeleted) {
+          groups = groups.filter((a) => !a.deletedAt && isNotExpired(a));
         } else {
-          groups = groups.filter((a) => !a.deletedAt);
+          if (showExpired) {
+            groups = groups.filter(isExpiredOrNoExpiry);
+            if (!showDeletedTemporarily) {
+              groups = groups.filter((a) => !a.deletedAt);
+            }
+          }
+          if (showDeletedTemporarily) {
+            groups = groups.filter((a) => !!a.deletedAt);
+          } else if (!showExpired) {
+            groups = groups.filter((a) => !a.deletedAt);
+          }
         }
-      } else if (!showDeletedTemporarily) {
-        groups = groups.filter((a) => !a.deletedAt);
+      } else {
+        groups = groups.filter((a) => {
+          if (canEditAsCreator(a)) {
+            if (a.deletedAt) return showDeletedTemporarily;
+            if (!showExpired && hasExpirationDateSet(a) && !isNotExpired(a)) {
+              return false;
+            }
+            return true;
+          }
+          const isActive = isActiveForNormalUser(a);
+          const includeExpired = showExpired && isExpiredOrNoExpiry(a) && !a.deletedAt;
+          const includeDeleted = showDeletedTemporarily && !!a.deletedAt;
+          return isActive || includeExpired || includeDeleted;
+        });
       }
       if (showOnlyLiked) {
         groups = groups.filter((a) => (likesMap[a.id]?.count ?? 0) >= 1);
@@ -832,8 +1166,8 @@ export default function NewsArticlesList({
           (a) =>
             (a.groupName || '').toLowerCase().includes(q) ||
             (a.title || '').toLowerCase().includes(q) ||
-            (a.description || '').toLowerCase().includes(q) ||
-            (a.customDescription || '').toLowerCase().includes(q)
+            ogpDescriptionPlainText(null, a.description).toLowerCase().includes(q) ||
+            ogpDescriptionPlainText(a.customDescription).toLowerCase().includes(q)
         );
       }
     }
@@ -846,10 +1180,9 @@ export default function NewsArticlesList({
     search,
     selectedSport,
     selectedLanguage,
-    showOnlyMyOgNews,
-    showPostedByMovesbook,
-    showPostedByMyCountry,
+    postedByFilter,
     currentUserCountry,
+    excludeExpiredAndDeleted,
     showExpired,
     showDeletedTemporarily,
     canFilterByMyOgNews,
@@ -857,10 +1190,12 @@ export default function NewsArticlesList({
     likesMap,
     isSuperAdmin,
     canEditAsCreator,
-    apiBase,
+    isMusic,
     activeMusicalGenre,
+    musicLibraryNav,
     showSingleNews,
     showGroupsOfNews,
+    hideOgpGroups,
     isAddingToGroup,
     viewSelectedOnly,
     selectedForGroupIds,
@@ -871,22 +1206,152 @@ export default function NewsArticlesList({
 
   const sorted = useMemo(() => {
     const list = [...filtered];
-    if (showOnlyLiked) {
-      // "I like" mode: sort by like count descending (most liked first)
-      list.sort((a, b) => (likesMap[b.id]?.count ?? 0) - (likesMap[a.id]?.count ?? 0));
-    } else if (sortOrder === 'date-desc') {
-      list.sort((a, b) => new Date(b.savedAt ?? 0).getTime() - new Date(a.savedAt ?? 0).getTime());
-    } else if (sortOrder === 'date-asc') {
-      list.sort((a, b) => new Date(a.savedAt ?? 0).getTime() - new Date(b.savedAt ?? 0).getTime());
-    } else if (sortOrder === 'alpha-asc') {
-      list.sort((a, b) => (a.title || a.url || '').localeCompare(b.title || b.url || '', undefined, { sensitivity: 'base' }));
-    } else {
-      list.sort((a, b) => (b.title || b.url || '').localeCompare(a.title || a.url || '', undefined, { sensitivity: 'base' }));
-    }
-    return list;
-  }, [filtered, sortOrder, showOnlyLiked, likesMap]);
+    const label = (a: ArticlePasted) =>
+      a.isOgpGroup
+        ? a.groupName || a.title || a.url || ''
+        : a.title || a.url || '';
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / itemsPerPage));
+    list.sort((a, b) => {
+      // Groups of News always before single NEWS.
+      const aGroup = a.isOgpGroup ? 0 : 1;
+      const bGroup = b.isOgpGroup ? 0 : 1;
+      if (aGroup !== bGroup) return aGroup - bGroup;
+
+      if (showOnlyLiked) {
+        return (likesMap[b.id]?.count ?? 0) - (likesMap[a.id]?.count ?? 0);
+      }
+
+      // Expired filter: newest expiration date first (then newest savedAt).
+      if (showExpired) {
+        const expA = getExpiresAtMs(a);
+        const expB = getExpiresAtMs(b);
+        if (expA != null && expB != null && expA !== expB) return expB - expA;
+        if (expA != null && expB == null) return -1;
+        if (expA == null && expB != null) return 1;
+        return new Date(b.savedAt ?? 0).getTime() - new Date(a.savedAt ?? 0).getTime();
+      }
+
+      // Alphabetical within each type (group name / article title).
+      const alpha = label(a).localeCompare(label(b), undefined, { sensitivity: 'base' });
+      if (sortOrder === 'alpha-desc') return -alpha;
+      if (sortOrder === 'date-desc') {
+        return new Date(b.savedAt ?? 0).getTime() - new Date(a.savedAt ?? 0).getTime();
+      }
+      if (sortOrder === 'date-asc') {
+        return new Date(a.savedAt ?? 0).getTime() - new Date(b.savedAt ?? 0).getTime();
+      }
+      // Default and alpha-asc: A–Z
+      return alpha;
+    });
+    return list;
+  }, [filtered, sortOrder, showOnlyLiked, likesMap, showExpired]);
+
+  const featuredArticles = useMemo(() => {
+    if (!isNewsOgp || viewingOgpGroup || isAddingToGroup) return [];
+    return sorted.filter(
+      (a) =>
+        !a.isOgpGroup &&
+        a.isFeatured === true &&
+        a.displayInEvidence !== false &&
+        !a.deletedAt,
+    );
+  }, [sorted, isNewsOgp, viewingOgpGroup, isAddingToGroup]);
+
+  const featuredIdSet = useMemo(
+    () => new Set(featuredArticles.map((a) => a.id)),
+    [featuredArticles],
+  );
+
+  const showFeaturedHero =
+    isNewsOgp &&
+    !viewingOgpGroup &&
+    !isAddingToGroup &&
+    !viewingHeadlines &&
+    featuredArticles.length > 0 &&
+    (showFeaturedControls ? showFeaturedInEvidence : true);
+
+  const headlinesArticles = useMemo(() => {
+    if (!isNewsOgp || viewingOgpGroup || isAddingToGroup) return [];
+    return sorted.filter((a) => !a.isOgpGroup && !a.deletedAt);
+  }, [sorted, isNewsOgp, viewingOgpGroup, isAddingToGroup]);
+
+  const showHeadlinesPanel =
+    isNewsOgp &&
+    !viewingOgpGroup &&
+    !isAddingToGroup &&
+    !viewingHeadlines &&
+    headlinesArticles.length > 0;
+
+  const showSponsors =
+    isNewsOgp &&
+    !viewingOgpGroup &&
+    !isAddingToGroup &&
+    !viewingHeadlines &&
+    (sponsorSettings?.sponsors.length ?? 0) > 0;
+
+  const getHeadlineViewCount = useCallback(
+    (article: ArticlePasted) => viewCountOverrides[article.id] ?? article.viewCount ?? 0,
+    [viewCountOverrides],
+  );
+
+  const handleRecordOgpView = useCallback(
+    async (articleId: string) => {
+      const token =
+        typeof window !== 'undefined'
+          ? adminContext
+            ? localStorage.getItem('adminToken')
+            : localStorage.getItem('token')
+          : null;
+      if (!token) return;
+      try {
+        const res = await fetch(`${apiBase}/ogp/${articleId}/view`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data && typeof data.viewCount === 'number') {
+          setViewCountOverrides((prev) => ({ ...prev, [articleId]: data.viewCount }));
+        }
+      } catch {
+        /* ignore */
+      }
+    },
+    [adminContext, apiBase],
+  );
+
+  const handleOpenHeadlineArticle = useCallback(
+    (article: ArticlePasted) => {
+      void handleRecordOgpView(article.id);
+      if (article.url && article.url !== '#') {
+        window.open(article.url, '_blank', 'noopener,noreferrer');
+      } else {
+        setPreviewArticleId(article.id);
+      }
+    },
+    [handleRecordOgpView],
+  );
+
+  const gridSorted = useMemo(() => {
+    if (!showFeaturedHero) return sorted;
+    return sorted.filter((a) => !featuredIdSet.has(a.id));
+  }, [sorted, showFeaturedHero, featuredIdSet]);
+
+  const sponsoredPages = useMemo(() => {
+    if (!showSponsors || !sponsorSettings) return null;
+    return paginateWithSponsors(
+      gridSorted,
+      rowsPerPage,
+      OGPS_PER_ROW,
+      sponsorSettings.startRow,
+      sponsorSettings.intervalRows,
+      maxSponsorCols(sponsorSettings.sponsors),
+    );
+  }, [showSponsors, sponsorSettings, gridSorted, rowsPerPage]);
+
+  const totalPages = Math.max(
+    1,
+    sponsoredPages ? sponsoredPages.length : Math.ceil(gridSorted.length / itemsPerPage),
+  );
   const start = (currentPage - 1) * itemsPerPage;
 
   // Clamp current page when total pages shrinks (e.g. after filter or items-per-page change)
@@ -895,9 +1360,16 @@ export default function NewsArticlesList({
   }, [totalPages, currentPage]);
 
   const paginated = useMemo(
-    () => sorted.slice(start, start + itemsPerPage),
-    [sorted, start, itemsPerPage]
+    () => gridSorted.slice(start, start + itemsPerPage),
+    [gridSorted, start, itemsPerPage]
   );
+
+  const pageCells: SponsoredPageCell<ArticlePasted>[] = useMemo(() => {
+    if (sponsoredPages) {
+      return sponsoredPages[currentPage - 1] ?? [];
+    }
+    return paginated.map((item) => ({ kind: 'news' as const, item }));
+  }, [sponsoredPages, currentPage, paginated]);
 
   // OGP list height = row1 + row2 + row3 (measure first element of row 4 relative to grid)
   const updateOgpListMaxHeight = useCallback(() => {
@@ -948,8 +1420,8 @@ export default function NewsArticlesList({
 
   const allArticleIdsKey = useMemo(() => byTopic.map((a) => a.id).join(','), [byTopic]);
   const allGroupIdsKey = useMemo(
-    () => (apiBase === '/api/music' ? '' : ogpNewsGroups.map((g) => g.id).join(',')),
-    [ogpNewsGroups, apiBase]
+    () => ogpNewsGroups.map((g) => g.id).join(','),
+    [ogpNewsGroups]
   );
 
   useEffect(() => {
@@ -1019,9 +1491,9 @@ export default function NewsArticlesList({
   }, [adminContext, apiBase]);
 
   return (
-    <div className="mt-6">
+    <div className="mt-6 min-w-0 w-full">
       {/* Toolbar - Search, Filter, Pagination (red area from second picture) */}
-      <div className="rounded-xl border border-gray-200 overflow-hidden mb-4">
+      <div className="rounded-xl border border-gray-200 overflow-hidden mb-4 min-w-0">
         {/* Row 1: Search, Highlight, next, prev, Select Sport, Language, Show */}
         <div className="bg-red-800 flex flex-wrap items-center gap-2 p-3">
           <div className="flex items-center bg-gray-700 rounded border border-gray-600 flex-1 min-w-[140px] max-w-[200px]">
@@ -1161,23 +1633,31 @@ export default function NewsArticlesList({
           >
             {t('news_next_ogp')}
           </button>
-          {/* Single News / Groups of News — after pagination, before topic title */}
-          {apiBase !== '/api/music' && !viewingOgpGroup && (
+          {/* Single / Groups — after pagination, before topic title */}
+          {!viewingOgpGroup && (
             <div className="flex items-center gap-3 flex-shrink-0 ml-1">
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <label
+                className={`flex items-center gap-1.5 select-none ${
+                  isAddingToGroup || hideOgpGroups
+                    ? 'cursor-not-allowed opacity-80'
+                    : 'cursor-pointer'
+                }`}
+              >
                 <input
                   type="checkbox"
-                  checked={showSingleNews}
+                  checked={hideOgpGroups || isAddingToGroup ? true : showSingleNews}
+                  disabled={isAddingToGroup || hideOgpGroups}
                   onChange={(e) => {
+                    if (isAddingToGroup || hideOgpGroups) return;
                     setShowSingleNews(e.target.checked);
                     setCurrentPage(1);
                   }}
-                  className="w-4 h-4 rounded border-gray-400 accent-green-600"
-                  aria-label="Single News"
+                  className="w-4 h-4 rounded border-gray-400 accent-green-600 disabled:cursor-not-allowed"
+                  aria-label={singleLabel}
                 />
-                <span className="text-sm text-gray-900 whitespace-nowrap">Single News</span>
+                <span className="text-sm text-gray-900 whitespace-nowrap">{singleLabel}</span>
               </label>
-              {!isAddingToGroup && (
+              {!isAddingToGroup && !hideOgpGroups && (
                 <label className="flex items-center gap-1.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -1187,9 +1667,9 @@ export default function NewsArticlesList({
                       setCurrentPage(1);
                     }}
                     className="w-4 h-4 rounded border-gray-400 accent-green-600"
-                    aria-label="Groups of News"
+                    aria-label={groupsLabel}
                   />
-                  <span className="text-sm text-gray-900 whitespace-nowrap">Groups of News</span>
+                  <span className="text-sm text-gray-900 whitespace-nowrap">{groupsLabel}</span>
                 </label>
               )}
             </div>
@@ -1200,7 +1680,7 @@ export default function NewsArticlesList({
               {renderActiveTopicHeading('light')}
             </div>
           </div>
-          {apiBase === '/api/music' && (
+          {isMusic && (
             <div className="flex items-center gap-2 flex-shrink-0">
               <label
                 htmlFor="musical-genre-select"
@@ -1227,34 +1707,28 @@ export default function NewsArticlesList({
               </select>
             </div>
           )}
-          {/* Group session: Exit returns to all OGP News. Otherwise Add Single / Add to a group. */}
-          {apiBase !== '/api/music' && viewingOgpGroup ? (
+          {/* Group session: Exit returns to all OGP items. Otherwise Add Single / Add to a group. */}
+          {viewingOgpGroup ? (
             <button
               type="button"
               onClick={exitOgpGroupView}
               className="ml-auto flex-shrink-0 px-6 py-2 rounded-md border border-gray-400 bg-gradient-to-b from-gray-100 to-gray-300 text-sm font-semibold text-gray-900 hover:from-gray-200 hover:to-gray-400 shadow-sm"
-              title="Exit group and show all OGP News"
+              title={`Exit group and show all ${ogpLabel}`}
               aria-label="Exit group view"
             >
               Exit
             </button>
+          ) : viewingHeadlines ? (
+            <button
+              type="button"
+              onClick={() => setViewingHeadlines(false)}
+              className="ml-auto flex-shrink-0 px-6 py-2 rounded-md border border-gray-400 bg-gradient-to-b from-gray-100 to-gray-300 text-sm font-semibold text-gray-900 hover:from-gray-200 hover:to-gray-400 shadow-sm"
+              title="Back to OGP News"
+              aria-label="Exit news headlines"
+            >
+              Exit
+            </button>
           ) : onAddClick != null && !superAdminReadOnlyOgpActions ? (
-            apiBase === '/api/music' ? (
-              <button
-                type="button"
-                onClick={onAddClick}
-                disabled={addButtonDisabled}
-                className={`flex items-center justify-center w-10 h-10 rounded-lg border transition-colors flex-shrink-0 ${
-                  addButtonDisabled
-                    ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-                title={addButtonDisabled ? 'Select a topic to add an article' : 'Add article'}
-                aria-label="Add article"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-            ) : (
               <div className="flex items-end gap-3 flex-shrink-0 ml-auto">
                 <div className="flex flex-col items-center gap-0.5">
                   <span className="text-sm text-gray-900 leading-tight">Single</span>
@@ -1273,28 +1747,48 @@ export default function NewsArticlesList({
                     <Plus className="w-5 h-5" />
                   </button>
                 </div>
+                {!hideOgpGroups && (
                 <div className="flex flex-col items-center gap-0.5">
                   <span className="text-sm text-gray-900 leading-tight whitespace-nowrap">
                     {isAddingToGroup ? 'Add to a group' : 'Add to a group'}
                   </span>
                   {isAddingToGroup ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedForGroupIds.length === 0) {
-                          window.alert('Select at least one OGP News to save a group.');
-                          return;
-                        }
-                        setGroupSaveError(null);
-                        setGroupNameConflict(false);
-                        setShowCreateGroupModal(true);
-                      }}
-                      className="flex items-center justify-center min-w-[3.25rem] h-10 px-3 rounded-lg border border-gray-300 bg-white text-red-600 text-sm font-semibold hover:bg-gray-50"
-                      title="Save selected OGP News as a group"
-                      aria-label="Save group"
-                    >
-                      Save
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedForGroupIds.length === 0) {
+                            window.alert(`Select at least one ${ogpLabel} to save a group.`);
+                            return;
+                          }
+                          setGroupSaveError(null);
+                          setGroupNameConflict(false);
+                          setShowCreateGroupModal(true);
+                        }}
+                        className="flex items-center justify-center min-w-[3.25rem] h-10 px-3 rounded-lg border border-gray-300 bg-white text-red-600 text-sm font-semibold hover:bg-gray-50"
+                        title={`Save selected ${ogpLabel} as a group`}
+                        aria-label="Save group"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingToGroup(false);
+                          setViewSelectedOnly(false);
+                          setSelectedForGroupIds([]);
+                          setShowCreateGroupModal(false);
+                          setGroupSaveError(null);
+                          setGroupNameConflict(false);
+                          setCurrentPage(1);
+                        }}
+                        className="flex items-center justify-center min-w-[3.25rem] h-10 px-3 rounded-lg border border-gray-400 bg-gradient-to-b from-gray-100 to-gray-300 text-sm font-semibold text-gray-900 hover:from-gray-200 hover:to-gray-400 shadow-sm"
+                        title="Exit and abort group creation"
+                        aria-label="Exit group creation"
+                      >
+                        Exit
+                      </button>
+                    </div>
                   ) : (
                     <button
                       type="button"
@@ -1322,14 +1816,14 @@ export default function NewsArticlesList({
                     </button>
                   )}
                 </div>
+                )}
               </div>
-            )
           ) : null}
         </div>
       </div>
 
       {/* Pasted - OGP cards in a grid (multiple per row); max 3 rows visible, scroll when more */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden min-w-0 w-full">
         <div
           className={`bg-gray-800 text-white px-3 sm:px-4 py-2 ${
             apiBase === '/api/music'
@@ -1337,10 +1831,19 @@ export default function NewsArticlesList({
               : 'flex flex-wrap items-center gap-x-3 gap-y-2'
           }`}
         >
-          {apiBase === '/api/music' ? (
+          {isMusic ? (
             <div className="grid grid-cols-[1fr_auto_1fr] items-center w-full gap-2 min-h-[36px]">
               <div className="justify-self-start font-semibold inline-flex flex-wrap items-baseline gap-x-0.5 min-w-0 truncate">
-                {renderActiveTopicHeading('dark')}
+                {viewingOgpGroup ? (
+                  <>
+                    <span className="text-white">GROUP of</span>
+                    <span className="text-lime-300 uppercase tracking-wide ml-1">
+                      {viewingOgpGroup.name}
+                    </span>
+                  </>
+                ) : (
+                  renderActiveTopicHeading('dark')
+                )}
               </div>
               <nav
                 className="flex items-center justify-center gap-x-2 sm:gap-x-3 gap-y-1 flex-nowrap"
@@ -1352,7 +1855,10 @@ export default function NewsArticlesList({
                     <button
                       key={key}
                       type="button"
-                      onClick={() => setMusicLibraryNav(key)}
+                      onClick={() => {
+                        setMusicLibraryNav((prev) => (prev === key ? null : key));
+                        setCurrentPage(1);
+                      }}
                       className={`inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 rounded text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
                         isActive
                           ? 'bg-white/20 text-white'
@@ -1414,7 +1920,7 @@ export default function NewsArticlesList({
               </div>
             </div>
           ) : (
-            <div className="font-semibold inline-flex flex-wrap items-baseline gap-x-1.5 min-w-0 shrink-0">
+            <div className="font-semibold inline-flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 shrink-0">
               {viewingOgpGroup ? (
                 <>
                   <span className="text-white">GROUP of</span>
@@ -1422,13 +1928,63 @@ export default function NewsArticlesList({
                     {viewingOgpGroup.name}
                   </span>
                 </>
+              ) : viewingHeadlines ? (
+                <span className="text-white">News Headlines</span>
               ) : (
                 renderActiveTopicHeading('dark')
+              )}
+              {isSuperAdmin && !viewingOgpGroup && (
+                <label className="flex items-center gap-2 cursor-pointer select-none font-normal">
+                  <input
+                    type="radio"
+                    name="exclude-expired-deleted"
+                    checked={excludeExpiredAndDeleted}
+                    onChange={() => {
+                      setExcludeExpiredAndDeleted(true);
+                      setCurrentPage(1);
+                    }}
+                    onClick={() => {
+                      if (excludeExpiredAndDeleted) {
+                        setExcludeExpiredAndDeleted(false);
+                        setCurrentPage(1);
+                      }
+                    }}
+                    className="w-4 h-4 border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                    aria-label="Exclude expired & deleted"
+                  />
+                  <span className="text-white text-sm whitespace-nowrap">
+                    Exclude expired & deleted
+                  </span>
+                </label>
               )}
             </div>
           )}
           <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0 ${apiBase === '/api/music' ? 'w-full justify-center' : 'ml-auto'}`}>
-            {apiBase !== '/api/music' && isAddingToGroup && !viewingOgpGroup && (
+            {apiBase === '/api/music' && isSuperAdmin && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="radio"
+                  name="exclude-expired-deleted"
+                  checked={excludeExpiredAndDeleted}
+                  onChange={() => {
+                    setExcludeExpiredAndDeleted(true);
+                    setCurrentPage(1);
+                  }}
+                  onClick={() => {
+                    if (excludeExpiredAndDeleted) {
+                      setExcludeExpiredAndDeleted(false);
+                      setCurrentPage(1);
+                    }
+                  }}
+                  className="w-4 h-4 border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                  aria-label="Exclude expired & deleted"
+                />
+                <span className="text-white text-sm whitespace-nowrap">
+                  Exclude expired & deleted
+                </span>
+              </label>
+            )}
+            {isAddingToGroup && !viewingOgpGroup && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -1440,60 +1996,82 @@ export default function NewsArticlesList({
                   className="w-4 h-4 rounded border-gray-300 accent-green-600"
                   aria-label="View selected"
                 />
-                <span className="text-yellow-300 text-sm whitespace-nowrap font-medium">
+                <span className="text-green-300 text-sm whitespace-nowrap font-medium">
                   View selected
                 </span>
               </label>
             )}
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
-                type="checkbox"
-                checked={showPostedByMovesbook}
-                onChange={(e) => {
-                  setShowPostedByMovesbook(e.target.checked);
+                type="radio"
+                name="posted-by-filter"
+                checked={postedByFilter === 'movesbook'}
+                onChange={() => {
+                  setPostedByFilter('movesbook');
                   setCurrentPage(1);
                 }}
-                className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                aria-label="Show posted by Movesbook"
+                onClick={() => {
+                  // Allow clearing the radio group (back to "show all").
+                  if (postedByFilter === 'movesbook') {
+                    setPostedByFilter('none');
+                    setCurrentPage(1);
+                  }
+                }}
+                className="w-4 h-4 border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                aria-label="posted by Movesbook"
               />
               <span className="text-white text-sm whitespace-nowrap">
-                Show posted by Movesbook
+                posted by Movesbook
               </span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
-                type="checkbox"
-                checked={showPostedByMyCountry}
-                onChange={(e) => {
-                  setShowPostedByMyCountry(e.target.checked);
+                type="radio"
+                name="posted-by-filter"
+                checked={postedByFilter === 'myCountry'}
+                onChange={() => {
+                  setPostedByFilter('myCountry');
                   setCurrentPage(1);
                 }}
-                className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                aria-label="Show posted by my country"
+                onClick={() => {
+                  if (postedByFilter === 'myCountry') {
+                    setPostedByFilter('none');
+                    setCurrentPage(1);
+                  }
+                }}
+                className="w-4 h-4 border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                aria-label={postedByCountryLabel}
               />
               <span className="text-white text-sm whitespace-nowrap">
-                Show posted by my country
+                {postedByCountryLabel}
               </span>
             </label>
             {canFilterByMyOgNews && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
-                  type="checkbox"
-                  checked={showOnlyMyOgNews}
-                  onChange={(e) => {
-                    setShowOnlyMyOgNews(e.target.checked);
+                  type="radio"
+                  name="posted-by-filter"
+                  checked={postedByFilter === 'me'}
+                  onChange={() => {
+                    setPostedByFilter('me');
                     setCurrentPage(1);
                   }}
-                  className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                  onClick={() => {
+                    if (postedByFilter === 'me') {
+                      setPostedByFilter('none');
+                      setCurrentPage(1);
+                    }
+                  }}
+                  className="w-4 h-4 border-gray-300 text-cyan-600 focus:ring-cyan-500"
                   aria-label={
                     showOnlyMyOgNewsLabelUsername
-                      ? `Show only posted by ${showOnlyMyOgNewsLabelUsername}`
+                      ? `only posted by ${showOnlyMyOgNewsLabelUsername}`
                       : t('news_show_only_my_ogp')
                   }
                 />
-                <span className="text-yellow-300 text-sm whitespace-nowrap">
+                <span className="text-white text-sm whitespace-nowrap">
                   {showOnlyMyOgNewsLabelUsername
-                    ? `Show only posted by ${showOnlyMyOgNewsLabelUsername}`
+                    ? `only posted by ${showOnlyMyOgNewsLabelUsername}`
                     : t('news_show_only_my_ogp')}
                 </span>
               </label>
@@ -1528,6 +2106,31 @@ export default function NewsArticlesList({
                 {isSuperAdmin ? 'Show deleted' : 'Show also deleted'}
               </span>
             </label>
+            {showFeaturedControls && isNewsOgp && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showFeaturedInEvidence}
+                  onChange={(e) => handleShowFeaturedInEvidenceChange(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-lime-400 focus:ring-lime-500"
+                  aria-label="Display news card"
+                />
+                <span className="text-lime-300 text-sm whitespace-nowrap font-medium">
+                  Display news card
+                </span>
+              </label>
+            )}
+            {isSuperAdmin && isNewsOgp && !superAdminReadOnlyOgpActions && (
+              <button
+                type="button"
+                onClick={() => setShowSponsorsModal(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500 text-amber-950 text-sm font-medium hover:bg-amber-400"
+                title="Configure sponsored news"
+              >
+                <Megaphone className="w-4 h-4" />
+                Sponsors
+              </button>
+            )}
             {apiBase !== '/api/music' && (
             <div className="flex items-center gap-1">
             <button
@@ -1578,10 +2181,10 @@ export default function NewsArticlesList({
           </div>
         </div>
         <div className="p-4 min-h-0 flex flex-col">
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && !showFeaturedHero && !showHeadlinesPanel && !viewingHeadlines && !showSponsors ? (
             <p className="text-sm text-gray-500">
               {viewingOgpGroup
-                ? `No OGP News in group "${viewingOgpGroup.name}".`
+                ? `No ${ogpLabel} in group "${viewingOgpGroup.name}".`
                 : activeTopic === ALL_TOPICS
                 ? t('news_no_articles_all')
                 : activeTopic === ALL_USER_SECTORS
@@ -1592,6 +2195,23 @@ export default function NewsArticlesList({
                       ? t('news_no_articles_for_topic').replace('{topic}', translateTopic(activeTopic))
                       : t('news_no_articles_default')}
             </p>
+          ) : viewingHeadlines ? (
+            <div
+              className="min-h-0 overflow-y-auto overscroll-contain"
+              role="region"
+              aria-label="News headlines"
+            >
+              <NewsHeadlinesExpandedView
+                articles={headlinesArticles}
+                getViewCount={getHeadlineViewCount}
+                likesMap={likesMap}
+                likeLoadingId={likeLoadingId}
+                onLike={(id) => handleLikeClick(id, false)}
+                onOpenArticle={handleOpenHeadlineArticle}
+                displayPicture={headlinesDisplayPicture}
+                onDisplayPictureChange={handleHeadlinesDisplayPictureChange}
+              />
+            </div>
           ) : (
             <div
               className="min-h-0 overflow-y-auto overscroll-contain"
@@ -1601,16 +2221,38 @@ export default function NewsArticlesList({
             >
               <div
                 ref={ogpGridRef}
-                className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 w-full min-h-min"
+                className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-4 w-full min-w-0 min-h-min"
               >
-                {paginated.map((a) => (
+                {showFeaturedHero && (
+                  <FeaturedNewsCard
+                    articles={featuredArticles}
+                    onPreview={(id) => setPreviewArticleId(id)}
+                    onView={(id) => void handleRecordOgpView(id)}
+                  />
+                )}
+                {showHeadlinesPanel && (
+                  <NewsHeadlinesPanel
+                    articles={headlinesArticles}
+                    getViewCount={getHeadlineViewCount}
+                    onViewMore={() => setViewingHeadlines(true)}
+                    onOpenArticle={handleOpenHeadlineArticle}
+                  />
+                )}
+                {pageCells.map((cell, cellIndex) =>
+                cell.kind === 'sponsor' && sponsorSettings ? (
+                  <OgpSponsoredCard
+                    key={`sponsor-${currentPage}-${cellIndex}`}
+                    sponsors={sponsorSettings.sponsors}
+                    delayMs={sponsorSettings.delayMs}
+                  />
+                ) : cell.kind === 'news' ? ((a: ArticlePasted) => (
                 <article
                   key={a.isOgpGroup ? `group-${a.id}` : a.id}
                   className={`border rounded-lg p-3 group flex flex-col min-w-0 relative h-full min-h-0 ${
                     a.isOgpGroup
-                      ? 'border-sky-200 bg-sky-100 hover:bg-sky-100/90'
+                      ? 'border-2 border-blue-500 bg-sky-100 hover:bg-sky-100/90'
                       : a.deletedAt
-                      ? 'border-amber-200 bg-amber-50/50 hover:bg-amber-50/70'
+                      ? 'border-amber-400 bg-amber-200 hover:bg-amber-300'
                       : isExpiredOrNoExpiry(a)
                         ? 'border-[rgb(255,38,0)] bg-[rgb(255,38,0)]/10 hover:bg-[rgb(255,38,0)]/15'
                       : 'border-gray-200 hover:bg-gray-50'
@@ -1646,7 +2288,10 @@ export default function NewsArticlesList({
                           target="_blank"
                           rel="noopener noreferrer"
                           className="block w-full flex-shrink-0 pointer-events-auto rounded mb-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset"
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!a.isOgpGroup) void handleRecordOgpView(a.id);
+                          }}
                           aria-label={`Open article: ${a.title || a.url}`}
                         >
                           <span className={`relative block w-full h-28 rounded overflow-hidden ${a.deletedAt ? 'opacity-75' : ''}`}>
@@ -1662,41 +2307,37 @@ export default function NewsArticlesList({
                         </a>
                       )
                     )}
-                    {/* OGP topic name + creator username; for groups: group name + group creator */}
+                    {/* OGP topic name + creator; for groups: topic on top, group name below */}
                     <div className="flex items-center gap-1 mb-1.5 flex-shrink-0">
-                      {a.isOgpGroup ? (
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 max-w-[70%] min-w-0 hover:bg-gray-200 cursor-pointer"
-                          title="Open OGP News group"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            openOgpGroupView(a);
-                          }}
-                        >
-                          <Tag className="w-3 h-3 shrink-0" aria-hidden />
-                          <span className="truncate">
-                            {a.groupName || a.title || 'Group'}
-                          </span>
-                        </button>
-                      ) : (
-                        <span
-                          className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 max-w-[70%] min-w-0"
-                          title="Topic"
-                        >
-                          <Tag className="w-3 h-3 shrink-0" aria-hidden />
-                          <span className="truncate">
-                            {translateTopic(a.topic ?? 'News')}
-                          </span>
+                      <span
+                        className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 max-w-[70%] min-w-0"
+                        title="Topic"
+                      >
+                        <Tag className="w-3 h-3 shrink-0" aria-hidden />
+                        <span className="truncate">
+                          {translateTopic(a.topic ?? 'News')}
                         </span>
-                      )}
+                      </span>
                       {(a.isOgpGroup ? a.creatorUsername || a.creatorName : a.creatorUsername) && (
                         <span className="ml-auto text-[11px] text-blue-600 whitespace-nowrap truncate max-w-[45%]" title={a.isOgpGroup ? (a.creatorUsername || a.creatorName || undefined) : (a.creatorUsername || undefined)}>
                           by {a.isOgpGroup ? a.creatorUsername || a.creatorName : a.creatorUsername}
                         </span>
                       )}
                     </div>
+                    {a.isOgpGroup && (
+                      <button
+                        type="button"
+                        className="block w-full text-left text-xs font-semibold text-sky-800 truncate mb-1 flex-shrink-0 hover:underline cursor-pointer"
+                        title={`Open ${ogpLabel} group. Here you can see all the most recent articles related to '${a.groupName || a.title || 'Group'}'`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openOgpGroupView(a);
+                        }}
+                      >
+                        {a.groupName || a.title || 'Group'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="relative z-10 text-left pointer-events-auto flex-1 min-h-0 flex flex-col group/text"
@@ -1706,6 +2347,7 @@ export default function NewsArticlesList({
                         if (a.isOgpGroup) {
                           openOgpGroupView(a);
                         } else {
+                          void handleRecordOgpView(a.id);
                           setPreviewArticleId(a.id);
                         }
                       }}
@@ -1715,7 +2357,12 @@ export default function NewsArticlesList({
                           ? highlightText(a.title || a.url, search)
                           : a.title || a.url}
                       </h4>
-                      <p
+                      {a.artist ? (
+                        <p className="text-xs text-gray-500 mt-0.5 truncate" title={a.artist}>
+                          {a.artist}
+                        </p>
+                      ) : null}
+                      <div
                         className={`text-xs text-gray-600 mt-1 flex-1 min-h-0 ${
                           expandedArticleIds.has(a.id)
                             ? 'max-h-28 overflow-y-auto overflow-x-hidden pointer-events-auto'
@@ -1730,6 +2377,7 @@ export default function NewsArticlesList({
                             if (a.isOgpGroup) {
                               openOgpGroupView(a);
                             } else {
+                              void handleRecordOgpView(a.id);
                               setPreviewArticleId(a.id);
                             }
                           }
@@ -1738,11 +2386,28 @@ export default function NewsArticlesList({
                       >
                         {highlightMatches && search.trim()
                           ? highlightText(
-                              a.customDescription || a.description || a.url,
+                              ogpDescriptionPlainText(
+                                a.customDescription,
+                                a.description,
+                                a.url
+                              ),
                               search
                             )
-                          : a.customDescription || a.description || a.url}
-                      </p>
+                          : expandedArticleIds.has(a.id)
+                            ? (
+                              <OgpRichDescription
+                                html={
+                                  a.customDescription || a.description || a.url || ''
+                                }
+                                className="text-xs text-gray-600"
+                              />
+                              )
+                            : ogpDescriptionPlainText(
+                                a.customDescription,
+                                a.description,
+                                a.url
+                              )}
+                      </div>
                     </button>
                     <div className="relative z-10 text-sm text-gray-600 mt-2 flex items-center gap-2 flex-shrink-0">
                       <span className="flex-1 min-w-0">
@@ -1763,7 +2428,7 @@ export default function NewsArticlesList({
                             );
                           }}
                           className="w-4 h-4 rounded border-gray-400 accent-green-600 flex-shrink-0"
-                          aria-label={`Select ${a.title || 'OGP News'} for group`}
+                          aria-label={`Select ${a.title || ogpLabel} for group`}
                         />
                       )}
                     </div>
@@ -1808,11 +2473,66 @@ export default function NewsArticlesList({
                       >
                         <Share2 className="w-3.5 h-3.5" />
                       </button>
+                      {showGlobalNewsButton && !a.isOgpGroup && !isMusic && !isExercise && onToggleGlobalNews ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleGlobalNewsToggle(a.id, a.inGlobalNews === true);
+                          }}
+                          disabled={
+                            superAdminReadOnlyOgpActions ||
+                            globalNewsLoadingId === a.id
+                          }
+                          className={`inline-flex items-center justify-center rounded-md border px-2 py-1 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+                            a.inGlobalNews
+                              ? 'border-teal-500 bg-teal-50 text-teal-700 hover:bg-teal-100'
+                              : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
+                          }`}
+                          title={
+                            a.inGlobalNews
+                              ? 'Shared in Global News (click to remove)'
+                              : 'Share in Global News'
+                          }
+                          aria-label={
+                            a.inGlobalNews ? 'Remove from Global News' : 'Share in Global News'
+                          }
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                        </button>
+                      ) : null}
+                      {showShareInMyClubsButton && !a.isOgpGroup && !isMusic && !isExercise ? (
+                        <ShareInMyClubsButtonIfClub
+                          userType={currentUserType}
+                          kind="ogp"
+                          itemId={a.id}
+                          itemTitle={a.title ?? a.customDescription ?? null}
+                          adminUsername={clubAdminUsername ?? undefined}
+                          sharedClubIds={a.sharedClubIds}
+                          onSharedChange={(clubIds) =>
+                            onArticleSharedClubIdsChange?.(a.id, clubIds)
+                          }
+                        />
+                      ) : null}
+                      {showClubGlobalNewsButton &&
+                      clubGlobalNewsClubId &&
+                      !a.isOgpGroup &&
+                      !isMusic &&
+                      !isExercise ? (
+                        <ClubGlobalNewsToggleButton
+                          kind="ogp"
+                          itemId={a.id}
+                          clubId={clubGlobalNewsClubId}
+                          inClubGlobalNews={a.inClubGlobalNews === true}
+                          onToggled={(next) => onToggleClubGlobalNews?.(a.id, next)}
+                        />
+                      ) : null}
                       {a.isOgpGroup && (
                         <span
                           className="inline-flex items-center justify-center min-w-[1.5rem] h-7 px-1.5 rounded border border-gray-300 bg-white text-gray-800 text-sm font-semibold tabular-nums"
-                          title={`${a.memberCount ?? 0} OGP News in this group`}
-                          aria-label={`${a.memberCount ?? 0} OGP News in this group`}
+                          title={`${a.memberCount ?? 0} ${ogpLabel} in this group`}
+                          aria-label={`${a.memberCount ?? 0} ${ogpLabel} in this group`}
                         >
                           {a.memberCount ?? 0}
                         </span>
@@ -1824,6 +2544,28 @@ export default function NewsArticlesList({
                         {a.deletedByName ? ` by ${a.deletedByName}` : ' by creator'}
                       </p>
                     )}
+                    {!a.deletedAt && isPastExpired(a) && (
+                      <p className="relative z-10 pointer-events-none text-xs text-amber-800 mt-1 font-medium">
+                        Expired on {formatDate(a.visibility?.expiresAt ?? undefined)}
+                      </p>
+                    )}
+                    {showFeaturedControls && isNewsOgp && !a.isOgpGroup && onToggleOgpFeatured && (
+                      <div className="relative z-10 mt-2 pt-2 border-t border-gray-100 flex flex-col gap-1.5 flex-shrink-0">
+                        <label className="inline-flex items-center gap-2 text-xs text-gray-700 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={a.isFeatured === true}
+                            disabled={superAdminReadOnlyOgpActions || featuredLoadingId === a.id}
+                            onChange={(e) => {
+                              void handleFeaturedToggle(a.id, { isFeatured: e.target.checked });
+                            }}
+                            className="w-3.5 h-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            aria-label="Featured News Card"
+                          />
+                          <span>Featured News Card</span>
+                        </label>
+                      </div>
+                    )}
                   </div>
                   {/* Action icons row below each OGP - compact so 6 fit within narrow cards */}
                   <div className="relative z-20 pointer-events-auto mt-auto pt-2 border-t border-gray-100 flex items-center justify-between gap-0.5 min-w-0 flex-shrink-0">
@@ -1832,22 +2574,37 @@ export default function NewsArticlesList({
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (canEditAsCreator(a)) setEditTopicArticleId(a.id);
+                          if (!canEditAsCreator(a)) return;
+                          if (apiBase === '/api/music' && onEditPasted && !a.isOgpGroup) {
+                            onEditPasted(a);
+                            return;
+                          }
+                          setEditTopicArticleId(a.id);
                         }}
                         disabled={
                           superAdminReadOnlyOgpActions ||
-                          (a.isOgpGroup ? !onUpdateOgpNewsGroup : !onUpdatePastedTopic) ||
-                          !canEditAsCreator(a)
+                          !canEditAsCreator(a) ||
+                          (apiBase === '/api/music' && onEditPasted && !a.isOgpGroup
+                            ? false
+                            : a.isOgpGroup
+                              ? !onUpdateOgpNewsGroup
+                              : !onUpdatePastedTopic)
                         }
                         className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
                         title={
                           canEditAsCreator(a)
-                            ? a.isOgpGroup
-                              ? 'Change group topic (creator only)'
-                              : 'Change topic (creator only)'
+                            ? apiBase === '/api/music' && onEditPasted && !a.isOgpGroup
+                              ? 'Edit music (creator only)'
+                              : a.isOgpGroup
+                                ? 'Change group topic (creator only)'
+                                : 'Change topic (creator only)'
                             : "Only the creator can change this"
                         }
-                        aria-label="Change topic"
+                        aria-label={
+                          apiBase === '/api/music' && onEditPasted && !a.isOgpGroup
+                            ? 'Edit music'
+                            : 'Change topic'
+                        }
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -1874,13 +2631,20 @@ export default function NewsArticlesList({
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (a.url) {
-                            navigator.clipboard?.writeText(a.url).then(() => setCopiedArticleId(a.id));
+                          const shareUrl = getArticleShareUrl(a, isMusic ? 'music' : 'news');
+                          if (shareUrl) {
+                            navigator.clipboard?.writeText(shareUrl).then(() => setCopiedArticleId(a.id));
                           }
                         }}
                         disabled={superAdminReadOnlyOgpActions}
                         className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={copiedArticleId === a.id ? 'Copied!' : 'Copy OGP URL to clipboard'}
+                        title={
+                          copiedArticleId === a.id
+                            ? 'Copied!'
+                            : a.isOgpGroup
+                              ? 'Copy group link to clipboard'
+                              : 'Copy OGP URL to clipboard'
+                        }
                         aria-label={copiedArticleId === a.id ? 'Copied!' : 'Copy link'}
                       >
                         <Link className="w-3.5 h-3.5" />
@@ -1901,7 +2665,22 @@ export default function NewsArticlesList({
                         title={a.isOgpGroup ? 'View creator of this group' : 'View creator of this article'}
                         aria-label="View creator"
                       >
-                        <User className="w-3.5 h-3.5" />
+                        {isSuperAdmin && a.createdBySuperAdmin ? (
+                          <span
+                            className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded bg-red-600 text-white border border-yellow-300 shrink-0 select-none"
+                            style={{
+                              fontFamily: "'Comic Sans MS', 'Comic Sans', cursive",
+                              fontSize: 11,
+                              fontWeight: 700,
+                              lineHeight: 1,
+                            }}
+                            title="Posted by Movesbook (Super Admin)"
+                          >
+                            MB
+                          </span>
+                        ) : (
+                          <User className="w-3.5 h-3.5" />
+                        )}
                       </button>
                       <button
                         type="button"
@@ -1964,32 +2743,90 @@ export default function NewsArticlesList({
                       )}
                   </div>
                 </article>
-              ))}
+                ))(cell.item) : null)}
               </div>
             </div>
           )}
         </div>
       </div>
 
+      <OgpSponsorsSettingsModal
+        isOpen={showSponsorsModal}
+        onClose={() => setShowSponsorsModal(false)}
+        initial={sponsorSettings}
+        ogpArticles={sponsorOgpArticles}
+        onSaved={(next) => {
+          setSponsorSettings(next);
+          setCurrentPage(1);
+        }}
+      />
+
       {settingsArticleId != null && (
         <NewsSettingModal
           isOpen={true}
           onClose={() => setSettingsArticleId(null)}
-          initialSettings={
-            pasted.find((a) => a.id === settingsArticleId)?.visibility ??
-            ogpNewsGroups.find((g) => g.id === settingsArticleId)?.visibility ??
-            defaultSettings
-          }
-          onSave={(settings) => {
+          initialSettings={(() => {
+            const fromPasted = pasted.find((a) => a.id === settingsArticleId);
+            const fromGroup = ogpNewsGroups.find((g) => g.id === settingsArticleId);
+            const visibility =
+              fromPasted?.visibility ?? fromGroup?.visibility ?? defaultSettings;
+            const clubAudienceMode =
+              fromPasted?.clubAudienceMode ?? fromGroup?.clubAudienceMode ?? null;
+            return {
+              ...visibility,
+              ...(clubGlobalNewsClubId ? { clubAudienceMode } : {}),
+            };
+          })()}
+          onSave={async (settings) => {
             const isGroup = ogpNewsGroups.some((g) => g.id === settingsArticleId);
-            if (isGroup) onUpdateOgpNewsGroupSettings?.(settingsArticleId, settings);
-            else onUpdatePastedSettings?.(settingsArticleId, settings);
+            if (isGroup) {
+              await onUpdateOgpNewsGroupSettings?.(settingsArticleId, settings);
+              if (settings.clubAudienceMode) {
+                onArticleClubAudienceModeChange?.(
+                  settingsArticleId,
+                  settings.clubAudienceMode,
+                );
+              }
+            } else {
+              onUpdatePastedSettings?.(settingsArticleId, settings);
+              if (clubGlobalNewsClubId && settings.clubAudienceMode) {
+                try {
+                  const token = localStorage.getItem('token');
+                  await fetch(
+                    `/api/clubs/shared-news/ogp/${encodeURIComponent(settingsArticleId)}`,
+                    {
+                      method: 'PATCH',
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        clubId: clubGlobalNewsClubId,
+                        audienceMode: settings.clubAudienceMode,
+                      }),
+                    },
+                  );
+                  onArticleClubAudienceModeChange?.(
+                    settingsArticleId,
+                    settings.clubAudienceMode,
+                  );
+                } catch (e) {
+                  console.error('Failed to save club audience mode', e);
+                }
+              }
+            }
             setSettingsArticleId(null);
           }}
           onDeleteSettings={() => {
             const isGroup = ogpNewsGroups.some((g) => g.id === settingsArticleId);
-            if (isGroup) onUpdateOgpNewsGroupSettings?.(settingsArticleId, defaultSettings);
-            else onUpdatePastedSettings?.(settingsArticleId, defaultSettings);
+            const cleared = {
+              ...defaultSettings,
+              ...(clubGlobalNewsClubId
+                ? { clubAudienceMode: 'me-and-club-members' as const }
+                : {}),
+            };
+            if (isGroup) onUpdateOgpNewsGroupSettings?.(settingsArticleId, cleared);
+            else onUpdatePastedSettings?.(settingsArticleId, cleared);
           }}
           options={settingsOptions}
           title={
@@ -1999,13 +2836,23 @@ export default function NewsArticlesList({
                 ? 'Music Setting'
                 : 'News Setting'
           }
+          showClubAudienceRadios={Boolean(clubGlobalNewsClubId)}
         />
       )}
 
       <OgpShareModal
         isOpen={shareModalArticle != null}
         onClose={() => setShareModalArticle(null)}
-        article={shareModalArticle ? { url: shareModalArticle.url, title: shareModalArticle.title } : null}
+        article={
+          shareModalArticle
+            ? {
+                url: getArticleShareUrl(shareModalArticle, isMusic ? 'music' : 'news'),
+                title: shareModalArticle.isOgpGroup
+                  ? shareModalArticle.groupName || shareModalArticle.title
+                  : shareModalArticle.title,
+              }
+            : null
+        }
         onCopyLink={() => shareModalArticle && setCopiedArticleId(shareModalArticle.id)}
       />
 
@@ -2023,7 +2870,7 @@ export default function NewsArticlesList({
           >
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
               <h2 id="creator-modal-title" className="text-lg font-semibold text-gray-900">
-                {apiBase === '/api/music' ? 'Music creator' : 'OGP creator'}
+                {apiBase === '/api/music' ? 'Music creator' : apiBase === '/api/exercises' ? 'Exercise creator' : 'OGP creator'}
               </h2>
               <button
                 type="button"
@@ -2158,6 +3005,9 @@ export default function NewsArticlesList({
                       rel="noopener noreferrer"
                       className="block w-full focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset cursor-pointer"
                       aria-label={`Open article: ${article.title || article.url}`}
+                      onClick={() => {
+                        if (!article.isOgpGroup) void handleRecordOgpView(article.id);
+                      }}
                     >
                       <span className="relative block w-full h-64 max-h-64">
                         <Image
@@ -2194,7 +3044,12 @@ export default function NewsArticlesList({
                     )}
                   </div>
                   <div className="mt-3 text-sm text-gray-700 max-h-60 overflow-y-auto overflow-x-hidden pr-2 border border-gray-200 rounded-lg p-3">
-                    {article.customDescription || article.description || article.url}
+                    <OgpRichDescription
+                      html={
+                        article.customDescription || article.description || article.url || ''
+                      }
+                      className="text-sm text-gray-700"
+                    />
                   </div>
                 </div>
               </div>
@@ -2217,12 +3072,12 @@ export default function NewsArticlesList({
           >
             <h2 id="remove-confirm-modal-title" className="text-lg font-semibold text-gray-900 mb-3">
               {ogpNewsGroups.some((g) => g.id === removeConfirmArticleId)
-                ? 'Remove OGP News group'
+                ? `Remove ${ogpLabel} group`
                 : 'Remove OGP'}
             </h2>
             <p className="text-sm text-gray-600 mb-4">
               {ogpNewsGroups.some((g) => g.id === removeConfirmArticleId)
-                ? 'Are you sure you want to remove this group? The individual OGP News items will not be deleted.'
+                ? `Are you sure you want to remove this group? The individual ${ogpLabel} items will not be deleted.`
                 : 'Are you sure you want to remove this article? This action cannot be undone.'}
             </p>
             <div className="flex gap-2 justify-end">
@@ -2294,14 +3149,14 @@ export default function NewsArticlesList({
             <label htmlFor="edit-topic-description" className="block text-sm font-medium text-gray-700 mb-1">
               Type here a brief description...
             </label>
-            <textarea
-              id="edit-topic-description"
-              value={editTopicDescription}
-              onChange={(e) => setEditTopicDescription(e.target.value)}
-              placeholder="Brief description..."
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 resize-y min-h-[80px] mb-4 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
-            />
+            <div className="mb-4">
+              <RichTextEditor
+                value={editTopicDescription}
+                onChange={setEditTopicDescription}
+                placeholder="Brief description..."
+                minHeight="80px"
+              />
+            </div>
             <div className="flex gap-2 justify-end">
               <button
                 type="button"
@@ -2330,8 +3185,9 @@ export default function NewsArticlesList({
         </div>
       )}
 
-      {showCreateGroupModal && apiBase !== '/api/music' && (
+      {showCreateGroupModal && (
         <CreateOgpNewsGroupModal
+          variant={isMusic ? 'music' : 'news'}
           topics={topicsList.filter(
             (t) => t !== ALL_TOPICS && t !== ALL_USER_SECTORS && t !== ALL_SUPER_ADMIN
           )}
@@ -2341,18 +3197,19 @@ export default function NewsArticlesList({
             activeTopic !== ALL_USER_SECTORS &&
             activeTopic !== ALL_SUPER_ADMIN
               ? activeTopic
-              : topicsList[0] ?? 'News'
+              : topicsList[0] ?? (isMusic ? 'Music' : isExercise ? 'Exercise' : 'News')
           }
           selectedCount={selectedForGroupIds.length}
           saving={groupSaving}
           error={groupSaveError}
           existingNameConflict={groupNameConflict}
+          onCreateTopic={onCreateTopic}
           onCancel={() => {
             setShowCreateGroupModal(false);
             setGroupSaveError(null);
             setGroupNameConflict(false);
           }}
-          onSave={async ({ name, topic, confirmExisting }) => {
+          onSave={async ({ name, topic, confirmExisting, coverImage }) => {
             if (!onSaveOgpNewsGroup) {
               setGroupSaveError('Saving groups is not available');
               return;
@@ -2365,6 +3222,7 @@ export default function NewsArticlesList({
                 topic,
                 articleIds: selectedForGroupIds,
                 confirmExisting,
+                coverImage: coverImage ?? null,
               });
               setShowCreateGroupModal(false);
               setGroupNameConflict(false);

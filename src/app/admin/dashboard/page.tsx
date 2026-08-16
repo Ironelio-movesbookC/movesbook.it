@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Users, Shield, Activity, TrendingUp } from 'lucide-react';
 import AdminSuperAdminOGPMusicContent from '@/components/admin/AdminSuperAdminOGPMusicContent';
 import AdminOgMusicPanelContent from '@/components/admin/AdminOgMusicPanelContent';
+import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 
 interface AdminUser {
   id: string;
@@ -42,6 +43,14 @@ function AdminDashboardInner() {
 
   if (panel === 'og-music') {
     return <AdminOgMusicPanelContent closeHref="/admin/dashboard" />;
+  }
+
+  if (panel === 'my-feedbacks') {
+    return (
+      <div className="p-4 min-h-[70vh]">
+        <MyStaffFeedbacksPanel onClose={() => router.push('/admin/dashboard')} />
+      </div>
+    );
   }
 
   const stats = [
@@ -129,7 +138,11 @@ function AdminDashboardInner() {
 
 export default function AdminDashboard() {
   return (
-    <Suspense fallback={<div className="p-6 text-gray-500">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="flex flex-1 items-center justify-center p-6 text-gray-500">Loading...</div>
+      }
+    >
       <AdminDashboardInner />
     </Suspense>
   );

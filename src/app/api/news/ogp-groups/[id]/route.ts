@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuthWithUser, getOrCreateUserForSuperAdmin } from '../../auth';
+import { isClubOgpAudienceMode } from '@/lib/clubOgpAudience';
 
 function parseJsonArray(value: unknown): string[] {
   if (value == null) return [];
@@ -92,11 +93,13 @@ export async function PATCH(
       topic?: string;
       name?: string;
       customDescription?: string | null;
+      coverImage?: string | null;
       visibilityUserTypes?: string;
       visibilityCountries?: string;
       visibilityLanguages?: string;
       visibilitySports?: string;
       expiresAt?: Date | null;
+      audienceMode?: string;
     } = {};
 
     if (body.topic !== undefined && typeof body.topic === 'string' && body.topic.trim()) {
@@ -108,6 +111,12 @@ export async function PATCH(
     if (body.customDescription !== undefined) {
       data.customDescription =
         typeof body.customDescription === 'string' ? body.customDescription.trim() || null : null;
+    }
+    if (body.coverImage !== undefined) {
+      data.coverImage =
+        typeof body.coverImage === 'string' && body.coverImage.trim()
+          ? body.coverImage.trim()
+          : null;
     }
     if (body.visibilityUserTypes !== undefined) {
       data.visibilityUserTypes = JSON.stringify(parseJsonArray(body.visibilityUserTypes));
@@ -128,6 +137,13 @@ export async function PATCH(
         const d = new Date(body.expiresAt);
         data.expiresAt = Number.isNaN(d.getTime()) ? null : d;
       }
+    }
+    const audienceRaw = body.audienceMode ?? body.clubAudienceMode;
+    if (audienceRaw !== undefined) {
+      if (!isClubOgpAudienceMode(audienceRaw)) {
+        return NextResponse.json({ error: 'Invalid audienceMode' }, { status: 400 });
+      }
+      data.audienceMode = audienceRaw;
     }
 
     if (Object.keys(data).length === 0) {

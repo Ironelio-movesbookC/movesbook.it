@@ -225,15 +225,104 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
       id: 'system',
       label: 'System mainpage',
       items: [
-        { 
-          label: 'General', 
-          icon: Sliders, 
+        {
+          label: 'General',
+          icon: Sliders,
           hasSubmenu: true,
           id: 'system_general',
           subItems: [
-            { label: 'Frame settings' },
-            { label: 'Links settings' }
-          ]
+            {
+              label: 'Frame settings',
+              href: '/admin/global-settings/frame-settings',
+            },
+            {
+              label: 'Links settings',
+              id: 'system_links_settings',
+              hasSubmenu: true,
+              subItems: [
+                {
+                  label: 'Athletes',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Coaches',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Teams',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Groups',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Clubs',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Store',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Buy-sell',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Job offers',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Central frame',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'IPAD',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'iPhone',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Android',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Smartwatch',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Touch Mode',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Screen Optimized',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Fast Workout Tracking',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Workout Player',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Mobile Version',
+                  href: '/admin/global-settings#',
+                },
+                {
+                  label: 'Cloud Storage',
+                  href: '/admin/global-settings#',
+                },
+              ],
+            },
+            {
+              label: 'Sponsors Settings',
+              href: '/admin/global-settings#',
+            },
+          ],
         },
         { 
           label: 'Top Banner', 
@@ -241,11 +330,11 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
           hasSubmenu: true,
           id: 'system_topbanner',
           subItems: [
-            { label: 'Why Movesbook' },
-            { label: 'Newsletters' },
-            { label: 'References' },
-            { label: 'About us' },
-            { label: 'Product infos' }
+            { label: 'Why Movesbook', href: '/admin/global-settings/why-movesbook' },
+            { label: 'Newsletters', href: '/admin/global-settings/newsletters' },
+            { label: 'References', href: '/admin/global-settings/newsletters' },
+            { label: 'About us', href: '/admin/global-settings/about-us' },
+            { label: 'Product infos', href: '/admin/global-settings/newsletters' }
           ]
         },
         { 
@@ -254,8 +343,8 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
           hasSubmenu: true,
           id: 'system_mainbanner',
           subItems: [
-            { label: 'Banner Tours' },
-            { label: 'Sport banners' }
+            { label: 'Banner Tours', href: '/admin/global-settings/banner-tours' },
+            { label: 'Sport banners', href: '/admin/global-settings/sport-banners' }
           ]
         }
       ]

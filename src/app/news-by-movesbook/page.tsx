@@ -9,6 +9,7 @@ import GetSocialBlock from '@/components/news/GetSocialBlock';
 import NewsToolbox from '@/components/news/NewsToolbox';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 interface Category {
   id: string;
@@ -226,6 +227,8 @@ function PublicNewsListPageContent() {
     updateUrlParams();
   };
 
+  const isClubAdmin = user?.userType ? isClubAccountUserType(user.userType) : false;
+
   return (
     <div className="p-3 sm:p-4 md:p-6">
       {isAdmin && (
@@ -268,6 +271,9 @@ function PublicNewsListPageContent() {
               currentLanguage={languages.find(l => l.id === selectedLanguage)?.code || 'en'}
               hideShowStatus={hideShowStatus}
               onHideShowChange={setHideShowStatus}
+              showShareInMyClubs={isClubAdmin}
+              clubUserType={user?.userType ?? null}
+              clubAdminUsername={user?.username ?? null}
             />
           ) : (
             <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 md:p-8 text-center">
