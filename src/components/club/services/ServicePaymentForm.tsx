@@ -375,7 +375,19 @@ export default function ServicePaymentForm({
       setDebtTotal(String((totalRest || purchase.rest).toFixed(2)));
       setDebtExpire(purchase.paydate ?? todayYmd);
     }
-  }, [expiredDeadlinesStats, totalRest, purchase.rest, purchase.paydate, todayYmd]);
+    
+    // Proactively select the expired installments
+    const expiredIds = installmentRows
+      .filter((r) => {
+        const dateStr = effectiveExpireDate(r.expireDate, r.paymentDate);
+        return dateStr && dateStr < todayYmd && r.balance > 0;
+      })
+      .map(r => r.id);
+    
+    if (expiredIds.length > 0) {
+      setSelectedInstallmentIds(new Set(expiredIds));
+    }
+  }, [expiredDeadlinesStats, totalRest, purchase.rest, purchase.paydate, todayYmd, installmentRows]);
 
   useEffect(() => {
     if (!onSelectedRecordIdsChange) return;
@@ -403,11 +415,10 @@ export default function ServicePaymentForm({
       .reduce((sum, r) => sum + r.balance, 0);
   }, [installmentRows, selectedInstallmentIds]);
 
-  // Do NOT auto-fill Amount paid to the full selected rest — that caused accidental
-  // full settlement of every checked deadline. Operator must type the payment amount.
+  // Auto-fill Amount paid to the full selected rest when selection changes.
   useEffect(() => {
     amountPaidTouchedRef.current = false;
-    setAmountPaid('0');
+    setAmountPaid(selectedTotalRest > 0 ? String(Number(selectedTotalRest.toFixed(2))) : '0');
     setPayWith('0');
   }, [selectedTotalRest]);
 
@@ -637,14 +648,15 @@ export default function ServicePaymentForm({
       // Like New deadline: allow raising Deadline above current cost by bumping record total.
       if (increase > 0 && onAddToRecordTotal) {
         await onAddToRecordTotal(increase);
-      } else if (newGrandTotal > purchase.value + 0.001 && !onAddToRecordTotal) {
+      } else if (increase > 0.001 && !onAddToRecordTotal) {
         setModifyError(
           `Total of all deadlines (€${newGrandTotal.toFixed(2)}) would exceed original cost (€${purchase.value.toFixed(2)}).`
         );
+        setModifySaving(false);
         return;
       }
 
-      const newRest = deadlineTotal - currentPaid;
+      const newRest = Math.round((deadlineTotal - currentPaid) * 100) / 100;
       await updateInstallment(procedureType, purchase.id, id, {
         balance: newRest,
         paid: currentPaid,

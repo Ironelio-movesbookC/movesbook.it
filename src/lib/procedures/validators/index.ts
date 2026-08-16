@@ -26,6 +26,11 @@ import {
   mapCourseSubscriptionCreateToInput,
 } from './courseSubscription';
 
+import {
+  createMemberCreditRecordSchema,
+  mapMemberCreditCreateToInput,
+} from './memberCredit';
+
 const KNOWN_PROCEDURE_TYPES = new Set<string>(Object.values(PROCEDURE_TYPE_CODES));
 
 export function isKnownProcedureType(type: string): type is ProcedureTypeCode {
@@ -117,6 +122,18 @@ export function parseCreateRecord(type: string, body: unknown): ParseCreateRecor
         };
       }
       return { ok: true, data: mapCourseSubscriptionCreateToInput(parsed.data) };
+    }
+    case PROCEDURE_TYPE_CODES.MEMBER_CREDIT: {
+      const parsed = createMemberCreditRecordSchema.safeParse(body);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          status: 400,
+          error: 'Validation failed',
+          details: parsed.error.flatten(),
+        };
+      }
+      return { ok: true, data: mapMemberCreditCreateToInput(parsed.data) };
     }
     default: {
       const _exhaustive: never = type;

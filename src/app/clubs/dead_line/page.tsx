@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { Pencil, Trash2 } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
@@ -11,7 +12,7 @@ import {
 } from '@/components/procedures/configs/serviceSale';
 import type { ProcedureTab } from '@/components/procedures/types';
 import { Member } from '@/types/clubTable';
-import { fetchDeadlines } from '@/lib/club/serviceSaleClient';
+import { deleteDeadline, fetchDeadlines } from '@/lib/club/serviceSaleClient';
 
 function sameMemberAndOpenRest(rows: Member[]): boolean {
   if (rows.length === 0) return false;
@@ -47,21 +48,57 @@ function DeadLinePageInner() {
       });
       setTotal(res.total);
       setData(
-        res.items.map((p) => ({
-          id: p.id,
-          userId: p.userId,
-          name: p.memberName,
-          typology: p.typology,
-          service: p.serviceName,
-          course: p.sectorName,
-          insertDate: p.paydate ?? undefined,
-          value: p.value,
-          paid: p.pay,
-          rest: p.rest,
-          casual: p.notes,
-          operator: p.operatorName,
-          dateEnd: p.lastPaymentDate ?? undefined,
-        }))
+        res.items.map((p) => {
+          const row: Member = {
+            id: p.id,
+            userId: p.userId,
+            name: p.memberName,
+            typology: p.typology,
+            service: p.serviceName,
+            course: p.sectorName,
+            insertDate: p.paydate ?? undefined,
+            value: p.value,
+            paid: p.pay,
+            rest: p.rest,
+            casual: p.notes,
+            operator: p.operatorName,
+            dateEnd: p.lastPaymentDate ?? undefined,
+          };
+
+          row.edit = (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(`/clubs/payment_detail/${p.id}`);
+              }}
+              className="text-blue-600 hover:text-blue-800"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          );
+
+          row.delete = (
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (!confirm('Delete this deadline record?')) return;
+                try {
+                  await deleteDeadline(p.id);
+                  load();
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : 'Delete failed');
+                }
+              }}
+              className="text-red-500 hover:text-red-700"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          );
+
+          return row;
+        })
       );
       setCheckedIds(new Set());
     } catch (e) {
@@ -69,7 +106,7 @@ function DeadLinePageInner() {
     } finally {
       setLoading(false);
     }
-  }, [page, displayAlsoPaid, scope, memberId]);
+  }, [page, displayAlsoPaid, scope, memberId, router]);
 
   useEffect(() => {
     load();

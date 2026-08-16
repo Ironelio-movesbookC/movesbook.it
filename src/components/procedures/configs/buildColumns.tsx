@@ -67,9 +67,11 @@ export function buildProcedureColumns(def: ProcedureDefinition) {
     { key: 'value', header: 'Debt', render: (v) => formatEuro(v) },
     { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
     { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
-    { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
+    { key: 'dateEnd', header: 'Exp Date', render: (v) => formatDate(v) },
     { key: 'casual', header: 'Description' },
     { key: 'operator', header: 'Operator' },
+    { key: 'edit', header: 'Edit' },
+    { key: 'delete', header: 'Delete' },
   ];
 
   const paymentColumns: Column[] = [
@@ -77,7 +79,11 @@ export function buildProcedureColumns(def: ProcedureDefinition) {
     { key: 'typology', header: 'Typology' },
     primaryCol,
     { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
-    { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
+    {
+      key: 'paid',
+      header: def.metadataKeys.direction === 'OUT' ? 'Value OUT' : 'Payment IN',
+      render: (v) => formatEuro(v),
+    },
     {
       key: 'originalDebt',
       header: 'OF..',
@@ -97,7 +103,11 @@ export function buildProcedureColumns(def: ProcedureDefinition) {
     { key: 'category', header: 'Document' },
     { key: 'contract', header: 'No. of document' },
     { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
-    { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
+    {
+      key: 'paid',
+      header: def.metadataKeys.direction === 'OUT' ? 'Value OUT' : 'Payment IN',
+      render: (v) => formatEuro(v),
+    },
     { key: 'casual', header: 'Annotations' },
     { key: 'operator', header: 'Operator' },
   ];

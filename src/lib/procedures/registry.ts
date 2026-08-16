@@ -20,6 +20,8 @@ export type ProcedureMetadataKeys = {
   primary: string;
   /** Optional second column (e.g. sector / section). */
   secondary?: string;
+  /** 'IN' (default) or 'OUT' for payments. */
+  direction?: 'IN' | 'OUT';
 };
 
 export type ProcedureDefinition = {
@@ -228,6 +230,35 @@ const COURSE_SUBSCRIPTION: ProcedureDefinition = {
   },
 };
 
+const MEMBER_CREDIT: ProcedureDefinition = {
+  code: PROCEDURE_TYPE_CODES.MEMBER_CREDIT,
+  name: 'Member Credit',
+  typologyLabel: 'MEMBER CREDITS',
+  pageSize: 25,
+  metadataKeys: { primary: 'creditLabel', direction: 'OUT' },
+  columnHeaders: { primary: 'Credit' },
+  routes: {
+    form: '/clubMembers/pay_member_employee',
+    records: '/clubMembers/member_credit_list',
+    deadlines: '/clubs/member_credit_dead_line',
+    payments: '/clubs/member_credit_payments',
+    receipts: '/clubs/member_credit_receipts',
+    paymentDetail: (id) => `/clubs/member_credit_payment_detail/${id}`,
+  },
+  archiveTitles: {
+    records: 'Archive of Member Credits',
+    deadlines: 'Member Credits',
+    payments: 'Archive of Payments (OUT)',
+    receipts: 'Archive of Receipts (OUT)',
+    paymentForm: 'Payment — Member Credit',
+    newRecordButton: '+ New credit',
+  },
+  form: {
+    title: 'Pay a member (or Pay a employee)',
+    subtitle: 'Assign a payment to give to a member or employee.',
+  },
+};
+
 export const PROCEDURE_DEFINITIONS: Record<ProcedureTypeCode, ProcedureDefinition> = {
   [PROCEDURE_TYPE_CODES.SERVICE_SALE]: SERVICE_SALE,
   [PROCEDURE_TYPE_CODES.EXPENSE]: EXPENSE,
@@ -235,6 +266,7 @@ export const PROCEDURE_DEFINITIONS: Record<ProcedureTypeCode, ProcedureDefinitio
   [PROCEDURE_TYPE_CODES.MEMBER_DEBT]: MEMBER_DEBT,
   [PROCEDURE_TYPE_CODES.MEMBERSHIP]: MEMBERSHIP,
   [PROCEDURE_TYPE_CODES.COURSE_SUBSCRIPTION]: COURSE_SUBSCRIPTION,
+  [PROCEDURE_TYPE_CODES.MEMBER_CREDIT]: MEMBER_CREDIT,
 };
 
 export const ALL_PROCEDURE_CODES = Object.values(PROCEDURE_TYPE_CODES);
