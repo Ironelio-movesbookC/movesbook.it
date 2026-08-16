@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { CreateProcedureRecordInput } from '../types';
 
-/** Typology options for credits/payments to members/employees */
 export const MEMBER_CREDIT_TYPOLOGY_OPTIONS = [
   { value: '6', label: 'Member credits' },
   { value: '8', label: 'Employ to pay' },
@@ -14,7 +13,6 @@ export const createMemberCreditRecordSchema = z.object({
   totalAmount: z.number().positive(),
   recordDate: z.string().min(1),
   dueDate: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
   causal: z.string().min(1),
   operatorId: z.string().optional().nullable(),
   typologyOfDeadline: z.enum(typologyValues).default('6'),
@@ -27,7 +25,7 @@ export const createMemberCreditRecordSchema = z.object({
 export type CreateMemberCreditRecordPayload = z.infer<typeof createMemberCreditRecordSchema>;
 
 function typologyLabel(code: string): string {
-  return MEMBER_CREDIT_TYPOLOGY_OPTIONS.find((o) => o.value === code)?.label ?? 'Member credits';
+  return MEMBER_CREDIT_TYPOLOGY_OPTIONS.find((o) => o.value === code)?.label ?? 'Member credit';
 }
 
 export function mapMemberCreditCreateToInput(
@@ -54,7 +52,6 @@ export function mapMemberCreditCreateToInput(
       companyId: data.companyId ?? null,
       companyName: data.companyName ?? null,
       openPaymentAfterSave: data.openPaymentAfterSave ?? false,
-      direction: 'OUT',
     },
     operatorId: data.operatorId,
     serviceName: causal || 'Member credit',

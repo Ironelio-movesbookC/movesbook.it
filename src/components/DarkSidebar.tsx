@@ -199,7 +199,7 @@ const CLUB_ADMIN_INSERT_NEW_ITEM_GROUPS: ClubAdminInsertItem[][] = [
     { kind: 'icon', Icon: Hourglass, label: 'Payment other deadlines', path: '/clubs/archive_service_list' },
   ],
   [
-    { kind: 'icon', Icon: Award, label: 'Add a new credit', path: '/clubMembers/pay_member_employee' },
+    { kind: 'icon', Icon: Hourglass, label: 'Add a new credit', path: '/clubMembers/pay_member_employee' },
     // PHP: clubMembers/debt_member — create a member debt (Member debts typology)
     { kind: 'icon', Icon: Hourglass, label: 'Insert a new debit', path: '/clubMembers/debt_member' },
   ],

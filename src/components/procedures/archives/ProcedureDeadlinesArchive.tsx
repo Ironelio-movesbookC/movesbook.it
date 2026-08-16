@@ -251,42 +251,44 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
   );
 
   const typologyButtons = (
-    <div className="flex flex-wrap gap-1 mb-3">
-      <span className="text-xs font-bold text-red-600 w-full mb-1">Deadlines incoming - Payment will be IN</span>
-      {[
-        { id: 'memberships', label: 'Memberships', href: '/clubs/memberships/deadlines' },
-        { id: 'subscriptions', label: 'Subscriptions', href: '/clubs/courses/deadlines' },
-        { id: 'services', label: 'Services', href: '/clubs/dead_line' },
-        { id: 'sellings', label: 'Sellings', href: '/ArchiveSeles/product_deadline' },
-        { id: 'member_debts', label: 'Member debts', href: '/clubs/member_debt_dead_line' },
-      ].map((b) => (
-        <Link
-          key={b.id}
-          href={b.href}
-          className={`px-3 py-1 text-xs font-bold text-white rounded shadow-sm ${
-            def.routes.deadlines === b.href ? 'bg-blue-600 ring-2 ring-blue-300' : 'bg-black hover:bg-gray-800'
-          }`}
-        >
-          {b.label}
-        </Link>
-      ))}
-      <div className="w-full mt-2 mb-1">
-        <span className="text-xs font-bold text-red-600">Deadlines outcoming - Payment will be OUT</span>
+    <div className="flex flex-col gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="text-xs font-bold text-red-600 mr-2">Deadlines incoming - Payment will be IN</span>
+        {[
+          { id: 'memberships', label: 'Memberships', href: '/clubs/memberships/deadlines' },
+          { id: 'subscriptions', label: 'Subscriptions', href: '/clubs/courses/deadlines' },
+          { id: 'services', label: 'Services', href: '/clubs/dead_line' },
+          { id: 'sellings', label: 'Sellings', href: '/ArchiveSeles/product_deadline' },
+          { id: 'member_debts', label: 'Member debts', href: '/clubs/member_debt_dead_line' },
+        ].map((b) => (
+          <Link
+            key={b.id}
+            href={b.href}
+            className={`px-3 py-1 text-[13px] font-bold text-white rounded shadow-sm ${
+              def.routes.deadlines === b.href ? 'bg-blue-600 ring-2 ring-blue-300' : 'bg-[#222] hover:bg-black'
+            }`}
+          >
+            {b.label}
+          </Link>
+        ))}
       </div>
-      {[
-        { id: 'member_credits', label: 'Member credits', href: '/clubs/member_credit_dead_line' },
-        { id: 'employ_to_pay', label: 'Employ to pay', href: '/clubs/member_credit_dead_line' },
-      ].map((b) => (
-        <Link
-          key={b.id}
-          href={b.href}
-          className={`px-3 py-1 text-xs font-bold text-white rounded shadow-sm ${
-            def.routes.deadlines === b.href ? 'bg-blue-600 ring-2 ring-blue-300' : 'bg-black hover:bg-gray-800'
-          }`}
-        >
-          {b.label}
-        </Link>
-      ))}
+      <div className="flex flex-wrap items-center gap-1 border-t border-gray-100 pt-2">
+        <span className="text-xs font-bold text-red-600 mr-2">Deadlines outcoming - Payment will be OUT</span>
+        {[
+          { id: 'member_credits', label: 'Member credits', href: '/clubs/member_credit_dead_line' },
+          { id: 'employ_to_pay', label: 'Employ to pay', href: '/clubs/member_credit_dead_line' },
+        ].map((b) => (
+          <Link
+            key={b.id}
+            href={b.href}
+            className={`px-3 py-1 text-[13px] font-bold text-white rounded shadow-sm ${
+              def.routes.deadlines === b.href ? 'bg-blue-600 ring-2 ring-blue-300' : 'bg-[#222] hover:bg-black'
+            }`}
+          >
+            {b.label}
+          </Link>
+        ))}
+      </div>
     </div>
   );
 
