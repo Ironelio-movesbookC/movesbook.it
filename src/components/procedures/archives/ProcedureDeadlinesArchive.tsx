@@ -191,13 +191,13 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
     openPayment([deadline.id]);
   }
 
-  function handleToggleCheck(row: Member, checked: boolean) {
+  function handleToggleCheck(row: Member) {
     if (!row.id) return;
     setSelectionError('');
     setCheckedIds((prev) => {
       const next = new Set(prev);
-      if (checked) next.add(row.id!);
-      else next.delete(row.id!);
+      if (next.has(row.id!)) next.delete(row.id!);
+      else next.add(row.id!);
       return next;
     });
     setSelectedId(row.id);
@@ -322,12 +322,12 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
         rows={data}
         selectedId={selectedId}
         selectedIds={checkedIds}
-        showCheckboxes
+        selectable={true}
         loading={loading}
         onRowClick={(row) => row.id && setSelectedId(row.id)}
         onRowDoubleClick={handleDoubleClick}
-        onToggleCheck={handleToggleCheck}
-        onToggleCheckAll={handleToggleCheckAll}
+        onToggleSelect={handleToggleCheck}
+        onToggleSelectAll={handleToggleCheckAll}
       />
     </ProcedureArchiveShell>
   );
