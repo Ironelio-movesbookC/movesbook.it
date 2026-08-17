@@ -470,7 +470,7 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
           hasSubmenu: true,
           id: 'promo_sponsors',
           subItems: [
-            { label: 'Sponsors in Mainpage' },
+            { label: 'Sponsors in Mainpage', href: '/admin/global-settings/sponsor-main' },
             { label: 'Investors of ads plans' }
           ]
         },
