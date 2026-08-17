@@ -320,7 +320,7 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
             },
             {
               label: 'Sponsors Settings',
-              href: '/admin/global-settings#',
+              href: '/admin/global-settings/sponsor-settings',
             },
           ],
         },
