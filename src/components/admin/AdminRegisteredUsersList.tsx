@@ -22,6 +22,7 @@ import AdminClubUserPanelModal, {
   type ClubUserPanelData,
 } from '@/components/admin/AdminClubUserPanelModal';
 import AdminRegisteredUserGridCard from '@/components/admin/AdminRegisteredUserGridCard';
+import AdminUserPanelButton from '@/components/admin/AdminUserPanelButton';
 import { groupRowsForAdminGrid } from '@/lib/admin/groupRegisteredUserGridCards';
 import { getDefaultMembershipSortOrder } from '@/lib/admin/networkSubscriptionHistory';
 import {
@@ -1318,16 +1319,19 @@ export default function AdminRegisteredUsersList({
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-4 text-sm text-blue-800 underline mt-4 pt-4 border-t border-gray-200">
-                  <button type="button" onClick={handlePrint} className="hover:text-blue-950">
-                    Print
-                  </button>
-                  <button type="button" onClick={openProfileSendMsgModal} className="hover:text-blue-950">
-                    Send Msg
-                  </button>
-                  <button type="button" onClick={openProfileSendMsgModal} className="hover:text-blue-950">
-                    Send Mail
-                  </button>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
+                  <div className="flex flex-wrap gap-4 text-sm text-blue-800 underline">
+                    <button type="button" onClick={handlePrint} className="hover:text-blue-950">
+                      Print
+                    </button>
+                    <button type="button" onClick={openProfileSendMsgModal} className="hover:text-blue-950">
+                      Send Msg
+                    </button>
+                    <button type="button" onClick={openProfileSendMsgModal} className="hover:text-blue-950">
+                      Send Mail
+                    </button>
+                  </div>
+                  <AdminUserPanelButton userId={profileData.id} userType={profileData.userType} />
                 </div>
               </div>
 

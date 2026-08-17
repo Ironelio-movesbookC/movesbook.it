@@ -300,6 +300,7 @@ export default function AdminRightSidebar({ isOpen, onToggle }: AdminRightSideba
   const lastLoggedViewAllHref = useMemo(() => {
     const qs = new URLSearchParams();
     qs.set('date', lastLoggedDate);
+    qs.set('type', 'in');
     if (lastLoggedType !== 'all') qs.set('userType', lastLoggedType);
     if (lastLoggedCountry) qs.set('country', lastLoggedCountry);
     return `/admin/users/logged_users?${qs.toString()}`;

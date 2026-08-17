@@ -96,13 +96,38 @@ export const STATS_VERSION_BUCKETS = [
 
 export type StatsVersionBucket = (typeof STATS_VERSION_BUCKETS)[number];
 
+/**
+ * Map a subscription version name to a chart bucket.
+ *
+ * PFU variants are rolled into the same bucket as the parent tier:
+ * - Base = Base + Base PFU (+ “pay for users”, etc.)
+ * - Premium = Premium + Premium PFU
+ * - Professional = Professional / Professionale + Professional PFU
+ */
 export function classifyVersionBucket(version: string | null | undefined): StatsVersionBucket {
   const v = (version ?? '').toLowerCase().trim();
   if (!v) return 'Base';
+
   if (v.includes('trial')) return 'Trial';
+
+  // Explicit PFU rolls (must run before generic keyword checks).
+  const isPfu = /\bpfu\b/.test(v) || v.includes('pay for user');
+  if (isPfu) {
+    if (
+      v.includes('professional') ||
+      v.includes('professionale') ||
+      /(^|[^a-z])pro([^a-z]|$)/.test(v)
+    ) {
+      return 'Professional';
+    }
+    if (v.includes('premium')) return 'Premium';
+    if (v.includes('base') || v.includes('standard')) return 'Base';
+  }
+
   // Check Professional before Premium/Base (names often contain multiple keywords).
   if (
     v.includes('professional') ||
+    v.includes('professionale') ||
     /(^|[^a-z])pro([^a-z]|$)/.test(v) ||
     v.endsWith(' pro')
   ) {

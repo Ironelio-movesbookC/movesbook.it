@@ -15,8 +15,9 @@ import { readPcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import { pickClubForAdminProfile } from '@/lib/admin/pickClubForAdminProfile';
 import { readPcuSettings } from '@/lib/admin/userPcuSettings';
 import { loadClubAdminInfoForUser } from '@/lib/user/clubAdminInfoPersistence';
-import { buildClubUserPanelFields } from '@/lib/admin/clubUserPanel';
+import { buildClubUserPanelFields, buildGenericUserPanelFields } from '@/lib/admin/clubUserPanel';
 import { buildProfileSubscriptionRows } from '@/lib/admin/buildProfileSubscriptionRows';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 export const dynamic = 'force-dynamic';
 
@@ -212,8 +213,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       ? `Club ${clubMeta.category}`
       : versionLabel(user.userType);
   const memberPaidCount = primaryOwned?._count.members ?? 0;
-  const personalWebsiteHref =
-    segment === 'clubs' ? await getUserPersonalWebsiteHref(user.id) : null;
+  const personalWebsiteHref = await getUserPersonalWebsiteHref(user.id);
 
   const subscriptionRows = buildProfileSubscriptionRows(user.settings?.adminSettings, {
     id: `account-${user.id}`,
@@ -251,6 +251,17 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   });
   const pcuSettings = readPcuSettings(user.settings?.adminSettings);
 
+  const userPanel =
+    isClubAccountUserType(user.userType) && primaryOwned
+      ? buildClubUserPanelFields(user, primaryOwned, {
+          planCount,
+          websiteUrl: personalWebsiteHref,
+        })
+      : buildGenericUserPanelFields(user, pcuPanel, {
+          planCount,
+          websiteUrl: personalWebsiteHref,
+        });
+
   return NextResponse.json({
     id: user.id,
     username: user.username,
@@ -269,13 +280,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     profilePanel,
     pcuAccess,
     pcuSettings,
-    ...(segment === 'clubs' && primaryOwned
-      ? {
-          userPanel: buildClubUserPanelFields(user, primaryOwned, {
-            planCount,
-            websiteUrl: personalWebsiteHref,
-          }),
-        }
-      : {}),
+    userPanel,
   });
 }
