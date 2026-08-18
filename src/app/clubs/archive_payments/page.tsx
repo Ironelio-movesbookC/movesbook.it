@@ -22,7 +22,7 @@ const columns: Column[] = [
     key: 'originalDebt',
     header: 'OF..',
     render: (_, row) =>
-      `${Number(row.paid ?? 0).toFixed(2)} / ${Number(row.originalDebt ?? 0).toFixed(2)}`,
+      `${Number(row.residualDebt ?? 0).toFixed(2)} / ${Number(row.originalDebt ?? 0).toFixed(2)}`,
   },
   { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
   { key: 'casual', header: 'Notes' },

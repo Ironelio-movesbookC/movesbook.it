@@ -5,6 +5,9 @@ export const PROCEDURE_TYPE_CODES = {
   EXPENSE: 'expense',
   PRODUCT_SALE: 'product_sale',
   MEMBER_DEBT: 'member_debt',
+  MEMBERSHIP: 'membership',
+  COURSE_SUBSCRIPTION: 'course_subscription',
+  MEMBER_CREDIT: 'member_credit',
 } as const;
 
 export type ProcedureTypeCode =
@@ -35,7 +38,9 @@ export type ProcedureRecordDto = {
   totalAmount: number;
   paidAmount: number;
   balanceAmount: number;
+  /** Creation/business date of the record. This stays editable only where PHP allowed it. */
   recordDate: string;
+  /** Expiration date of the deadline. */
   dueDate: string | null;
   /** ISO timestamp — used to order same-day deadlines (oldest first). */
   createdAt: string;

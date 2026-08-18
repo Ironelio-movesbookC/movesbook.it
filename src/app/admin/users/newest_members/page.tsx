@@ -12,6 +12,7 @@ import {
   STATS_USER_KINDS,
   type StatsUserKind,
 } from '@/lib/admin/statisticsKinds';
+import AdminUserPanelButton from '@/components/admin/AdminUserPanelButton';
 
 const TYPE_OPTIONS: Array<{ value: StatsUserKind | 'all'; label: string }> = [
   { value: 'all', label: 'All users' },
@@ -217,7 +218,7 @@ export default function AdminNewestMembersPage() {
                   ? 'text-orange-600'
                   : 'text-[#222]';
               return (
-                <li key={user.id} className="flex gap-3 px-4 py-3">
+                <li key={user.id} className="flex items-start gap-3 px-4 py-3">
                   <GenderOrPhoto user={user} />
                   <div className="min-w-0 flex-1">
                     <Link
@@ -246,6 +247,7 @@ export default function AdminNewestMembersPage() {
                       Send Message
                     </button>
                   </div>
+                  <AdminUserPanelButton userId={user.id} userType={user.userType} />
                   {user.presence ? (
                     <span
                       className={`shrink-0 self-start rounded px-2 py-0.5 text-xs font-bold ${

@@ -47,6 +47,7 @@ type ServiceItem = {
   actualCost: string;
   currencyCode: string;
   imageUrl: string | null;
+  howMany: number | null;
   orderPosition: number;
   created: string | null;
   modified: string | null;
@@ -60,6 +61,7 @@ type ServiceDraft = {
   currentImageUrl: string | null;
   imageFile: File | null;
   imagePreview: string | null;
+  howMany: string;
   removeImage: boolean;
 };
 
@@ -153,6 +155,7 @@ function ServiceTableHead({
         <SortHeader label="Sector" active={sortKey === 'sector'} direction={sortDirection} onClick={() => onSort('sector')} />
       </th>
       <th className="w-28 px-4 py-3">Image</th>
+      <th className="w-24 px-4 py-3 text-center">How many</th>
       <th className="px-4 py-3">
         <SortHeader label="Service" active={sortKey === 'service'} direction={sortDirection} onClick={() => onSort('service')} />
       </th>
@@ -173,6 +176,7 @@ function makeEmptyDraft(): ServiceDraft {
     sectorId: '',
     serviceName: '',
     cost: '',
+    howMany: '',
     currentImageUrl: null,
     imageFile: null,
     imagePreview: null,
@@ -381,6 +385,7 @@ export default function ClubTablesSpecialServicesPage() {
       sectorId: item.sectorId,
       serviceName: item.serviceName,
       cost: item.cost,
+      howMany: String(item.howMany ?? ''),
       currentImageUrl: item.imageUrl,
       imageFile: null,
       imagePreview: null,
@@ -453,6 +458,7 @@ export default function ClubTablesSpecialServicesPage() {
       formData.append('sectorId', draft.sectorId);
       formData.append('serviceName', draft.serviceName.trim());
       formData.append('cost', String(Number(draft.cost)));
+      formData.append('howMany', String(Number(draft.howMany) || 0));
       formData.append('removeImage', draft.removeImage ? '1' : '0');
       if (draft.imageFile) {
         formData.append('image', draft.imageFile);
@@ -600,51 +606,51 @@ export default function ClubTablesSpecialServicesPage() {
                   <tbody>
                     {pageItems.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-16 text-center text-gray-500">
-                          No special services found.
-                        </td>
-                      </tr>
-                    ) : pageItems.map((item) => (
-                      <SortableServiceRow
-                        key={item.id}
-                        item={item}
-                        currencyCode={currencyCode}
-                        reordering={reordering}
-                        onEdit={() => openEditModal(item)}
-                        onDelete={() => setDeleteTarget(item)}
-                      />
-                    ))}
-                  </tbody>
-                </SortableContext>
-              </table>
-            </DndContext>
-          ) : (
-            <table className="w-full min-w-[960px] border-collapse text-sm">
-              <thead>
-                <ServiceTableHead sortKey={sortKey} sortDirection={sortDirection} onSort={updateSort} />
-              </thead>
-              <tbody>
-                {pageItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-16 text-center text-gray-500">
-                      No special services found.
-                    </td>
-                  </tr>
-                ) : (
-                  pageItems.map((item) => (
-                    <ServiceTableRow
-                      key={item.id}
-                      item={item}
-                      currencyCode={currencyCode}
-                      onEdit={() => openEditModal(item)}
-                      onDelete={() => setDeleteTarget(item)}
-                      showDragHandle={false}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
-          )}
+      <td colSpan={8} className="px-4 py-16 text-center text-gray-500">
+        No special services found.
+      </td>
+    </tr>
+  ) : pageItems.map((item) => (
+      <SortableServiceRow
+        key={item.id}
+        item={item}
+        currencyCode={currencyCode}
+        reordering={reordering}
+        onEdit={() => openEditModal(item)}
+        onDelete={() => setDeleteTarget(item)}
+      />
+    ))}
+  </tbody>
+</SortableContext>
+</table>
+</DndContext>
+) : (
+<table className="w-full min-w-[960px] border-collapse text-sm">
+<thead>
+  <ServiceTableHead sortKey={sortKey} sortDirection={sortDirection} onSort={updateSort} />
+</thead>
+<tbody>
+  {pageItems.length === 0 ? (
+    <tr>
+      <td colSpan={8} className="px-4 py-16 text-center text-gray-500">
+        No special services found.
+      </td>
+    </tr>
+  ) : (
+    pageItems.map((item) => (
+      <ServiceTableRow
+        key={item.id}
+        item={item}
+        currencyCode={currencyCode}
+        onEdit={() => openEditModal(item)}
+        onDelete={() => setDeleteTarget(item)}
+        showDragHandle={false}
+      />
+    ))
+  )}
+</tbody>
+</table>
+)}
         </div>
       </section>
 
@@ -699,6 +705,16 @@ export default function ClubTablesSpecialServicesPage() {
                 onChange={(value) => {
                   updateDraft({ cost: value });
                   setFieldErrors((current) => ({ ...current, cost: undefined }));
+                }}
+              />
+
+              <Field
+                label="How many"
+                value={draft.howMany}
+                type="number"
+                min={0}
+                onChange={(value) => {
+                  updateDraft({ howMany: value });
                 }}
               />
 
@@ -832,6 +848,9 @@ function ServiceTableCells({
             No image
           </div>
         )}
+      </td>
+      <td className="px-4 py-4 text-center font-semibold text-gray-900">
+        {item.howMany ?? 0}
       </td>
       <td className="px-4 py-4">
         <div className="font-semibold text-gray-950">{item.serviceName}</div>

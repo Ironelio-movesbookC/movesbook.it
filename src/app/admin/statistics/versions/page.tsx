@@ -49,7 +49,7 @@ export default function VersionsByCountryPage() {
   return (
     <StatisticsPageShell
       title="Bargraph versions for country"
-      description="Bars for subscription versions (Trial, Base, Premium, Professional). Filter by country and/or type of user. Click a version to see its distribution among user types, and the matching users list below (same grid as All Users)."
+      description="Bars for subscription versions (Trial, Base, Premium, Professional). Counts under each bar are absolute user totals — Base includes Base PFU, Premium includes Premium PFU, Professional includes Professional PFU. Filter by country and/or type of user. Click a version to see its distribution among user types, and the matching users list below."
       totalUsers={data?.totalUsers ?? 0}
       incomeEuro={data?.incomeEuro ?? 0}
       loading={loading}

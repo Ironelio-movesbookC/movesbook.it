@@ -40,7 +40,7 @@ export default function ProductSaleListPage() {
       </div>
       <ClubArchivePage
         title={def.archiveTitles.records}
-        archiveType="product-sales"
+        archiveType="product-sales-unified"
         columns={columns}
         footerHint="Legacy archive_seles rows plus new product_sale procedure records."
       />

@@ -298,18 +298,68 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
     setIsTranslating(true);
     setSaveError(null);
     try {
-      const targets = ALL_LANGUAGES.filter((l) => l.code !== sourceLangCode).map((l) => l.code);
       const failed = new Set<string>();
+      let englishTitle = sourceLangCode === 'en' ? titleSource : '';
+      let englishBody = sourceLangCode === 'en' ? bodyPlain : '';
 
-      // Titles first so other-language title fields fill even if body translation is slow/fails.
-      if (titleSource) {
+      // Non-English source: first translate the edited text to English in the background.
+      if (sourceLangCode !== 'en') {
+        if (titleSource) {
+          const { translations: trans, failedLanguages } = await fetchLongTextTranslations(
+            titleSource,
+            ['en'],
+            sourceLangCode,
+          );
+          failedLanguages.forEach((code) => failed.add(code));
+          englishTitle = trans.en?.trim() || '';
+        }
+        if (bodyPlain.trim()) {
+          const { translations: trans, failedLanguages } = await fetchLongTextTranslations(
+            bodyPlain,
+            ['en'],
+            sourceLangCode,
+          );
+          failedLanguages.forEach((code) => failed.add(code));
+          englishBody = trans.en?.trim() || '';
+        }
+        if (!englishTitle && titleSource) {
+          throw new Error('english_title_pivot_failed');
+        }
+        if (bodyPlain.trim() && !englishBody) {
+          throw new Error('english_body_pivot_failed');
+        }
+        setTitles((prev) => ({
+          ...prev,
+          [sourceLangCode]: titleSource,
+          ...(englishTitle ? { en: englishTitle } : {}),
+        }));
+        if (englishBody) {
+          setBodies((prev) => ({
+            ...prev,
+            [sourceLangCode]: bodyHtml,
+            en: plainTextToRichHtml(englishBody),
+          }));
+        }
+      }
+
+      // Then translate from English to every other language (keep the edited source as-is).
+      const targets = ALL_LANGUAGES.filter(
+        (l) => l.code !== sourceLangCode && l.code !== 'en',
+      ).map((l) => l.code);
+
+      if (englishTitle) {
         const { translations: trans, failedLanguages } = await fetchLongTextTranslations(
-          titleSource,
+          englishTitle,
           targets,
+          'en',
         );
         failedLanguages.forEach((code) => failed.add(code));
         setTitles((prev) => {
-          const next = { ...prev, [sourceLangCode]: titleSource };
+          const next = {
+            ...prev,
+            [sourceLangCode]: titleSource,
+            en: englishTitle,
+          };
           for (const code of targets) {
             const translated = trans[code]?.trim();
             if (translated) next[code] = translated;
@@ -318,21 +368,26 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
         });
       }
 
-      if (bodyPlain.trim()) {
+      if (englishBody.trim()) {
         const { translations: trans, failedLanguages } = await fetchLongTextTranslations(
-          bodyPlain,
+          englishBody,
           targets,
+          'en',
         );
         failedLanguages.forEach((code) => failed.add(code));
         setBodies((prev) => {
-          const next = { ...prev };
+          const next = {
+            ...prev,
+            [sourceLangCode]: bodyHtml,
+            en: plainTextToRichHtml(englishBody),
+          };
           for (const code of targets) {
             if (trans[code]?.trim()) next[code] = plainTextToRichHtml(trans[code]);
           }
           return next;
         });
         setTranslationRevision((r) => r + 1);
-      } else if (titleSource) {
+      } else if (englishTitle) {
         setTranslationRevision((r) => r + 1);
       }
 

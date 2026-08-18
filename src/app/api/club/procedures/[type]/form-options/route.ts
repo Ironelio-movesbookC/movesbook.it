@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getClubAuthContext } from '@/lib/procedures';
 import { fetchExpenseFormOptions } from '@/lib/procedures/expenseFormOptions';
 import { fetchMemberDebtFormOptions } from '@/lib/procedures/memberDebtFormOptions';
+import { fetchMemberCreditFormOptions } from '@/lib/procedures/memberCreditFormOptions';
 import { fetchProductSaleFormOptions } from '@/lib/procedures/productSaleFormOptions';
 import { fetchServiceSaleFormOptions } from '@/lib/procedures/serviceSaleFormOptions';
+import { fetchMembershipFormOptions } from '@/lib/procedures/membershipFormOptions';
+import { fetchCourseSubscriptionFormOptions } from '@/lib/procedures/courseSubscriptionFormOptions';
 import { isKnownProcedureType } from '@/lib/procedures/validators';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 
@@ -37,6 +40,21 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 
     if (params.type === PROCEDURE_TYPE_CODES.MEMBER_DEBT) {
       const options = await fetchMemberDebtFormOptions(auth.ctx);
+      return NextResponse.json(options);
+    }
+
+    if (params.type === PROCEDURE_TYPE_CODES.MEMBER_CREDIT) {
+      const options = await fetchMemberCreditFormOptions(auth.ctx);
+      return NextResponse.json(options);
+    }
+
+    if (params.type === PROCEDURE_TYPE_CODES.MEMBERSHIP) {
+      const options = await fetchMembershipFormOptions(auth.ctx);
+      return NextResponse.json(options);
+    }
+
+    if (params.type === PROCEDURE_TYPE_CODES.COURSE_SUBSCRIPTION) {
+      const options = await fetchCourseSubscriptionFormOptions(auth.ctx);
       return NextResponse.json(options);
     }
 

@@ -205,7 +205,8 @@ function PaymentDetailPageInner() {
           ? 'Payments saved across selected deadlines.'
           : 'Payment saved successfully.'
       );
-      router.push('/clubs/dead_line');
+      // Wait a brief moment to show success message before closing
+      setTimeout(() => router.push('/clubs/dead_line'), 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
     } finally {
@@ -222,6 +223,14 @@ function PaymentDetailPageInner() {
       <ProcedureArchiveShell
         title={
           extraPurchases.length > 0 ? 'Payment — More deadlines' : 'Payment — Deadline'
+        }
+        member={
+          purchase
+            ? {
+                name: purchase.memberName,
+                image: purchase.memberImage,
+              }
+            : undefined
         }
         activeTab="deadline"
         tabs={getServiceSaleTabs('deadline', id, scopedRecordIds)}
