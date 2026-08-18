@@ -6,20 +6,26 @@ import {
   translatePlainTextMyMemory,
 } from '@/utils/richTextTranslation';
 
-async function translateToLanguage(sourceText: string, lang: string): Promise<string | null> {
-  if (lang === 'en') return sourceText;
+async function translateToLanguage(
+  sourceText: string,
+  lang: string,
+  sourceLang: string,
+): Promise<string | null> {
+  if (lang === sourceLang) return sourceText;
 
   const paragraphs = splitPlainTextParagraphs(sourceText);
   if (paragraphs.length === 0) return null;
 
+  const apiTarget = mapLangForTranslationApi(lang);
+  const apiSource = mapLangForTranslationApi(sourceLang);
   const translatedBlocks: string[] = [];
   for (const paragraph of paragraphs) {
-    const gtx = await translatePlainTextGtx(paragraph, lang);
+    const gtx = await translatePlainTextGtx(paragraph, lang, sourceLang);
     if (gtx) {
       translatedBlocks.push(gtx);
       continue;
     }
-    const myMemory = await translatePlainTextMyMemory(paragraph, lang);
+    const myMemory = await translatePlainTextMyMemory(paragraph, lang, sourceLang);
     if (myMemory) {
       translatedBlocks.push(myMemory);
       continue;
@@ -30,8 +36,8 @@ async function translateToLanguage(sourceText: string, lang: string): Promise<st
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           q: paragraph,
-          source: 'en',
-          target: lang,
+          source: apiSource,
+          target: apiTarget,
           format: 'text',
         }),
         signal: AbortSignal.timeout(10000),
@@ -54,8 +60,12 @@ async function translateToLanguage(sourceText: string, lang: string): Promise<st
 
 export async function POST(request: NextRequest) {
   try {
-    const { text, targetLanguages } = await request.json();
+    const { text, targetLanguages, sourceLanguage } = await request.json();
     const sourceText = typeof text === 'string' ? text.trim() : '';
+    const sourceLang =
+      typeof sourceLanguage === 'string' && sourceLanguage.trim()
+        ? sourceLanguage.trim()
+        : 'en';
 
     if (!sourceText || !targetLanguages || !Array.isArray(targetLanguages)) {
       return NextResponse.json(
@@ -65,14 +75,21 @@ export async function POST(request: NextRequest) {
     }
 
     const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
-    const translations: Record<string, string> = { en: sourceText };
+    const translations: Record<string, string> = {};
+    if (sourceLang === 'en') {
+      translations.en = sourceText;
+    }
     const failed: string[] = [];
 
     for (const lang of targetLanguages) {
-      if (lang === 'en') continue;
+      if (lang === sourceLang) {
+        translations[lang] = sourceText;
+        continue;
+      }
 
       if (apiKey) {
         const apiTarget = mapLangForTranslationApi(lang);
+        const apiSource = mapLangForTranslationApi(sourceLang);
         try {
           const paragraphs = splitPlainTextParagraphs(sourceText);
           const translatedParagraphs: string[] = [];
@@ -84,7 +101,7 @@ export async function POST(request: NextRequest) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   q: paragraph,
-                  source: 'en',
+                  source: apiSource,
                   target: apiTarget,
                   format: 'text',
                 }),
@@ -107,7 +124,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const translated = await translateToLanguage(sourceText, lang);
+      const translated = await translateToLanguage(sourceText, lang, sourceLang);
       if (translated) {
         translations[lang] = translated;
       } else {

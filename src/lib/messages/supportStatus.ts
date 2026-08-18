@@ -1,4 +1,4 @@
-/** Workflow status for Suggestions & Problems (staff-editable, user-visible). */
+/** Workflow status for Suggestions, Problems, and staff bug/fix memos. */
 
 export const SUPPORT_WORKFLOW_STATUS_CODES = [
   'pending',
@@ -19,7 +19,7 @@ export const SUPPORT_WORKFLOW_STATUS_LABELS: Record<SupportWorkflowStatus, strin
 };
 
 export function isSupportWorkflowCategory(category?: string | null): boolean {
-  return category === 'suggestion' || category === 'problem';
+  return category === 'suggestion' || category === 'problem' || category === 'bug_fixed';
 }
 
 export function isSupportWorkflowStatus(value: unknown): value is SupportWorkflowStatus {
