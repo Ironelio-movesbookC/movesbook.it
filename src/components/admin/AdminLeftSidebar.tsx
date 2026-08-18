@@ -620,7 +620,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   >
                     <Users2 className="w-4 h-4 shrink-0 opacity-95" />
                     <span className="leading-snug">
-                      My feedbacks for Staff ({myFeedbackCount})
+                      Feedbacks for our Staff ({myFeedbackCount})
                     </span>
                   </Link>
                 ) : null}

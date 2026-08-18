@@ -77,12 +77,13 @@ function translateAuthHeaders(): Record<string, string> {
 export async function fetchLongTextTranslations(
   plainSource: string,
   targetLanguages: string[],
+  sourceLanguage = 'en',
 ): Promise<{ translations: Record<string, string>; failedLanguages: string[] }> {
   const response = await fetch('/api/translate', {
     method: 'POST',
     cache: 'no-store',
     headers: translateAuthHeaders(),
-    body: JSON.stringify({ text: plainSource, targetLanguages }),
+    body: JSON.stringify({ text: plainSource, targetLanguages, sourceLanguage }),
   });
   if (!response.ok) {
     const errorText = await response.text();
@@ -139,9 +140,14 @@ function splitTextForTranslation(text: string, maxLength: number): string[] {
   return chunks.length > 0 ? chunks : [text];
 }
 
-async function translateChunkWithGtx(chunk: string, apiLang: string): Promise<string | null> {
+async function translateChunkWithGtx(
+  chunk: string,
+  apiLang: string,
+  sourceLang = 'en',
+): Promise<string | null> {
+  const sl = mapLangForTranslationApi(sourceLang);
   const url =
-    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${encodeURIComponent(apiLang)}&dt=t&q=${encodeURIComponent(chunk)}`;
+    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(apiLang)}&dt=t&q=${encodeURIComponent(chunk)}`;
   const response = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MovesBook/1.0)' },
     signal: AbortSignal.timeout(20000),
@@ -159,14 +165,16 @@ async function translateChunkWithGtx(chunk: string, apiLang: string): Promise<st
 export async function translatePlainTextGtx(
   text: string,
   targetLang: string,
+  sourceLang = 'en',
 ): Promise<string | null> {
   const source = text.trim();
   if (!source) return '';
+  if (targetLang === sourceLang) return source;
   const apiLang = mapLangForTranslationApi(targetLang);
   const chunks = splitTextForTranslation(source, GTX_MAX_CHUNK);
   const parts: string[] = [];
   for (const chunk of chunks) {
-    const translated = await translateChunkWithGtx(chunk, apiLang);
+    const translated = await translateChunkWithGtx(chunk, apiLang, sourceLang);
     if (translated == null) return null;
     parts.push(translated);
     if (chunks.length > 1) {
@@ -179,13 +187,16 @@ export async function translatePlainTextGtx(
 export async function translatePlainTextMyMemory(
   text: string,
   targetLang: string,
+  sourceLang = 'en',
 ): Promise<string | null> {
+  if (targetLang === sourceLang) return text.trim();
   const apiLang = mapLangForTranslationApi(targetLang);
+  const sl = mapLangForTranslationApi(sourceLang);
   const chunks = splitTextForTranslation(text.trim(), 400);
   const parts: string[] = [];
   for (const chunk of chunks) {
     const response = await fetch(
-      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=en|${encodeURIComponent(apiLang)}`,
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${encodeURIComponent(sl)}|${encodeURIComponent(apiLang)}`,
       { signal: AbortSignal.timeout(10000) },
     );
     if (!response.ok) return null;
