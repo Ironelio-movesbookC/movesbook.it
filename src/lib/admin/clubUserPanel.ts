@@ -6,7 +6,7 @@ import {
 import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
 import type { ClubProfilePickSource } from '@/lib/admin/pickClubForAdminProfile';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
-import { typeBadgeLabel } from '@/lib/admin/userPcuPanel';
+import { typeBadgeLabel, type PcuPanelPayload } from '@/lib/admin/userPcuPanel';
 
 const PLACEHOLDER_LOCATIONS = new Set([
   'location',
@@ -33,6 +33,27 @@ function versionLabel(userType: UserType): string {
       return 'Club account';
     default:
       return String(userType);
+  }
+}
+
+function modalTitleFor(userType: UserType, createdAt: Date): string {
+  const ageYears =
+    (Date.now() - new Date(createdAt).getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+  const age = ageYears >= 2 ? 'old' : 'new';
+  switch (userType) {
+    case UserType.CLUB:
+    case UserType.CLUB_TRAINER:
+      return `online_${age}_Club`;
+    case UserType.COACH:
+      return `online_${age}_Coach`;
+    case UserType.TEAM:
+    case UserType.TEAM_MANAGER:
+      return `online_${age}_Team`;
+    case UserType.GROUP:
+    case UserType.GROUP_ADMIN:
+      return `online_${age}_Group`;
+    default:
+      return `online_${age}_User`;
   }
 }
 
@@ -92,11 +113,9 @@ export function buildClubUserPanelFields(
   const panelVersion =
     category && category !== 'Other' ? `Club ${category}` : versionLabel(user.userType);
   const memberCount = club._count?.members ?? 0;
-  const clubAgeYears =
-    (Date.now() - new Date(clubCreatedAt).getTime()) / (365.25 * 24 * 60 * 60 * 1000);
 
   return {
-    modalTitle: clubAgeYears >= 2 ? 'online_old_Club' : 'online_new_Club',
+    modalTitle: modalTitleFor(user.userType, clubCreatedAt),
     fullName,
     username: clubUsername,
     officialName,
@@ -112,6 +131,44 @@ export function buildClubUserPanelFields(
     clubId: club.id,
     typeBadge: typeBadgeLabel(user.userType),
     visitPagePath: officialName ? clubSearchResultsPath(officialName) : null,
+    websiteUrl: opts.websiteUrl ?? null,
+  };
+}
+
+/** Summary USER PANEL for any account type (athletes, coaches, teams, …). */
+export function buildGenericUserPanelFields(
+  user: {
+    userType: UserType;
+    createdAt: Date;
+    image: string | null;
+  },
+  pcu: PcuPanelPayload,
+  opts: { planCount: number; websiteUrl?: string | null },
+): ClubUserPanelPayload {
+  const dateStart =
+    (pcu.startDateIso || '').slice(0, 10) || user.createdAt.toISOString().slice(0, 10);
+  const dateEnd = pcu.endDateIso ? pcu.endDateIso.slice(0, 10) : null;
+  return {
+    modalTitle: modalTitleFor(user.userType, user.createdAt),
+    fullName: pcu.fullname || pcu.username,
+    username: pcu.username,
+    officialName: pcu.entityName || pcu.fullname || pcu.username,
+    clubname: pcu.locality || pcu.cityClubTeam || '',
+    country: pcu.country || '',
+    city: pcu.city || pcu.locality || '',
+    sport: pcu.sport || '',
+    dateStart,
+    dateEnd,
+    version: pcu.version || versionLabel(user.userType),
+    paid: opts.planCount,
+    adminImageUrl: pcu.imageUrl || user.image?.trim() || null,
+    clubId: pcu.entityId,
+    typeBadge: pcu.typeOfUser || typeBadgeLabel(user.userType),
+    visitPagePath:
+      pcu.visitPagePath ||
+      (pcu.username.trim()
+        ? `/searchresults/search/${encodeURIComponent(pcu.username.trim())}`
+        : null),
     websiteUrl: opts.websiteUrl ?? null,
   };
 }

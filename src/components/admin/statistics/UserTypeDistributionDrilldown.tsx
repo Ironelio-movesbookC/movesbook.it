@@ -59,6 +59,7 @@ export default function UserTypeDistributionDrilldown({
           slices={slices}
           kindColors
           height={300}
+          legendValueMode="count"
         />
       </div>
     </div>
