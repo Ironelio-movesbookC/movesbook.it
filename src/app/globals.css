@@ -50,6 +50,17 @@ body {
     rgb(var(--background-start-rgb));
 }
 
+/* Admin Send Message / Send Mail fields — stay readable even when OS/browser is in dark mode */
+.send-message-field {
+  background-color: #fffde7 !important;
+  color: #111827 !important;
+  color-scheme: light;
+  caret-color: #111827;
+}
+.send-message-field::placeholder {
+  color: #6b7280;
+}
+
 /* High Contrast Mode */
 .high-contrast {
   --contrast-boost: 1.5;
@@ -367,6 +378,10 @@ form select {
     left: 0;
     top: 0;
     width: 100%;
+    background: #fff;
+    color: #111;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   /* hide elements */

@@ -82,6 +82,12 @@ interface ProfilePayload {
     tagged: boolean;
     favouritePriority: FavouritePriority;
   };
+  pcuAccess?: {
+    accessStartIso: string;
+    accessEndIso: string;
+    suspendAccessControl: boolean;
+    suspend: boolean;
+  };
 }
 
 type ActionTarget = { id: string; email: string; username: string; label: string };
@@ -106,6 +112,8 @@ interface RowUser {
   primaryClubId?: string | null;
   entityId?: string | null;
   entityKind?: 'club' | 'team' | 'group' | 'coaching_group';
+  accountUsername?: string;
+  imageUrl?: string | null;
 }
 
 function rowListKey(r: RowUser): string {
@@ -404,9 +412,11 @@ export default function AdminRegisteredUsersList({
   const [clubPanelUserId, setClubPanelUserId] = useState<string | null>(null);
 
   const [msgModalOpen, setMsgModalOpen] = useState(false);
+  const [msgKind, setMsgKind] = useState<'message' | 'mail'>('message');
   const [msgTargets, setMsgTargets] = useState<ActionTarget[]>([]);
   const [msgDraft, setMsgDraft] = useState('');
   const [msgSubject, setMsgSubject] = useState('Message from Movesbook Admin');
+  const [msgToEmail, setMsgToEmail] = useState('');
   const [msgSending, setMsgSending] = useState(false);
   const [msgError, setMsgError] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
@@ -677,15 +687,32 @@ export default function AdminRegisteredUsersList({
     window.print();
   }, []);
 
+  const openComposeModal = useCallback(
+    (kind: 'message' | 'mail', targets: ActionTarget[]) => {
+      setMsgKind(kind);
+      setMsgTargets(targets);
+      setMsgError('');
+      setMsgDraft('');
+      setMsgSubject(
+        kind === 'mail' ? 'Mail from Movesbook Admin' : 'Message from Movesbook Admin',
+      );
+      setMsgToEmail(kind === 'mail' && targets.length === 1 ? targets[0].email?.trim() || '' : '');
+      setMsgModalOpen(true);
+    },
+    [],
+  );
+
   const openSendMsgModal = useCallback(() => {
     const targets = requireActionTargets();
     if (!targets) return;
-    setMsgTargets(targets);
-    setMsgError('');
-    setMsgDraft('');
-    setMsgSubject('Message from Movesbook Admin');
-    setMsgModalOpen(true);
-  }, [requireActionTargets]);
+    openComposeModal('message', targets);
+  }, [requireActionTargets, openComposeModal]);
+
+  const openSendMailModal = useCallback(() => {
+    const targets = requireActionTargets();
+    if (!targets) return;
+    openComposeModal('mail', targets);
+  }, [requireActionTargets, openComposeModal]);
 
   const handleSendMsgSubmit = useCallback(async () => {
     const targets = msgTargets;
@@ -694,6 +721,17 @@ export default function AdminRegisteredUsersList({
     if (!message) {
       setMsgError('Please enter a message.');
       return;
+    }
+    const toEmail = msgToEmail.trim();
+    if (msgKind === 'mail' && targets.length === 1) {
+      if (!toEmail) {
+        setMsgError('Please enter an email address.');
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toEmail)) {
+        setMsgError('Please enter a valid email address.');
+        return;
+      }
     }
     const token = localStorage.getItem('adminToken');
     if (!token) {
@@ -713,27 +751,41 @@ export default function AdminRegisteredUsersList({
           segment,
           userIds: targets.map((t) => t.id),
           message,
-          subject: msgSubject.trim() || 'Message from Movesbook Admin',
+          subject:
+            msgSubject.trim() ||
+            (msgKind === 'mail' ? 'Mail from Movesbook Admin' : 'Message from Movesbook Admin'),
+          ...(msgKind === 'mail' && targets.length === 1 ? { toEmail } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to send message');
+      if (!res.ok) {
+        throw new Error(
+          data?.error || (msgKind === 'mail' ? 'Failed to send mail' : 'Failed to send message'),
+        );
+      }
 
       const sent = typeof data.sent === 'number' ? data.sent : 0;
       const failed = Array.isArray(data.failed) ? data.failed.length : 0;
       setMsgModalOpen(false);
       setMsgDraft('');
+      const noun = msgKind === 'mail' ? 'Mail' : 'Message';
       if (failed > 0) {
-        window.alert(`Message sent to ${sent} user(s). ${failed} failed — check email addresses.`);
+        window.alert(`${noun} sent to ${sent} user(s). ${failed} failed — check email addresses.`);
       } else {
-        window.alert(`Message sent to ${sent} user(s).`);
+        window.alert(`${noun} sent to ${sent} user(s).`);
       }
     } catch (e: unknown) {
-      setMsgError(e instanceof Error ? e.message : 'Failed to send message');
+      setMsgError(
+        e instanceof Error
+          ? e.message
+          : msgKind === 'mail'
+            ? 'Failed to send mail'
+            : 'Failed to send message',
+      );
     } finally {
       setMsgSending(false);
     }
-  }, [msgTargets, msgDraft, msgSubject, segment]);
+  }, [msgTargets, msgDraft, msgSubject, msgToEmail, msgKind, segment]);
 
   const pageNumbers = useMemo(() => {
     const maxButtons = 5;
@@ -897,14 +949,23 @@ export default function AdminRegisteredUsersList({
     await deleteSubscriptionsForTargets(targets, true);
   }, [requireActionTargets, deleteSubscriptionsForTargets]);
 
+  const handleDeleteProfileAccount = useCallback(async () => {
+    if (!profileActionTarget) {
+      window.alert('No user is open.');
+      return;
+    }
+    await deleteSubscriptionsForTargets([profileActionTarget], true);
+  }, [profileActionTarget, deleteSubscriptionsForTargets]);
+
   const openProfileSendMsgModal = useCallback(() => {
     if (!profileActionTarget) return;
-    setMsgTargets([profileActionTarget]);
-    setMsgError('');
-    setMsgDraft('');
-    setMsgSubject('Message from Movesbook Admin');
-    setMsgModalOpen(true);
-  }, [profileActionTarget]);
+    openComposeModal('message', [profileActionTarget]);
+  }, [profileActionTarget, openComposeModal]);
+
+  const openProfileSendMailModal = useCallback(() => {
+    if (!profileActionTarget) return;
+    openComposeModal('mail', [profileActionTarget]);
+  }, [profileActionTarget, openComposeModal]);
 
   const openUserProfile = useCallback(
     async (userId: string, clubId?: string | null) => {
@@ -970,6 +1031,14 @@ export default function AdminRegisteredUsersList({
             ? {
                 tagged: Boolean(data.profilePanel.tagged),
                 favouritePriority: normalizeFavouritePriority(data.profilePanel.favouritePriority),
+              }
+            : undefined,
+          pcuAccess: data.pcuAccess
+            ? {
+                accessStartIso: String(data.pcuAccess.accessStartIso ?? ''),
+                accessEndIso: String(data.pcuAccess.accessEndIso ?? ''),
+                suspendAccessControl: Boolean(data.pcuAccess.suspendAccessControl),
+                suspend: Boolean(data.pcuAccess.suspend),
               }
             : undefined,
         });
@@ -1177,7 +1246,7 @@ export default function AdminRegisteredUsersList({
       )}
 
       {profileState !== 'idle' ? (
-        <div ref={profilePanelRef} className="border border-t-0 border-gray-300 bg-[#ececec]">
+        <div ref={profilePanelRef} className="print-area border border-t-0 border-gray-300 bg-[#ececec]">
           <div className="flex items-center justify-between gap-2 px-3 py-2 bg-gray-200 border-b border-gray-300">
             <button
               type="button"
@@ -1217,6 +1286,11 @@ export default function AdminRegisteredUsersList({
               onProfileSubFilterOk={profileSubFilterOk}
               onProfileSubProceed={profileSubProceed}
               onClose={closeUserProfile}
+              onPrint={handlePrint}
+              onSendMsg={openProfileSendMsgModal}
+              onSendMail={openProfileSendMailModal}
+              onDeleteAccount={() => void handleDeleteProfileAccount()}
+              initialPcuAccess={profileData.pcuAccess}
             />
           )}
 
@@ -1327,7 +1401,7 @@ export default function AdminRegisteredUsersList({
                     <button type="button" onClick={openProfileSendMsgModal} className="hover:text-blue-950">
                       Send Msg
                     </button>
-                    <button type="button" onClick={openProfileSendMsgModal} className="hover:text-blue-950">
+                    <button type="button" onClick={openProfileSendMailModal} className="hover:text-blue-950">
                       Send Mail
                     </button>
                   </div>
@@ -1803,7 +1877,7 @@ export default function AdminRegisteredUsersList({
           </button>
           <button
             type="button"
-            onClick={openSendMsgModal}
+            onClick={openSendMailModal}
             disabled={actionBusy}
             className="hover:text-blue-950 disabled:opacity-50"
           >
@@ -1884,7 +1958,7 @@ export default function AdminRegisteredUsersList({
       {loading ? (
         <div className="py-16 text-center text-gray-600">Loading…</div>
       ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+        <div className={`${profileState === 'idle' ? 'print-area ' : ''}grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3`}>
           {gridCardGroups.map((group) => (
             <AdminRegisteredUserGridCard
               key={group.userId}
@@ -1897,7 +1971,7 @@ export default function AdminRegisteredUsersList({
           ))}
         </div>
       ) : (
-        <div className="overflow-x-auto border border-t-0 border-gray-300">
+        <div className={`${profileState === 'idle' ? 'print-area ' : ''}overflow-x-auto border border-t-0 border-gray-300`}>
           <table className="w-full min-w-[1200px] text-sm">
             <thead>
               <tr className="bg-[#4a8f96] text-white">
@@ -2036,16 +2110,44 @@ export default function AdminRegisteredUsersList({
             >
               <X className="h-5 w-5" />
             </button>
-            <h2 className="mb-1 text-lg font-semibold text-gray-900">Send message</h2>
+            <h2 className="mb-1 text-lg font-semibold text-gray-900">
+              {msgKind === 'mail' ? 'Send mail' : 'Send message'}
+            </h2>
             <p className="mb-4 text-sm text-gray-600">
-              To {msgTargets.map((t) => t.label).join(', ')}
+              To: {msgTargets.map((t) => t.label).join(', ')}
+              {msgKind === 'mail' ? (
+                <span className="mt-1 block text-xs text-gray-500">
+                  {msgTargets.length === 1
+                    ? 'Mail is sent from Movesbook using the configured email service.'
+                    : 'Each selected user is mailed at their registered address.'}
+                </span>
+              ) : (
+                <span className="mt-1 block text-xs text-gray-500">
+                  Sent to the user’s registered email on file.
+                </span>
+              )}
             </p>
-            <label className="mb-2 block text-sm font-medium text-gray-700">Subject</label>
+            {msgKind === 'mail' && msgTargets.length === 1 ? (
+              <>
+                <label className="mb-2 block text-sm font-medium text-gray-700">Mail address</label>
+                <input
+                  type="email"
+                  value={msgToEmail}
+                  onChange={(e) => setMsgToEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="send-message-field mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+                  autoComplete="email"
+                />
+              </>
+            ) : null}
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              {msgKind === 'mail' ? 'Subject (optional)' : 'Subject'}
+            </label>
             <input
               type="text"
               value={msgSubject}
               onChange={(e) => setMsgSubject(e.target.value)}
-              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
             <textarea
@@ -2053,7 +2155,7 @@ export default function AdminRegisteredUsersList({
               onChange={(e) => setMsgDraft(e.target.value)}
               rows={5}
               placeholder="Write your message…"
-              className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             {msgError ? <p className="mb-2 text-sm text-red-600">{msgError}</p> : null}
             <div className="flex justify-end gap-2">
@@ -2070,7 +2172,7 @@ export default function AdminRegisteredUsersList({
                 disabled={msgSending}
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {msgSending ? 'Sending…' : 'Send'}
+                {msgSending ? 'Sending…' : msgKind === 'mail' ? 'Send mail' : 'Send'}
               </button>
             </div>
           </div>

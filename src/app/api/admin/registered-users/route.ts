@@ -20,6 +20,7 @@ import {
   readNetworkSubscriptionHistory,
   type NetworkSubscriptionPeriod,
 } from '@/lib/admin/networkSubscriptionHistory';
+import { toMediaApiPath } from '@/lib/uploadMediaUrl';
 import {
   buildMovesbookUserTextSearchOr,
   segmentShouldMatchOwnedClubs,
@@ -237,6 +238,7 @@ export async function GET(request: NextRequest) {
         country: true,
         createdAt: true,
         updatedAt: true,
+        image: true,
       },
       orderBy,
       skip: (page - 1) * pageSize,
@@ -414,6 +416,12 @@ export async function GET(request: NextRequest) {
       version: versionLabel(u.userType),
       amount: '—',
       status,
+      imageUrl: (() => {
+        const raw = u.image?.trim();
+        if (!raw) return null;
+        if (/^https?:\/\//i.test(raw) || raw.startsWith('data:')) return raw;
+        return toMediaApiPath(raw) || raw;
+      })(),
       ...(isClubsSegment || isAllSegment
         ? {
             clubsOwnedCount,
