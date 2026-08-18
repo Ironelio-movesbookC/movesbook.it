@@ -8,6 +8,12 @@ import {
   peerMatchesChatAudience,
   type ChatAudience,
 } from '@/lib/chat/chatAudience';
+import { DEFAULT_CLUB_MEMBER_NAME_VISIBILITY } from '@/lib/chat/clubMemberNameVisibility';
+import {
+  loadClubMemberNameVisibilityContext,
+  loadClubMemberNameVisibilityMap,
+  resolveClubMemberPublicName,
+} from '@/lib/chat/loadClubMemberNameVisibility';
 
 async function loadMyClubAdminIds(myId: string, clubId?: string | null): Promise<Set<string>> {
   const clubs = await prisma.club.findMany({
@@ -152,6 +158,7 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             name: true,
+            username: true,
             telegramAccount: true,
             lastSeenAt: true,
             superAdminId: true,
@@ -162,6 +169,7 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             name: true,
+            username: true,
             telegramAccount: true,
             lastSeenAt: true,
             superAdminId: true,
@@ -188,6 +196,17 @@ export async function GET(request: NextRequest) {
       });
     });
 
+    const visibilityCtx =
+      audience === 'club-member'
+        ? await loadClubMemberNameVisibilityContext(myId, clubId)
+        : null;
+    const visibilityMap =
+      audience === 'club-member'
+        ? await loadClubMemberNameVisibilityMap(
+            filtered.map((c) => (c.user1Id === myId ? c.user2.id : c.user1.id))
+          )
+        : null;
+
     const list = await Promise.all(
       filtered.map(async (c) => {
         const other = c.user1Id === myId ? c.user2 : c.user1;
@@ -205,11 +224,23 @@ export async function GET(request: NextRequest) {
         const isOnline =
           other.lastSeenAt != null && Date.now() - other.lastSeenAt.getTime() < ONLINE_THRESHOLD_MS;
 
+        let displayName = other.name;
+        if (audience === 'club-member' && visibilityCtx && visibilityMap) {
+          const visibility =
+            visibilityMap.get(other.id) ?? DEFAULT_CLUB_MEMBER_NAME_VISIBILITY;
+          displayName = resolveClubMemberPublicName({
+            viewerId: myId,
+            target: other,
+            visibility,
+            ctx: visibilityCtx,
+          }).name;
+        }
+
         return {
           id: c.id,
           otherUser: {
             id: other.id,
-            name: other.name,
+            name: displayName,
             telegramAccount: other.telegramAccount,
             lastSeenAt: other.lastSeenAt?.toISOString() ?? null,
             isOnline,
