@@ -28,6 +28,8 @@ function toPaymentRow(payment: ProcedurePaymentView): Member {
     service: payment.primaryLabel,
     insertDate: payment.paymentDate ?? undefined,
     paid: payment.paid,
+    originalDebt: payment.originalDebt,
+    residualDebt: payment.residualDebt,
     rest: payment.balance,
     casual: payment.description,
     operator: payment.operatorName,

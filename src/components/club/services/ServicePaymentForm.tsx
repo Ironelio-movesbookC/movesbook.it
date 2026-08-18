@@ -201,6 +201,7 @@ export default function ServicePaymentForm({
     () => allPurchases.reduce((sum, p) => sum + Math.max(0, p.rest), 0),
     [allPurchases]
   );
+
   const [installments, setInstallments] = useState<InstallmentRow[]>([]);
   const [selectedInstallmentIds, setSelectedInstallmentIds] = useState<Set<string>>(new Set());
   const [installmentError, setInstallmentError] = useState('');
@@ -260,9 +261,7 @@ export default function ServicePaymentForm({
       .catch(() => setInstallments([]));
   }, [procedureType, purchase.id, multiDeadlineMode]);
 
-  useEffect(() => {
-    setDebtTotal(String(totalRest || purchase.rest));
-  }, [totalRest, purchase.rest]);
+  const todayYmd = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   useEffect(() => {
     if (!multiDeadlineMode) return;
@@ -274,7 +273,6 @@ export default function ServicePaymentForm({
   const paidAmount = Number(amountPaid) || 0;
   const payWithAmount = Number(payWith) || 0;
   const restGive = Math.max(0, payWithAmount - paidAmount);
-  const overallNewRest = Math.max(0, totalRest - paidAmount);
 
   type DeadlineListRow = {
     id: string;
@@ -343,6 +341,54 @@ export default function ServicePaymentForm({
     return [...rows].sort(compareDeadlinesOldestFirst);
   }, [multiDeadlineMode, allPurchases, installments, payments, purchase]);
 
+  /** The sum of rests for the records listed in the "Deadlines total" list. */
+  const listedTotalRest = useMemo(
+    () => installmentRows.reduce((sum, r) => sum + Math.max(0, r.balance), 0),
+    [installmentRows]
+  );
+  const overallNewRest = Math.round(Math.max(0, listedTotalRest - paidAmount) * 100) / 100;
+
+  const expiredDeadlinesStats = useMemo(() => {
+    // We want to look at ALL possible deadlines to find which ones are expired.
+    const expired = installmentRows.filter((r) => {
+      const dateStr = effectiveExpireDate(r.expireDate, r.paymentDate);
+      return dateStr && dateStr < todayYmd && r.balance > 0;
+    });
+
+    const sum = expired.reduce((acc, r) => acc + r.balance, 0);
+    const lastDate = expired.reduce((latest, r) => {
+      const dateStr = effectiveExpireDate(r.expireDate, r.paymentDate);
+      if (!dateStr) return latest;
+      return !latest || dateStr > latest ? dateStr : latest;
+    }, '');
+
+    return { sum, lastDate };
+  }, [installmentRows, todayYmd]);
+
+  useEffect(() => {
+    // If there are expired deadlines, auto-fill the Debt section with their sum and latest date.
+    if (expiredDeadlinesStats.sum > 0) {
+      setDebtTotal(String(expiredDeadlinesStats.sum.toFixed(2)));
+      setDebtExpire(expiredDeadlinesStats.lastDate);
+    } else {
+      // Fallback to previous logic if nothing is expired.
+      setDebtTotal(String((totalRest || purchase.rest).toFixed(2)));
+      setDebtExpire(purchase.paydate ?? todayYmd);
+    }
+    
+    // Proactively select the expired installments
+    const expiredIds = installmentRows
+      .filter((r) => {
+        const dateStr = effectiveExpireDate(r.expireDate, r.paymentDate);
+        return dateStr && dateStr < todayYmd && r.balance > 0;
+      })
+      .map(r => r.id);
+    
+    if (expiredIds.length > 0) {
+      setSelectedInstallmentIds(new Set(expiredIds));
+    }
+  }, [expiredDeadlinesStats, totalRest, purchase.rest, purchase.paydate, todayYmd, installmentRows]);
+
   useEffect(() => {
     if (!onSelectedRecordIdsChange) return;
     const fromSelection = Array.from(selectedInstallmentIds)
@@ -369,11 +415,10 @@ export default function ServicePaymentForm({
       .reduce((sum, r) => sum + r.balance, 0);
   }, [installmentRows, selectedInstallmentIds]);
 
-  // Do NOT auto-fill Amount paid to the full selected rest — that caused accidental
-  // full settlement of every checked deadline. Operator must type the payment amount.
+  // Auto-fill Amount paid to the full selected rest when selection changes.
   useEffect(() => {
     amountPaidTouchedRef.current = false;
-    setAmountPaid('0');
+    setAmountPaid(selectedTotalRest > 0 ? String(Number(selectedTotalRest.toFixed(2))) : '0');
     setPayWith('0');
   }, [selectedTotalRest]);
 
@@ -603,14 +648,15 @@ export default function ServicePaymentForm({
       // Like New deadline: allow raising Deadline above current cost by bumping record total.
       if (increase > 0 && onAddToRecordTotal) {
         await onAddToRecordTotal(increase);
-      } else if (newGrandTotal > purchase.value + 0.001 && !onAddToRecordTotal) {
+      } else if (increase > 0.001 && !onAddToRecordTotal) {
         setModifyError(
           `Total of all deadlines (€${newGrandTotal.toFixed(2)}) would exceed original cost (€${purchase.value.toFixed(2)}).`
         );
+        setModifySaving(false);
         return;
       }
 
-      const newRest = deadlineTotal - currentPaid;
+      const newRest = Math.round((deadlineTotal - currentPaid) * 100) / 100;
       await updateInstallment(procedureType, purchase.id, id, {
         balance: newRest,
         paid: currentPaid,

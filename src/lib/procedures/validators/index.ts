@@ -17,6 +17,19 @@ import {
   createServiceSaleRecordSchema,
   mapServiceSaleCreateToInput,
 } from './serviceSale';
+import {
+  createMembershipRecordSchema,
+  mapMembershipCreateToInput,
+} from './membership';
+import {
+  createCourseSubscriptionRecordSchema,
+  mapCourseSubscriptionCreateToInput,
+} from './courseSubscription';
+
+import {
+  createMemberCreditRecordSchema,
+  mapMemberCreditCreateToInput,
+} from './memberCredit';
 
 const KNOWN_PROCEDURE_TYPES = new Set<string>(Object.values(PROCEDURE_TYPE_CODES));
 
@@ -85,6 +98,42 @@ export function parseCreateRecord(type: string, body: unknown): ParseCreateRecor
         };
       }
       return { ok: true, data: mapMemberDebtCreateToInput(parsed.data) };
+    }
+    case PROCEDURE_TYPE_CODES.MEMBERSHIP: {
+      const parsed = createMembershipRecordSchema.safeParse(body);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          status: 400,
+          error: 'Validation failed',
+          details: parsed.error.flatten(),
+        };
+      }
+      return { ok: true, data: mapMembershipCreateToInput(parsed.data) };
+    }
+    case PROCEDURE_TYPE_CODES.COURSE_SUBSCRIPTION: {
+      const parsed = createCourseSubscriptionRecordSchema.safeParse(body);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          status: 400,
+          error: 'Validation failed',
+          details: parsed.error.flatten(),
+        };
+      }
+      return { ok: true, data: mapCourseSubscriptionCreateToInput(parsed.data) };
+    }
+    case PROCEDURE_TYPE_CODES.MEMBER_CREDIT: {
+      const parsed = createMemberCreditRecordSchema.safeParse(body);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          status: 400,
+          error: 'Validation failed',
+          details: parsed.error.flatten(),
+        };
+      }
+      return { ok: true, data: mapMemberCreditCreateToInput(parsed.data) };
     }
     default: {
       const _exhaustive: never = type;

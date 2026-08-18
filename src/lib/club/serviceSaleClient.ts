@@ -334,6 +334,10 @@ export async function deletePurchase(id: string): Promise<void> {
   await clubApiFetch(`${BASE}/records?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+export async function deleteDeadline(id: string): Promise<void> {
+  await deletePurchase(id);
+}
+
 export async function updatePurchase(
   id: string,
   input: { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number }

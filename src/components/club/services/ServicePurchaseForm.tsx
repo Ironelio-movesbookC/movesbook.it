@@ -358,6 +358,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
                 min="0"
                 step="0.01"
                 className={procedureHighlightInputClass}
+                style={{ backgroundColor: '#fff9c4' }}
                 value={pay}
                 onChange={(e) => setPay(e.target.value)}
                 placeholder="0"

@@ -493,6 +493,7 @@ export default function ClubTablesServicesPage() {
                   <th className="w-36 px-4 py-3">
                     <SortHeader label="Cost" active={sortKey === 'cost'} direction={sortDirection} onClick={() => updateSort('cost')} />
                   </th>
+                  <th className="w-36 px-4 py-3">How many</th>
                   <th className="w-36 px-4 py-3">
                     <SortHeader label="Modified" active={sortKey === 'modified'} direction={sortDirection} onClick={() => updateSort('modified')} />
                   </th>
@@ -502,7 +503,7 @@ export default function ClubTablesServicesPage() {
               <tbody>
                 {pageItems.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-16 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-16 text-center text-gray-500">
                       No services found.
                     </td>
                   </tr>
@@ -531,6 +532,7 @@ export default function ClubTablesServicesPage() {
                         <div className="font-semibold text-gray-950">{item.serviceName}</div>
                       </td>
                       <td className="px-4 py-4 font-semibold text-gray-800">{formatCost(item.cost, item.currencyCode || currencyCode)}</td>
+                      <td className="px-4 py-4 text-gray-800">{item.howMany || '-'}</td>
                       <td className="px-4 py-4 text-gray-600">{formatDate(item.modified || item.created)}</td>
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2">

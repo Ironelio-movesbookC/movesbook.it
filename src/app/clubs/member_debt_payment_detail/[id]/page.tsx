@@ -283,7 +283,12 @@ export default function MemberDebtPaymentDetailPage() {
         });
       }
       setSuccess('Payment saved.');
-      await load();
+      if (onCancel) {
+        // Wait a brief moment to show success message before closing
+        setTimeout(() => onCancel(), 1000);
+      } else {
+        await load();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
     } finally {
