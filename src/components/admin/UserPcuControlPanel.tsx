@@ -2169,7 +2169,7 @@ export default function UserPcuControlPanel({
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto">
+    <div className="print-area w-full max-w-5xl mx-auto">
       <div className="bg-gray-200 border border-gray-300 rounded shadow-sm">
         <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300">
           <div className="flex items-center gap-3">
@@ -5419,7 +5419,7 @@ export default function UserPcuControlPanel({
               value={mailTo}
               onChange={(e) => setMailTo(e.target.value)}
               placeholder="user@example.com"
-              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
               autoComplete="email"
             />
             <label className="mb-2 block text-sm font-medium text-gray-700">Subject (optional)</label>
@@ -5427,7 +5427,7 @@ export default function UserPcuControlPanel({
               type="text"
               value={mailSubject}
               onChange={(e) => setMailSubject(e.target.value)}
-              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
             <textarea
@@ -5435,7 +5435,7 @@ export default function UserPcuControlPanel({
               onChange={(e) => setMailBody(e.target.value)}
               rows={4}
               placeholder="Write your message…"
-              className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             {mailError ? <p className="mb-2 text-sm text-red-600">{mailError}</p> : null}
             <div className="flex justify-end gap-2">
@@ -5478,7 +5478,7 @@ export default function UserPcuControlPanel({
               type="text"
               value={msgSubject}
               onChange={(e) => setMsgSubject(e.target.value)}
-              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
             <textarea
@@ -5486,7 +5486,7 @@ export default function UserPcuControlPanel({
               onChange={(e) => setMsgDraft(e.target.value)}
               rows={5}
               placeholder="Write your message…"
-              className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             {msgError ? <p className="mb-2 text-sm text-red-600">{msgError}</p> : null}
             <div className="flex justify-end gap-2">

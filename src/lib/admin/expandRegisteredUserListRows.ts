@@ -32,6 +32,7 @@ export type RegisteredUserListRow = {
   entityKind?: 'club' | 'team' | 'group' | 'coaching_group';
   /** Login username (unchanged when `username` is a club/entity handle). */
   accountUsername?: string;
+  imageUrl?: string | null;
 };
 
 type ClubEntity = {

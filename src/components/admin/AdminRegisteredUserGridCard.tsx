@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { User } from 'lucide-react';
 import { flagEmojiFromCountryName } from '@/lib/admin/countryFlag';
 import {
@@ -11,7 +12,7 @@ import {
 import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
-type RowUser = AdminGridCardGroup['admin'];
+const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
 function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
   switch (tone) {
@@ -46,6 +47,16 @@ export default function AdminRegisteredUserGridCard({
   const showOwnedList = gridCardShowsOwnedEntities(group);
   const isClubAdmin =
     isClubsSegment || (isAllSegment && isClubAccountUserType(admin.userType));
+  const location = admin.location?.trim() || '';
+  const dateLine = [admin.dateStart, admin.dateEnd].filter(Boolean).join(' — ');
+
+  const openPanel = () => {
+    if (isClubAdmin && onOpenClubPanel) {
+      onOpenClubPanel(admin.id, admin.primaryClubId ?? null);
+      return;
+    }
+    onOpenUserProfile(admin.id, admin.primaryClubId);
+  };
 
   return (
     <div className="border border-gray-300 bg-white p-4 rounded shadow-sm text-sm">
@@ -58,7 +69,7 @@ export default function AdminRegisteredUserGridCard({
               <span className="ml-0.5">{flagEmojiFromCountryName(admin.country)}</span>
             )}
           </div>
-          <div className="text-gray-600">{admin.location?.trim() || '—'}</div>
+          {location ? <div className="text-gray-600">{location}</div> : null}
           {isClubAdmin && onOpenClubPanel ? (
             <button
               type="button"
@@ -70,17 +81,33 @@ export default function AdminRegisteredUserGridCard({
           ) : (
             <div className="text-gray-600">@{admin.accountUsername ?? admin.username}</div>
           )}
-          <div className="text-gray-600">
-            {admin.dateStart} — {admin.dateEnd ?? '—'}
-          </div>
+          {dateLine ? <div className="text-gray-600">{dateLine}</div> : null}
           <div className="text-gray-700">{admin.version}</div>
         </div>
-        <div
-          className="w-14 h-14 shrink-0 border-2 border-red-600 bg-gray-50 flex items-center justify-center"
-          aria-hidden
+        <button
+          type="button"
+          onClick={openPanel}
+          className="w-14 h-14 shrink-0 border-2 border-red-600 bg-gray-50 flex items-center justify-center overflow-hidden"
+          title="Open User Panel"
         >
-          <User className="w-7 h-7 text-gray-400" />
-        </div>
+          {admin.imageUrl ? (
+            isDataUrl(admin.imageUrl) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={admin.imageUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <Image
+                src={admin.imageUrl}
+                alt=""
+                width={56}
+                height={56}
+                className="h-full w-full object-cover"
+                unoptimized
+              />
+            )
+          ) : (
+            <User className="w-7 h-7 text-gray-400" />
+          )}
+        </button>
       </div>
 
       {showOwnedList ? (
@@ -98,9 +125,9 @@ export default function AdminRegisteredUserGridCard({
                   {entityCompanyLabel(entity.entityKind)}:{' '}
                   <span className="font-medium">{entity.companyName?.trim() || '—'}</span>
                 </span>
-                <span className="text-red-600 whitespace-nowrap">
-                  {entity.dateEnd ?? '—'}
-                </span>
+                {entity.dateEnd ? (
+                  <span className="text-red-600 whitespace-nowrap">{entity.dateEnd}</span>
+                ) : null}
                 <span className={clubAdminStatusClassName(entity.statusTone)}>
                   {entity.status}
                 </span>
