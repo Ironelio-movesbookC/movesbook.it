@@ -46,6 +46,7 @@ export const serviceSaleRecordColumns: Column[] = [
   { key: 'service', header: 'Service slot' },
   { key: 'course', header: 'Section' },
   { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
+  { key: 'expirationDate', header: 'Expiration Date', render: (v) => formatDate(v) },
   { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
   { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
   { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
@@ -61,12 +62,15 @@ export const serviceSaleDeadlineColumns: Column[] = [
   { key: 'typology', header: 'Typology' },
   { key: 'service', header: 'Service slot' },
   { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
+  { key: 'expirationDate', header: 'Expiration Date', render: (v) => formatDate(v) },
   { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
   { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
   { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
   { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
   { key: 'casual', header: 'Notes' },
   { key: 'operator', header: 'Operator' },
+  { key: 'edit', header: 'Edit' },
+  { key: 'delete', header: 'Delete' },
 ];
 
 export const serviceSalePaymentColumns: Column[] = [

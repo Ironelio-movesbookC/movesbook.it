@@ -358,18 +358,20 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
                 min="0"
                 step="0.01"
                 className={procedureHighlightInputClass}
-                style={{ backgroundColor: '#fff9c4' }}
+                style={{ backgroundColor: '#fff984' }}
                 value={pay}
                 onChange={(e) => setPay(e.target.value)}
                 placeholder="0"
               />
             </ProcedureFormCell>
-            <ProcedureFormCell label="Date">
+            <ProcedureFormCell label="Expiration Date">
               <input
                 type="date"
-                readOnly
-                className={procedureReadonlyInputClass}
+                min={todayDate()}
+                className={procedureHighlightInputClass}
+                style={{ backgroundColor: '#d3f07b' }}
                 value={paydate}
+                onChange={(e) => setPaydate(e.target.value)}
               />
             </ProcedureFormCell>
             <ProcedureFormCell label="Causal">
