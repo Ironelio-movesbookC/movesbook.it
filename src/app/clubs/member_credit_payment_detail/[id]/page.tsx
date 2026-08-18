@@ -72,6 +72,9 @@ function mapPurchase(r: {
   operatorId: string | null;
   operatorName: string;
   lastPaymentDate: string | null;
+  recordDate: string;
+  expireDate: string | null;
+  createdAt: string | null;
 }): ServiceSalePurchase {
   return {
     id: r.id,
@@ -109,12 +112,13 @@ function parseIds(primaryId: string, idsParam: string | null): string[] {
   return unique;
 }
 
-export default function MemberDebtPaymentDetailPage() {
+export default function MemberCreditPaymentDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
   const id = String(params?.id ?? '');
-  const client = useMemo(() => createProcedureClient(PROCEDURE_TYPE_CODES.MEMBER_DEBT), []);
+
+  const client = useMemo(() => createProcedureClient(PROCEDURE_TYPE_CODES.MEMBER_CREDIT), []);
   const recordIds = useMemo(
     () => parseIds(id, searchParams?.get('ids') ?? null),
     [id, searchParams]
@@ -182,6 +186,7 @@ export default function MemberDebtPaymentDetailPage() {
       currentOperatorId: formOptions.currentOperatorId ?? null,
     });
 
+    // Auto-settle logic when deadlines-form is disabled by settings.
     const primary = mapped[0];
     if (
       recordIds.length === 1 &&
@@ -214,20 +219,11 @@ export default function MemberDebtPaymentDetailPage() {
 
   const tabs = useMemo(
     () =>
-      getProcedureTabs(PROCEDURE_TYPE_CODES.MEMBER_DEBT, 'deadlines', id).filter(
+      getProcedureTabs(PROCEDURE_TYPE_CODES.MEMBER_CREDIT, 'deadlines', id).filter(
         (t) => t.id === 'deadlines' || t.id === 'payments'
       ),
     [id]
   );
-
-  async function handleAddToRecordTotal(additionalAmount: number): Promise<void> {
-    if (!purchase) return;
-    const newTotal = purchase.value + additionalAmount;
-    await client.updateRecord(id, { totalAmount: newTotal });
-    setPurchases((prev) =>
-      prev.map((p, i) => (i === 0 ? { ...p, value: newTotal, rest: p.rest + additionalAmount } : p))
-    );
-  }
 
   async function handleSubmit(values: ServicePaymentSubmitValues) {
     setError('');
@@ -242,7 +238,6 @@ export default function MemberDebtPaymentDetailPage() {
         values.distributions?.filter((d) => d.amount > 0 && d.installmentId !== 'current') ?? [];
 
       if (recordIds.length > 1 && distributions.length > 0) {
-        // Multi-deadline: each selected row is a procedure record id.
         for (const dist of distributions) {
           if (!recordIds.includes(dist.installmentId)) continue;
           await client.addPayment(dist.installmentId, {
@@ -258,7 +253,7 @@ export default function MemberDebtPaymentDetailPage() {
             debtExpire: values.debtExpire,
             payWith: values.payWith,
             taxDocument: values.taxDocument,
-            createReceipt: values.createReceipt && dist.installmentId === id,
+            createReceipt: false,
             receiptNumber: values.receiptNumber,
             receiptAnnotations: values.description,
             serviceName: purchases.find((p) => p.id === dist.installmentId)?.serviceName,
@@ -278,19 +273,15 @@ export default function MemberDebtPaymentDetailPage() {
           debtExpire: values.debtExpire,
           payWith: values.payWith,
           taxDocument: values.taxDocument,
-          createReceipt: values.createReceipt,
+          createReceipt: false,
           receiptNumber: values.receiptNumber,
           receiptAnnotations: values.description,
           serviceName: purchase?.serviceName,
         });
       }
+
       setSuccess('Payment saved.');
-      if (onCancel) {
-        // Wait a brief moment to show success message before closing
-        setTimeout(() => onCancel(), 1000);
-      } else {
-        await load();
-      }
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
     } finally {
@@ -319,17 +310,18 @@ export default function MemberDebtPaymentDetailPage() {
             extraPurchases={extraPurchases}
             payments={payments}
             options={options}
-            procedureType="member_debt"
+            procedureType="member_credit"
             saving={saving}
             error={error}
             success={success}
             onSubmit={handleSubmit}
-            onCancel={() => router.push('/clubs/member_debt_dead_line')}
-            onAddToRecordTotal={extraPurchases.length > 0 ? undefined : handleAddToRecordTotal}
+            onCancel={() => router.push('/clubs/member_credit_dead_line')}
             operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
+            disableReceipt
           />
         )}
       </ProcedureArchiveShell>
     </div>
   );
 }
+

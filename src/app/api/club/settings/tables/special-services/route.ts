@@ -18,6 +18,7 @@ type ServicePayload = {
   sectorId: string;
   serviceName: string;
   cost: string;
+  howMany: string;
   removeImage: boolean;
   image: File | null;
 };
@@ -32,6 +33,7 @@ type ServiceRow = {
   actual_cost?: string | number | null;
   club_currency_code?: string | null;
   service_img?: string | null;
+  service_qty?: string | number | null;
   service_available?: number | string | null;
   show_cost?: number | string | null;
   video_url?: string | null;
@@ -74,6 +76,7 @@ const SERVICE_COLUMN_DEFINITIONS: Record<string, string> = {
   actual_cost: 'VARCHAR(80) NULL',
   club_currency_code: 'VARCHAR(20) NULL',
   service_img: 'VARCHAR(255) NULL',
+  service_qty: 'VARCHAR(80) NULL',
   service_available: 'TINYINT(1) NOT NULL DEFAULT 1',
   show_cost: 'TINYINT(1) NOT NULL DEFAULT 1',
   video_url: 'VARCHAR(500) NULL',
@@ -404,6 +407,7 @@ function parsePayload(formData: FormData): ServicePayload {
     sectorId: text(formData.get('sectorId')),
     serviceName: text(formData.get('serviceName')),
     cost: text(formData.get('cost')),
+    howMany: text(formData.get('howMany')),
     removeImage: formData.get('removeImage') === '1',
     image: fileFromForm(formData)
   };
@@ -433,6 +437,10 @@ async function validatePayload(sectorTable: string, payload: ServicePayload): Pr
     fieldErrors.cost = 'Please enter cost.';
   } else if (!Number.isFinite(Number(payload.cost)) || Number(payload.cost) < 0) {
     fieldErrors.cost = 'Cost must be a number greater than or equal to 0.';
+  }
+
+  if (payload.howMany && (!Number.isFinite(Number(payload.howMany)) || Number(payload.howMany) < 0)) {
+    fieldErrors.howMany = 'How many must be a number greater than or equal to 0.';
   }
 
   if (payload.image) {
@@ -543,6 +551,7 @@ function normalizeService(row: ServiceRow) {
     actualCost: text(row.actual_cost),
     currencyCode: text(row.club_currency_code) || 'EUR',
     imageUrl,
+    howMany: text(row.service_qty) ? Number(text(row.service_qty)) : null,
     serviceAvailable: yesNo(row.service_available),
     showCost: row.show_cost == null ? true : yesNo(row.show_cost),
     videoUrl: text(row.video_url),
@@ -707,8 +716,8 @@ export async function POST(request: NextRequest) {
     await prisma.$executeRawUnsafe(
       `INSERT INTO \`${serviceTable}\`
          (user_id, club_id, sector_id, service_name, club_currency_cost, actual_cost,
-          club_currency_code, service_img, order_position)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          club_currency_code, service_img, service_qty, order_position)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       storageUserId,
       context.club?.id ?? null,
       payload.sectorId,
@@ -717,6 +726,7 @@ export async function POST(request: NextRequest) {
       actualCost,
       'EUR',
       imagePath,
+      payload.howMany || null,
       orderPosition
     );
 
@@ -733,7 +743,8 @@ export async function POST(request: NextRequest) {
         cost,
         actualCost,
         currencyCode: 'EUR',
-        imageUrl: imagePath
+        imageUrl: imagePath,
+        howMany: payload.howMany ? Number(payload.howMany) : null
       }
     }, { status: 201 });
   } catch (error) {
@@ -799,6 +810,7 @@ export async function PUT(request: NextRequest) {
            actual_cost = ?,
            club_currency_code = ?,
            service_img = ?,
+           service_qty = ?,
            modified = CURRENT_TIMESTAMP
        WHERE id = ?`,
       payload.sectorId,
@@ -807,6 +819,7 @@ export async function PUT(request: NextRequest) {
       actualCost,
       currencyCode,
       imagePath,
+      payload.howMany || null,
       id
     );
 
@@ -823,7 +836,8 @@ export async function PUT(request: NextRequest) {
         cost,
         actualCost,
         currencyCode,
-        imageUrl: imagePath
+        imageUrl: imagePath,
+        howMany: payload.howMany ? Number(payload.howMany) : null
       }
     });
   } catch (error) {

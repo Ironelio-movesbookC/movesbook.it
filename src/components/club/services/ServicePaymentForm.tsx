@@ -69,6 +69,8 @@ type Props = {
   onAddToRecordTotal?: (amount: number) => Promise<void>;
   operatorPassStatus?: string;
   notEnterCustData?: boolean;
+  /** When true, hide the receipt/tax document UI and never create receipts. */
+  disableReceipt?: boolean;
   /** Selected procedure record ids (for scoping Historical / Payments / Receipts tabs). */
   onSelectedRecordIdsChange?: (recordIds: string[]) => void;
 };
@@ -189,6 +191,7 @@ export default function ServicePaymentForm({
   onAddToRecordTotal,
   operatorPassStatus = 'Yes',
   notEnterCustData = false,
+  disableReceipt = false,
   onSelectedRecordIdsChange,
 }: Props) {
   const sectionLabel = `${purchase.sectorName}-${purchase.serviceName}`;
@@ -212,7 +215,7 @@ export default function ServicePaymentForm({
   const [amountPaid, setAmountPaid] = useState('0');
   const amountPaidTouchedRef = useRef(false);
   const [payMode, setPayMode] = useState('cash');
-  const [taxDoc, setTaxDoc] = useState(true);
+  const [taxDoc, setTaxDoc] = useState(!disableReceipt);
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [operatorId, setOperatorId] = useState(options.currentOperatorId ?? options.operators[0]?.id ?? '');
   const [operatorPassword, setOperatorPassword] = useState('');
@@ -245,7 +248,11 @@ export default function ServicePaymentForm({
   });
   const [newFormOpen, setNewFormOpen] = useState(false);
   const [newFormSaving, setNewFormSaving] = useState(false);
-  const [newForm, setNewForm] = useState({ balance: '', expireDate: '', description: '' });
+  const [newForm, setNewForm] = useState({
+    balance: '',
+    expireDate: new Date().toISOString().slice(0, 10),
+    description: '',
+  });
   const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<'new' | 'delete' | null>(null);
   /** Which "new" flow triggered the admin-password gate: split the selected deadline, or add an independent one. */
@@ -415,6 +422,12 @@ export default function ServicePaymentForm({
       .reduce((sum, r) => sum + r.balance, 0);
   }, [installmentRows, selectedInstallmentIds]);
 
+  function computeTotalRestForIds(ids: Set<string>): number {
+    return installmentRows
+      .filter((r) => ids.has(r.id))
+      .reduce((sum, r) => sum + Math.max(0, r.balance), 0);
+  }
+
   // Auto-fill Amount paid to the full selected rest when selection changes.
   useEffect(() => {
     amountPaidTouchedRef.current = false;
@@ -520,14 +533,14 @@ export default function ServicePaymentForm({
         // it does not touch or divide the one it was copied from.
         setNewForm({
           balance: String(selectedRow.balance),
-          expireDate: selectedRow.expireDate?.slice(0, 10) ?? '',
+          expireDate: selectedRow.expireDate?.slice(0, 10) ?? todayYmd,
           description: selectedRow.description ?? (description || sectionLabel),
         });
         setNewFormOpen(true);
         return;
       }
     }
-    setNewForm({ balance: '', expireDate: '', description: description || sectionLabel });
+    setNewForm({ balance: '', expireDate: todayYmd, description: description || sectionLabel });
     setNewFormOpen(true);
   }
 
@@ -740,9 +753,9 @@ export default function ServicePaymentForm({
       debtExpire,
       payWith: payWithAmount,
       restGive,
-      taxDocument: taxDocument ?? undefined,
+      taxDocument: disableReceipt ? undefined : taxDocument ?? undefined,
       // Receipt is only tagged in the modal; real save happens on Confirm.
-      createReceipt: Boolean(taxDoc && taxDocument),
+      createReceipt: disableReceipt ? false : Boolean(taxDoc && taxDocument),
       receiptNumber: taxDocument?.documentNumber || undefined,
       receiptAnnotations: taxDocument?.causal || undefined,
       receiptDocumentType: taxDocument?.documentType || undefined,
@@ -821,6 +834,15 @@ export default function ServicePaymentForm({
                           if (next.has(row.id)) next.delete(row.id);
                           else next.add(row.id);
                           setSelectedInstallmentIds(next);
+
+                          // Immediately sync "Amount paid" to the selected Rest sum.
+                          // (Avoid edge cases where effects run after a user interaction.)
+                          const nextTotalRest = computeTotalRestForIds(next);
+                          amountPaidTouchedRef.current = false;
+                          setAmountPaid(
+                            nextTotalRest > 0 ? String(Number(nextTotalRest.toFixed(2))) : '0'
+                          );
+                          setPayWith('0');
                         }}
                         className="mt-1"
                       />
@@ -953,6 +975,7 @@ export default function ServicePaymentForm({
                 <span className="text-gray-600">Expired</span>
                 <input
                   type="date"
+                  min={todayYmd}
                   className={`mt-1 ${procedureHighlightInputClass}`}
                   style={{ backgroundColor: '#d3f07b' }}
                   value={debtExpire}
@@ -1008,6 +1031,7 @@ export default function ServicePaymentForm({
                 step="0.01"
                 max={selectedTotalRest}
                 className={`h-10 min-w-0 ${procedureHighlightInputClass}`}
+                style={{ backgroundColor: '#fff984' }}
                 value={amountPaid}
                 onChange={(e) => handleAmountPaidChange(e.target.value)}
                 onBlur={(e) => handleAmountPaidChange(e.target.value)}
@@ -1025,30 +1049,42 @@ export default function ServicePaymentForm({
                   </option>
                 ))}
               </select>
-              <div className="flex h-10 min-w-0 items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={taxDoc}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setTaxDoc(checked);
-                    if (!checked) setTaxDocument(null);
-                  }}
-                />
-                <span>Tax doc</span>
-                {taxDocument && (
-                  <span className="text-xs text-teal-700">· receipt ready at Confirm</span>
-                )}
-              </div>
+              {!disableReceipt ? (
+                <div className="flex h-10 min-w-0 items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={taxDoc}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setTaxDoc(checked);
+                      if (!checked) setTaxDocument(null);
+                    }}
+                  />
+                  <span>Tax doc</span>
+                  {taxDocument && (
+                    <span className="text-xs text-teal-700">· receipt ready at Confirm</span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex h-10 min-w-0 items-center gap-2 text-gray-400" aria-hidden>
+                  -
+                </div>
+              )}
               <div className="min-w-0">
-                <button
-                  type="button"
-                  onClick={() => setTaxModalOpen(true)}
-                  disabled={!taxDoc}
-                  className="h-10 rounded bg-gray-200 px-3 text-sm hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Open form
-                </button>
+                {!disableReceipt ? (
+                  <button
+                    type="button"
+                    onClick={() => setTaxModalOpen(true)}
+                    disabled={!taxDoc}
+                    className="h-10 rounded bg-gray-200 px-3 text-sm hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Open form
+                  </button>
+                ) : (
+                  <span className="text-xs text-gray-500" aria-hidden>
+                    -
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -1059,6 +1095,7 @@ export default function ServicePaymentForm({
               <input
                 type="date"
                 className={`h-10 ${procedureHighlightInputClass}`}
+                style={{ backgroundColor: '#fff984' }}
                 value={paymentDate}
                 onChange={(e) => setPaymentDate(e.target.value)}
               />
@@ -1184,29 +1221,31 @@ export default function ServicePaymentForm({
         </div>
       </form>
 
-      <TaxDocumentModal
-        open={taxModalOpen}
-        memberName={purchase.memberName}
-        defaultCausal={description}
-        defaultTotal={paidAmount}
-        defaultResidual={overallNewRest}
-        initial={
-          taxDocument
-            ? {
-                ...taxDocument,
-                // Always sync receipt Total to current Amount paid when opening.
-                total: paidAmount,
-                residualTotal: overallNewRest,
-              }
-            : undefined
-        }
-        hideMemberName={notEnterCustData}
-        onClose={() => setTaxModalOpen(false)}
-        onSave={(values) => {
-          setTaxDocument(values);
-          setTaxDoc(true);
-        }}
-      />
+      {!disableReceipt && (
+        <TaxDocumentModal
+          open={taxModalOpen}
+          memberName={purchase.memberName}
+          defaultCausal={description}
+          defaultTotal={paidAmount}
+          defaultResidual={overallNewRest}
+          initial={
+            taxDocument
+              ? {
+                  ...taxDocument,
+                  // Always sync receipt Total to current Amount paid when opening.
+                  total: paidAmount,
+                  residualTotal: overallNewRest,
+                }
+              : undefined
+          }
+          hideMemberName={notEnterCustData}
+          onClose={() => setTaxModalOpen(false)}
+          onSave={(values) => {
+            setTaxDocument(values);
+            setTaxDoc(true);
+          }}
+        />
+      )}
 
       {modifyOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -1251,7 +1290,9 @@ export default function ServicePaymentForm({
               <span className="text-gray-600">Expiration date</span>
               <input
                 type="date"
+                min={todayYmd}
                 className={`mt-1 ${procedureInputClass}`}
+                style={{ backgroundColor: '#d3f07b' }}
                 value={modifyForm.expireDate}
                 onChange={(e) => setModifyForm((f) => ({ ...f, expireDate: e.target.value }))}
               />
@@ -1321,7 +1362,9 @@ export default function ServicePaymentForm({
               <span className="text-gray-600">Expiration date</span>
               <input
                 type="date"
+                min={todayYmd}
                 className={`mt-1 ${procedureInputClass}`}
+                style={{ backgroundColor: '#d3f07b' }}
                 value={newForm.expireDate}
                 onChange={(e) => setNewForm((f) => ({ ...f, expireDate: e.target.value }))}
               />
