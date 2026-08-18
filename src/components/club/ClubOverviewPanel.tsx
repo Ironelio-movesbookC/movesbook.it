@@ -12,11 +12,13 @@ import {
   User,
 } from 'lucide-react';
 import UserProfile from '@/components/UserProfile';
+import ClubAdminInfoForm from '@/components/profile/ClubAdminInfoForm';
+import ClubReferencesDisplay from '@/components/club/ClubReferencesDisplay';
+import ManagedEntitySidebarAvatar from '@/components/entity/ManagedEntitySidebarAvatar';
 import {
   getClubProfileDisplayRows,
   parseClubDescriptionMeta,
 } from '@/lib/club/clubSidebarLabel';
-import type { ClubAdminPublicContactRow } from '@/lib/club/clubAdminInfo';
 
 export type ClubOverviewTabId =
   | 'admin-profile'
@@ -59,13 +61,13 @@ interface Club {
   name: string;
   description: string | null;
   location: string | null;
+  imageUrl?: string | null;
 }
 
 type ClubOverviewPanelProps = {
   club: Club | null;
   members: ClubMember[];
   clubProfileEditHref: string;
-  adminContactRows?: ClubAdminPublicContactRow[];
   onAddMembers?: () => void;
 };
 
@@ -213,7 +215,6 @@ export default function ClubOverviewPanel({
   club,
   members,
   clubProfileEditHref,
-  adminContactRows = [],
   onAddMembers,
 }: ClubOverviewPanelProps) {
   const [activeTab, setActiveTab] = useState<ClubOverviewTabId>('admin-profile');
@@ -295,6 +296,24 @@ export default function ClubOverviewPanel({
 
         {activeTab === 'club-profile' && (
           <div className="space-y-4 p-6">
+            <div>
+              <h3 className="text-xl font-bold text-gray-800 mb-1">Club Profile</h3>
+              <p className="text-sm text-gray-600 mb-4">Personal details for the club account.</p>
+              <div className="flex items-center gap-4 mb-6 pb-6 border-b border-gray-100">
+                <ManagedEntitySidebarAvatar
+                  description={club?.description}
+                  imageUrl={club?.imageUrl}
+                  alt={club?.name ?? 'Club logo'}
+                  className="w-20 h-20 rounded-2xl"
+                />
+                <Link
+                  href={clubProfileEditHref}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2"
+                >
+                  Change profile photo
+                </Link>
+              </div>
+            </div>
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm text-gray-600">Official club information registered for this club.</p>
               <Link
@@ -316,52 +335,24 @@ export default function ClubOverviewPanel({
             ) : (
               <p className="text-sm text-gray-500">No club profile details yet.</p>
             )}
+            {club ? (
+              <ClubReferencesDisplay
+                variant="club"
+                referencesHtml={meta.referencesHtml}
+                referencesLevel={meta.referencesLevel}
+                editHref={clubProfileEditHref}
+              />
+            ) : null}
           </div>
         )}
 
         {activeTab === 'contact-info' && (
           <div className="p-6 space-y-4">
             <p className="text-sm text-gray-600">
-              Club administrator contact details from{' '}
-              <Link href="/profile#admin-info" className="font-semibold text-blue-600 hover:text-blue-800">
-                Admin info
-              </Link>{' '}
-              on your profile. Link fields appear here only when &quot;Show in Club admin info&quot; is checked.
+              Club administrator contact details. Fields marked &quot;Show in Club admin info&quot; can
+              be shared on the club overview for members.
             </p>
-            {adminContactRows.length > 0 ? (
-              <dl className="grid gap-3 sm:grid-cols-2 max-w-3xl">
-                {adminContactRows.map(({ label, value, href }, index) => (
-                  <div key={`${label}-${index}`} className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
-                    <dt className="text-xs font-medium text-gray-500">{label}</dt>
-                    <dd className="text-sm text-gray-900 mt-0.5 break-words whitespace-pre-wrap">
-                      {href && label !== 'About me' ? (
-                        <a
-                          href={href}
-                          {...(/^https?:\/\//i.test(href)
-                            ? { target: '_blank', rel: 'noopener noreferrer' }
-                            : {})}
-                          className="text-blue-600 hover:underline"
-                        >
-                          {value}
-                        </a>
-                      ) : (
-                        value
-                      )}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ) : (
-              <TabPlaceholder title="Contact Info">
-                <p className="text-sm text-gray-500">
-                  No admin contact details yet. Fill in{' '}
-                  <Link href="/profile#admin-info" className="font-semibold text-blue-600 hover:underline">
-                    Admin info
-                  </Link>{' '}
-                  on your profile and save.
-                </p>
-              </TabPlaceholder>
-            )}
+            <ClubAdminInfoForm />
           </div>
         )}
 

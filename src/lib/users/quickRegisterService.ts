@@ -19,6 +19,12 @@ import {
 import {
   ensureQuickRegisterSubscriptionSettings,
 } from '@/lib/users/quickRegisterSubscriptionSeed';
+import { getSubscriptionEditData } from '@/lib/admin/subscriptionSettingsMock';
+import {
+  getScenarioPricing,
+  getTripleSubscriptionPricing,
+  type SubscriptionPricingScenario,
+} from '@/lib/admin/subscriptionPricingPresentation';
 import {
   fetchLegacyUserByEmail,
   getCountriesTable,
@@ -414,6 +420,7 @@ export async function getQuickRegisterSubscriptionData(params: {
   userType: string;
   versionId: string;
   promocode?: string;
+  registrationType?: SubscriptionPricingScenario;
 }): Promise<Record<string, unknown>> {
   await ensureQuickRegisterSubscriptionSettings();
 
@@ -428,6 +435,23 @@ export async function getQuickRegisterSubscriptionData(params: {
     Number(params.versionId)
   );
   const subscriptionData: Record<string, unknown> = { ...(rows[0] ?? {}) };
+
+  const scenario: SubscriptionPricingScenario =
+    params.registrationType === 'renewal' ? 'renewal' : 'first';
+  const editData = getSubscriptionEditData(Number(params.versionId), false);
+  if (editData) {
+    const standard = getScenarioPricing(editData.general, scenario);
+    const triple = getTripleSubscriptionPricing(editData.general, scenario);
+
+    subscriptionData.days_duration = standard.days;
+    subscriptionData.price = standard.price;
+    subscriptionData.discount_with_promocode = standard.promoDiscount;
+    subscriptionData.pricing_scenario = scenario;
+    subscriptionData.triple_duration_days = triple.days;
+    subscriptionData.triple_duration_price = triple.price;
+    subscriptionData.triple_duration_discount = triple.discountPercent;
+    subscriptionData.triple_price_after_promo = triple.priceAfterPromo;
+  }
 
   const promoCode = params.promocode?.trim() ?? '';
   if (promoCode) {

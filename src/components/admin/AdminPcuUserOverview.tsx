@@ -7,43 +7,15 @@ import { ArrowLeft, User } from 'lucide-react';
 import { flagEmojiFromCountryName } from '@/lib/admin/countryFlag';
 import type { PcuPanelPayload } from '@/lib/admin/userPcuPanel';
 import type { PcuSettings } from '@/lib/admin/userPcuSettings';
+import {
+  normalizePcuAlertDateToInput,
+  parseAlertMessagePreview,
+} from '@/lib/admin/userPcuAlertMsg';
+import AdminPcuDatePicker from '@/components/admin/AdminPcuDatePicker';
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
 type AlertMsgLang = 'en' | 'it';
-
-function toDateInputValue(iso: string | undefined): string {
-  if (!iso?.trim()) return '';
-  const s = iso.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
-}
-
-/** Split saved alert HTML into a red headline (first heading) and body for preview. */
-function parseAlertMessagePreview(html: string): { title: string; bodyHtml: string } {
-  const trimmed = html.trim();
-  if (!trimmed) return { title: '', bodyHtml: '' };
-
-  const headingMatch = trimmed.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i);
-  if (headingMatch) {
-    const title = headingMatch[1].replace(/<[^>]+>/g, '').trim();
-    const bodyHtml = trimmed.slice(headingMatch.index! + headingMatch[0].length).trim();
-    return { title, bodyHtml };
-  }
-
-  const pMatch = trimmed.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-  if (pMatch) {
-    const plain = pMatch[1].replace(/<[^>]+>/g, '').trim();
-    if (plain.length > 0 && plain.length < 120) {
-      const bodyHtml = trimmed.slice(pMatch.index! + pMatch[0].length).trim();
-      return { title: plain, bodyHtml };
-    }
-  }
-
-  return { title: '', bodyHtml: trimmed };
-}
 
 /** Parse "lat, lng" (comma or whitespace separated). */
 function parseLatLng(coords: string | null | undefined): { lat: number; lng: number } | null {
@@ -128,8 +100,8 @@ export default function AdminPcuUserOverview({
     .trim();
   const countryFlag = flagEmojiFromCountryName(user.country);
 
-  const enableFromValue = toDateInputValue(alertMsg?.enableFrom);
-  const enableToValue = toDateInputValue(alertMsg?.enableTo);
+  const enableFromValue = normalizePcuAlertDateToInput(alertMsg?.enableFrom);
+  const enableToValue = normalizePcuAlertDateToInput(alertMsg?.enableTo);
   const mapLatLng = parseLatLng(user.mapCoordinates);
   const mapHref = mapLatLng ? googleMapsUrl(mapLatLng.lat, mapLatLng.lng) : null;
 
@@ -241,33 +213,11 @@ export default function AdminPcuUserOverview({
             <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-gray-800">Enable From</span>
-                <input
-                  type="date"
-                  readOnly
-                  value={enableFromValue}
-                  className="px-2 py-1 border border-gray-400 bg-white text-sm w-[9.5rem]"
-                />
-                <span
-                  className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center text-base"
-                  aria-hidden
-                >
-                  📅
-                </span>
+                <AdminPcuDatePicker value={enableFromValue} onChange={() => {}} disabled />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-800">To</span>
-                <input
-                  type="date"
-                  readOnly
-                  value={enableToValue}
-                  className="px-2 py-1 border border-gray-400 bg-white text-sm w-[9.5rem]"
-                />
-                <span
-                  className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center text-base"
-                  aria-hidden
-                >
-                  📅
-                </span>
+                <AdminPcuDatePicker value={enableToValue} onChange={() => {}} disabled />
               </div>
               <div className="ml-auto text-sm text-gray-800">Read on 13th November 2025</div>
             </div>

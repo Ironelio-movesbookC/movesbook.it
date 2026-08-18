@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { verifyToken } from '@/lib/auth';
+import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 
 const prisma = new PrismaClient();
 
@@ -70,7 +71,8 @@ export async function GET(
         id: team.id,
         name: team.name,
         description: team.description,
-        sport: team.sport
+        sport: team.sport,
+        imageUrl: getLogoUrlFromEntityDescription(team.description),
       },
       members: members.map(m => ({
         id: m.id,

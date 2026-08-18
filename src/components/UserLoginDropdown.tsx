@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { usePcuAlert } from '@/contexts/PcuAlertContext';
+import { fetchPcuAlert } from '@/lib/user/pcuAlertClient';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 import { 
   User, 
@@ -17,6 +19,7 @@ export default function UserLoginDropdown() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { user, logout, isAuthenticated } = useAuth();
+  const { showAlert } = usePcuAlert();
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -35,9 +38,14 @@ export default function UserLoginDropdown() {
     router.push('/login');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setIsOpen(false);
-    logout();
+    const alert = await fetchPcuAlert('logout', user?.language || 'en');
+    if (alert) {
+      showAlert(alert, () => logout());
+    } else {
+      logout();
+    }
   };
 
   const handleProfile = () => {

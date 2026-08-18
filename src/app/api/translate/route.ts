@@ -58,6 +58,47 @@ async function translateToLanguage(
   return translatedBlocks.join('\n\n');
 }
 
+async function translateWithGoogleApiKey(
+  sourceText: string,
+  lang: string,
+  sourceLang: string,
+  apiKey: string,
+): Promise<string | null> {
+  const apiTarget = mapLangForTranslationApi(lang);
+  const apiSource = mapLangForTranslationApi(sourceLang);
+  const paragraphs = splitPlainTextParagraphs(sourceText);
+  const translatedParagraphs: string[] = [];
+
+  for (const paragraph of paragraphs) {
+    try {
+      const response = await fetch(
+        `https://translation.googleapis.com/language/translate/v2?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            q: paragraph,
+            source: apiSource,
+            target: apiTarget,
+            format: 'text',
+          }),
+          signal: AbortSignal.timeout(15000),
+        },
+      );
+      const data = await response.json();
+      const piece = data.data?.translations?.[0]?.translatedText?.trim();
+      if (!piece) return null;
+      translatedParagraphs.push(piece);
+    } catch {
+      return null;
+    }
+  }
+
+  return translatedParagraphs.length === paragraphs.length
+    ? translatedParagraphs.join('\n\n')
+    : null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { text, targetLanguages, sourceLanguage } = await request.json();
@@ -87,58 +128,44 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      if (apiKey) {
-        const apiTarget = mapLangForTranslationApi(lang);
-        const apiSource = mapLangForTranslationApi(sourceLang);
-        try {
-          const paragraphs = splitPlainTextParagraphs(sourceText);
-          const translatedParagraphs: string[] = [];
-          for (const paragraph of paragraphs) {
-            const response = await fetch(
-              `https://translation.googleapis.com/language/translate/v2?key=${apiKey}`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  q: paragraph,
-                  source: apiSource,
-                  target: apiTarget,
-                  format: 'text',
-                }),
-              },
-            );
-            const data = await response.json();
-            const piece = data.data?.translations?.[0]?.translatedText?.trim();
-            if (!piece) {
-              translatedParagraphs.length = 0;
-              break;
-            }
-            translatedParagraphs.push(piece);
-          }
-          if (translatedParagraphs.length === paragraphs.length) {
-            translations[lang] = translatedParagraphs.join('\n\n');
-            continue;
-          }
-        } catch (error) {
-          console.error(`Google Translate API error for ${lang}:`, error);
-        }
-      }
+      try {
+        let translated: string | null = null;
 
-      const translated = await translateToLanguage(sourceText, lang, sourceLang);
-      if (translated) {
-        translations[lang] = translated;
-      } else {
+        if (apiKey) {
+          translated = await translateWithGoogleApiKey(sourceText, lang, sourceLang, apiKey);
+        }
+
+        if (!translated) {
+          translated = await translateToLanguage(sourceText, lang, sourceLang);
+        }
+
+        if (translated) {
+          translations[lang] = translated;
+        } else {
+          failed.push(lang);
+          translations[lang] = '';
+        }
+      } catch (error) {
+        console.error(`Translation error for ${lang}:`, error);
         failed.push(lang);
         translations[lang] = '';
       }
+
       if (targetLanguages.indexOf(lang) < targetLanguages.length - 1) {
-        await new Promise((r) => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 150));
       }
     }
+
+    const successCount = Object.keys(translations).filter(
+      (key) => key !== sourceLang && translations[key]?.trim(),
+    ).length;
 
     return NextResponse.json({
       translations,
       ...(failed.length > 0 ? { failedLanguages: failed } : {}),
+      ...(successCount === 0 && failed.length > 0
+        ? { warning: 'All translation providers failed or timed out for every language.' }
+        : {}),
     });
   } catch (error) {
     console.error('Translation API error:', error);

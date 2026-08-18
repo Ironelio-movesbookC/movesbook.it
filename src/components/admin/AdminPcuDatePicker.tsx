@@ -39,31 +39,61 @@ export function toIsoDate(d: Date): string {
   return `${y}-${mo}-${day}`;
 }
 
-/** mm/dd/yyyy ↔ yyyy-mm-dd */
-export function mmDdYyyyToIso(value: string): string {
+/** dd/mm/yyyy ↔ yyyy-mm-dd (accepts legacy mm/dd/yyyy when unambiguous). */
+export function ddMmYyyyToIso(value: string): string {
   const parts = value.trim().split('/');
   if (parts.length !== 3) return '';
-  const [mm, dd, yyyy] = parts;
-  if (!yyyy || !mm || !dd) return '';
+  const [first, second, yyyy] = parts;
+  if (!yyyy || !first || !second) return '';
+  const a = Number(first);
+  const b = Number(second);
+  let dd: string;
+  let mm: string;
+  if (a > 12 && b >= 1 && b <= 12) {
+    dd = first;
+    mm = second;
+  } else if (b > 12 && a >= 1 && a <= 12) {
+    mm = first;
+    dd = second;
+  } else {
+    dd = first;
+    mm = second;
+  }
   return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
 
-export function isoToMmDdYyyy(iso: string): string {
+export function isoToDdMmYyyy(iso: string): string {
   const d = parseIsoDate(iso);
   if (!d) return '';
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
-  return `${mm}/${dd}/${d.getFullYear()}`;
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
 }
+
+/** Display yyyy-mm-dd as dd/mm/yyyy; passthrough for empty or non-ISO values. */
+export function formatPcuIsoDate(value: string | null | undefined): string {
+  const raw = value?.trim() ?? '';
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    return isoToDdMmYyyy(raw.slice(0, 10));
+  }
+  return raw;
+}
+
+/** @deprecated Use ddMmYyyyToIso */
+export const mmDdYyyyToIso = ddMmYyyyToIso;
+
+/** @deprecated Use isoToDdMmYyyy */
+export const isoToMmDdYyyy = isoToDdMmYyyy;
 
 type AdminPcuDatePickerProps = {
   value: string;
   onChange: (iso: string) => void;
   disabled?: boolean;
+  /** When true (default), admins can pick past subscription dates. */
+  allowPastDates?: boolean;
   /** ISO date (yyyy-mm-dd); dates on or before this day are not selectable. */
   minDateIso?: string;
-  /** When true, past days remain selectable (useful for history filters). */
-  allowPastDates?: boolean;
   /** Render the month grid under the field instead of a floating popover. */
   inline?: boolean;
   placeholder?: string;
@@ -75,10 +105,10 @@ export default function AdminPcuDatePicker({
   value,
   onChange,
   disabled,
+  allowPastDates = true,
   minDateIso,
-  allowPastDates = false,
   inline = false,
-  placeholder = '0000-00-00',
+  placeholder = 'dd/mm/yyyy',
   className = '',
   inputClassName = '',
 }: AdminPcuDatePickerProps) {
@@ -124,7 +154,7 @@ export default function AdminPcuDatePicker({
     return rows;
   }, [viewMonth, viewYear]);
 
-  const displayValue = value ? isoToMmDdYyyy(value) : '';
+  const displayValue = value ? isoToDdMmYyyy(value) : '';
 
   const years = useMemo(() => {
     const y = today.getFullYear();

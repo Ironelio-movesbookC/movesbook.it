@@ -7,6 +7,7 @@ import {
   findClubByCompanyUsername,
   hashClubCompanyPassword,
 } from '@/lib/club/clubDirectLogin';
+import { getClubCreatableCompaniesQuota } from '@/lib/club/creatableCompaniesQuota';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,6 +91,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (isExplicitClubCreate(body)) {
+      const quota = await getClubCreatableCompaniesQuota(userId, String(decoded.userType));
+      if (quota && !quota.canCreate) {
+        return NextResponse.json(
+          {
+            error: `You cannot create more companies. Limit: ${quota.limit}, already created: ${quota.created}.`,
+          },
+          { status: 403 },
+        );
+      }
+
       const clubUsername = String(body!.username ?? '').trim();
       if (!clubUsername) {
         return NextResponse.json({ error: 'Club username is required' }, { status: 400 });
