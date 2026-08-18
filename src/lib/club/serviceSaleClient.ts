@@ -20,7 +20,9 @@ export type ServiceSalePurchase = {
   typology: string;
   sectorName: string;
   serviceName: string;
+  recordDate: string | null;
   paydate: string | null;
+  expireDate: string | null;
   /** ISO timestamp for same-day chronological ordering (oldest first). */
   createdAt: string | null;
   value: number;
@@ -113,8 +115,10 @@ export function mapRecord(record: ProcedureRecordDto): ServiceSalePurchase {
     typology: SERVICES_TYPOLOGY,
     sectorName: metaString(meta, 'sectorName') || '-',
     serviceName: metaString(meta, 'serviceName') || '-',
-    // Deadline/expire display uses dueDate (PHP ServicePurchase.paydate / installment expire).
+    recordDate: record.recordDate,
+    // Keep legacy `paydate` as the expiration/deadline date for existing callers.
     paydate: record.dueDate ?? record.recordDate,
+    expireDate: record.dueDate ?? record.recordDate,
     createdAt: record.createdAt ?? null,
     value: record.totalAmount,
     pay: record.paidAmount,
@@ -334,9 +338,19 @@ export async function deletePurchase(id: string): Promise<void> {
   await clubApiFetch(`${BASE}/records?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+export async function deleteDeadline(id: string): Promise<void> {
+  await deletePurchase(id);
+}
+
 export async function updatePurchase(
   id: string,
-  input: { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number }
+  input: {
+    recordDate?: string;
+    dueDate?: string | null;
+    notes?: string;
+    operatorId?: string;
+    totalAmount?: number;
+  }
 ): Promise<void> {
   await clubApiFetch(`${BASE}/records/${encodeURIComponent(id)}`, {
     method: 'PATCH',

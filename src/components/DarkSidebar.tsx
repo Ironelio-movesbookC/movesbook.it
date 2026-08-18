@@ -199,13 +199,13 @@ const CLUB_ADMIN_INSERT_NEW_ITEM_GROUPS: ClubAdminInsertItem[][] = [
     { kind: 'icon', Icon: Hourglass, label: 'Payment other deadlines', path: '/clubs/archive_service_list' },
   ],
   [
-    { kind: 'icon', Icon: Award, label: 'Add a new credit' },
+    { kind: 'icon', Icon: Hourglass, label: 'Add a new credit', path: '/clubMembers/pay_member_employee' },
     // PHP: clubMembers/debt_member — create a member debt (Member debts typology)
     { kind: 'icon', Icon: Hourglass, label: 'Insert a new debit', path: '/clubMembers/debt_member' },
   ],
   [
     { kind: 'icon', Icon: ArrowUpRight, label: 'Payment expenses', path: '/clubs/new_expense' },
-    { kind: 'icon', Icon: ArrowUpRight, label: 'Pay a member' },
+    { kind: 'icon', Icon: ArrowUpRight, label: 'Pay a member or an employee', path: '/clubMembers/pay_member_employee' },
   ],
   [
     { kind: 'icon', Icon: CreditCard, label: 'Card to a member' },
@@ -284,6 +284,8 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   ],
   [
     { kind: 'icon', Icon: ShoppingCart, label: 'Shop/Selling of products', path: '/ArchiveSeles/product_sale_list' },
+    { kind: 'icon', Icon: Users2, label: 'Archive of Memberships', path: '/clubs/memberships/archive' },
+    { kind: 'icon', Icon: BookOpen, label: 'Archive of Course Subs', path: '/clubs/courses/archive' },
     { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '/clubs/new_moment_cash' },
     { kind: 'icon', Icon: FileText, label: 'Archive of Services', path: '/clubs/archive_service_list' },
     { kind: 'icon', Icon: Receipt, label: 'Member expenses', path: '/clubs/new_expense' },

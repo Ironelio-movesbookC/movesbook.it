@@ -72,6 +72,9 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       case 'cash-movements':
         result = await listCashMovements(auth.ctx, direction, archiveParams);
         break;
+      case 'product-sales-unified':
+        result = await listUnifiedProductSales(auth.ctx, archiveParams);
+        break;
       case 'deadlines':
         result = await listUnifiedDeadlines(auth.ctx, archiveParams);
         break;

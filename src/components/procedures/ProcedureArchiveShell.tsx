@@ -1,5 +1,6 @@
 'use client';
 
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import ProcedureArchiveTabs from './ProcedureArchiveTabs';
 import type { ProcedureArchiveShellProps } from './types';
 
@@ -14,11 +15,34 @@ export default function ProcedureArchiveShell({
   footerHint,
   children,
   pagination,
+  member,
 }: ProcedureArchiveShellProps) {
+  const memberImageUrl = member?.image ? resolvePublicImageUrl(member.image) : null;
+
   return (
     <div className="p-4">
       <div className="flex justify-between items-center bg-teal-800 text-white px-4 py-3 rounded-t-lg">
-        <h1 className="text-lg font-semibold">{title}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold whitespace-nowrap">{title}</h1>
+          {member && (
+            <div className="flex items-center gap-2 border-l border-teal-700 pl-3">
+              <span className="text-sm font-medium text-teal-100 italic">of</span>
+              <span className="text-lg font-bold text-[#d3f07b]">{member.name}</span>
+              {memberImageUrl && (
+                <div className="h-8 w-8 overflow-hidden rounded-full border border-teal-700 bg-teal-900/50">
+                  <img
+                    src={memberImageUrl}
+                    alt={member.name}
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         {headerAction}
       </div>
       <div className="bg-white border border-gray-200 rounded-b-lg p-4">

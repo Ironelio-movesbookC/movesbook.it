@@ -81,8 +81,10 @@ function mapPurchase(r: {
     typology: r.typology,
     sectorName: r.secondaryLabel || '-',
     serviceName: r.primaryLabel,
+    recordDate: r.recordDate,
     paydate: r.paydate,
-    createdAt: null,
+    expireDate: r.expireDate ?? r.paydate,
+    createdAt: r.createdAt ?? null,
     value: r.value,
     pay: r.pay,
     rest: r.rest,
@@ -283,7 +285,12 @@ export default function MemberDebtPaymentDetailPage() {
         });
       }
       setSuccess('Payment saved.');
-      await load();
+      if (onCancel) {
+        // Wait a brief moment to show success message before closing
+        setTimeout(() => onCancel(), 1000);
+      } else {
+        await load();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
     } finally {

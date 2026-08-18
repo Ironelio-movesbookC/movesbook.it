@@ -23,6 +23,16 @@ const PROCEDURE_TYPES = [
     name: 'Member Debt',
     description: 'Create a free-form club member debt (debit) with optional payment of deadline.',
   },
+  {
+    code: 'membership',
+    name: 'Membership',
+    description: 'Register a club membership subscription with payment tracking.',
+  },
+  {
+    code: 'course_subscription',
+    name: 'Course Subscription',
+    description: 'Subscribe a member to a course with payment and deadline management.',
+  },
 ];
 
 async function main() {

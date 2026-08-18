@@ -22,6 +22,7 @@ export type Member = {
   insertDate?: Date | string;
   /** Display-ready insert date (e.g. DD/MM/YYYY) when insertDate is kept as ISO for filters. */
   insertDateDisplay?: string;
+  expirationDate?: Date | string;
   membershipEndDate?: Date | string;
 
   // membership
