@@ -11,6 +11,8 @@ import MovesbookChannel, {
   ChannelAvatar,
   loadChannelLeft,
   rejoinMovesbookChannel,
+  getChannelLeftEventName,
+  getChannelRejoinedEventName,
 } from './MovesbookChannel';
 import type { ChatAudience } from '@/lib/chat/chatAudience';
 
@@ -95,8 +97,24 @@ export type ChatUser = {
   name: string;
   username: string;
   telegramAccount: string | null;
+  /** True when whole name is hidden by the peer's club-member visibility setting. */
+  nameHidden?: boolean;
   lastSeenAt: string | null;
   isOnline: boolean;
+};
+
+type MemberClubForAdminChat = {
+  id: string;
+  name: string;
+  adminId: string | null;
+  admin: {
+    id: string;
+    name: string;
+    username: string;
+    telegramAccount: string | null;
+    lastSeenAt: string | null;
+    isOnline: boolean;
+  } | null;
 };
 
 type MessageItem = {
@@ -115,13 +133,18 @@ type ChatPanelProps = {
   onClose?: () => void;
   /** Auth token provider - if not given, uses localStorage token */
   getAuthHeaders?: () => Record<string, string>;
-  /** Show Movesbook broadcast channel (normal users). Default true. */
+  /** Show broadcast channel (Movesbook Channel or Club Channel). Default true. */
   showMovesbookChannel?: boolean;
   /**
    * Restrict 1:1 conversations / start-chat user list to this audience
    * (e.g. Movesbook Staff vs Movesbook User).
    */
   chatAudience?: ChatAudience | null;
+  /**
+   * When set, shows Club Channel for this club and scopes 1:1 lists to that club's members
+   * when chatAudience is club-member / club-admin.
+   */
+  clubId?: string | null;
 };
 
 const defaultGetAuthHeaders = (): Record<string, string> => {
@@ -136,8 +159,12 @@ export default function ChatPanel({
   getAuthHeaders: getAuthHeadersProp,
   showMovesbookChannel = true,
   chatAudience = null,
+  clubId = null,
 }: ChatPanelProps) {
   const getAuthHeaders = getAuthHeadersProp ?? defaultGetAuthHeaders;
+  const effectiveAudience: ChatAudience | null =
+    chatAudience ?? (clubId ? 'club-member' : null);
+  const channelTitle = clubId ? 'Club Channel' : 'Movesbook channel';
 
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [selectedOtherUser, setSelectedOtherUser] = useState<{ id: string; name: string } | null>(null);
@@ -146,12 +173,15 @@ export default function ChatPanel({
   const [message, setMessage] = useState('');
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [users, setUsers] = useState<ChatUser[]>([]);
+  const [memberClubs, setMemberClubs] = useState<MemberClubForAdminChat[]>([]);
+  const [loadingMemberClubs, setLoadingMemberClubs] = useState(false);
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [showUserList, setShowUserList] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const isClubAdminAudience = effectiveAudience === 'club-admin';
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
@@ -177,7 +207,9 @@ export default function ChatPanel({
 
   useEffect(() => {
     if (!showMovesbookChannel) return;
-    setChannelLeft(loadChannelLeft());
+    setChannelLeft(loadChannelLeft(clubId));
+    const leftEvent = getChannelLeftEventName(clubId);
+    const rejoinedEvent = getChannelRejoinedEventName(clubId);
     const onLeft = () => {
       setChannelLeft(true);
       setChannelSelected(false);
@@ -190,13 +222,23 @@ export default function ChatPanel({
       setSelectedMessageIds(new Set());
       setReplyingTo(null);
     };
-    window.addEventListener('movesbook-channel-left', onLeft);
-    window.addEventListener('movesbook-channel-rejoined', onRejoined);
+    window.addEventListener(leftEvent, onLeft);
+    window.addEventListener(rejoinedEvent, onRejoined);
     return () => {
-      window.removeEventListener('movesbook-channel-left', onLeft);
-      window.removeEventListener('movesbook-channel-rejoined', onRejoined);
+      window.removeEventListener(leftEvent, onLeft);
+      window.removeEventListener(rejoinedEvent, onRejoined);
     };
-  }, [showMovesbookChannel]);
+  }, [showMovesbookChannel, clubId]);
+
+  // Reset selection when switching clubs
+  useEffect(() => {
+    setChannelSelected(false);
+    setSelectedConversationId(null);
+    setSelectedOtherUser(null);
+    setSelectedMessageIds(new Set());
+    setReplyingTo(null);
+    setChannelLeft(showMovesbookChannel ? loadChannelLeft(clubId) : false);
+  }, [clubId, showMovesbookChannel]);
 
   const selectChannel = () => {
     setChannelSelected(true);
@@ -215,7 +257,10 @@ export default function ChatPanel({
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true);
     try {
-      const qs = chatAudience ? `?audience=${encodeURIComponent(chatAudience)}` : '';
+      const params = new URLSearchParams();
+      if (effectiveAudience) params.set('audience', effectiveAudience);
+      if (clubId) params.set('clubId', clubId);
+      const qs = params.toString() ? `?${params.toString()}` : '';
       const res = await fetch(`/api/chat/conversations${qs}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
@@ -226,13 +271,14 @@ export default function ChatPanel({
     } finally {
       setLoadingConversations(false);
     }
-  }, [getAuthHeaders, chatAudience]);
+  }, [getAuthHeaders, effectiveAudience, clubId]);
 
   const loadUsers = useCallback(async (search?: string) => {
     try {
       const params = new URLSearchParams();
       if (search != null && search.trim() !== '') params.set('search', search.trim());
-      if (chatAudience) params.set('audience', chatAudience);
+      if (effectiveAudience) params.set('audience', effectiveAudience);
+      if (clubId) params.set('clubId', clubId);
       const qs = params.toString() ? `?${params.toString()}` : '';
       const res = await fetch(`/api/chat/users${qs}`, { headers: getAuthHeaders() });
       if (res.ok) {
@@ -242,21 +288,75 @@ export default function ChatPanel({
     } catch (e) {
       console.error('Load users:', e);
     }
-  }, [getAuthHeaders, chatAudience]);
+  }, [getAuthHeaders, effectiveAudience, clubId]);
+
+  const loadMemberClubs = useCallback(async () => {
+    setLoadingMemberClubs(true);
+    try {
+      const res = await fetch('/api/athletes/my-clubs', { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setMemberClubs((data.clubs || []) as MemberClubForAdminChat[]);
+      } else {
+        setMemberClubs([]);
+      }
+    } catch (e) {
+      console.error('Load member clubs:', e);
+      setMemberClubs([]);
+    } finally {
+      setLoadingMemberClubs(false);
+    }
+  }, [getAuthHeaders]);
 
   useEffect(() => {
     loadConversations();
-    loadUsers();
-  }, [loadConversations, loadUsers]);
+    if (!isClubAdminAudience) {
+      loadUsers();
+    }
+  }, [loadConversations, loadUsers, isClubAdminAudience]);
 
-  // Debounced search when user list is visible (Telegram-style: by telegramAccount or name)
+  // Load clubs when club-admin start-chat list opens
   useEffect(() => {
-    if (!showUserList) return;
+    if (!showUserList || !isClubAdminAudience) return;
+    loadMemberClubs();
+  }, [showUserList, isClubAdminAudience, loadMemberClubs]);
+
+  // Debounced user search when user list is visible (non club-admin audiences)
+  useEffect(() => {
+    if (!showUserList || isClubAdminAudience) return;
     const t = setTimeout(() => {
       loadUsers(searchQuery);
     }, 300);
     return () => clearTimeout(t);
-  }, [showUserList, searchQuery, loadUsers]);
+  }, [showUserList, searchQuery, loadUsers, isClubAdminAudience]);
+
+  const filteredMemberClubs = (() => {
+    if (!isClubAdminAudience) return memberClubs;
+    const q = searchQuery.trim().toLowerCase().replace(/^@+/, '');
+    if (!q) return memberClubs;
+    return memberClubs.filter((c) => {
+      const clubName = (c.name || '').toLowerCase();
+      const adminName = (c.admin?.name || '').toLowerCase();
+      const adminUser = (c.admin?.username || '').toLowerCase();
+      const adminTg = (c.admin?.telegramAccount || '').toLowerCase();
+      return (
+        clubName.includes(q) ||
+        adminName.includes(q) ||
+        adminUser.includes(q) ||
+        adminTg.includes(q)
+      );
+    });
+  })();
+
+  const filteredConversations = (() => {
+    const q = searchQuery.trim().toLowerCase().replace(/^@+/, '');
+    if (!q) return conversations;
+    return conversations.filter((c) => {
+      const name = (c.otherUser.name || '').toLowerCase();
+      const tg = (c.otherUser.telegramAccount || '').toLowerCase();
+      return name.includes(q) || tg.includes(q);
+    });
+  })();
 
   useEffect(() => {
     const ping = () => {
@@ -346,14 +446,19 @@ export default function ChatPanel({
     scrollToBottom('auto');
   }, [selectedConversationId, messages.length, scrollToBottom]);
 
-  const handleStartChat = async (otherUser: ChatUser) => {
+  const handleStartChat = async (
+    otherUser: Pick<ChatUser, 'id' | 'name'>,
+    options?: { clubId?: string | null }
+  ) => {
     try {
+      const scopedClubId = options?.clubId ?? clubId;
       const res = await fetch('/api/chat/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           participantId: otherUser.id,
-          ...(chatAudience ? { audience: chatAudience } : {}),
+          ...(effectiveAudience ? { audience: effectiveAudience } : {}),
+          ...(scopedClubId ? { clubId: scopedClubId } : {}),
         }),
       });
       if (res.ok) {
@@ -363,10 +468,23 @@ export default function ChatPanel({
         setSelectedOtherUser({ id: data.otherUser.id, name: data.otherUser.name });
         setShowUserList(false);
         loadConversations();
+      } else {
+        const err = await res.json().catch(() => null);
+        console.error('Start chat failed:', err?.error || res.statusText);
       }
     } catch (e) {
       console.error('Start chat:', e);
     }
+  };
+
+  const handleStartChatWithClubAdmin = async (club: MemberClubForAdminChat) => {
+    const adminId = club.admin?.id ?? club.adminId;
+    if (!adminId || !club.admin) return;
+    if (!club.admin.telegramAccount) return;
+    await handleStartChat(
+      { id: adminId, name: club.admin.name || club.name },
+      { clubId: club.id }
+    );
   };
 
   const sendContent = useCallback(
@@ -603,18 +721,19 @@ export default function ChatPanel({
             getAuthHeaders={getAuthHeaders}
             selected={channelSelected}
             onSelect={selectChannel}
+            clubId={clubId}
           />
         )}
         {showMovesbookChannel && channelLeft && (
           <button
             type="button"
-            onClick={() => rejoinMovesbookChannel()}
+            onClick={() => rejoinMovesbookChannel(clubId)}
             className="flex w-full shrink-0 items-center gap-2.5 border-b border-[#15202b] bg-[#1a2332] px-3 py-2.5 text-left transition hover:bg-[#222b38]"
           >
-            <ChannelAvatar size={36} className="shadow-sm" />
+            <ChannelAvatar size={36} className="shadow-sm" alt={channelTitle} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[14px] font-semibold text-white">
-                Rejoin Movesbook channel
+                Rejoin {channelTitle}
               </span>
               <span className="mt-0.5 block text-[11px] text-[#8ab4d9]">
                 Tap to see broadcasts again
@@ -630,7 +749,13 @@ export default function ChatPanel({
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search"
+                placeholder={
+                  isClubAdminAudience
+                    ? 'Search'
+                    : effectiveAudience === 'club-member'
+                      ? 'Search username'
+                      : 'Search'
+                }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -644,7 +769,13 @@ export default function ChatPanel({
               className="flex-1 flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"
             >
               <UserPlus className="w-4 h-4" />
-              {showUserList ? 'Hide users' : 'Start chat with user'}
+              {showUserList
+                ? isClubAdminAudience
+                  ? 'Hide clubs'
+                  : 'Hide users'
+                : isClubAdminAudience
+                  ? 'Start chat with club admin'
+                  : 'Start chat with user'}
             </button>
             <button
               type="button"
@@ -659,44 +790,121 @@ export default function ChatPanel({
 
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
           {showUserList ? (
-            <div className="p-2">
-              {users.length === 0 ? (
-                <p className="text-sm text-gray-500 p-2">No users with Telegram yet.</p>
-              ) : (
-                users.map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => handleStartChat(u)}
-                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 text-left"
-                  >
-                    <div className="relative flex-shrink-0">
-                      <div className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center font-semibold">
-                        {u.name.charAt(0).toUpperCase()}
-                      </div>
-                      <span
-                        className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
-                          u.isOnline ? 'bg-green-500' : 'bg-gray-400'
+            isClubAdminAudience ? (
+              <div className="p-2">
+                {loadingMemberClubs ? (
+                  <p className="text-sm text-gray-500 p-2">Loading clubs…</p>
+                ) : filteredMemberClubs.length === 0 ? (
+                  <p className="text-sm text-gray-500 p-2">
+                    {searchQuery.trim()
+                      ? 'No matching clubs.'
+                      : 'You are not a member of any clubs yet.'}
+                  </p>
+                ) : (
+                  filteredMemberClubs.map((club) => {
+                    const admin = club.admin;
+                    const canChat = Boolean(admin?.telegramAccount && (admin.id || club.adminId));
+                    const adminLabel =
+                      admin?.name || admin?.username || 'Club Admin';
+                    return (
+                      <button
+                        key={club.id}
+                        type="button"
+                        disabled={!canChat}
+                        onClick={() => handleStartChatWithClubAdmin(club)}
+                        title={
+                          canChat
+                            ? `Chat with ${adminLabel}`
+                            : 'Club Admin has no Telegram account yet'
+                        }
+                        className={`w-full flex items-center gap-3 p-3 rounded-lg text-left ${
+                          canChat
+                            ? 'hover:bg-gray-50'
+                            : 'opacity-50 cursor-not-allowed'
                         }`}
-                        title={u.isOnline ? 'Online' : 'Offline'}
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 truncate">{u.name}</p>
-                      <p className="text-xs text-gray-500 truncate">{u.telegramAccount || u.username}</p>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
+                      >
+                        <div className="relative flex-shrink-0">
+                          <div className="w-10 h-10 rounded-full bg-teal-600 text-white flex items-center justify-center font-semibold">
+                            {(club.name || 'C').charAt(0).toUpperCase()}
+                          </div>
+                          {admin && (
+                            <span
+                              className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
+                                admin.isOnline ? 'bg-green-500' : 'bg-gray-400'
+                              }`}
+                              title={admin.isOnline ? 'Admin online' : 'Admin offline'}
+                            />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 truncate">
+                            {club.name?.trim() || 'Club'}
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {canChat
+                              ? `Admin: ${adminLabel}${
+                                  admin?.telegramAccount ? ` · ${admin.telegramAccount}` : ''
+                                }`
+                              : 'Admin Telegram required'}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              <div className="p-2">
+                {users.length === 0 ? (
+                  <p className="text-sm text-gray-500 p-2">No users with Telegram yet.</p>
+                ) : (
+                  users.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => handleStartChat(u)}
+                      className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 text-left"
+                    >
+                      <div className="relative flex-shrink-0">
+                        <div className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center font-semibold">
+                          {u.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span
+                          className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
+                            u.isOnline ? 'bg-green-500' : 'bg-gray-400'
+                          }`}
+                          title={u.isOnline ? 'Online' : 'Offline'}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{u.name}</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {u.nameHidden
+                            ? u.username
+                              ? `@${u.username.replace(/^@+/, '')}`
+                              : u.telegramAccount
+                            : u.telegramAccount || u.username}
+                        </p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )
           ) : (
             <>
               {loadingConversations ? (
                 <div className="p-4 text-center text-gray-500 text-sm">Loading…</div>
               ) : conversations.length === 0 ? (
-                <div className="p-4 text-sm text-gray-500">No conversations yet. Start a chat with a user above.</div>
+                <div className="p-4 text-sm text-gray-500">
+                  {isClubAdminAudience
+                    ? 'No conversations yet. Start a chat with a club admin above.'
+                    : 'No conversations yet. Start a chat with a user above.'}
+                </div>
+              ) : filteredConversations.length === 0 ? (
+                <div className="p-4 text-sm text-gray-500">No matching conversations.</div>
               ) : (
-                conversations.map((c) => (
+                filteredConversations.map((c) => (
                   <button
                     key={c.id}
                     type="button"
@@ -784,6 +992,7 @@ export default function ChatPanel({
             selected={channelSelected}
             onSelect={selectChannel}
             onCloseEmbedded={embedded ? onClose : undefined}
+            clubId={clubId}
           />
         ) : selectedConversationId ? (
           <>
@@ -990,7 +1199,11 @@ export default function ChatPanel({
           <div className="flex-1 min-h-0 flex items-center justify-center text-gray-500">
             <div className="text-center">
               <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-              <p className="text-lg">Select a chat or start a new one with a user</p>
+              <p className="text-lg">
+                {isClubAdminAudience
+                  ? 'Select a chat or start a new one with a club admin'
+                  : 'Select a chat or start a new one with a user'}
+              </p>
             </div>
           </div>
         )}

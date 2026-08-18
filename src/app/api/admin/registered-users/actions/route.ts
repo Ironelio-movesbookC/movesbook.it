@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Resend } from 'resend';
 import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
@@ -13,8 +12,10 @@ import {
 } from '@/lib/admin/renewRegisteredUserMembership';
 import { parseMembershipEntityKind, type MembershipEntityKind } from '@/lib/admin/membershipEntity';
 import { verifyAdminActionPassword } from '@/lib/admin/verifyAdminActionPassword';
+import { sendIonosEmail } from '@/lib/ionosEmail';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const ALL_REGISTERED_TYPES: UserType[] = [
   UserType.ATHLETE,
@@ -191,7 +192,29 @@ async function resolveSegmentUserIds(segment: string, userIds: string[]): Promis
   return { ok: true, ids: users.map((u) => u.id), users };
 }
 
-/** POST — Send a message (email) to registered users. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function adminMessageHtml(subject: string, message: string): string {
+  const body = escapeHtml(message)
+    .split(/\n{2,}/)
+    .map((block) => `<p style="margin:0 0 12px;white-space:pre-wrap;">${block.replace(/\n/g, '<br/>')}</p>`)
+    .join('');
+  return `
+    <div style="font-family: Arial, sans-serif; padding: 20px; color: #222;">
+      <h2 style="margin: 0 0 12px;">${escapeHtml(subject)}</h2>
+      ${body}
+      <p style="margin-top: 24px; font-size: 12px; color: #888;">Sent from Movesbook Admin</p>
+    </div>
+  `;
+}
+
+/** POST — Send a message (email) to registered users via the same IONOS SMTP as promocode invites. */
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (!auth.ok) {
@@ -221,31 +244,9 @@ export async function POST(request: NextRequest) {
   }
 
   const { users } = resolved;
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  const resend = apiKey ? new Resend(apiKey) : null;
-
+  const htmlBody = adminMessageHtml(subject, message);
   const sent: string[] = [];
   const failed: { id: string; email: string; error: string }[] = [];
-
-  const htmlBody = `
-    <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2 style="margin: 0 0 12px;">${subject}</h2>
-      <p style="white-space: pre-wrap;">${message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
-      <p style="margin-top: 24px; font-size: 12px; color: #888;">Sent from Movesbook Admin</p>
-    </div>
-  `;
-
-  if (!resend) {
-    return NextResponse.json({
-      sent: 0,
-      failed: [],
-      mailtoFallback: true,
-      emailNotConfigured: true,
-      recipients: users.map((u) => ({ id: u.id, email: u.email, username: u.username })),
-      message:
-        'RESEND_API_KEY is missing or empty in .env. Add your key from https://resend.com/api-keys, set RESEND_FROM_EMAIL to a verified sender, then restart the dev server.',
-    });
-  }
 
   for (const user of users) {
     const destination =
@@ -255,21 +256,13 @@ export async function POST(request: NextRequest) {
       continue;
     }
     try {
-      const result = await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL?.trim() || 'onboarding@resend.dev',
+      await sendIonosEmail({
         to: destination,
         subject,
         html: htmlBody,
+        text: message,
       });
-      if (result.error) {
-        failed.push({
-          id: user.id,
-          email: destination,
-          error: formatResendSendError(result.error.message),
-        });
-      } else {
-        sent.push(user.id);
-      }
+      sent.push(user.id);
     } catch (e: unknown) {
       const raw = e instanceof Error ? e.message : 'Send failed';
       failed.push({
@@ -278,6 +271,20 @@ export async function POST(request: NextRequest) {
         error: formatResendSendError(raw),
       });
     }
+  }
+
+  if (sent.length === 0) {
+    const firstError = failed[0]?.error || 'Failed to send email';
+    return NextResponse.json(
+      {
+        sent: 0,
+        failed,
+        mailtoFallback: false,
+        recipients: users.map((u) => ({ id: u.id, email: u.email, username: u.username })),
+        error: firstError,
+      },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({

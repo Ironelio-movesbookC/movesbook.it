@@ -121,6 +121,9 @@ export async function PATCH(
         ? new Date(body.expiresAt)
         : null;
     }
+    if (body.inGlobalNews !== undefined && typeof body.inGlobalNews === 'boolean') {
+      (data as { inGlobalNews?: boolean }).inGlobalNews = body.inGlobalNews;
+    }
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });

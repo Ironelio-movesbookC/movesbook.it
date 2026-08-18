@@ -1,19 +1,21 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
 import type { StatisticsPayload } from '@/lib/admin/buildStatistics';
 import {
   STATS_KIND_LABELS,
+  STATS_TYPE_KIND_FILTER_LABELS,
   STATS_USER_KINDS,
+  type StatsTypeKindFilter,
   type StatsUserKind,
 } from '@/lib/admin/statisticsKinds';
 
 export type StatisticsFilters = {
   country: string;
-  userType: StatsUserKind | 'all';
-  typeKind: StatsUserKind;
+  userType: StatsUserKind | 'all' | 'except_groups';
+  typeKind: StatsTypeKindFilter;
 };
 
 const DEFAULT_FILTERS: StatisticsFilters = {
@@ -33,14 +35,24 @@ export function useAdminStatistics(options?: {
   initial?: Partial<StatisticsFilters>;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const countryFromUrl = searchParams.get('country')?.trim() || '';
   const [authChecked, setAuthChecked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<StatisticsPayload | null>(null);
-  const [filters, setFilters] = useState<StatisticsFilters>({
+  const [filters, setFilters] = useState<StatisticsFilters>(() => ({
     ...DEFAULT_FILTERS,
     ...options?.initial,
-  });
+    ...(countryFromUrl ? { country: countryFromUrl } : {}),
+  }));
+
+  // Keep country filter in sync when sidebar links change ?country=…
+  useEffect(() => {
+    setFilters((prev) =>
+      prev.country === countryFromUrl ? prev : { ...prev, country: countryFromUrl },
+    );
+  }, [countryFromUrl]);
 
   useEffect(() => {
     const adminData = localStorage.getItem('adminUser');
@@ -59,7 +71,7 @@ export function useAdminStatistics(options?: {
     if (options?.enableUserType && filters.userType !== 'all') {
       qs.set('userType', filters.userType);
     }
-    // When selecting a single type for type-pies, align income/users totals to that type
+    // When selecting a type for type-pies, align income/users totals to that filter
     if (options?.enableTypeKind) {
       qs.set('typeKind', filters.typeKind);
       if (!options?.enableUserType) {
@@ -127,5 +139,5 @@ export function formatCount(value: number): string {
   return new Intl.NumberFormat('en-US').format(value || 0);
 }
 
-export { STATS_KIND_LABELS, STATS_USER_KINDS };
-export type { StatsUserKind };
+export { STATS_KIND_LABELS, STATS_USER_KINDS, STATS_TYPE_KIND_FILTER_LABELS };
+export type { StatsUserKind, StatsTypeKindFilter };

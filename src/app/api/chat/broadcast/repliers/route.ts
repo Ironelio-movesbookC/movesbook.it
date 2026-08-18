@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
-import { resolvePanelAuth } from '@/lib/panelAuth';
 import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
+import { resolveBroadcastAdminAuth } from '@/lib/chat/clubChannelAuth';
 
 export const dynamic = 'force-dynamic';
 
 const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
+
+function parseClubId(raw: string | null): string | null {
+  const trimmed = raw?.trim() ?? '';
+  return trimmed || null;
+}
 
 function parseReplyMeta(recipientIds: string | null): {
   parentId: string | null;
@@ -30,15 +35,20 @@ function messagePreview(content: string, max = 80): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+function clubScopeWhere(clubId: string | null) {
+  return clubId ? { clubId } : { clubId: null };
+}
+
 /**
- * GET - Admin: users (with Telegram) who replied to Movesbook broadcast messages,
+ * GET - Admin / club admin: users (with Telegram) who replied to channel broadcasts,
  * plus their reply messages for the Chat users inbox.
  */
 export async function GET(request: NextRequest) {
   try {
-    const panelAuth = await resolvePanelAuth(request);
-    if (!panelAuth.ok) {
-      return NextResponse.json({ error: panelAuth.error }, { status: panelAuth.status });
+    const clubId = parseClubId(request.nextUrl.searchParams.get('clubId'));
+    const adminAuth = await resolveBroadcastAdminAuth(request, clubId);
+    if (!adminAuth.ok) {
+      return NextResponse.json({ error: adminAuth.error }, { status: adminAuth.status });
     }
 
     const authHeader = request.headers.get('authorization');
@@ -52,13 +62,13 @@ export async function GET(request: NextRequest) {
     const myId = await resolveMessageDatabaseUserId(decoded.userId, decoded.userType);
 
     const replyRows = await prisma.chatBroadcastMessage.findMany({
-      where: { mode: 'reply' },
+      where: { mode: 'reply', ...clubScopeWhere(clubId) },
       orderBy: { createdAt: 'asc' },
       take: 2000,
     });
 
     const channelRows = await prisma.chatBroadcastMessage.findMany({
-      where: { mode: 'repliers' },
+      where: { mode: 'repliers', ...clubScopeWhere(clubId) },
       orderBy: { createdAt: 'asc' },
       take: 2000,
     });
@@ -118,8 +128,9 @@ export async function GET(request: NextRequest) {
     const userById = new Map(users.map((u) => [u.id, u]));
     const parentById = new Map(parents.map((p) => [p.id, p]));
 
-    // Only keep replies from users who still have a Telegram account.
-    const telegramReplies = parsedReplies.filter((r) => r.senderUserId && userById.has(r.senderUserId));
+    const telegramReplies = parsedReplies.filter(
+      (r) => r.senderUserId && userById.has(r.senderUserId)
+    );
 
     const conversationByUserId = new Map<string, string>();
     if (myId) {
@@ -204,8 +215,6 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Admin channel messages sent from Chat users → All (mode=repliers).
-    // Keep these out of 1:1 conversations — they belong only to the All channel feed.
     const channelMessages = channelRows.map((row) => ({
       id: row.id,
       content: row.content,

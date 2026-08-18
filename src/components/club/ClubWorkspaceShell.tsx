@@ -403,7 +403,18 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   };
 
   const goToDashboardPanel = useCallback(
-    (panel: 'identification-devices' | 'outcome-settings' | 'news' | 'suggest-movesbook') => {
+    (
+      panel:
+        | 'identification-devices'
+        | 'outcome-settings'
+        | 'news'
+        | 'suggest-movesbook'
+        | 'chat'
+        | 'club-news'
+        | 'club-news-ogp'
+        | 'club-global-news'
+        | 'club-movesbook-news'
+    ) => {
       if (!hasFormClub) return;
       const clubId = selectedClubId ?? formClubs[0]?.id ?? null;
       if (!selectedClubId && clubId) {
@@ -486,10 +497,16 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onTabChange={handleTabChange}
                 onMyPageClick={handleMyPageTabClick}
                 onMyClubClick={handleMyClubTabClick}
-                onClubAddSongsPlaylistsClick={() => goToDashboardPanel('news')}
+                onClubAddSongsPlaylistsClick={() => router.push('/add-songs')}
+                onClubMusicPanelClick={() => router.push('/music-panel')}
                 onIdentificationDevicesClick={() => goToDashboardPanel('identification-devices')}
                 onAccessOutcomeSettingsClick={() => goToDashboardPanel('outcome-settings')}
                 onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
+                onClubChatClick={() => goToDashboardPanel('chat')}
+                onClubNewsSectionClick={() => goToDashboardPanel('club-news')}
+                onClubMovesbookNewsSectionClick={() => goToDashboardPanel('club-movesbook-news')}
+                onClubOgpNewsSectionClick={() => goToDashboardPanel('club-news-ogp')}
+                onClubGlobalNewsSectionClick={() => goToDashboardPanel('club-global-news')}
                 onCreateClubClick={openCreateClubFlow}
                 creatableCompaniesQuota={creatableCompaniesQuota}
                 onMyFeedbacksStaffClick={() => {

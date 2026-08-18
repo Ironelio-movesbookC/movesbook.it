@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminChatExperience from '@/components/chat/AdminChatExperience';
 import TelegramJoinModal from '@/components/chat/TelegramJoinModal';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 export default function AdminChatPage() {
   const router = useRouter();
@@ -29,7 +30,7 @@ export default function AdminChatPage() {
     let cancelled = false;
 
     const checkSuperAdminTelegram = async () => {
-      const isSuperAdmin = Boolean(localStorage.getItem('superAdminUser'));
+      const isSuperAdmin = resolveIsSuperAdminFromStorage();
       if (!isSuperAdmin) {
         if (!cancelled) {
           setNeedsTelegram(false);

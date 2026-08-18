@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Shield } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { persistAdminLoginSession } from '@/lib/panelSession';
 
 interface AdminLoginModalProps {
     isOpen: boolean;
@@ -30,6 +31,7 @@ export default function AdminLoginModal({ isOpen, onClose, onSwitchToUserLogin }
             localStorage.removeItem('user');
             localStorage.removeItem('adminUser');
             localStorage.removeItem('adminToken');
+            localStorage.removeItem('superAdminUser');
         }
         
         if (!isOpen) {
@@ -67,11 +69,10 @@ export default function AdminLoginModal({ isOpen, onClose, onSwitchToUserLogin }
             }
 
             console.log('Admin login successful!');
-            
-            // Store admin token and user data
-            localStorage.setItem('adminToken', data.token);
-            localStorage.setItem('adminUser', JSON.stringify(data.user));
-            
+
+            // Also set superAdminUser when isSuperAdmin so OGP News/Music recognize Super Admin
+            persistAdminLoginSession(data.token, data.user);
+
             // Close modal and redirect to admin dashboard
             onClose();
             window.location.href = '/admin/dashboard';

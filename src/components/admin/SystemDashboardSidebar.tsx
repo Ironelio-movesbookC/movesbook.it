@@ -324,7 +324,7 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
             },
             {
               label: 'Sponsors Settings',
-              href: '/admin/global-settings#',
+              href: '/admin/global-settings/sponsor-settings',
             },
           ],
         },
@@ -347,8 +347,8 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
           hasSubmenu: true,
           id: 'system_mainbanner',
           subItems: [
-            { label: 'Banner Tours' },
-            { label: 'Sport banners' }
+            { label: 'Banner Tours', href: '/admin/global-settings/banner-tours' },
+            { label: 'Sport banners', href: '/admin/global-settings/sport-banners' }
           ]
         }
       ]
@@ -474,7 +474,7 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
           hasSubmenu: true,
           id: 'promo_sponsors',
           subItems: [
-            { label: 'Sponsors in Mainpage' },
+            { label: 'Sponsors in Mainpage', href: '/admin/global-settings/sponsor-main' },
             { label: 'Investors of ads plans' }
           ]
         },

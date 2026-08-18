@@ -12,23 +12,24 @@ export interface AdminOgMusicPanelContentProps {
 /**
  * Superadmin "OG Music panel" — same My Music UI as the athlete/user dashboard.
  * Embedded on /admin/dashboard when opened from Music → OG Music panel.
+ * Fills the full central column at a fixed height so tab changes do not resize it.
  */
 export default function AdminOgMusicPanelContent({
   closeHref = '/admin/dashboard',
 }: AdminOgMusicPanelContentProps) {
   return (
-    <div className="p-4 md:p-6 max-w-[1920px] mx-auto">
-      <div className="rounded-xl shadow-md border border-gray-200 overflow-hidden bg-[#152038]">
-        <div className="flex items-center justify-end px-3 py-2 border-b border-white/20 bg-[#1a2744]">
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col p-2 md:p-3">
+      <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-[#152038] shadow-md">
+        <div className="flex flex-shrink-0 items-center justify-end border-b border-white/20 bg-[#1a2744] px-3 py-2">
           <Link
             href={closeHref}
-            className="p-1.5 rounded-lg text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+            className="rounded-lg p-1.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
             aria-label="Close"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </Link>
         </div>
-        <div className="flex flex-col min-h-[70vh] max-h-[calc(100vh-8rem)]">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <MyMusicPanel embedded adminContext />
         </div>
       </div>

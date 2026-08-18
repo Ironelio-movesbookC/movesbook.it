@@ -79,6 +79,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 function SortableItem(props: { id: string, children: React.ReactNode }) {
   const {
@@ -131,6 +132,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
 
   const [lastViewedCount, setLastViewedCount] = useState("1");
   const [adminUserId, setAdminUserId] = useState<string | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [myFeedbackCount, setMyFeedbackCount] = useState(0);
   const [lastViewedToggles, setLastViewedToggles] = useState({
     singleUsers: true,
@@ -152,6 +154,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    setIsSuperAdmin(resolveIsSuperAdminFromStorage());
     const adminData = localStorage.getItem('adminUser');
     if (!adminData) return;
     try {
@@ -282,7 +285,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   <span>Access to advertisings</span>
                 </Link>
 
-                {/* Statistics Super Admin — nested menu */}
+                {/* General graphs — nested menu */}
                 <div className="space-y-1 pt-1">
                   <button
                     type="button"
@@ -291,7 +294,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   >
                     <div className="flex items-center gap-3">
                       <PieChart className="w-4 h-4 text-white shrink-0" />
-                      <span>Statistics Super Admin</span>
+                      <span>General graphs</span>
                     </div>
                     <Triangle
                       className={`w-3 h-3 text-white fill-[#ff8d00] transition-transform ${
@@ -617,7 +620,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   >
                     <Users2 className="w-4 h-4 shrink-0 opacity-95" />
                     <span className="leading-snug">
-                      My feedbacks for Staff ({myFeedbackCount})
+                      Feedbacks for our Staff ({myFeedbackCount})
                     </span>
                   </Link>
                 ) : null}
@@ -744,16 +747,27 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                    <AlertCircle className="w-4 h-4 text-white" />
                    <span>News Archive</span>
                 </Link>
+
+                {isSuperAdmin && (
+                  <Link href="/admin/news/global" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
+                     <Globe className="w-4 h-4 text-white" />
+                     <span>Global News</span>
+                  </Link>
+                )}
                 
-                <Link href="/news-by-movesbook/indexall" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
-                   <AlertCircle className="w-4 h-4 text-white" />
-                   <span>News</span>
-                </Link>
-                
-                <Link href="/news-by-movesbook/indexall" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
-                   <Globe className="w-4 h-4 text-white" />
-                   <span>News through links</span>
-                </Link>
+                {!isSuperAdmin && (
+                  <>
+                    <Link href="/news-by-movesbook/indexall" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
+                       <AlertCircle className="w-4 h-4 text-white" />
+                       <span>News</span>
+                    </Link>
+                    
+                    <Link href="/news-by-movesbook/indexall" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
+                       <Globe className="w-4 h-4 text-white" />
+                       <span>News through links</span>
+                    </Link>
+                  </>
+                )}
 
                 <Link href="/admin/news/links" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
                    <Globe className="w-4 h-4 text-white" />

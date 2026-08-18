@@ -7,12 +7,25 @@ import { readProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import { readChannelSettings } from '@/lib/chat/channelSettings';
 import { resolvePanelAuth } from '@/lib/panelAuth';
+import {
+  getClubMemberUserIds,
+  resolveBroadcastAdminAuth,
+} from '@/lib/chat/clubChannelAuth';
 
 export const dynamic = 'force-dynamic';
 
 const BROADCAST_MODES = new Set(['all', 'group', 'subscribers', 'favourites', 'repliers']);
 const ALL_SPORT_VALUES = Object.keys(SportType) as SportType[];
 const ALL_USER_TYPE_VALUES = (Object.keys(UserType) as UserType[]).filter((t) => t !== 'ADMIN');
+
+type AudienceUser = {
+  id: string;
+  country: string | null;
+  userType: UserType;
+  telegramAccount: string | null;
+  mainSports: { sport: SportType }[];
+  settings: { adminSettings: unknown } | null;
+};
 
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -24,6 +37,12 @@ function isFullSelection(selected: string[], universe: string[]): boolean {
   if (selected.length < universe.length) return false;
   const set = new Set(selected);
   return universe.every((v) => set.has(v));
+}
+
+function parseClubId(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed || null;
 }
 
 function mapMessage(
@@ -68,14 +87,24 @@ function mapMessage(
   };
 }
 
-async function resolveRecipientIds(opts: {
-  mode: string;
-  subscriberIds: string[];
-  sports: string[];
-  userTypes: string[];
-  countries: string[];
-}): Promise<string[] | null> {
-  const telegramUsers = await prisma.user.findMany({
+async function loadAudienceUsers(clubId: string | null): Promise<AudienceUser[]> {
+  if (clubId) {
+    const memberIds = await getClubMemberUserIds(clubId);
+    if (memberIds.length === 0) return [];
+    return prisma.user.findMany({
+      where: { id: { in: memberIds } },
+      select: {
+        id: true,
+        country: true,
+        userType: true,
+        telegramAccount: true,
+        mainSports: { select: { sport: true } },
+        settings: { select: { adminSettings: true } },
+      },
+    });
+  }
+
+  return prisma.user.findMany({
     where: {
       superAdminId: null,
       telegramAccount: { not: null },
@@ -89,14 +118,23 @@ async function resolveRecipientIds(opts: {
       settings: { select: { adminSettings: true } },
     },
   });
+}
 
-  const withTelegram = telegramUsers.filter((u) => Boolean(u.telegramAccount?.trim()));
+async function resolveRecipientIds(opts: {
+  mode: string;
+  clubId: string | null;
+  subscriberIds: string[];
+  sports: string[];
+  userTypes: string[];
+  countries: string[];
+}): Promise<string[] | null> {
+  const audience = await loadAudienceUsers(opts.clubId);
+  const withTelegram = audience.filter((u) => Boolean(u.telegramAccount?.trim()));
 
   if (opts.mode === 'all') {
     return null; // visible to every channel viewer
   }
 
-  // Admin "All" chat in Chat users — message every broadcast replier (Telegram).
   if (opts.mode === 'repliers') {
     const set = new Set(opts.subscriberIds);
     return withTelegram.filter((u) => set.has(u.id)).map((u) => u.id);
@@ -116,7 +154,6 @@ async function resolveRecipientIds(opts: {
       .map((u) => u.id);
   }
 
-  // group — "select all" on a dimension means unrestricted for that dimension
   const hasFiltersConfigured =
     opts.sports.length > 0 || opts.userTypes.length > 0 || opts.countries.length > 0;
   if (!hasFiltersConfigured) return [];
@@ -128,7 +165,7 @@ async function resolveRecipientIds(opts: {
   const countries = isFullSelection(opts.countries, ALL_COUNTRIES) ? [] : opts.countries;
 
   if (sports.length === 0 && userTypes.length === 0 && countries.length === 0) {
-    return null; // configured group that matches everyone with Telegram
+    return null;
   }
 
   return withTelegram
@@ -151,7 +188,6 @@ function userCanSeeBroadcast(
   row: { recipientIds: string | null; mode: string },
   myId: string
 ): boolean {
-  // "repliers" channel chat is only for the targeted broadcast-repliers group.
   if (row.mode === 'repliers') {
     if (!row.recipientIds) return false;
     try {
@@ -161,11 +197,14 @@ function userCanSeeBroadcast(
       return false;
     }
   }
-  // Other channel posts are a shared feed; recipientIds are for targeting / notifications.
   return true;
 }
 
-/** GET - Broadcast messages for Movesbook channel (users) or full history (admin). */
+function clubScopeWhere(clubId: string | null) {
+  return clubId ? { clubId } : { clubId: null };
+}
+
+/** GET - Broadcast messages for Movesbook / Club channel (users) or full history (admin). */
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
@@ -177,11 +216,45 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    const panelAuth = await resolvePanelAuth(request);
-    const isAdmin = panelAuth.ok;
+    const clubId = parseClubId(request.nextUrl.searchParams.get('clubId'));
     const wantAll = request.nextUrl.searchParams.get('all') === '1';
 
+    let isAdmin = false;
+    if (wantAll) {
+      const adminAuth = await resolveBroadcastAdminAuth(request, clubId);
+      if (!adminAuth.ok) {
+        return NextResponse.json({ error: adminAuth.error }, { status: adminAuth.status });
+      }
+      isAdmin = true;
+    } else if (clubId) {
+      // Club channel: members or club admin can read
+      const myId = await resolveMessageDatabaseUserId(decoded.userId, decoded.userType);
+      if (!myId) {
+        return NextResponse.json({ error: 'User not found' }, { status: 401 });
+      }
+      const club = await prisma.club.findUnique({
+        where: { id: clubId },
+        select: { adminId: true },
+      });
+      if (!club) {
+        return NextResponse.json({ error: 'Club not found' }, { status: 404 });
+      }
+      if (club.adminId !== myId) {
+        const membership = await prisma.clubMember.findUnique({
+          where: { clubId_memberId: { clubId, memberId: myId } },
+          select: { id: true },
+        });
+        if (!membership) {
+          return NextResponse.json({ error: 'Club membership required' }, { status: 403 });
+        }
+      }
+    } else {
+      const panelAuth = await resolvePanelAuth(request);
+      isAdmin = panelAuth.ok;
+    }
+
     const rows = await prisma.chatBroadcastMessage.findMany({
+      where: clubScopeWhere(clubId),
       orderBy: { createdAt: 'asc' },
       take: 1000,
     });
@@ -205,10 +278,10 @@ export async function GET(request: NextRequest) {
         .map((row) => mapMessage(row, { myId, parentById }));
     }
 
-    const channelSettings = await readChannelSettings();
+    const channelSettings = await readChannelSettings(clubId);
 
     return NextResponse.json({
-      channelName: channelSettings.channelName || 'Movesbook channel',
+      channelName: channelSettings.channelName || (clubId ? 'Club Channel' : 'Movesbook channel'),
       channelPhoto: channelSettings.photoUrl,
       messages,
       unreadHint: messages.length,
@@ -219,14 +292,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** POST - Admin sends a broadcast into the Movesbook channel (or syncs legacy history). */
+/** POST - Admin / club admin sends a broadcast (or syncs legacy history). */
 export async function POST(request: NextRequest) {
   try {
-    const panelAuth = await resolvePanelAuth(request);
-    if (!panelAuth.ok) {
-      return NextResponse.json({ error: panelAuth.error }, { status: panelAuth.status });
-    }
-
     let body: Record<string, unknown> = {};
     try {
       body = (await request.json()) as Record<string, unknown>;
@@ -234,16 +302,25 @@ export async function POST(request: NextRequest) {
       body = {};
     }
 
-    // Bulk sync of legacy localStorage history
+    const clubId =
+      parseClubId(body.clubId) ?? parseClubId(request.nextUrl.searchParams.get('clubId'));
+
+    const adminAuth = await resolveBroadcastAdminAuth(request, clubId);
+    if (!adminAuth.ok) {
+      return NextResponse.json({ error: adminAuth.error }, { status: adminAuth.status });
+    }
+
+    const defaultSenderName =
+      adminAuth.kind === 'club' ? 'Club admin' : 'Movesbook admin';
+
     if (Array.isArray(body.messages)) {
       const existing = await prisma.chatBroadcastMessage.findMany({
+        where: clubScopeWhere(clubId),
         select: { content: true, mode: true, createdAt: true },
         take: 2000,
       });
       const existingKeys = new Set(
-        existing.map(
-          (r) => `${r.mode}|${r.content}|${r.createdAt.toISOString()}`
-        )
+        existing.map((r) => `${r.mode}|${r.content}|${r.createdAt.toISOString()}`)
       );
 
       let createdCount = 0;
@@ -259,26 +336,25 @@ export async function POST(request: NextRequest) {
         const senderName =
           typeof item.senderName === 'string' && item.senderName.trim()
             ? item.senderName.trim()
-            : 'Movesbook admin';
+            : defaultSenderName;
         let createdAt: Date | undefined;
         if (typeof item.createdAt === 'string' && item.createdAt.trim()) {
           const d = new Date(item.createdAt);
           if (!Number.isNaN(d.getTime())) createdAt = d;
         }
         const key = `${mode}|${content}|${(createdAt ?? new Date()).toISOString()}`;
-        // Dedupe loosely by content+mode if timestamp key already exists, or content+mode+time
         const looseDup = existing.some((r) => r.mode === mode && r.content === content);
         if (existingKeys.has(key) || looseDup) continue;
 
         const recipientIds = await resolveRecipientIds({
           mode,
+          clubId,
           subscriberIds: asStringArray(item.subscriberIds),
           sports: asStringArray(item.sports),
           userTypes: asStringArray(item.userTypes),
           countries: asStringArray(item.countries),
         });
 
-        // For synced legacy messages without targeting info, treat as channel-wide.
         const storedRecipients =
           mode === 'all' || recipientIds == null
             ? null
@@ -291,6 +367,7 @@ export async function POST(request: NextRequest) {
             content,
             mode,
             senderName,
+            clubId,
             recipientIds: storedRecipients,
             ...(createdAt ? { createdAt } : {}),
           },
@@ -299,6 +376,7 @@ export async function POST(request: NextRequest) {
       }
 
       const rows = await prisma.chatBroadcastMessage.findMany({
+        where: clubScopeWhere(clubId),
         orderBy: { createdAt: 'asc' },
         take: 1000,
       });
@@ -322,10 +400,11 @@ export async function POST(request: NextRequest) {
     const senderName =
       typeof body.senderName === 'string' && body.senderName.trim()
         ? body.senderName.trim()
-        : 'Movesbook admin';
+        : defaultSenderName;
 
     const recipientIds = await resolveRecipientIds({
       mode,
+      clubId,
       subscriberIds: asStringArray(body.subscriberIds),
       sports: asStringArray(body.sports),
       userTypes: asStringArray(body.userTypes),
@@ -344,6 +423,7 @@ export async function POST(request: NextRequest) {
         content,
         mode,
         senderName,
+        clubId,
         recipientIds: recipientIds == null ? null : JSON.stringify(recipientIds),
       },
     });
@@ -358,12 +438,13 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/** DELETE - Admin clears broadcast history, or deletes one message by id. */
+/** DELETE - Admin / club admin clears broadcast history, or deletes one message by id. */
 export async function DELETE(request: NextRequest) {
   try {
-    const panelAuth = await resolvePanelAuth(request);
-    if (!panelAuth.ok) {
-      return NextResponse.json({ error: panelAuth.error }, { status: panelAuth.status });
+    const clubId = parseClubId(request.nextUrl.searchParams.get('clubId'));
+    const adminAuth = await resolveBroadcastAdminAuth(request, clubId);
+    if (!adminAuth.ok) {
+      return NextResponse.json({ error: adminAuth.error }, { status: adminAuth.status });
     }
 
     const messageId = request.nextUrl.searchParams.get('messageId')?.trim();
@@ -372,15 +453,20 @@ export async function DELETE(request: NextRequest) {
       if (!existing) {
         return NextResponse.json({ error: 'Message not found' }, { status: 404 });
       }
+      if ((existing.clubId ?? null) !== clubId) {
+        return NextResponse.json({ error: 'Message not found' }, { status: 404 });
+      }
       await prisma.chatBroadcastMessage.delete({ where: { id: messageId } });
       return NextResponse.json({ success: true, messageId });
     }
 
     const mode = request.nextUrl.searchParams.get('mode');
     if (mode && BROADCAST_MODES.has(mode)) {
-      await prisma.chatBroadcastMessage.deleteMany({ where: { mode } });
+      await prisma.chatBroadcastMessage.deleteMany({
+        where: { ...clubScopeWhere(clubId), mode },
+      });
     } else {
-      await prisma.chatBroadcastMessage.deleteMany({});
+      await prisma.chatBroadcastMessage.deleteMany({ where: clubScopeWhere(clubId) });
     }
 
     return NextResponse.json({ success: true });

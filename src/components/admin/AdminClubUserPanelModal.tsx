@@ -112,9 +112,18 @@ export default function AdminClubUserPanelModal({
 
   const countryCode = data ? countryCodeFromName(data.country) : '';
   const flag = countryCode ? flagEmojiFromCode(countryCode) : '';
+  const isClubPanel =
+    Boolean(data?.modalTitle?.toLowerCase().includes('club')) ||
+    data?.typeBadge?.toLowerCase() === 'club' ||
+    data?.version?.toLowerCase().includes('club');
   const visitPath =
     data?.visitPagePath?.trim() ||
-    (data?.officialName ? clubSearchResultsPath(data.officialName) : null);
+    (isClubPanel && data?.officialName
+      ? clubSearchResultsPath(data.officialName)
+      : null) ||
+    (data?.username?.trim()
+      ? `/searchresults/search/${encodeURIComponent(data.username.trim())}`
+      : null);
   const websiteUrl = data?.websiteUrl?.trim() || null;
   const membershipDateClass = data
     ? membershipDateClassName(
@@ -157,7 +166,7 @@ export default function AdminClubUserPanelModal({
         </div>
 
         {loading && (
-          <div className="px-6 py-12 text-center text-gray-600 text-sm">Loading club profile…</div>
+          <div className="px-6 py-12 text-center text-gray-600 text-sm">Loading user panel…</div>
         )}
 
         {!loading && error && (

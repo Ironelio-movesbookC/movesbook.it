@@ -13,6 +13,13 @@ import {
 import ListPageSelector from '@/components/ui/ListPageSelector';
 import { MAX_SUPPORT_IMAGES } from '@/lib/messages/supportImages';
 import ThreadPathOpenLink from '@/components/messages/ThreadPathOpenLink';
+import {
+  SUPPORT_WORKFLOW_STATUS_CODES,
+  SUPPORT_WORKFLOW_STATUS_LABELS,
+  normalizeSupportWorkflowStatus,
+  supportWorkflowStatusLabel,
+  type SupportWorkflowStatus,
+} from '@/lib/messages/supportStatus';
 
 type FeedItem = {
   id: string;
@@ -21,6 +28,7 @@ type FeedItem = {
   updatedAt: string;
   author?: string;
   imageUrls?: string[];
+  status?: string | null;
 };
 
 type ThreadDetail = {
@@ -33,6 +41,7 @@ type ThreadDetail = {
     pathStaff?: string | null;
     realPath?: string | null;
     imageUrls?: string[];
+    status?: string | null;
   };
   messages: Array<{
     id: string;
@@ -57,11 +66,13 @@ export default function AdminBugsMemoPanel() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
   const [total, setTotal] = useState(0);
+  const [filterStatus, setFilterStatus] = useState('');
 
   const [leftView, setLeftView] = useState<'list' | 'thread'>('list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [threadDetail, setThreadDetail] = useState<ThreadDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
 
   const [composerObject, setComposerObject] = useState('');
   const [composerPath, setComposerPath] = useState('');
@@ -105,6 +116,7 @@ export default function AdminBugsMemoPanel() {
         pageSize: String(pageSize),
       });
       if (searchQuery) qs.set('q', searchQuery);
+      if (filterStatus) qs.set('status', filterStatus);
       const data = await authFetch(`/api/admin/messages/bug-memos?${qs}`);
       setItems(data.items || []);
       setTotal(data.total || 0);
@@ -114,7 +126,7 @@ export default function AdminBugsMemoPanel() {
     } finally {
       setLoading(false);
     }
-  }, [authFetch, page, pageSize, searchQuery]);
+  }, [authFetch, filterStatus, page, pageSize, searchQuery]);
 
   useEffect(() => {
     void loadItems();
@@ -296,11 +308,31 @@ export default function AdminBugsMemoPanel() {
     }
   };
 
+  const updateThreadStatus = async (status: SupportWorkflowStatus) => {
+    if (!selectedId) return;
+    setStatusSaving(true);
+    setSendError(null);
+    try {
+      const data = await authFetch(`/api/messages/threads/${selectedId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      setThreadDetail(data);
+      setItems((prev) =>
+        prev.map((item) => (item.id === selectedId ? { ...item, status } : item)),
+      );
+    } catch {
+      setSendError('Failed to update status.');
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
   const fieldClass =
     'w-full border border-slate-300 rounded px-2 py-2 text-sm bg-white !text-black placeholder:!text-slate-600 [caret-color:#000]';
 
   return (
-    <div className="admin-bugs-memo-panel p-6 max-w-6xl mx-auto !text-black [color-scheme:light]">
+    <div className="admin-bugs-memo-panel w-full p-2 sm:p-3 !text-black [color-scheme:light]">
       <div className="mb-4">
         <h1 className="text-2xl font-bold !text-slate-900">Bugs and fixed errors</h1>
         <p className="text-sm !text-slate-600 mt-1">
@@ -332,6 +364,23 @@ export default function AdminBugsMemoPanel() {
                 >
                   Proceed
                 </button>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => {
+                    setFilterStatus(e.target.value);
+                    setPage(1);
+                  }}
+                  aria-label="Filter by status"
+                  title="Filter by status"
+                  className="border border-slate-300 rounded px-2 py-1 text-xs font-semibold bg-white text-red-600 min-w-[130px]"
+                >
+                  <option value="">All status</option>
+                  {SUPPORT_WORKFLOW_STATUS_CODES.map((code) => (
+                    <option key={code} value={code}>
+                      {SUPPORT_WORKFLOW_STATUS_LABELS[code]}
+                    </option>
+                  ))}
+                </select>
               </div>
               <ListPageSelector
                 page={page}
@@ -367,6 +416,11 @@ export default function AdminBugsMemoPanel() {
                           <p className="text-[11px] !text-slate-500 mt-1">
                             {item.author} · {new Date(item.updatedAt).toLocaleString()}
                           </p>
+                          <div className="mt-1">
+                            <span className="inline-block rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600">
+                              {supportWorkflowStatusLabel(item.status)}
+                            </span>
+                          </div>
                         </button>
                         {item.imageUrls && item.imageUrls.length > 0 ? (
                           <div className="px-2 pb-2 flex gap-1.5 flex-wrap border-t border-slate-100 bg-white">
@@ -411,6 +465,32 @@ export default function AdminBugsMemoPanel() {
                   ) : threadDetail ? (
                     <>
                       <h3 className="font-semibold !text-slate-900">{threadDetail.thread.subject}</h3>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label
+                          className="text-xs font-semibold text-slate-700"
+                          htmlFor="bug-fixed-status"
+                        >
+                          Edit status
+                        </label>
+                        <select
+                          id="bug-fixed-status"
+                          disabled={statusSaving}
+                          value={normalizeSupportWorkflowStatus(threadDetail.thread.status)}
+                          onChange={(e) =>
+                            void updateThreadStatus(e.target.value as SupportWorkflowStatus)
+                          }
+                          className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-red-600 disabled:opacity-50"
+                        >
+                          {SUPPORT_WORKFLOW_STATUS_CODES.map((code) => (
+                            <option key={code} value={code}>
+                              {SUPPORT_WORKFLOW_STATUS_LABELS[code]}
+                            </option>
+                          ))}
+                        </select>
+                        {statusSaving ? (
+                          <span className="text-[11px] text-slate-500">Saving…</span>
+                        ) : null}
+                      </div>
                       {threadDetail.thread.errorMessage ? (
                         <p className="text-xs text-amber-800 bg-amber-50 rounded px-2 py-1">
                           Error: {threadDetail.thread.errorMessage}

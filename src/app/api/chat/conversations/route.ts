@@ -8,17 +8,50 @@ import {
   peerMatchesChatAudience,
   type ChatAudience,
 } from '@/lib/chat/chatAudience';
+import { DEFAULT_CLUB_MEMBER_NAME_VISIBILITY } from '@/lib/chat/clubMemberNameVisibility';
+import {
+  loadClubMemberNameVisibilityContext,
+  loadClubMemberNameVisibilityMap,
+  resolveClubMemberPublicName,
+} from '@/lib/chat/loadClubMemberNameVisibility';
 
-async function loadMyClubAdminIds(myId: string): Promise<Set<string>> {
+async function loadMyClubAdminIds(myId: string, clubId?: string | null): Promise<Set<string>> {
   const clubs = await prisma.club.findMany({
-    where: { members: { some: { memberId: myId } } },
+    where: {
+      members: { some: { memberId: myId } },
+      ...(clubId ? { id: clubId } : {}),
+    },
     select: { adminId: true },
   });
   return new Set(clubs.map((c) => c.adminId));
 }
 
 /** Other users who share at least one club membership with `myId` (ClubMember table). */
-async function loadMyFellowClubMemberIds(myId: string): Promise<Set<string>> {
+async function loadMyFellowClubMemberIds(
+  myId: string,
+  clubId?: string | null
+): Promise<Set<string>> {
+  if (clubId) {
+    const [club, fellows] = await Promise.all([
+      prisma.club.findUnique({
+        where: { id: clubId },
+        select: { adminId: true },
+      }),
+      prisma.clubMember.findMany({
+        where: {
+          clubId,
+          memberId: { not: myId },
+        },
+        select: { memberId: true },
+      }),
+    ]);
+    const ids = new Set(fellows.map((f) => f.memberId));
+    if (club?.adminId && club.adminId !== myId) {
+      ids.add(club.adminId);
+    }
+    return ids;
+  }
+
   const myMemberships = await prisma.clubMember.findMany({
     where: { memberId: myId },
     select: { clubId: true },
@@ -39,11 +72,22 @@ async function loadMyFellowClubMemberIds(myId: string): Promise<Set<string>> {
 async function assertParticipantMatchesAudience(
   audience: ChatAudience,
   myId: string,
-  participantId: string
+  participantId: string,
+  clubId?: string | null
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  const audienceWhere = buildChatAudienceWhere(audience, myId);
+  const audienceWhere = buildChatAudienceWhere(audience, myId, clubId);
   if (!audienceWhere) {
     return { ok: false, error: 'This chat type is not available yet', status: 400 };
+  }
+
+  if (clubId && (audience === 'club-member' || audience === 'club-admin')) {
+    const membership = await prisma.clubMember.findUnique({
+      where: { clubId_memberId: { clubId, memberId: myId } },
+      select: { id: true },
+    });
+    if (!membership) {
+      return { ok: false, error: 'Club membership required', status: 403 };
+    }
   }
 
   const match = await prisma.user.findFirst({
@@ -85,16 +129,27 @@ export async function GET(request: NextRequest) {
 
     const audienceRaw = request.nextUrl.searchParams.get('audience')?.trim() ?? '';
     const audience = isChatAudience(audienceRaw) ? audienceRaw : null;
-    const audienceWhere = audience ? buildChatAudienceWhere(audience, myId) : null;
+    const clubId = request.nextUrl.searchParams.get('clubId')?.trim() || null;
+    const audienceWhere = audience ? buildChatAudienceWhere(audience, myId, clubId) : null;
 
     if (audience && !audienceWhere) {
       return NextResponse.json({ conversations: [] });
     }
 
+    if (clubId && (audience === 'club-member' || audience === 'club-admin')) {
+      const membership = await prisma.clubMember.findUnique({
+        where: { clubId_memberId: { clubId, memberId: myId } },
+        select: { id: true },
+      });
+      if (!membership) {
+        return NextResponse.json({ conversations: [] });
+      }
+    }
+
     const myClubAdminIds =
-      audience === 'club-admin' ? await loadMyClubAdminIds(myId) : undefined;
+      audience === 'club-admin' ? await loadMyClubAdminIds(myId, clubId) : undefined;
     const myFellowClubMemberIds =
-      audience === 'club-member' ? await loadMyFellowClubMemberIds(myId) : undefined;
+      audience === 'club-member' ? await loadMyFellowClubMemberIds(myId, clubId) : undefined;
 
     const conversations = await prisma.chatConversation.findMany({
       where: { OR: [{ user1Id: myId }, { user2Id: myId }] },
@@ -103,6 +158,7 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             name: true,
+            username: true,
             telegramAccount: true,
             lastSeenAt: true,
             superAdminId: true,
@@ -113,6 +169,7 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             name: true,
+            username: true,
             telegramAccount: true,
             lastSeenAt: true,
             superAdminId: true,
@@ -139,6 +196,17 @@ export async function GET(request: NextRequest) {
       });
     });
 
+    const visibilityCtx =
+      audience === 'club-member'
+        ? await loadClubMemberNameVisibilityContext(myId, clubId)
+        : null;
+    const visibilityMap =
+      audience === 'club-member'
+        ? await loadClubMemberNameVisibilityMap(
+            filtered.map((c) => (c.user1Id === myId ? c.user2.id : c.user1.id))
+          )
+        : null;
+
     const list = await Promise.all(
       filtered.map(async (c) => {
         const other = c.user1Id === myId ? c.user2 : c.user1;
@@ -156,11 +224,23 @@ export async function GET(request: NextRequest) {
         const isOnline =
           other.lastSeenAt != null && Date.now() - other.lastSeenAt.getTime() < ONLINE_THRESHOLD_MS;
 
+        let displayName = other.name;
+        if (audience === 'club-member' && visibilityCtx && visibilityMap) {
+          const visibility =
+            visibilityMap.get(other.id) ?? DEFAULT_CLUB_MEMBER_NAME_VISIBILITY;
+          displayName = resolveClubMemberPublicName({
+            viewerId: myId,
+            target: other,
+            visibility,
+            ctx: visibilityCtx,
+          }).name;
+        }
+
         return {
           id: c.id,
           otherUser: {
             id: other.id,
-            name: other.name,
+            name: displayName,
             telegramAccount: other.telegramAccount,
             lastSeenAt: other.lastSeenAt?.toISOString() ?? null,
             isOnline,
@@ -203,8 +283,15 @@ export async function POST(request: NextRequest) {
     }
 
     const audience = isChatAudience(body?.audience) ? body.audience : null;
+    const clubId =
+      typeof body?.clubId === 'string' && body.clubId.trim() ? body.clubId.trim() : null;
     if (audience) {
-      const check = await assertParticipantMatchesAudience(audience, myId, participantId);
+      const check = await assertParticipantMatchesAudience(
+        audience,
+        myId,
+        participantId,
+        clubId
+      );
       if (!check.ok) {
         return NextResponse.json({ error: check.error }, { status: check.status });
       }

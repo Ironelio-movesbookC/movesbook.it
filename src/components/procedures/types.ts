@@ -25,6 +25,11 @@ export type ProcedureArchiveShellProps = {
   footerHint?: string;
   children: React.ReactNode;
   pagination?: React.ReactNode;
+  /** Optional member info to display in the header. */
+  member?: {
+    name: string;
+    image?: string | null;
+  };
 };
 
 export type PaymentFormValues = {

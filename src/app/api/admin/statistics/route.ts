@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/adminAuth';
 import { buildStatisticsPayload } from '@/lib/admin/buildStatistics';
-import { STATS_USER_KINDS, type StatsUserKind } from '@/lib/admin/statisticsKinds';
+import {
+  isStatsTypeKindFilter,
+  STATS_USER_KINDS,
+  type StatsTypeKindFilter,
+  type StatsUserKind,
+} from '@/lib/admin/statisticsKinds';
 
 export const dynamic = 'force-dynamic';
 
-function parseKind(raw: string | null): StatsUserKind | 'all' {
+function parseKind(raw: string | null): StatsUserKind | 'all' | 'except_groups' {
   if (!raw || raw === 'all') return 'all';
+  if (raw === 'except_groups') return 'except_groups';
   return STATS_USER_KINDS.includes(raw as StatsUserKind) ? (raw as StatsUserKind) : 'all';
 }
 
-function parseTypeKind(raw: string | null): StatsUserKind {
-  if (raw && STATS_USER_KINDS.includes(raw as StatsUserKind)) return raw as StatsUserKind;
+function parseTypeKind(raw: string | null): StatsTypeKindFilter {
+  if (raw && isStatsTypeKindFilter(raw)) return raw;
   return 'single';
 }
 

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { readProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
+import { getClubMemberUserIds } from '@/lib/chat/clubChannelAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,7 @@ type StatsFilters = {
   candidates: boolean;
   candidateMode: string;
   candidateSearch: string;
+  clubId: string | null;
 };
 
 function parseCsvParam(raw: string | null | undefined): string[] {
@@ -31,6 +33,12 @@ function parseCsvParam(raw: string | null | undefined): string[] {
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((v) => String(v ?? '').trim()).filter(Boolean))];
+}
+
+function parseClubId(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed || null;
 }
 
 function isFullSelection(selected: string[], universe: string[]): boolean {
@@ -61,28 +69,38 @@ function filtersFromSearchParams(request: NextRequest): StatsFilters {
     adminIds: parseCsvParam(request.nextUrl.searchParams.get('adminIds')),
     candidates: request.nextUrl.searchParams.get('candidates') === '1',
     candidateMode: request.nextUrl.searchParams.get('candidateMode')?.trim() || 'subscribers',
-    candidateSearch: (request.nextUrl.searchParams.get('candidateSearch')?.trim() ?? '').replace(/^@+/, '').toLowerCase(),
+    candidateSearch: (request.nextUrl.searchParams.get('candidateSearch')?.trim() ?? '')
+      .replace(/^@+/, '')
+      .toLowerCase(),
+    clubId: parseClubId(request.nextUrl.searchParams.get('clubId')),
   };
 }
 
 async function buildStatsResponse(filters: StatsFilters) {
-  const users = await prisma.user.findMany({
-    where: { superAdminId: null },
-    select: {
-      id: true,
-      name: true,
-      username: true,
-      country: true,
-      userType: true,
-      lastSeenAt: true,
-      image: true,
-      telegramAccount: true,
-      createdAt: true,
-      mainSports: { select: { sport: true } },
-      settings: { select: { adminSettings: true } },
-    },
-    orderBy: { lastSeenAt: 'desc' },
-  });
+  const memberIds = filters.clubId ? await getClubMemberUserIds(filters.clubId) : null;
+
+  const users =
+    memberIds && memberIds.length === 0
+      ? []
+      : await prisma.user.findMany({
+          where: filters.clubId
+            ? { id: { in: memberIds! } }
+            : { superAdminId: null },
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            country: true,
+            userType: true,
+            lastSeenAt: true,
+            image: true,
+            telegramAccount: true,
+            createdAt: true,
+            mainSports: { select: { sport: true } },
+            settings: { select: { adminSettings: true } },
+          },
+          orderBy: { lastSeenAt: 'desc' },
+        });
 
   const now = Date.now();
   const byCountry = new Map<string, { online: number; all: number }>();
@@ -112,7 +130,9 @@ async function buildStatsResponse(filters: StatsFilters) {
       name: u.name || u.username,
       location: u.country || '',
       role: u.userType,
-      avatar: u.image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.username)}`,
+      avatar:
+        u.image ||
+        `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.username)}`,
     }));
 
   const subscriberIdSet = new Set(filters.subscriberIds);
@@ -129,9 +149,12 @@ async function buildStatsResponse(filters: StatsFilters) {
   });
 
   const subscribers =
-    subscriberIdSet.size === 0 ? [] : users.filter((u) => subscriberIdSet.has(u.id)).map(toSubscriber);
+    subscriberIdSet.size === 0
+      ? []
+      : users.filter((u) => subscriberIdSet.has(u.id)).map(toSubscriber);
 
-  const admins = adminIdSet.size === 0 ? [] : users.filter((u) => adminIdSet.has(u.id)).map(toSubscriber);
+  const admins =
+    adminIdSet.size === 0 ? [] : users.filter((u) => adminIdSet.has(u.id)).map(toSubscriber);
 
   const candidates = filters.candidates
     ? users
@@ -156,19 +179,18 @@ async function buildStatsResponse(filters: StatsFilters) {
         .map(toSubscriber)
     : undefined;
 
-  // Broadcast "Start chat with…" counts only include users who have a Telegram account.
   const telegramUsers = users.filter((u) => Boolean(u.telegramAccount?.trim()));
 
-  // Empty saved filters = no group selected (count 0). Non-empty means a group is configured.
   const hasGroupFiltersConfigured =
     filters.sports.length > 0 || filters.userTypes.length > 0 || filters.countries.length > 0;
 
-  // "Select all" for a dimension is treated as unrestricted for that dimension.
   const effectiveSports = isFullSelection(filters.sports, ALL_SPORT_VALUES) ? [] : filters.sports;
   const effectiveUserTypes = isFullSelection(filters.userTypes, ALL_USER_TYPE_VALUES)
     ? []
     : filters.userTypes;
-  const effectiveCountries = isFullSelection(filters.countries, ALL_COUNTRIES) ? [] : filters.countries;
+  const effectiveCountries = isFullSelection(filters.countries, ALL_COUNTRIES)
+    ? []
+    : filters.countries;
 
   const groupUsersCount = !hasGroupFiltersConfigured
     ? 0
@@ -244,11 +266,17 @@ export async function POST(request: NextRequest) {
       subscriberIds: asStringArray(body.subscriberIds),
       adminIds: asStringArray(body.adminIds),
       candidates: body.candidates === true || body.candidates === '1',
-      candidateMode: typeof body.candidateMode === 'string' ? body.candidateMode.trim() || 'subscribers' : 'subscribers',
+      candidateMode:
+        typeof body.candidateMode === 'string'
+          ? body.candidateMode.trim() || 'subscribers'
+          : 'subscribers',
       candidateSearch:
         typeof body.candidateSearch === 'string'
           ? body.candidateSearch.trim().replace(/^@+/, '').toLowerCase()
           : '',
+      clubId:
+        parseClubId(body.clubId) ??
+        parseClubId(request.nextUrl.searchParams.get('clubId')),
     });
     return NextResponse.json(data);
   } catch (error) {

@@ -8,6 +8,7 @@ import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { DOCUMENT_TYPES } from '@/lib/news/mappings';
+import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
 
 interface NewsItem {
   id: string;
@@ -26,6 +27,7 @@ interface NewsItem {
   originalLanguage: {
     name: string;
   } | null;
+  inGlobalNews?: boolean;
 }
 
 interface Category {
@@ -62,6 +64,8 @@ export default function NewsIndexAllPage() {
   const { t } = useLanguage();
   const { user, loading } = useAuth();
   const [adminUser, setAdminUser] = useState<any>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [globalNewsLoadingId, setGlobalNewsLoadingId] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [filteredNews, setFilteredNews] = useState<NewsItem[]>([]);
@@ -121,6 +125,7 @@ export default function NewsIndexAllPage() {
           const parsed = JSON.parse(adminData);
           setAdminUser(parsed);
         }
+        setIsSuperAdmin(resolveIsSuperAdminFromStorage());
       } catch (error) {
         console.error('Error parsing admin user:', error);
       } finally {
@@ -221,6 +226,34 @@ export default function NewsIndexAllPage() {
     } catch (error) {
       console.error('Error deleting news:', error);
       alert('Failed to delete news article');
+    }
+  };
+
+  const handleToggleGlobalNews = async (id: string, currentlyShared: boolean) => {
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      alert('Super admin login required');
+      return;
+    }
+    setGlobalNewsLoadingId(id);
+    try {
+      const res = await fetch(`/api/admin/global-news/news/${id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ inGlobalNews: !currentlyShared }),
+      });
+      if (!res.ok) throw new Error('Failed to update Global News');
+      const next = !currentlyShared;
+      setNews((prev) => prev.map((n) => (n.id === id ? { ...n, inGlobalNews: next } : n)));
+      setFilteredNews((prev) => prev.map((n) => (n.id === id ? { ...n, inGlobalNews: next } : n)));
+    } catch (error) {
+      console.error('Error updating global news:', error);
+      alert('Failed to update Global News');
+    } finally {
+      setGlobalNewsLoadingId(null);
     }
   };
 
@@ -477,6 +510,30 @@ export default function NewsIndexAllPage() {
                           >
                             <Edit className="w-4 h-4" />
                           </Link>
+                          {isSuperAdmin && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleToggleGlobalNews(item.id, item.inGlobalNews === true)
+                              }
+                              disabled={globalNewsLoadingId === item.id}
+                              className={`transition-colors disabled:opacity-50 ${
+                                item.inGlobalNews
+                                  ? 'text-teal-700 hover:text-teal-900'
+                                  : 'text-gray-500 hover:text-teal-700'
+                              }`}
+                              title={
+                                item.inGlobalNews
+                                  ? 'Shared in Global News (click to remove)'
+                                  : 'Share in Global News'
+                              }
+                              aria-label={
+                                item.inGlobalNews ? 'Remove from Global News' : 'Share in Global News'
+                              }
+                            >
+                              <Globe className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDelete(item.id)}
                             className="text-red-600 hover:text-red-800 transition-colors"

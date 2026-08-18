@@ -82,6 +82,9 @@ import MyMusicPanel from '@/components/music/MyMusicPanel';
 import MusicOGPPanel from '@/components/music/MusicOGPPanel';
 import PostsPanel from '@/components/posts/PostsPanel';
 import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
+import ClubNewsArchivePanel from '@/components/club/ClubNewsArchivePanel';
+import ClubSharedNewsPanel from '@/components/club/ClubSharedNewsPanel';
+import ClubMovesbookNewsPanel from '@/components/club/ClubMovesbookNewsPanel';
 import AthleteLegacyBanner, {
   type AthleteLegacyBannerProfile,
 } from '@/components/athlete/AthleteLegacyBanner';
@@ -98,6 +101,13 @@ import {
   getEntityDirectAccessLock,
   getEntityDirectAccessProfilePath,
 } from '@/lib/entity/entityDirectAccessSession';
+
+type AthleteClubMainPanel =
+  | 'default'
+  | 'club-news'
+  | 'club-news-ogp'
+  | 'club-global-news'
+  | 'club-movesbook-news';
 
 function heroBannerStripBgUrl(p: AthleteLegacyBannerProfile | null): string {
   return getHeroBannerDisplayUrl(p);
@@ -151,6 +161,12 @@ function AthleteDashboardContent() {
   const [telegramAccount, setTelegramAccount] = useState('');
   const [userTelegramAccount, setUserTelegramAccount] = useState<string | null>(null);
   const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
+  /** Open Club Channel chat on My Club tab (member view). */
+  const [clubChatOpen, setClubChatOpen] = useState(false);
+  /** After Telegram join, open club chat instead of My Page audience picker. */
+  const [pendingClubChatOpen, setPendingClubChatOpen] = useState(false);
+  /** My Club → Club News panels (member view). */
+  const [clubMainPanel, setClubMainPanel] = useState<AthleteClubMainPanel>('default');
   
   // Entities athlete belongs to
   const [myCoaches, setMyCoaches] = useState<any[]>([]);
@@ -244,14 +260,26 @@ function AthleteDashboardContent() {
     if (activeTab !== 'my-entity') {
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
+      setClubChatOpen(false);
+      setClubMainPanel('default');
     }
   }, [activeTab]);
 
   useEffect(() => {
     if (myClubs.length === 0 && activeTab === 'my-entity') {
       setActiveTab('my-page');
+      setClubChatOpen(false);
+      setClubMainPanel('default');
     }
   }, [myClubs.length, activeTab]);
+
+  const openClubNewsPanel = useCallback((panel: Exclude<AthleteClubMainPanel, 'default'>) => {
+    setActiveTab('my-entity');
+    setClubChatOpen(false);
+    setClubAddSongsOgpOpen(false);
+    setClubAddSongsOgpExpanded(false);
+    setClubMainPanel(panel);
+  }, []);
 
   // Load entities the athlete belongs to
   useEffect(() => {
@@ -282,11 +310,41 @@ function AthleteDashboardContent() {
   };
 
   const handleChatPanelClick = () => {
+    setPendingClubChatOpen(false);
     if (userTelegramAccount) {
       // Ask who they want to chat with before opening the panel
       setShowChatAudienceModal(true);
     } else {
       // User hasn't joined, show join modal
+      setShowJoinModal(true);
+    }
+  };
+
+  const openClubChat = useCallback(() => {
+    const clubId = selectedClubId ?? myClubs[0]?.id ?? null;
+    if (!clubId) {
+      alert('Join a club first to use Club Chat.');
+      return;
+    }
+    if (!selectedClubId) {
+      setSelectedClubId(clubId);
+    }
+    setActiveTab('my-entity');
+    setClubAddSongsOgpOpen(false);
+    setClubMainPanel('default');
+    setClubChatOpen(true);
+  }, [selectedClubId, myClubs]);
+
+  const handleClubChatClick = () => {
+    const clubId = selectedClubId ?? myClubs[0]?.id ?? null;
+    if (!clubId) {
+      alert('Join a club first to use Club Chat.');
+      return;
+    }
+    if (userTelegramAccount) {
+      openClubChat();
+    } else {
+      setPendingClubChatOpen(true);
       setShowJoinModal(true);
     }
   };
@@ -326,8 +384,13 @@ function AthleteDashboardContent() {
           setUserTelegramAccount(formattedAccount);
           setShowJoinModal(false);
           setTelegramAccount('');
-          // After joining Telegram, pick who to chat with
-          setShowChatAudienceModal(true);
+          if (pendingClubChatOpen) {
+            setPendingClubChatOpen(false);
+            openClubChat();
+          } else {
+            // After joining Telegram, pick who to chat with
+            setShowChatAudienceModal(true);
+          }
         } else {
           alert(data.error || 'Failed to save Telegram account');
         }
@@ -834,10 +897,31 @@ function AthleteDashboardContent() {
                   setActiveSection('staff-feedbacks');
                 }}
                 onMyClubClick={() => setActiveTab('my-entity')}
+                onClubChatClick={handleClubChatClick}
                 onClubAddSongsPlaylistsClick={() => {
-                  setActiveTab('my-entity');
-                  setClubAddSongsOgpOpen(true);
+                  // Same as navbar "Add Songs" → Music OGP editor
+                  setActiveTab('my-page');
+                  setClubChatOpen(false);
+                  setClubAddSongsOgpOpen(false);
+                  setClubAddSongsOgpExpanded(false);
+                  setClubMainPanel('default');
+                  setActiveSection('music-editor');
+                  setMusicExpanded(false);
                 }}
+                onClubMusicPanelClick={() => {
+                  // Same as navbar "Music Panel" → My Music panel
+                  setActiveTab('my-page');
+                  setClubChatOpen(false);
+                  setClubAddSongsOgpOpen(false);
+                  setClubAddSongsOgpExpanded(false);
+                  setClubMainPanel('default');
+                  setActiveSection('music');
+                  setMusicExpanded(false);
+                }}
+                onClubMovesbookNewsSectionClick={() => openClubNewsPanel('club-movesbook-news')}
+                onClubNewsSectionClick={() => openClubNewsPanel('club-news')}
+                onClubOgpNewsSectionClick={() => openClubNewsPanel('club-news-ogp')}
+                onClubGlobalNewsSectionClick={() => openClubNewsPanel('club-global-news')}
               />
             </div>
           )}
@@ -946,6 +1030,76 @@ function AthleteDashboardContent() {
                     isExpanded={clubAddSongsOgpExpanded}
                     onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
                   />
+                </div>
+              ) : clubChatOpen && (selectedClubId ?? myClubs[0]?.id) ? (
+                <div className="flex-1 flex flex-col min-h-0 max-h-[75vh]">
+                  <ChatPanel
+                    key={`club-chat-${selectedClubId ?? myClubs[0]?.id}`}
+                    embedded
+                    clubId={selectedClubId ?? myClubs[0]?.id}
+                    chatAudience="club-member"
+                    onClose={() => setClubChatOpen(false)}
+                  />
+                </div>
+              ) : clubMainPanel === 'club-news' ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {selectedClubId ?? myClubs[0]?.id ? (
+                    <ClubNewsArchivePanel
+                      clubId={(selectedClubId ?? myClubs[0]?.id)!}
+                      sharedWithClubOnly
+                      title="News"
+                      onClose={() => setClubMainPanel('default')}
+                    />
+                  ) : (
+                    <div className="rounded-lg border bg-white p-6 shadow-sm">
+                      <p className="py-12 text-center text-sm text-gray-600">
+                        Select a club in the sidebar to view shared News.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : clubMainPanel === 'club-news-ogp' ? (
+                <div className="flex min-h-0 flex-1 flex-col py-4">
+                  {selectedClubId ?? myClubs[0]?.id ? (
+                    <NewsOGPPanel
+                      title="OGP News"
+                      clubId={(selectedClubId ?? myClubs[0]?.id)!}
+                      sharedWithClubOnly
+                      onClose={() => {
+                        setClubMainPanel('default');
+                        setClubAddSongsOgpExpanded(false);
+                      }}
+                      embedded
+                      isExpanded={clubAddSongsOgpExpanded}
+                      onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
+                    />
+                  ) : (
+                    <div className="rounded-lg border bg-white p-6 shadow-sm">
+                      <p className="py-12 text-center text-sm text-gray-600">
+                        Select a club in the sidebar to view shared OGP News.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : clubMainPanel === 'club-global-news' ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {selectedClubId ?? myClubs[0]?.id ? (
+                    <ClubSharedNewsPanel
+                      clubId={(selectedClubId ?? myClubs[0]?.id)!}
+                      type="all"
+                      title="Club Global News"
+                    />
+                  ) : (
+                    <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
+                      <p className="py-12 text-center text-sm text-gray-600">
+                        Select a club in the sidebar to view Club Global News.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : clubMainPanel === 'club-movesbook-news' ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <ClubMovesbookNewsPanel title="Movesbook News" />
                 </div>
               ) : (
                 <div className="bg-white rounded-lg shadow-sm border p-8 pt-12 flex-1 flex items-start justify-center">
@@ -1141,6 +1295,7 @@ function AthleteDashboardContent() {
                   onClick={() => {
                     setShowJoinModal(false);
                     setTelegramAccount('');
+                    setPendingClubChatOpen(false);
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                 >

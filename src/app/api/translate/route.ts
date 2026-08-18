@@ -6,52 +6,53 @@ import {
   translatePlainTextMyMemory,
 } from '@/utils/richTextTranslation';
 
-async function translateParagraphWithFallbacks(
-  paragraph: string,
+async function translateToLanguage(
+  sourceText: string,
   lang: string,
+  sourceLang: string,
 ): Promise<string | null> {
-  const myMemory = await translatePlainTextMyMemory(paragraph, lang);
-  if (myMemory) return myMemory;
-
-  const gtx = await translatePlainTextGtx(paragraph, lang);
-  if (gtx) return gtx;
-
-  try {
-    const response = await fetch('https://libretranslate.de/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        q: paragraph,
-        source: 'en',
-        target: lang,
-        format: 'text',
-      }),
-      signal: AbortSignal.timeout(10000),
-    });
-    if (response.ok) {
-      const data = (await response.json()) as { translatedText?: string };
-      if (data.translatedText?.trim()) {
-        return data.translatedText.trim();
-      }
-    }
-  } catch {
-    /* no libretranslate */
-  }
-
-  return null;
-}
-
-async function translateToLanguage(sourceText: string, lang: string): Promise<string | null> {
-  if (lang === 'en') return sourceText;
+  if (lang === sourceLang) return sourceText;
 
   const paragraphs = splitPlainTextParagraphs(sourceText);
   if (paragraphs.length === 0) return null;
 
+  const apiTarget = mapLangForTranslationApi(lang);
+  const apiSource = mapLangForTranslationApi(sourceLang);
   const translatedBlocks: string[] = [];
   for (const paragraph of paragraphs) {
-    const translated = await translateParagraphWithFallbacks(paragraph, lang);
-    if (!translated) return null;
-    translatedBlocks.push(translated);
+    const gtx = await translatePlainTextGtx(paragraph, lang, sourceLang);
+    if (gtx) {
+      translatedBlocks.push(gtx);
+      continue;
+    }
+    const myMemory = await translatePlainTextMyMemory(paragraph, lang, sourceLang);
+    if (myMemory) {
+      translatedBlocks.push(myMemory);
+      continue;
+    }
+    try {
+      const response = await fetch('https://libretranslate.de/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          q: paragraph,
+          source: apiSource,
+          target: apiTarget,
+          format: 'text',
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        const data = (await response.json()) as { translatedText?: string };
+        if (data.translatedText?.trim()) {
+          translatedBlocks.push(data.translatedText.trim());
+          continue;
+        }
+      }
+    } catch {
+      /* try next paragraph provider */
+    }
+    return null;
   }
 
   return translatedBlocks.join('\n\n');
@@ -60,9 +61,11 @@ async function translateToLanguage(sourceText: string, lang: string): Promise<st
 async function translateWithGoogleApiKey(
   sourceText: string,
   lang: string,
+  sourceLang: string,
   apiKey: string,
 ): Promise<string | null> {
   const apiTarget = mapLangForTranslationApi(lang);
+  const apiSource = mapLangForTranslationApi(sourceLang);
   const paragraphs = splitPlainTextParagraphs(sourceText);
   const translatedParagraphs: string[] = [];
 
@@ -75,7 +78,7 @@ async function translateWithGoogleApiKey(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             q: paragraph,
-            source: 'en',
+            source: apiSource,
             target: apiTarget,
             format: 'text',
           }),
@@ -98,8 +101,12 @@ async function translateWithGoogleApiKey(
 
 export async function POST(request: NextRequest) {
   try {
-    const { text, targetLanguages } = await request.json();
+    const { text, targetLanguages, sourceLanguage } = await request.json();
     const sourceText = typeof text === 'string' ? text.trim() : '';
+    const sourceLang =
+      typeof sourceLanguage === 'string' && sourceLanguage.trim()
+        ? sourceLanguage.trim()
+        : 'en';
 
     if (!sourceText || !targetLanguages || !Array.isArray(targetLanguages)) {
       return NextResponse.json(
@@ -109,21 +116,27 @@ export async function POST(request: NextRequest) {
     }
 
     const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
-    const translations: Record<string, string> = { en: sourceText };
+    const translations: Record<string, string> = {};
+    if (sourceLang === 'en') {
+      translations.en = sourceText;
+    }
     const failed: string[] = [];
 
     for (const lang of targetLanguages) {
-      if (lang === 'en') continue;
+      if (lang === sourceLang) {
+        translations[lang] = sourceText;
+        continue;
+      }
 
       try {
         let translated: string | null = null;
 
         if (apiKey) {
-          translated = await translateWithGoogleApiKey(sourceText, lang, apiKey);
+          translated = await translateWithGoogleApiKey(sourceText, lang, sourceLang, apiKey);
         }
 
         if (!translated) {
-          translated = await translateToLanguage(sourceText, lang);
+          translated = await translateToLanguage(sourceText, lang, sourceLang);
         }
 
         if (translated) {
@@ -144,7 +157,7 @@ export async function POST(request: NextRequest) {
     }
 
     const successCount = Object.keys(translations).filter(
-      (key) => key !== 'en' && translations[key]?.trim(),
+      (key) => key !== sourceLang && translations[key]?.trim(),
     ).length;
 
     return NextResponse.json({

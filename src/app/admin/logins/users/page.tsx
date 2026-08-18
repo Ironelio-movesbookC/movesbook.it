@@ -1,8 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminLoginLogsPanel from '@/components/admin/AdminLoginLogsPanel';
+
+function AdminUsersLoginsContent() {
+  return (
+    <AdminLoginLogsPanel
+      variant="users"
+      title="Logins about users"
+      description="Login and logout history for Single Users, Coaches, Team admins, Club admins, and Group admins. Open a username to view the User Panel."
+      apiPath="/api/admin/logins/users"
+      listTitle="Users login list"
+      emptyMessage="No login rows in this range. Adjust dates or wait for user logins."
+    />
+  );
+}
 
 export default function AdminUsersLoginsPage() {
   const router = useRouter();
@@ -20,13 +33,8 @@ export default function AdminUsersLoginsPage() {
   if (!authChecked) return null;
 
   return (
-    <AdminLoginLogsPanel
-      variant="users"
-      title="Logins about users"
-      description="Login and logout history for Single Users, Coaches, Team admins, Club admins, and Group admins."
-      apiPath="/api/admin/logins/users"
-      listTitle="Users login list"
-      emptyMessage="No login rows in this range. Adjust dates or wait for user logins."
-    />
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Loading…</div>}>
+      <AdminUsersLoginsContent />
+    </Suspense>
   );
 }

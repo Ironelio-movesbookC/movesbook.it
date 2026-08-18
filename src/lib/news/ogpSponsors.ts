@@ -1,0 +1,236 @@
+export const OGP_SPONSOR_SETTINGS_ID = 'default';
+export const OGP_CARDS_PER_ROW = 6;
+
+export const SPONSOR_START_ROW_MIN = 1;
+export const SPONSOR_START_ROW_MAX = 5;
+export const SPONSOR_INTERVAL_MIN = 3;
+export const SPONSOR_INTERVAL_MAX = 99;
+export const SPONSOR_DELAY_MS_MIN = 1000;
+export const SPONSOR_DELAY_MS_MAX = 60_000;
+export const SPONSOR_DELAY_MS_DEFAULT = 5000;
+
+export type OgpSponsorSize = 'single' | 'double';
+export type OgpSponsorLinkTarget = 'tab' | 'window';
+
+export type OgpSponsor = {
+  id: string;
+  image: string;
+  size: OgpSponsorSize;
+  hoverTitle: string;
+  linkUrl: string;
+  linkTarget: OgpSponsorLinkTarget;
+  sortOrder: number;
+};
+
+export type OgpSponsorSettings = {
+  startRow: number;
+  intervalRows: number;
+  delayMs: number;
+  sponsors: OgpSponsor[];
+};
+
+export type SponsoredPageCell<T> =
+  | { kind: 'news'; item: T }
+  | { kind: 'sponsor' };
+
+function toInt(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.round(n);
+}
+
+export function clampStartRow(value: unknown): number {
+  return Math.min(
+    SPONSOR_START_ROW_MAX,
+    Math.max(SPONSOR_START_ROW_MIN, toInt(value, 2)),
+  );
+}
+
+export function clampIntervalRows(value: unknown): number {
+  return Math.min(
+    SPONSOR_INTERVAL_MAX,
+    Math.max(SPONSOR_INTERVAL_MIN, toInt(value, 12)),
+  );
+}
+
+export function clampDelayMs(value: unknown): number {
+  return Math.min(
+    SPONSOR_DELAY_MS_MAX,
+    Math.max(SPONSOR_DELAY_MS_MIN, toInt(value, SPONSOR_DELAY_MS_DEFAULT)),
+  );
+}
+
+export function isSponsorSize(value: unknown): value is OgpSponsorSize {
+  return value === 'single' || value === 'double';
+}
+
+export function isSponsorLinkTarget(value: unknown): value is OgpSponsorLinkTarget {
+  return value === 'tab' || value === 'window';
+}
+
+export function sponsorColsForSize(size: OgpSponsorSize): 1 | 2 {
+  return size === 'double' ? 2 : 1;
+}
+
+export function maxSponsorCols(sponsors: Pick<OgpSponsor, 'size'>[]): 1 | 2 {
+  return sponsors.some((s) => s.size === 'double') ? 2 : 1;
+}
+
+export function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export type OgpSponsorSourceArticle = {
+  id: string;
+  title: string;
+  image: string;
+  url: string;
+};
+
+function normalizeUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '').toLowerCase();
+}
+
+/** Prefer a custom picture; otherwise use the selected / URL-matched OGP News picture. */
+export function resolveSponsorImage(
+  draft: { image?: string | null; ogpArticleId?: string | null; linkUrl?: string | null },
+  ogpArticles: OgpSponsorSourceArticle[],
+): string {
+  const custom = typeof draft.image === 'string' ? draft.image.trim() : '';
+  if (custom) return custom;
+  const byId = draft.ogpArticleId
+    ? ogpArticles.find((a) => a.id === draft.ogpArticleId)
+    : undefined;
+  if (byId?.image) return byId.image.trim();
+  const link = typeof draft.linkUrl === 'string' ? normalizeUrl(draft.linkUrl) : '';
+  if (!link) return '';
+  const byUrl = ogpArticles.find((a) => normalizeUrl(a.url) === link);
+  return byUrl?.image?.trim() || '';
+}
+
+export function findOgpArticleForSponsor(
+  draft: { ogpArticleId?: string | null; linkUrl?: string | null },
+  ogpArticles: OgpSponsorSourceArticle[],
+): OgpSponsorSourceArticle | undefined {
+  if (draft.ogpArticleId) {
+    const byId = ogpArticles.find((a) => a.id === draft.ogpArticleId);
+    if (byId) return byId;
+  }
+  const link = typeof draft.linkUrl === 'string' ? normalizeUrl(draft.linkUrl) : '';
+  if (!link) return undefined;
+  return ogpArticles.find((a) => normalizeUrl(a.url) === link);
+}
+
+/** 1-based local rows on this page that should show a sponsor (before last-row clamp). */
+export function sponsorLocalRowsOnPage(
+  page: number,
+  startRow: number,
+  intervalRows: number,
+  rowsPerPage: number,
+): number[] {
+  if (page < 1 || rowsPerPage < 1) return [];
+  const a = clampStartRow(startRow);
+  const b = clampIntervalRows(intervalRows);
+  const pageFirst = (page - 1) * rowsPerPage + 1;
+  const pageLast = page * rowsPerPage;
+  const rows: number[] = [];
+  const firstK = a >= pageFirst ? 0 : Math.ceil((pageFirst - a) / b);
+  for (let k = firstK; k < firstK + rowsPerPage + 2; k++) {
+    const globalRow = a + k * b;
+    if (globalRow > pageLast) break;
+    if (globalRow >= pageFirst) {
+      rows.push(globalRow - pageFirst + 1);
+    }
+  }
+  return rows;
+}
+
+export function clampToLastAvailableRow(localRow: number, actualRowsOnPage: number): number {
+  if (actualRowsOnPage <= 0) return 1;
+  return Math.min(Math.max(1, localRow), actualRowsOnPage);
+}
+
+/**
+ * Split items into pages, inserting a sponsor slot at the configured rows.
+ * If the selected row does not exist on a page, the slot is shown on the last available row.
+ */
+export function paginateWithSponsors<T>(
+  items: T[],
+  rowsPerPage: number,
+  colsPerRow: number,
+  startRow: number,
+  intervalRows: number,
+  sponsorCols: 1 | 2,
+): SponsoredPageCell<T>[][] {
+  const R = Math.max(1, rowsPerPage);
+  const C = Math.max(1, colsPerRow);
+  const span = sponsorCols === 2 ? 2 : 1;
+
+  if (items.length === 0) {
+    const locals = sponsorLocalRowsOnPage(1, startRow, intervalRows, R);
+    return locals.length > 0 ? [[{ kind: 'sponsor' }]] : [];
+  }
+
+  const pages: SponsoredPageCell<T>[][] = [];
+  let i = 0;
+  let page = 1;
+
+  while (i < items.length) {
+    const intendedLocals = sponsorLocalRowsOnPage(page, startRow, intervalRows, R);
+    const slotCount = intendedLocals.length;
+    const capacityNews = Math.max(0, R * C - slotCount * span);
+    const take = Math.min(items.length - i, capacityNews);
+    if (take === 0) {
+      if (slotCount > 0) {
+        pages.push([{ kind: 'sponsor' }]);
+      }
+      break;
+    }
+    const slice = items.slice(i, i + take);
+    i += take;
+
+    const rowsWithoutSponsor = Math.max(1, Math.ceil(Math.max(slice.length, 1) / C));
+    const sponsorRows = new Set(
+      intendedLocals.map((row) => clampToLastAvailableRow(row, rowsWithoutSponsor)),
+    );
+
+    const cells: SponsoredPageCell<T>[] = [];
+    let n = 0;
+    let r = 1;
+    const maxRows = Math.max(rowsWithoutSponsor, sponsorRows.size > 0 ? Math.max(...sponsorRows) : 0);
+    while (n < slice.length || r <= maxRows) {
+      let used = 0;
+      if (sponsorRows.has(r)) {
+        cells.push({ kind: 'sponsor' });
+        used += span;
+      }
+      while (used < C && n < slice.length) {
+        cells.push({ kind: 'news', item: slice[n++] });
+        used += 1;
+      }
+      r += 1;
+      if (r > maxRows && n >= slice.length) break;
+      if (r > 10_000) break;
+    }
+
+    pages.push(cells);
+    page += 1;
+    if (page > 100_000) break;
+  }
+
+  return pages;
+}
+
+export function openSponsorLink(url: string, target: OgpSponsorLinkTarget): void {
+  if (!url) return;
+  if (target === 'window') {
+    window.open(url, '_blank', 'noopener,noreferrer,width=1200,height=800');
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}

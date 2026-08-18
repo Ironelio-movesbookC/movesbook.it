@@ -387,8 +387,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
   }
 
-  const personalWebsiteHref =
-    segment === 'clubs' ? await getUserPersonalWebsiteHref(user.id) : null;
+  const personalWebsiteHref = await getUserPersonalWebsiteHref(user.id);
 
   const entityPcuAccessWindow = {
     accessStartIso: subscriptionCurrent.dateStart,

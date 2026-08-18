@@ -1,15 +1,13 @@
 'use client';
 
 import Image from 'next/image';
-import { RefObject, useEffect, useMemo, useState } from 'react';
+import { RefObject, useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveProfileAccessDates } from '@/lib/admin/profileAccessDates';
 import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import {
   CalendarDays,
-  CheckSquare,
   CreditCard,
   Mail,
-  Square,
   User,
   X,
 } from 'lucide-react';
@@ -18,6 +16,7 @@ import NotYetActivePeriodEditControl, {
   subscriptionPeriodDateClassName,
 } from '@/components/admin/NotYetActivePeriodEditControl';
 import AdminPcuDatePicker, { formatPcuIsoDate } from '@/components/admin/AdminPcuDatePicker';
+import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
@@ -33,6 +32,7 @@ export interface ProfileSubscriptionFilterState {
 }
 
 export interface ClubsProfileData {
+  id: string;
   fullName: string;
   username: string;
   email: string;
@@ -98,6 +98,11 @@ interface AdminClubsUserProfilePanelProps {
   userId: string;
   profileEntityId?: string | null;
   onPeriodDatesSaved?: () => void | Promise<void>;
+  onPrint: () => void;
+  onSendMsg: () => void;
+  onSendMail: () => void;
+  onDeleteAccount: () => void;
+  initialPcuAccess?: PcuAccessSettings;
 }
 
 function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -130,23 +135,69 @@ export default function AdminClubsUserProfilePanel({
   userId,
   profileEntityId,
   onPeriodDatesSaved,
+  onPrint,
+  onSendMsg,
+  onSendMail,
+  onDeleteAccount,
+  initialPcuAccess,
 }: AdminClubsUserProfilePanelProps) {
   const countryCode = countryCodeFromName(profileData.country);
   const resolvedAccessDates = useMemo(
     () =>
       resolveProfileAccessDates(
         profileData.subscriptionRows,
-        profileData.pcuAccess,
+        profileData.pcuAccess ?? initialPcuAccess,
       ),
-    [profileData.subscriptionRows, profileData.pcuAccess],
+    [profileData.subscriptionRows, profileData.pcuAccess, initialPcuAccess],
   );
   const [accessStart, setAccessStart] = useState(resolvedAccessDates.accessStart);
   const [accessEnd, setAccessEnd] = useState(resolvedAccessDates.accessEnd);
+  const [suspendAccessControl, setSuspendAccessControl] = useState(
+    () =>
+      profileData.pcuAccess?.suspendAccessControl ??
+      initialPcuAccess?.suspendAccessControl ??
+      false,
+  );
+  const [suspend, setSuspend] = useState(
+    () => profileData.pcuAccess?.suspend ?? initialPcuAccess?.suspend ?? false,
+  );
+  const [pcuAccessSaving, setPcuAccessSaving] = useState(false);
 
   useEffect(() => {
     setAccessStart(resolvedAccessDates.accessStart);
     setAccessEnd(resolvedAccessDates.accessEnd);
   }, [resolvedAccessDates.accessStart, resolvedAccessDates.accessEnd]);
+
+  const savePcuAccess = useCallback(
+    async (patch: Partial<PcuAccessSettings>) => {
+      const token = getAdminBearerToken();
+      if (!token) {
+        window.alert('Admin session not found.');
+        return;
+      }
+      setPcuAccessSaving(true);
+      try {
+        const res = await fetch(
+          `/api/admin/registered-users/${encodeURIComponent(profileData.id)}/pcu-access`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(patch),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to save access settings');
+      } catch (e: unknown) {
+        window.alert(e instanceof Error ? e.message : 'Failed to save access settings');
+      } finally {
+        setPcuAccessSaving(false);
+      }
+    },
+    [profileData.id],
+  );
 
   const allRowsSelected =
     filteredRows.length > 0 && filteredRows.every((r) => profileRowSelected.has(r.id));
@@ -157,16 +208,15 @@ export default function AdminClubsUserProfilePanel({
         <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300">
           <div className="text-sm font-semibold text-red-700">Panel control about the User</div>
           <div className="flex items-center gap-3 text-sm text-gray-700">
-            <button type="button" className="hover:underline">
+            <button type="button" onClick={onPrint} className="hover:underline">
               Print
             </button>
-            <button type="button" className="hover:underline">
+            <button type="button" onClick={onSendMsg} className="hover:underline">
               Send Msg
             </button>
-            <button type="button" className="hover:underline">
+            <button type="button" onClick={onSendMail} className="hover:underline">
               Send mail
             </button>
-            <input type="checkbox" className="rounded border-gray-500" aria-label="Panel option" />
             <button
               type="button"
               className="p-1.5 rounded hover:bg-gray-300"
@@ -185,7 +235,7 @@ export default function AdminClubsUserProfilePanel({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={profileData.imageUrl} alt="" className="w-full h-full object-cover" />
               ) : (
-                <Image src={profileData.imageUrl} alt="" width={64} height={64} className="object-cover w-full h-full" />
+                <Image src={profileData.imageUrl} alt="" width={64} height={64} className="object-cover w-full h-full" unoptimized />
               )
             ) : (
               <User className="w-7 h-7 text-gray-500" />
@@ -222,7 +272,11 @@ export default function AdminClubsUserProfilePanel({
             </div>
 
             <div className="flex flex-wrap items-center gap-4 mt-3">
-              <button type="button" className="px-4 py-2 bg-gray-700 text-white text-sm rounded">
+              <button
+                type="button"
+                onClick={onSendMail}
+                className="px-4 py-2 bg-gray-700 text-white text-sm rounded hover:bg-gray-800"
+              >
                 <Mail className="inline w-4 h-4 mr-2" />
                 Send mail
               </button>
@@ -230,7 +284,11 @@ export default function AdminClubsUserProfilePanel({
                 <span>Start</span>
                 <AdminPcuDatePicker
                   value={accessStart}
-                  onChange={setAccessStart}
+                  disabled={pcuAccessSaving}
+                  onChange={(iso) => {
+                    setAccessStart(iso);
+                    void savePcuAccess({ accessStartIso: iso });
+                  }}
                   className="w-32"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
@@ -240,7 +298,11 @@ export default function AdminClubsUserProfilePanel({
                 <span>End</span>
                 <AdminPcuDatePicker
                   value={accessEnd}
-                  onChange={setAccessEnd}
+                  disabled={pcuAccessSaving}
+                  onChange={(iso) => {
+                    setAccessEnd(iso);
+                    void savePcuAccess({ accessEndIso: iso });
+                  }}
                   className="w-32"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
@@ -248,17 +310,37 @@ export default function AdminClubsUserProfilePanel({
                   <span className="text-green-600 font-semibold">(already renewed)</span>
                 ) : null}
               </div>
-              <div className="flex items-center gap-2 text-sm">
-                <Square className="w-4 h-4 text-gray-600" />
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={suspendAccessControl}
+                  disabled={pcuAccessSaving}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setSuspendAccessControl(next);
+                    void savePcuAccess({ suspendAccessControl: next });
+                  }}
+                  className="w-4 h-4 rounded border-gray-400"
+                />
                 <span className="text-red-600">Suspend access control</span>
-              </div>
+              </label>
               <button type="button" className="px-4 py-2 bg-gray-700 text-white text-sm rounded">
                 Exhaustion status
               </button>
-              <div className="flex items-center gap-2 text-sm">
-                <CheckSquare className="w-4 h-4 text-gray-600" />
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={suspend}
+                  disabled={pcuAccessSaving}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setSuspend(next);
+                    void savePcuAccess({ suspend: next });
+                  }}
+                  className="w-4 h-4 rounded border-gray-400"
+                />
                 <span className="text-red-600">Suspend</span>
-              </div>
+              </label>
             </div>
           </div>
         </div>
@@ -294,7 +376,7 @@ export default function AdminClubsUserProfilePanel({
               <button
                 type="button"
                 onClick={() => (profileSubFilterOpen ? onProfileSubFilterExit() : onOpenProfileSubFilter())}
-                className="px-3 py-2 bg-gray-700 text-white text-sm rounded"
+                className="px-3 py-2 bg-gray-700 text-white text-sm rounded hover:bg-gray-800"
               >
                 Filter
               </button>
@@ -388,16 +470,7 @@ export default function AdminClubsUserProfilePanel({
               Proceed
             </button>
             <div className="ml-auto flex flex-wrap gap-4 text-sm text-gray-700">
-              <button type="button" className="hover:underline">
-                Print
-              </button>
-              <button type="button" className="hover:underline">
-                Send Msg
-              </button>
-              <button type="button" className="hover:underline">
-                Send mail
-              </button>
-              <button type="button" className="hover:underline text-red-700">
+              <button type="button" onClick={onDeleteAccount} className="hover:underline text-red-700">
                 Delete account
               </button>
             </div>

@@ -2192,22 +2192,6 @@ export default function UserPcuControlPanel({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to send mail');
 
-      if (data.mailtoFallback) {
-        const hint =
-          typeof data.message === 'string' && data.message.trim()
-            ? data.message
-            : 'RESEND_API_KEY is not set. Add it to .env and restart npm run dev.';
-        setMailError(hint);
-        if (!data.emailNotConfigured) {
-          const params = new URLSearchParams();
-          params.set('subject', mailSubject.trim() || 'Message from Movesbook Admin');
-          params.set('body', message);
-          window.location.href = `mailto:${encodeURIComponent(to)}?${params.toString()}`;
-          setMailModalOpen(false);
-        }
-        return;
-      }
-
       const failed = Array.isArray(data.failed) ? data.failed : [];
       if (failed.length > 0) {
         const first = failed[0] as { error?: string };
@@ -2265,18 +2249,7 @@ export default function UserPcuControlPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to send message');
-      if (data.mailtoFallback && Array.isArray(data.recipients) && data.recipients.length > 0) {
-        const emails = data.recipients
-          .map((r: { email?: string }) => r.email?.trim())
-          .filter(Boolean) as string[];
-        if (emails.length === 1) {
-          window.location.href = `mailto:${encodeURIComponent(emails[0]!)}`;
-        } else if (emails.length > 1) {
-          window.location.href = `mailto:?bcc=${emails.map((e) => encodeURIComponent(e)).join(',')}`;
-        }
-      } else {
-        window.alert(`Message sent to ${data.sent ?? 0} user(s).`);
-      }
+      window.alert(`Message sent to ${data.sent ?? 0} user(s).`);
       setMsgModalOpen(false);
     } catch (e: unknown) {
       setMsgError(e instanceof Error ? e.message : 'Failed to send message');
@@ -2327,7 +2300,7 @@ export default function UserPcuControlPanel({
   };
 
   return (
-    <div className="w-full min-w-0">
+    <div className="print-area w-full min-w-0 max-w-5xl mx-auto">
       <div className="bg-gray-200 border border-gray-300 rounded shadow-sm">
         <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-gray-300">
           <div className="flex items-center gap-3 min-w-0">
@@ -5597,7 +5570,7 @@ export default function UserPcuControlPanel({
               value={mailTo}
               onChange={(e) => setMailTo(e.target.value)}
               placeholder="user@example.com"
-              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
               autoComplete="email"
             />
             <label className="mb-2 block text-sm font-medium text-gray-700">Subject (optional)</label>
@@ -5605,7 +5578,7 @@ export default function UserPcuControlPanel({
               type="text"
               value={mailSubject}
               onChange={(e) => setMailSubject(e.target.value)}
-              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
             <textarea
@@ -5613,7 +5586,7 @@ export default function UserPcuControlPanel({
               onChange={(e) => setMailBody(e.target.value)}
               rows={4}
               placeholder="Write your message…"
-              className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             {mailError ? <p className="mb-2 text-sm text-red-600">{mailError}</p> : null}
             <div className="flex justify-end gap-2">
@@ -5656,7 +5629,7 @@ export default function UserPcuControlPanel({
               type="text"
               value={msgSubject}
               onChange={(e) => setMsgSubject(e.target.value)}
-              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
             <textarea
@@ -5664,7 +5637,7 @@ export default function UserPcuControlPanel({
               onChange={(e) => setMsgDraft(e.target.value)}
               rows={5}
               placeholder="Write your message…"
-              className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              className="send-message-field mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             {msgError ? <p className="mb-2 text-sm text-red-600">{msgError}</p> : null}
             <div className="flex justify-end gap-2">

@@ -63,11 +63,15 @@ export function isChatAudience(value: unknown): value is ChatAudience {
  * Prisma filter for peer users eligible for a chat audience.
  * Always combine with `telegramAccount: { not: null }` and exclude self.
  * Returns null when the audience is not implemented yet.
+ * Optional `clubId` narrows club-admin / club-member to that club.
  */
 export function buildChatAudienceWhere(
   audience: ChatAudience,
-  myId: string
+  myId: string,
+  clubId?: string | null
 ): Prisma.UserWhereInput | null {
+  const scopedClubId = typeof clubId === 'string' ? clubId.trim() : '';
+
   switch (audience) {
     case 'movesbook-staff':
       return { superAdminId: { not: null } };
@@ -75,6 +79,17 @@ export function buildChatAudienceWhere(
       return { superAdminId: null };
     case 'club-admin':
       // CLUB accounts that administer a club the current user belongs to
+      if (scopedClubId) {
+        return {
+          userType: 'CLUB',
+          ownedClubs: {
+            some: {
+              id: scopedClubId,
+              members: { some: { memberId: myId } },
+            },
+          },
+        };
+      }
       return {
         userType: 'CLUB',
         ownedClubs: {
@@ -90,6 +105,14 @@ export function buildChatAudienceWhere(
       return { userType: 'CLUB' };
     case 'club-member':
       // Fellow ClubMember rows on clubs the current user belongs to
+      if (scopedClubId) {
+        return {
+          OR: [
+            { clubMemberships: { some: { clubId: scopedClubId } } },
+            { ownedClubs: { some: { id: scopedClubId } } },
+          ],
+        };
+      }
       return {
         clubMemberships: {
           some: {

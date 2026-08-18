@@ -33,10 +33,17 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const auth = await getClubAuthContext(request);
     if ('error' in auth) return auth.error;
 
-    const body = await request.json() as { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number };
+    const body = await request.json() as {
+      recordDate?: string;
+      dueDate?: string | null;
+      notes?: string;
+      operatorId?: string;
+      totalAmount?: number;
+    };
 
     await procedureService.updateRecord(auth.ctx, params.type, params.id, {
       recordDate: body.recordDate,
+      dueDate: body.dueDate,
       notes: body.notes,
       operatorId: body.operatorId,
       totalAmount: body.totalAmount,
