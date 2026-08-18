@@ -22,7 +22,10 @@ export type ProcedureRecordView = {
   procedureType: string;
   primaryLabel: string;
   secondaryLabel: string;
+  recordDate: string;
   paydate: string | null;
+  expireDate: string | null;
+  createdAt: string;
   value: number;
   pay: number;
   rest: number;
@@ -102,8 +105,11 @@ function mapRecord(def: ProcedureDefinition, record: ProcedureRecordDto): Proced
     secondaryLabel: def.metadataKeys.secondary
       ? metaString(metadata, def.metadataKeys.secondary) || '-'
       : '',
-    // Deadline/expire display uses dueDate (PHP ServicePurchase.paydate / installment expire).
+    recordDate: record.recordDate,
+    // Keep legacy `paydate` field aligned with deadline expiry for existing code paths.
     paydate: record.dueDate ?? record.recordDate,
+    expireDate: record.dueDate ?? record.recordDate,
+    createdAt: record.createdAt,
     value: record.totalAmount,
     pay: record.paidAmount,
     rest: record.balanceAmount,

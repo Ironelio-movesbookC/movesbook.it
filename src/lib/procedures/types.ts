@@ -38,7 +38,9 @@ export type ProcedureRecordDto = {
   totalAmount: number;
   paidAmount: number;
   balanceAmount: number;
+  /** Creation/business date of the record. This stays editable only where PHP allowed it. */
   recordDate: string;
+  /** Expiration date of the deadline. */
   dueDate: string | null;
   /** ISO timestamp — used to order same-day deadlines (oldest first). */
   createdAt: string;
