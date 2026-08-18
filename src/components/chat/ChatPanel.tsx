@@ -97,6 +97,8 @@ export type ChatUser = {
   name: string;
   username: string;
   telegramAccount: string | null;
+  /** True when whole name is hidden by the peer's club-member visibility setting. */
+  nameHidden?: boolean;
   lastSeenAt: string | null;
   isOnline: boolean;
 };
@@ -343,6 +345,16 @@ export default function ChatPanel({
         adminUser.includes(q) ||
         adminTg.includes(q)
       );
+    });
+  })();
+
+  const filteredConversations = (() => {
+    const q = searchQuery.trim().toLowerCase().replace(/^@+/, '');
+    if (!q) return conversations;
+    return conversations.filter((c) => {
+      const name = (c.otherUser.name || '').toLowerCase();
+      const tg = (c.otherUser.telegramAccount || '').toLowerCase();
+      return name.includes(q) || tg.includes(q);
     });
   })();
 
@@ -737,7 +749,13 @@ export default function ChatPanel({
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search"
+                placeholder={
+                  isClubAdminAudience
+                    ? 'Search'
+                    : effectiveAudience === 'club-member'
+                      ? 'Search username'
+                      : 'Search'
+                }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -860,7 +878,13 @@ export default function ChatPanel({
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 truncate">{u.name}</p>
-                        <p className="text-xs text-gray-500 truncate">{u.telegramAccount || u.username}</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {u.nameHidden
+                            ? u.username
+                              ? `@${u.username.replace(/^@+/, '')}`
+                              : u.telegramAccount
+                            : u.telegramAccount || u.username}
+                        </p>
                       </div>
                     </button>
                   ))
@@ -877,8 +901,10 @@ export default function ChatPanel({
                     ? 'No conversations yet. Start a chat with a club admin above.'
                     : 'No conversations yet. Start a chat with a user above.'}
                 </div>
+              ) : filteredConversations.length === 0 ? (
+                <div className="p-4 text-sm text-gray-500">No matching conversations.</div>
               ) : (
-                conversations.map((c) => (
+                filteredConversations.map((c) => (
                   <button
                     key={c.id}
                     type="button"
