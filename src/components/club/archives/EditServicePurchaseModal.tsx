@@ -10,7 +10,9 @@ type EditServicePurchaseModalProps = {
   onSaved: () => void;
   purchase: {
     id: string;
+    recordDate: string | null;
     paydate: string | null;
+    expireDate?: string | null;
     notes: string;
     operatorId: string | null;
   };
@@ -23,6 +25,7 @@ export default function EditServicePurchaseModal({
   purchase,
 }: EditServicePurchaseModalProps) {
   const [recordDate, setRecordDate] = useState('');
+  const [expireDate, setExpireDate] = useState('');
   const [notes, setNotes] = useState('');
   const [operatorId, setOperatorId] = useState('');
   const [options, setOptions] = useState<ServiceSaleFormOptions | null>(null);
@@ -31,7 +34,8 @@ export default function EditServicePurchaseModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setRecordDate(purchase.paydate ?? '');
+    setRecordDate(purchase.recordDate ?? '');
+    setExpireDate(purchase.expireDate ?? purchase.paydate ?? '');
     setNotes(purchase.notes ?? '');
     setOperatorId(purchase.operatorId ?? '');
     setError(null);
@@ -47,6 +51,7 @@ export default function EditServicePurchaseModal({
     try {
       await updatePurchase(purchase.id, {
         recordDate: recordDate || undefined,
+        dueDate: expireDate || undefined,
         notes: notes || undefined,
         operatorId: operatorId || undefined,
       });
@@ -87,9 +92,23 @@ export default function EditServicePurchaseModal({
               id="edit-record-date"
               type="date"
               value={recordDate}
-              onChange={(e) => setRecordDate(e.target.value)}
+              readOnly
+              disabled
+              className="w-full rounded border border-gray-400 bg-gray-100 px-3 py-2 text-sm text-gray-600 disabled:opacity-100"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="edit-expire-date" className="mb-1 block text-sm text-gray-800">Expiration Date</label>
+            <input
+              id="edit-expire-date"
+              type="date"
+              min={new Date().toISOString().slice(0, 10)}
+              value={expireDate}
+              onChange={(e) => setExpireDate(e.target.value)}
               disabled={saving}
-              className="w-full rounded border border-gray-400 bg-white px-3 py-2 text-sm disabled:opacity-60"
+              className="w-full rounded border border-gray-400 px-3 py-2 text-sm disabled:opacity-60"
+              style={{ backgroundColor: '#d3f07b' }}
             />
           </div>
 

@@ -707,7 +707,7 @@ model UserMessageThread {
   realPath        String?               @db.VarChar(2048)
   errorMessage    String?               @db.VarChar(1000)
   supportCategory String?               @db.VarChar(32)
-  /// Workflow status for Suggestions/Problems (pending|progress|future|solved|unsolvable).
+  /// Workflow status for Suggestions, Problems, and bug/fix memos.
   /// Legacy assistance also used: S=Started, C=Completed, D=Decline
   status          String?               @db.VarChar(32)
   /// JSON array of up to 3 public image URLs attached to the first post

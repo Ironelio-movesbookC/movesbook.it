@@ -4,7 +4,10 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
 import {
   aggregateClubAdminSubscriptionStatus,
+  inferMembershipEndDateYmd,
+  membershipStatusToneFromLabel,
   parseClubSubscriptionEndDate,
+  parseClubSubscriptionStartDate,
   type ClubSubscriptionStatusTone,
 } from '@/lib/admin/clubSubscriptionStatus';
 import { sortClubsByCreatedAtAsc } from '@/lib/club/clubSidebarLabel';
@@ -15,15 +18,24 @@ import {
 } from '@/lib/admin/expandRegisteredUserListRows';
 import {
   buildMembershipListRows,
+  filterListRowsBySubscriptionDateRange,
   getDefaultMembershipSortOrder,
   parseMembershipViewMode,
+  parseSubscriptionDateField,
+  periodStatusFromDates,
+  readDeletedSubscriptionPeriods,
   readNetworkSubscriptionHistory,
   type NetworkSubscriptionPeriod,
+  type PcuAccessWindow,
+  type SubscriptionPeriodDeletion,
 } from '@/lib/admin/networkSubscriptionHistory';
+import { readPcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import {
   buildMovesbookUserTextSearchOr,
+  filterListRowsByTextSearch,
   segmentShouldMatchOwnedClubs,
 } from '@/lib/admin/movesbookUserTextSearch';
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { resolveStatsBarUserIds } from '@/lib/admin/buildStatistics';
 import {
   parseStatsKindParam,
@@ -118,11 +130,19 @@ export async function GET(request: NextRequest) {
   const sportRaw = (url.searchParams.get('sport') || '').trim();
   const version = (url.searchParams.get('version') || '').trim();
   const login = (url.searchParams.get('login') || 'all').trim();
-  const subDay = (url.searchParams.get('subDay') || '').trim();
-  const subMonth = (url.searchParams.get('subMonth') || '').trim();
-  const subYear = (url.searchParams.get('subYear') || '').trim();
-  const createdFrom = (url.searchParams.get('createdFrom') || '').trim();
-  const createdTo = (url.searchParams.get('createdTo') || '').trim();
+  const subDateField = (url.searchParams.get('subDateField') || 'dateStart').trim();
+  const subRangeFrom = (url.searchParams.get('subRangeFrom') || '').trim();
+  const subRangeTo = (url.searchParams.get('subRangeTo') || '').trim();
+  const hasSubDateRange = Boolean(subRangeFrom || subRangeTo);
+  const needsRowLevelSearchFilter = Boolean(
+    search &&
+      (segment === 'all' ||
+        segment === 'clubs' ||
+        segment === 'teams' ||
+        segment === 'groups' ||
+        segment === 'coaches'),
+  );
+  const fetchAllMatchingUsers = hasSubDateRange || needsRowLevelSearchFilter;
   const userTypeCategory = (url.searchParams.get('userTypeCategory') || '').trim();
   const membershipMode = parseMembershipViewMode(url.searchParams.get('membership'));
   const membershipSort =
@@ -194,58 +214,47 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const d = parseInt(subDay, 10);
-  const m = parseInt(subMonth, 10);
-  const y = parseInt(subYear, 10);
-  if (!Number.isNaN(d) && !Number.isNaN(m) && !Number.isNaN(y) && m >= 1 && m <= 12) {
-    const start = new Date(y, m - 1, d);
-    const end = new Date(y, m - 1, d + 1);
-    if (!Number.isNaN(start.getTime())) {
-      andClauses.push({ createdAt: { gte: start, lt: end } });
-    }
-  }
-
-  if (createdFrom) {
-    const from = new Date(createdFrom);
-    if (!Number.isNaN(from.getTime())) {
-      andClauses.push({ createdAt: { gte: from } });
-    }
-  }
-  if (createdTo) {
-    const to = new Date(createdTo);
-    if (!Number.isNaN(to.getTime())) {
-      to.setHours(23, 59, 59, 999);
-      andClauses.push({ createdAt: { lte: to } });
-    }
-  }
-
   const where: Prisma.UserWhereInput = { AND: andClauses };
   const orderBy = parseOrder(orderParam);
 
-  const [total, rows] = await Promise.all([
+  const userSelect = {
+    id: true,
+    username: true,
+    email: true,
+    name: true,
+    firstName: true,
+    surname: true,
+    userType: true,
+    country: true,
+    image: true,
+    createdAt: true,
+    updatedAt: true,
+  } as const;
+
+  const [dbTotal, rows] = await Promise.all([
     prisma.user.count({ where }),
     prisma.user.findMany({
       where,
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        name: true,
-        firstName: true,
-        surname: true,
-        userType: true,
-        country: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: userSelect,
       orderBy,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      ...(fetchAllMatchingUsers
+        ? {}
+        : { skip: (page - 1) * pageSize, take: pageSize }),
     }),
   ]);
 
   const isClubsSegment = segment === 'clubs';
+  const isTeamsSegment = segment === 'teams';
+  const isGroupsSegment = segment === 'groups';
+  const isCoachesSegment = segment === 'coaches';
   const isAllSegment = segment === 'all';
+  const shouldExpandEntityRows =
+    (isClubsSegment ||
+      isAllSegment ||
+      isTeamsSegment ||
+      isGroupsSegment ||
+      isCoachesSegment) &&
+    membershipMode !== 'lastPerUser';
   const userIds = rows.map((u) => u.id);
 
   const clubsByAdmin = new Map<
@@ -298,43 +307,75 @@ export async function GET(request: NextRequest) {
 
   const teamsByAdmin = new Map<
     string,
-    { id: string; name: string; sport: string | null; createdAt: Date }[]
+    { id: string; name: string; description: string | null; sport: string | null; createdAt: Date }[]
   >();
   const groupsByAdmin = new Map<
     string,
-    { id: string; name: string; groupType: string | null; createdAt: Date }[]
+    {
+      id: string;
+      name: string;
+      description: string | null;
+      groupType: string | null;
+      createdAt: Date;
+    }[]
   >();
   const coachingGroupsByCoach = new Map<
     string,
-    { id: string; name: string; createdAt: Date }[]
+    { id: string; name: string; description: string | null; createdAt: Date }[]
   >();
 
-  if (isAllSegment && userIds.length > 0) {
-    const teamAdminIds = rows
-      .filter((u) => u.userType === UserType.TEAM || u.userType === UserType.TEAM_MANAGER)
-      .map((u) => u.id);
-    const groupAdminIds = rows
-      .filter((u) => u.userType === UserType.GROUP || u.userType === UserType.GROUP_ADMIN)
-      .map((u) => u.id);
-    const coachIds = rows.filter((u) => u.userType === UserType.COACH).map((u) => u.id);
+  if ((isAllSegment || isTeamsSegment || isGroupsSegment || isCoachesSegment) && userIds.length > 0) {
+    const teamAdminIds = isTeamsSegment
+      ? userIds
+      : rows
+          .filter((u) => u.userType === UserType.TEAM || u.userType === UserType.TEAM_MANAGER)
+          .map((u) => u.id);
+    const groupAdminIds = isGroupsSegment
+      ? userIds
+      : rows
+          .filter((u) => u.userType === UserType.GROUP || u.userType === UserType.GROUP_ADMIN)
+          .map((u) => u.id);
+    const coachIds = isCoachesSegment
+      ? userIds
+      : rows.filter((u) => u.userType === UserType.COACH).map((u) => u.id);
 
     const [ownedTeams, ownedGroups, ownedCoaching] = await Promise.all([
       teamAdminIds.length > 0
         ? prisma.team.findMany({
             where: { adminId: { in: teamAdminIds } },
-            select: { adminId: true, id: true, name: true, sport: true, createdAt: true },
+            select: {
+              adminId: true,
+              id: true,
+              name: true,
+              description: true,
+              sport: true,
+              createdAt: true,
+            },
           })
         : [],
       groupAdminIds.length > 0
         ? prisma.group.findMany({
             where: { adminId: { in: groupAdminIds } },
-            select: { adminId: true, id: true, name: true, groupType: true, createdAt: true },
+            select: {
+              adminId: true,
+              id: true,
+              name: true,
+              description: true,
+              groupType: true,
+              createdAt: true,
+            },
           })
         : [],
       coachIds.length > 0
         ? prisma.coachingGroup.findMany({
             where: { coachId: { in: coachIds } },
-            select: { coachId: true, id: true, name: true, createdAt: true },
+            select: {
+              coachId: true,
+              id: true,
+              name: true,
+              description: true,
+              createdAt: true,
+            },
           })
         : [],
     ]);
@@ -344,6 +385,7 @@ export async function GET(request: NextRequest) {
       list.push({
         id: team.id,
         name: team.name,
+        description: team.description,
         sport: team.sport,
         createdAt: team.createdAt,
       });
@@ -354,6 +396,7 @@ export async function GET(request: NextRequest) {
       list.push({
         id: group.id,
         name: group.name,
+        description: group.description,
         groupType: group.groupType,
         createdAt: group.createdAt,
       });
@@ -361,7 +404,12 @@ export async function GET(request: NextRequest) {
     }
     for (const cg of ownedCoaching) {
       const list = coachingGroupsByCoach.get(cg.coachId) ?? [];
-      list.push({ id: cg.id, name: cg.name, createdAt: cg.createdAt });
+      list.push({
+        id: cg.id,
+        name: cg.name,
+        description: cg.description,
+        createdAt: cg.createdAt,
+      });
       coachingGroupsByCoach.set(cg.coachId, list);
     }
   }
@@ -377,6 +425,12 @@ export async function GET(request: NextRequest) {
     let location = '';
     let primaryClubId: string | null = null;
     const userIsClubAdmin = isClubUserType(u.userType);
+    const userIsTeamAdmin =
+      u.userType === UserType.TEAM || u.userType === UserType.TEAM_MANAGER;
+    const userIsGroupAdmin =
+      u.userType === UserType.GROUP || u.userType === UserType.GROUP_ADMIN;
+    const userIsCoach = u.userType === UserType.COACH;
+
     if (isClubsSegment || (isAllSegment && userIsClubAdmin)) {
       const adminClubs = clubsByAdmin.get(u.id) ?? [];
       clubsOwnedCount = adminClubs.length;
@@ -392,11 +446,66 @@ export async function GET(request: NextRequest) {
       const aggregated = aggregateClubAdminSubscriptionStatus(endDates);
       status = aggregated.label;
       statusTone = aggregated.tone;
+    } else if (isTeamsSegment || (isAllSegment && userIsTeamAdmin)) {
+      const adminTeams = teamsByAdmin.get(u.id) ?? [];
+      if (adminTeams.length > 0) {
+        const first = [...adminTeams].sort(
+          (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+        )[0]!;
+        primaryClubId = first.id;
+        companyName = first.name?.trim() || '';
+        location = first.sport?.trim() || '';
+      }
+    } else if (isGroupsSegment || (isAllSegment && userIsGroupAdmin)) {
+      const adminGroups = groupsByAdmin.get(u.id) ?? [];
+      if (adminGroups.length > 0) {
+        const first = [...adminGroups].sort(
+          (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+        )[0]!;
+        primaryClubId = first.id;
+        companyName = first.name?.trim() || '';
+        location = first.groupType?.trim() || '';
+      }
+    } else if (isCoachesSegment || (isAllSegment && userIsCoach)) {
+      const coachGroups = coachingGroupsByCoach.get(u.id) ?? [];
+      if (coachGroups.length > 0) {
+        const first = [...coachGroups].sort(
+          (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+        )[0]!;
+        primaryClubId = first.id;
+        companyName = first.name?.trim() || '';
+      }
     } else {
       location = locationByUserId.get(u.id) ?? '';
       if (isAllSegment && u.userType === UserType.ATHLETE) {
         companyName = '';
       }
+    }
+
+    let dateStart = u.createdAt.toISOString().slice(0, 10);
+    let dateEnd: string | null = inferMembershipEndDateYmd(dateStart, null);
+
+    if (isClubsSegment || (isAllSegment && userIsClubAdmin)) {
+      const adminClubs = clubsByAdmin.get(u.id) ?? [];
+      if (adminClubs.length > 0) {
+        const first = sortClubsByCreatedAtAsc(adminClubs)[0]!;
+        dateStart =
+          parseClubSubscriptionStartDate(first.description, first.createdAt) ||
+          first.createdAt.toISOString().slice(0, 10);
+        const parsedEnd = parseClubSubscriptionEndDate(first.description, first.createdAt);
+        dateEnd = inferMembershipEndDateYmd(
+          dateStart,
+          parsedEnd?.toISOString().slice(0, 10) ?? null,
+        );
+      }
+    }
+
+    const usesClubAggregate =
+      (isClubsSegment || (isAllSegment && userIsClubAdmin)) &&
+      (clubsByAdmin.get(u.id)?.length ?? 0) > 0;
+    if (!usesClubAggregate) {
+      status = periodStatusFromDates({ dateStart, dateEnd });
+      statusTone = membershipStatusToneFromLabel(status);
     }
 
     return {
@@ -408,20 +517,26 @@ export async function GET(request: NextRequest) {
       displayName,
       userType: u.userType,
       country: u.country,
+      imageUrl: resolvePublicImageUrl(u.image),
       location,
-      dateStart: u.createdAt.toISOString().slice(0, 10),
-      dateEnd: null as string | null,
+      dateStart,
+      dateEnd,
       version: versionLabel(u.userType),
       amount: '—',
       status,
-      ...(isClubsSegment || isAllSegment
+      statusTone,
+      ...((isClubsSegment || isAllSegment) && clubsOwnedCount !== undefined
         ? {
             clubsOwnedCount,
             companyName,
-            statusTone,
             primaryClubId: isClubsSegment || userIsClubAdmin ? primaryClubId : null,
           }
-        : {}),
+        : isTeamsSegment || isGroupsSegment || isCoachesSegment || isAllSegment
+          ? {
+              companyName,
+              primaryClubId,
+            }
+          : {}),
     };
   });
 
@@ -433,6 +548,8 @@ export async function GET(request: NextRequest) {
   };
 
   const historyByUserId = new Map<string, NetworkSubscriptionPeriod[]>();
+  const deletedByUserId = new Map<string, SubscriptionPeriodDeletion[]>();
+  const pcuAccessByUserId = new Map<string, PcuAccessWindow>();
   if (userIds.length > 0) {
     const settingsRows = await prisma.userSettings.findMany({
       where: { userId: { in: userIds } },
@@ -440,37 +557,81 @@ export async function GET(request: NextRequest) {
     });
     for (const s of settingsRows) {
       historyByUserId.set(s.userId, readNetworkSubscriptionHistory(s.adminSettings));
+      deletedByUserId.set(s.userId, readDeletedSubscriptionPeriods(s.adminSettings));
+      const pcu = readPcuAccessSettings(s.adminSettings, {
+        accessStartIso: '',
+        accessEndIso: '',
+      });
+      if (pcu.accessStartIso.trim()) {
+        pcuAccessByUserId.set(s.userId, {
+          accessStartIso: pcu.accessStartIso,
+          accessEndIso: pcu.accessEndIso,
+        });
+      }
     }
   }
-
-  const expandEntities =
-    (isClubsSegment || isAllSegment) && membershipMode !== 'lastPerUser';
 
   let users: RegisteredUserListRow[];
   if (membershipMode === 'lastPerUser') {
     const allEntities = expandRegisteredUserListRows(baseRows, entityMaps, {
-      expandEntities: isClubsSegment || isAllSegment,
+      expandEntities:
+        isClubsSegment ||
+        isAllSegment ||
+        isTeamsSegment ||
+        isGroupsSegment ||
+        isCoachesSegment,
     });
     users = buildMembershipListRows(
       allEntities,
       historyByUserId,
       'lastPerUser',
       membershipSort,
+      deletedByUserId,
+      pcuAccessByUserId,
     );
   } else {
     const entityExpanded = expandRegisteredUserListRows(baseRows, entityMaps, {
-      expandEntities,
+      expandEntities: shouldExpandEntityRows,
     });
     users = buildMembershipListRows(
       entityExpanded,
       historyByUserId,
       membershipMode,
       membershipSort,
+      deletedByUserId,
+      pcuAccessByUserId,
     );
   }
 
+  if (needsRowLevelSearchFilter) {
+    users = filterListRowsByTextSearch(users, search);
+  }
+
+  if (hasSubDateRange) {
+    users = filterListRowsBySubscriptionDateRange(
+      users,
+      parseSubscriptionDateField(subDateField),
+      subRangeFrom,
+      subRangeTo,
+    );
+  }
+
+  if (fetchAllMatchingUsers) {
+    const totalFiltered = users.length;
+    users = users.slice((page - 1) * pageSize, page * pageSize);
+    return NextResponse.json({
+      total: totalFiltered,
+      page,
+      pageSize,
+      users,
+      membership: membershipMode,
+      membershipSort,
+      expandedRowCount: users.length,
+    });
+  }
+
   return NextResponse.json({
-    total,
+    total: dbTotal,
     page,
     pageSize,
     users,

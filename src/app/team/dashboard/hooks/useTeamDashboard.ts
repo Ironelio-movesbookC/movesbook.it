@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { getDashboardPathForUserType, isTeamAccountUserType } from '@/utils/dashboardRouting';
 import { filterFormCreatedEntities } from '@/hooks/useManagedEntityCreation';
+import { isEntityWorkspaceSession } from '@/lib/entity/entityDirectAccessSession';
 
 export function useTeamDashboard() {
   const router = useRouter();
@@ -55,6 +56,7 @@ export function useTeamDashboard() {
   const hasFormTeam = formCreatedTeams.length > 0;
 
   useEffect(() => {
+    if (isEntityWorkspaceSession('team')) return;
     if (!hasFormTeam && activeTab === 'my-entity') {
       setActiveTab('my-page');
     }

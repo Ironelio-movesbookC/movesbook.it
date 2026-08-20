@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
@@ -33,14 +33,37 @@ import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/Ch
 import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import { ClubWorkspaceContext } from '@/contexts/ClubWorkspaceContext';
+import { clubProfilePayloadForApi } from '@/lib/club/clubProfilePayload';
+import { type CreatableCompaniesQuota } from '@/lib/club/creatableCompaniesQuota.shared';
+import {
+  canCreateAnotherCompany,
+  getCreatableCompaniesLimit,
+  isCreatableCompaniesUnlimited,
+  remainingCreatableCompanies,
+} from '@/lib/admin/subscriptionManageableUsers';
+import { SUBSCRIPTION_SETTINGS_UPDATED_EVENT } from '@/lib/admin/subscriptionSettingsMock';
+import { getDefaultVersionId } from '@/lib/registration/waysToGetStarted';
+import { applyEntityLogoOnSave } from '@/lib/entity/applyEntityLogoOnSave';
+import {
+  useEntityDirectAccessGuard,
+  useEntityDirectAccessLockedForKind,
+} from '@/hooks/useEntityDirectAccessGuard';
+import { clearEntityCompanyLoginSession, isEntityWorkspaceSession } from '@/lib/entity/entityDirectAccessSession';
+import { fetchPcuAlert } from '@/lib/user/pcuAlertClient';
+import { usePcuAlert } from '@/contexts/PcuAlertContext';
+import { useEntityWorkspaceDashboardNav } from '@/hooks/useEntityWorkspaceDashboardNav';
 import TopBar from '@/app/club/dashboard/components/topbar/TopBar';
 import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 
 function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
+  const { showAlert } = usePcuAlert();
+  const clubDirectAccessLocked = useEntityDirectAccessLockedForKind('club');
+  useEntityDirectAccessGuard(!loading && !!user);
 
   const {
     showAdBanner,
@@ -63,12 +86,51 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
   const [createClubModalKey, setCreateClubModalKey] = useState(0);
   const [createClubSaving, setCreateClubSaving] = useState(false);
+  const [myClubTabVisible, setMyClubTabVisible] = useState(false);
+  const [subscriptionSettingId, setSubscriptionSettingId] = useState<number | null>(null);
+  const [settingsRevision, setSettingsRevision] = useState(0);
   const [showStaffFeedbacks, setShowStaffFeedbacks] = useState(false);
+
+  const showMyClubTab = useCallback(() => {
+    setMyClubTabVisible(true);
+  }, []);
+
+  const hideMyClubTab = useCallback(() => {
+    setMyClubTabVisible(false);
+  }, []);
+
+  useEntityWorkspaceDashboardNav({
+    kind: 'club',
+    searchParams,
+    router,
+    entityDirectAccessLocked: clubDirectAccessLocked,
+    activeTab,
+    setActiveTab,
+    setSelectedEntityId: setSelectedClubId,
+    setMyEntityTabVisible: setMyClubTabVisible,
+  });
 
   const formClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(clubs),
     [clubs],
   );
+
+  const creatableCompaniesQuota = useMemo((): CreatableCompaniesQuota | null => {
+    void settingsRevision;
+    const created = formClubs.length;
+    const limit = getCreatableCompaniesLimit(subscriptionSettingId);
+    if (limit == null) return null;
+
+    const unlimited = isCreatableCompaniesUnlimited(limit);
+    return {
+      limit,
+      created,
+      remaining: remainingCreatableCompanies(limit, created),
+      canCreate: canCreateAnotherCompany(limit, created),
+      unlimited,
+    };
+  }, [formClubs.length, subscriptionSettingId, settingsRevision]);
+
   const hasFormClub = formClubs.length > 0;
   const activeClub = selectedClubId
     ? formClubs.find((c) => c.id === selectedClubId) ?? null
@@ -92,6 +154,28 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
       console.error('Error loading clubs:', error);
     } finally {
       setClubsLoaded(true);
+    }
+  }, []);
+
+  const loadSubscriptionSettingId = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const response = await fetch('/api/user/member-registration-info', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const fallbackId = getDefaultVersionId('club');
+        if (fallbackId) setSubscriptionSettingId(fallbackId);
+        return;
+      }
+      const data = (await response.json()) as { subscriptionSettingId?: number };
+      if (typeof data.subscriptionSettingId === 'number') {
+        setSubscriptionSettingId(data.subscriptionSettingId);
+      }
+    } catch {
+      /* optional */
     }
   }, []);
 
@@ -126,6 +210,20 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     if (savedClubId) setSelectedClubId(savedClubId);
     const savedTab = readClubWorkspaceTab();
     if (savedTab) setActiveTab(savedTab);
+  }, []);
+
+  useEffect(() => {
+    void loadSubscriptionSettingId();
+  }, [loadSubscriptionSettingId]);
+
+  useEffect(() => {
+    const refresh = () => setSettingsRevision((value) => value + 1);
+    window.addEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener('focus', refresh);
+    };
   }, []);
 
   useEffect(() => {
@@ -195,24 +293,46 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   }, [user, loadClubs, loadBannerProfile]);
 
   const handleTabChange = useCallback((tab: ClubWorkspaceTab) => {
+    if (tab === 'my-page') {
+      clearEntityCompanyLoginSession();
+      hideMyClubTab();
+    }
     writeClubWorkspaceTab(tab);
     setActiveTab(tab);
-  }, []);
+  }, [hideMyClubTab]);
 
-  const handleClubSelect = useCallback((clubId: string) => {
-    localStorage.setItem('selectedClub', clubId);
-    setSelectedClubId(clubId);
-    writeClubWorkspaceTab('my-entity');
-    setActiveTab('my-entity');
-  }, []);
+  const handleClubSelect = useCallback(
+    async (clubId: string) => {
+      const openMyClub = () => {
+        localStorage.setItem('selectedClub', clubId);
+        setSelectedClubId(clubId);
+        writeClubWorkspaceTab('my-entity');
+        setActiveTab('my-entity');
+        showMyClubTab();
+      };
+
+      if (!isEntityWorkspaceSession('club')) {
+        const alert = await fetchPcuAlert('login', user?.language || 'en', clubId);
+        if (alert) {
+          showAlert(alert, openMyClub);
+          return;
+        }
+      }
+
+      openMyClub();
+    },
+    [showAlert, showMyClubTab, user?.language],
+  );
 
   const handleMyPageTabClick = useCallback(() => {
+    clearEntityCompanyLoginSession();
+    hideMyClubTab();
     writeClubWorkspaceTab('my-page');
     setActiveTab('my-page');
     if (pathname !== '/club/dashboard') {
       router.push('/club/dashboard');
     }
-  }, [pathname, router]);
+  }, [hideMyClubTab, pathname, router]);
 
   const handleMyClubTabClick = useCallback(() => {
     const clubId = selectedClubId ?? formClubs[0]?.id ?? null;
@@ -228,7 +348,16 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     router.push(`/my-club?clubId=${encodeURIComponent(clubId)}`);
   }, [selectedClubId, formClubs, router]);
 
-  const openCreateClubFlow = () => setShowAdminPasswordConfirm(true);
+  const openCreateClubFlow = () => {
+    if (creatableCompaniesQuota && !creatableCompaniesQuota.canCreate) {
+      showAlert({
+        title: 'Company limit reached',
+        bodyHtml: `<p>You cannot create more companies for this subscription version.</p><p><strong>Limit:</strong> ${creatableCompaniesQuota.limit} · <strong>Already created:</strong> ${creatableCompaniesQuota.created}</p>`,
+      });
+      return;
+    }
+    setShowAdminPasswordConfirm(true);
+  };
 
   const handleAdminPasswordVerified = () => {
     setShowAdminPasswordConfirm(false);
@@ -248,19 +377,24 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ create: true, ...payload }),
+        body: JSON.stringify({ create: true, ...clubProfilePayloadForApi(payload) }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.error || 'Failed to create club');
       }
+      const clubId = data.club?.id as string | undefined;
+      if (clubId && (payload.logoFile || payload.removeLogo)) {
+        await applyEntityLogoOnSave('club', clubId, payload);
+      }
       await loadClubs();
-      if (data.club?.id) {
-        setSelectedClubId(data.club.id);
-        localStorage.setItem('selectedClub', data.club.id);
+      if (clubId) {
+        setSelectedClubId(clubId);
+        localStorage.setItem('selectedClub', clubId);
         writeClubFormProfileHint(true);
         writeClubWorkspaceTab('my-entity');
         setActiveTab('my-entity');
+        showMyClubTab();
       }
       setShowCreateClubModal(false);
     } finally {
@@ -356,6 +490,8 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 entities={formClubs}
                 selectedEntityId={selectedClubId}
                 clubProfileLoaded={clubsLoaded}
+                clubMyClubTabVisible={myClubTabVisible || clubDirectAccessLocked}
+                hideMyPageTab={clubDirectAccessLocked}
                 onEntitySelect={handleClubSelect}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
@@ -372,6 +508,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onClubOgpNewsSectionClick={() => goToDashboardPanel('club-news-ogp')}
                 onClubGlobalNewsSectionClick={() => goToDashboardPanel('club-global-news')}
                 onCreateClubClick={openCreateClubFlow}
+                creatableCompaniesQuota={creatableCompaniesQuota}
                 onMyFeedbacksStaffClick={() => {
                   setActiveTab('my-page');
                   setShowStaffFeedbacks(true);

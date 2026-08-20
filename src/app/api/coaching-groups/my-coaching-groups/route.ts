@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest) {
         description: group.description,
         memberCount: group.members.length,
         createdAt: group.createdAt,
+        imageUrl: getLogoUrlFromEntityDescription(group.description),
         admin: group.coach ? {
           username: group.coach.username,
           name: group.coach.name

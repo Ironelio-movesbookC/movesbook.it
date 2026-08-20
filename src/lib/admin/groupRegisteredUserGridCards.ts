@@ -1,5 +1,6 @@
 import { UserType } from '@prisma/client';
 import type { RegisteredUserListRow } from '@/lib/admin/expandRegisteredUserListRows';
+import { pickLatestMembershipRowPerEntity } from '@/lib/admin/networkSubscriptionHistory';
 
 export type AdminGridCardGroup = {
   userId: string;
@@ -23,10 +24,11 @@ export function groupRowsForAdminGrid(rows: RegisteredUserListRow[]): AdminGridC
     const entityRows = byUser.get(userId) ?? [];
     const base = entityRows.find((r) => r.rowKey === userId) ?? entityRows[0]!;
     const owned = entityRows.filter((r) => r.entityId);
+    const latestOwned = pickLatestMembershipRowPerEntity(owned);
     return {
       userId,
       admin: base,
-      entities: owned.length > 0 ? owned : entityRows,
+      entities: latestOwned.length > 0 ? latestOwned : entityRows,
     };
   });
 }

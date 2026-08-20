@@ -49,6 +49,8 @@ const publicApiRoutes = [
   '/api/outcome-messages',
   /** Public read APIs (editorial news, shared OGP groups, etc.) */
   '/api/public/',
+  /** Used by admin editors (Settings, subscriptions, recipes) — token is often in localStorage only */
+  '/api/translate',
 ];
 
 /** Public share links (read-only workout day / session). */

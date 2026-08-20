@@ -166,7 +166,6 @@ export default function StaffMessagesExperience({
   const [threadDetail, setThreadDetail] = useState<ThreadDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const [composerCategory, setComposerCategory] = useState('feedback');
   const [composerLang, setComposerLang] = useState('');
   const [composerObject, setComposerObject] = useState('');
   const [composerPath, setComposerPath] = useState('');
@@ -396,7 +395,8 @@ export default function StaffMessagesExperience({
     setPage(1);
   };
 
-  const navigateLegacyCategory = (categoryId: string) => {
+  const selectSupportCategory = (categoryId: string) => {
+    if (!SUPPORT_CATS.some((c) => c.id === categoryId)) return;
     setSubPage(categoryId);
     setPage(1);
     setFilterStatus('');
@@ -413,7 +413,6 @@ export default function StaffMessagesExperience({
   };
 
   const resetComposer = useCallback(() => {
-    setComposerCategory('feedback');
     setComposerLang('');
     setComposerObject('');
     setComposerPath('');
@@ -516,8 +515,8 @@ export default function StaffMessagesExperience({
         languageCode: composerLang || undefined,
         pathStaff: composerPath.trim() || undefined,
         realPath: composerRealPath || undefined,
-        errorMessage: composerCategory === 'problem' ? composerErrorMsg.trim() : undefined,
-        supportCategory: mainTab === 'support' ? composerCategory : undefined,
+        errorMessage: subPage === 'problem' ? composerErrorMsg.trim() : undefined,
+        supportCategory: mainTab === 'support' ? subPage : undefined,
         imageUrls: composerImages.map((img) => img.url).slice(0, MAX_SUPPORT_IMAGES),
       };
       const path = mainTab === 'review' ? '/api/messages/reviews' : '/api/messages/support';
@@ -546,7 +545,6 @@ export default function StaffMessagesExperience({
   }, [
     authFetch,
     composerBody,
-    composerCategory,
     composerErrorMsg,
     composerImages,
     composerLang,
@@ -558,6 +556,7 @@ export default function StaffMessagesExperience({
     loadReviewsMine,
     loadSupportFeed,
     resetComposer,
+    subPage,
     t,
   ]);
 
@@ -764,10 +763,11 @@ export default function StaffMessagesExperience({
                         <button
                           key={c.id}
                           type="button"
-                          onClick={() => navigateLegacyCategory(c.id)}
+                          onClick={() => selectSupportCategory(c.id)}
+                          aria-pressed={subPage === c.id}
                           className={`px-2.5 py-1 text-xs font-medium rounded ${
                             subPage === c.id
-                              ? 'bg-[#c43c54] text-white'
+                              ? 'bg-[#c43c54] text-white ring-2 ring-[#c43c54]/25'
                               : 'bg-white border border-slate-300 text-black'
                           }`}
                         >
@@ -935,6 +935,27 @@ export default function StaffMessagesExperience({
                           </div>
                         )}
                       </div>
+                      {isSupportWorkflowCategory(subPage) ? (
+                        <select
+                          value={appliedStatus}
+                          onChange={(e) => {
+                            const status = e.target.value;
+                            setFilterStatus(status);
+                            setAppliedStatus(status);
+                            setPage(1);
+                          }}
+                          aria-label={t('staff_filter_status')}
+                          title={t('staff_filter_status')}
+                          className="border border-slate-300 rounded px-2 py-1 text-xs font-semibold bg-white text-red-600 min-w-[130px]"
+                        >
+                          <option value="">{t('staff_filter_status_all_workflow')}</option>
+                          {SUPPORT_WORKFLOW_STATUS_CODES.map((code) => (
+                            <option key={code} value={code}>
+                              {t(`staff_status_${code}`)}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
                     </div>
                     <ListPageSelector
                       page={page}
@@ -1151,7 +1172,9 @@ export default function StaffMessagesExperience({
                                   <div className="mt-1">
                                     <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                                       {t('staff_status_label')}:{' '}
-                                      {t(`staff_status_${normalizeSupportWorkflowStatus(item.status)}`)}
+                                      <span className="text-red-600">
+                                        {t(`staff_status_${normalizeSupportWorkflowStatus(item.status)}`)}
+                                      </span>
                                     </span>
                                   </div>
                                 ) : null}
@@ -1244,9 +1267,11 @@ export default function StaffMessagesExperience({
                             <p className="mt-1.5">
                               <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
                                 {t('staff_status_label')}:{' '}
-                                {t(
-                                  `staff_status_${normalizeSupportWorkflowStatus(threadDetail.thread.status)}`,
-                                )}
+                                <span className="text-red-600">
+                                  {t(
+                                    `staff_status_${normalizeSupportWorkflowStatus(threadDetail.thread.status)}`,
+                                  )}
+                                </span>
                               </span>
                             </p>
                           ) : null}
@@ -1284,10 +1309,16 @@ export default function StaffMessagesExperience({
                             <li
                               key={m.id}
                               className={`rounded p-2 text-xs ${
-                                m.isStaff ? 'bg-amber-50 border border-amber-100' : 'bg-slate-50 border'
+                                m.isStaff
+                                  ? '!bg-[#fff8cc] border border-[#eadb88]'
+                                  : 'bg-slate-50 border border-slate-200'
                               }`}
                             >
-                              <span className="font-semibold text-slate-600">
+                              <span
+                                className={`font-semibold ${
+                                  m.isStaff ? 'text-amber-900' : 'text-slate-600'
+                                }`}
+                              >
                                 {m.isStaff
                                   ? t('messages_staff_badge')
                                   : m.sender?.name || m.sender?.username || '—'}
@@ -1350,13 +1381,16 @@ export default function StaffMessagesExperience({
                   {SUPPORT_CATS.map((c) => (
                     <label
                       key={c.id}
-                      className="inline-flex items-center gap-1 cursor-pointer !text-black font-medium"
+                      className={`inline-flex items-center gap-1 cursor-pointer font-medium ${
+                        subPage === c.id ? 'text-[#c43c54]' : '!text-black'
+                      }`}
                     >
                       <input
                         type="radio"
-                        name="bug_type"
-                        checked={composerCategory === c.id}
-                        onChange={() => setComposerCategory(c.id)}
+                        name="staff_composer_category"
+                        checked={subPage === c.id}
+                        onChange={() => selectSupportCategory(c.id)}
+                        className="accent-[#c43c54]"
                       />
                       {t(c.labelKey)}
                     </label>
@@ -1393,7 +1427,7 @@ export default function StaffMessagesExperience({
               />
               <input type="hidden" value={composerRealPath} readOnly />
 
-              {mainTab === 'support' && composerCategory === 'problem' && (
+              {mainTab === 'support' && subPage === 'problem' && (
                 <>
                   <label className="block text-xs font-medium !text-black mb-1">{t('staff_error_message')}</label>
                   <input

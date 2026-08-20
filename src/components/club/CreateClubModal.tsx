@@ -2,10 +2,13 @@
 
 import { X } from 'lucide-react';
 import ClubProfileEditor, {
-  type ClubProfileFormPayload,
+  type ClubProfileSavePayload,
 } from '@/components/club/ClubProfileEditor';
+import ClubRegistrationAccountPurchaseStep, {
+  useClubRegistrationAccountSelection,
+} from '@/components/club/ClubRegistrationAccountPurchaseStep';
 
-export type CreateClubFormPayload = ClubProfileFormPayload;
+export type CreateClubFormPayload = ClubProfileSavePayload;
 
 export { CLUB_CATEGORY_OPTIONS } from '@/components/club/ClubProfileEditor';
 
@@ -24,6 +27,8 @@ export default function CreateClubModal({
   onSave,
   saving = false,
 }: CreateClubModalProps) {
+  const { selectedPacks, onSelectPack } = useClubRegistrationAccountSelection();
+
   if (!isOpen) return null;
 
   return (
@@ -53,6 +58,11 @@ export default function CreateClubModal({
           onSave={onSave}
           saving={saving}
           onCancel={onClose}
+        />
+
+        <ClubRegistrationAccountPurchaseStep
+          selectedPacks={selectedPacks}
+          onSelectPack={onSelectPack}
         />
       </div>
     </div>

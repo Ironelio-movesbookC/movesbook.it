@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
   try {
     const result = await listBugFixedMemos({
       searchQuery: searchParams.get('q') || '',
+      status: searchParams.get('status') || '',
       page: Number(searchParams.get('page') || '1'),
       pageSize: Number(searchParams.get('pageSize') || '5'),
     });

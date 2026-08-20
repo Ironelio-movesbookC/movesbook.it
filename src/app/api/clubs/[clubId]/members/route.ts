@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { verifyToken } from '@/lib/auth';
 import { getClubAdminPublicContactRows } from '@/lib/club/clubAdminInfo';
 import { loadClubAdminInfoForUser } from '@/lib/user/clubAdminInfoPersistence';
+import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 
 const prisma = new PrismaClient();
 
@@ -76,7 +77,8 @@ export async function GET(
         name: club.name,
         description: club.description,
         location: club.location,
-        youtubeChannelUrl: club.youtubeChannelUrl
+        youtubeChannelUrl: club.youtubeChannelUrl,
+        imageUrl: getLogoUrlFromEntityDescription(club.description),
       },
       adminContact: {
         rows: adminContactRows,

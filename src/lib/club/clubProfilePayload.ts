@@ -24,6 +24,18 @@ export type ClubProfileFormPayload = {
   referencesLevel: string;
 };
 
+export type ClubProfileSavePayload = ClubProfileFormPayload & {
+  logoFile?: File | null;
+  removeLogo?: boolean;
+};
+
+export function clubProfilePayloadForApi(
+  payload: ClubProfileSavePayload,
+): ClubProfileFormPayload {
+  const { logoFile: _logoFile, removeLogo: _removeLogo, ...rest } = payload;
+  return rest;
+}
+
 export function clubToFormPayload(club: {
   name: string;
   description?: string | null;
@@ -49,6 +61,20 @@ export function clubToFormPayload(club: {
   };
 }
 
+export function mergeClubSubscriptionDates(
+  existingDescription: string | null | undefined,
+  subscriptionStart: string,
+  subscriptionEnd: string,
+): string {
+  const prev = parseClubDescriptionMeta(existingDescription);
+  const meta: ClubDescriptionMeta = {
+    ...prev,
+    subscriptionStart: subscriptionStart.trim().slice(0, 10) || undefined,
+    subscriptionEnd: subscriptionEnd.trim().slice(0, 10) || undefined,
+  };
+  return JSON.stringify(meta);
+}
+
 export function mergeClubDescriptionForSave(
   existingDescription: string | null | undefined,
   payload: ClubProfileFormPayload,
@@ -57,6 +83,7 @@ export function mergeClubDescriptionForSave(
   const prev = parseClubDescriptionMeta(existingDescription);
   const meta: ClubDescriptionMeta = {
     createdViaForm: true,
+    subscriptionStart: prev.subscriptionStart?.trim() || undefined,
     subscriptionEnd:
       prev.subscriptionEnd?.trim() ||
       (options?.isCreate ? defaultClubSubscriptionEndDate() : undefined),
@@ -73,6 +100,7 @@ export function mergeClubDescriptionForSave(
     clubPasswordHash: options?.clubPasswordHash ?? prev.clubPasswordHash,
     referencesHtml: payload.referencesHtml.trim() || undefined,
     referencesLevel: payload.referencesLevel.trim() || undefined,
+    logoUrl: prev.logoUrl?.trim() || undefined,
   };
   const hasMeta = Object.values(meta).some((v) => v !== undefined && v !== '');
   return hasMeta ? JSON.stringify(meta) : JSON.stringify({ createdViaForm: true });

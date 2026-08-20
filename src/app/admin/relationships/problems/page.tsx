@@ -9,9 +9,8 @@ export default function AdminProblemsPage() {
       <AdminCustomerFeedbackPanel
         kind="support"
         category="problem"
-        excludeBugs
         title="Problems"
-        description="Problem reports from users (excluding bug/error reports with technical messages)."
+        description="Problem reports shared by users."
         emptyMessage="No problem reports yet."
       />
     </AdminRelationshipAuthShell>
