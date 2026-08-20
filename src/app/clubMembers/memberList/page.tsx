@@ -17,6 +17,7 @@ import {
 import { SUBSCRIPTION_SETTINGS_UPDATED_EVENT } from '@/lib/admin/subscriptionSettingsMock';
 import { useClubWorkspace } from '@/contexts/ClubWorkspaceContext';
 import type { Column, Member } from '@/types/clubTable';
+import { staffRowTextClass } from '@/lib/club/clubStaff.constants';
 
 const columns: Column[] = [
   {
@@ -39,7 +40,18 @@ const columns: Column[] = [
   { key: 'name', header: 'Name' },
   { key: 'gender', header: 'Gender' },
   { key: 'dateOfBirth', header: 'Date of Birth' },
-  { key: 'operator', header: 'Operator' },
+  {
+    key: 'operator',
+    header: 'Operator',
+    render: (value, row) => {
+      const label = String(value ?? 'Member');
+      const colorClass = staffRowTextClass({
+        staffType: String(row.staffType ?? ''),
+        role: String(row.staffRole ?? ''),
+      });
+      return <span className={colorClass}>{label}</span>;
+    },
+  },
   {
     key: 'memberType',
     header: 'Member Type',

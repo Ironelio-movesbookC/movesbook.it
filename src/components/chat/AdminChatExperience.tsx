@@ -1870,14 +1870,23 @@ export default function AdminChatExperience({
                             className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-white/5"
                             onClick={() => addChannelAdmin(s)}
                           >
-                            <span
-                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
-                              style={{
-                                backgroundColor: subscriberAvatarColor(memberName || label),
-                              }}
-                            >
-                              {subscriberInitials(memberName || label)}
-                            </span>
+                            {s.image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={s.image}
+                                alt=""
+                                className="h-11 w-11 shrink-0 rounded-full object-cover"
+                              />
+                            ) : (
+                              <span
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
+                                style={{
+                                  backgroundColor: subscriberAvatarColor(memberName || label),
+                                }}
+                              >
+                                {subscriberInitials(memberName || label)}
+                              </span>
+                            )}
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-[16px] text-white">
                                 {showNameAndTg ? memberName : label}

@@ -1,4 +1,5 @@
 import { UserType } from '@prisma/client';
+import { CLUB_STAFF_DB_USER_TYPES } from '@/lib/club/clubStaff.constants';
 
 /** Movesbook user types shown on /admin/logins/users (ID5–ID9). */
 export const MOVESBOOK_LOGIN_USER_TYPES: UserType[] = [
@@ -8,12 +9,13 @@ export const MOVESBOOK_LOGIN_USER_TYPES: UserType[] = [
   UserType.TEAM_MANAGER,
   UserType.CLUB,
   UserType.CLUB_TRAINER,
+  ...(CLUB_STAFF_DB_USER_TYPES as unknown as UserType[]),
   UserType.GROUP,
   UserType.GROUP_ADMIN,
 ];
 
 export function movesbookUserTypeLabel(userType: UserType): string {
-  switch (userType) {
+  switch (userType as string) {
     case UserType.ATHLETE:
       return 'Single User';
     case UserType.COACH:
@@ -24,6 +26,12 @@ export function movesbookUserTypeLabel(userType: UserType): string {
     case UserType.CLUB:
     case UserType.CLUB_TRAINER:
       return 'Club admin';
+    case 'CLUB_COADMIN':
+      return 'Club coadmin';
+    case 'CLUB_OPERATOR':
+      return 'Club operator';
+    case 'CLUB_COLLABORATOR':
+      return 'Club collaborator';
     case UserType.GROUP:
     case UserType.GROUP_ADMIN:
       return 'Group admin';

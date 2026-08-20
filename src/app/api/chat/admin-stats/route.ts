@@ -10,8 +10,11 @@ import {
   listClubMemberGroupMemberIds,
 } from '@/lib/club/memberLists';
 import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
+import { CLUB_STAFF_TYPES } from '@/lib/club/clubStaff.constants';
 
 export const dynamic = 'force-dynamic';
+
+const CLUB_STAFF_TYPE_VALUES = CLUB_STAFF_TYPES.map((t) => t.value);
 
 const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
 
@@ -104,14 +107,28 @@ function filtersFromSearchParams(request: NextRequest): StatsFilters {
 }
 
 async function buildStatsResponse(filters: StatsFilters) {
-  const memberIds = filters.clubId ? await getClubMemberUserIds(filters.clubId) : null;
+  // Club Channel: include both club members and club staff (coadmin/operator/collaborator).
+  let clubScopedIds: string[] | null = null;
+  if (filters.clubId) {
+    const [memberIds, staffRows] = await Promise.all([
+      getClubMemberUserIds(filters.clubId),
+      prisma.clubStaff.findMany({
+        where: {
+          clubId: filters.clubId,
+          staffType: { in: [...CLUB_STAFF_TYPE_VALUES] },
+        },
+        select: { userId: true },
+      }),
+    ]);
+    clubScopedIds = [...new Set([...memberIds, ...staffRows.map((r) => r.userId)])];
+  }
 
   const users =
-    memberIds && memberIds.length === 0
+    clubScopedIds && clubScopedIds.length === 0
       ? []
       : await prisma.user.findMany({
           where: filters.clubId
-            ? { id: { in: memberIds! } }
+            ? { id: { in: clubScopedIds! } }
             : { superAdminId: null },
           select: {
             id: true,
@@ -187,6 +204,31 @@ async function buildStatsResponse(filters: StatsFilters) {
   const admins =
     adminIdSet.size === 0 ? [] : users.filter((u) => adminIdSet.has(u.id)).map(toSubscriber);
 
+  const matchesCandidateSearch = (u: {
+    firstName: string | null;
+    surname: string | null;
+    name: string;
+    username: string;
+    telegramAccount: string | null;
+  }) => {
+    if (!filters.candidateSearch) return true;
+    const tg = (u.telegramAccount || '').toLowerCase().replace(/^@+/, '');
+    const fullName = formatMemberDisplayName(u).toLowerCase();
+    const firstName = (u.firstName || '').toLowerCase();
+    const surname = (u.surname || '').toLowerCase();
+    const name = (u.name || '').toLowerCase();
+    const username = (u.username || '').toLowerCase();
+    return (
+      tg.includes(filters.candidateSearch) ||
+      fullName.includes(filters.candidateSearch) ||
+      firstName.includes(filters.candidateSearch) ||
+      surname.includes(filters.candidateSearch) ||
+      name.includes(filters.candidateSearch) ||
+      username.includes(filters.candidateSearch)
+    );
+  };
+
+  // Add Subscribers / Add Admin: club pool is members + staff; require Telegram.
   const candidates = filters.candidates
     ? users
         .filter((u) => {
@@ -195,23 +237,7 @@ async function buildStatsResponse(filters: StatsFilters) {
           if (filters.candidateMode === 'admins') return !adminIdSet.has(u.id);
           return !subscriberIdSet.has(u.id);
         })
-        .filter((u) => {
-          if (!filters.candidateSearch) return true;
-          const tg = (u.telegramAccount || '').toLowerCase().replace(/^@+/, '');
-          const fullName = formatMemberDisplayName(u).toLowerCase();
-          const firstName = (u.firstName || '').toLowerCase();
-          const surname = (u.surname || '').toLowerCase();
-          const name = (u.name || '').toLowerCase();
-          const username = (u.username || '').toLowerCase();
-          return (
-            tg.includes(filters.candidateSearch) ||
-            fullName.includes(filters.candidateSearch) ||
-            firstName.includes(filters.candidateSearch) ||
-            surname.includes(filters.candidateSearch) ||
-            name.includes(filters.candidateSearch) ||
-            username.includes(filters.candidateSearch)
-          );
-        })
+        .filter(matchesCandidateSearch)
         .slice(0, 80)
         .map(toSubscriber)
     : undefined;

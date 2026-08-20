@@ -157,6 +157,11 @@ import {
 } from '@/lib/club/clubTopicsNavigation';
 import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
 import { getAuthToken } from '@/utils/auth.utils';
+import { withSelectedClubId } from '@/lib/club/servicePurchasesClient';
+import {
+  CLUB_STAFF_CHANGED_EVENT,
+  type ClubStaffListItem,
+} from '@/lib/club/clubStaff.constants';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
   return (
@@ -703,6 +708,13 @@ export default function DarkSidebar({
   const [friendsFindOpen, setFriendsFindOpen] = useState(true);
   const [clubManagementOpen, setClubManagementOpen] = useState(false);
   const [clubCurrentOperatorsOpen, setClubCurrentOperatorsOpen] = useState(false);
+  /** Live club-admin profile for Current Operators → Administrator (from /api/user/profile). */
+  const [clubAdminOperatorProfile, setClubAdminOperatorProfile] = useState<{
+    name: string;
+    country: string | null;
+    image: string | null;
+  } | null>(null);
+  const [clubStaffItems, setClubStaffItems] = useState<ClubStaffListItem[]>([]);
   const [accountsAndDeviceOpen, setAccountsAndDeviceOpen] = useState(false);
   const [clubAccountsSectionOpen, setClubAccountsSectionOpen] = useState(false);
   const [clubIdDevicesSectionOpen, setClubIdDevicesSectionOpen] = useState(false);
@@ -735,10 +747,112 @@ export default function DarkSidebar({
   const sidebarProfileImageSrc = resolvePublicImageUrl(
     userImageOverride ?? profileImageFromDb ?? user?.image
   );
+  const clubAdminOperatorDisplayName =
+    clubAdminOperatorProfile?.name || user?.name || 'Admin';
+  const clubAdminOperatorCountry =
+    clubAdminOperatorProfile?.country || user?.country?.trim() || null;
+  const clubAdminOperatorImageSrc = resolvePublicImageUrl(
+    clubAdminOperatorProfile?.image ??
+      userImageOverride ??
+      profileImageFromDb ??
+      user?.image,
+  );
   /** When parent sends a new `users_new.image`, drop local override before paint so banner + sidebar stay in sync. */
   useLayoutEffect(() => {
     setUserImageOverride(undefined);
   }, [profileImageFromDb]);
+
+  useEffect(() => {
+    if (!clubCurrentOperatorsOpen || !user?.id) return;
+    const token = getAuthToken();
+    if (!token) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/user/profile', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          name?: string | null;
+          firstName?: string | null;
+          surname?: string | null;
+          country?: string | null;
+          image?: string | null;
+        };
+        const displayName =
+          [data.firstName, data.surname].filter(Boolean).join(' ').trim() ||
+          data.name?.trim() ||
+          user.name ||
+          'Admin';
+        if (cancelled) return;
+        setClubAdminOperatorProfile({
+          name: displayName,
+          country: data.country?.trim() || null,
+          image: data.image ?? null,
+        });
+      } catch {
+        /* optional — fall back to auth user */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clubCurrentOperatorsOpen, user?.id, user?.name]);
+
+  useEffect(() => {
+    if (!clubCurrentOperatorsOpen) return;
+    const token = getAuthToken();
+    if (!token) return;
+
+    let cancelled = false;
+    const loadStaff = async () => {
+      try {
+        const res = await fetch(withSelectedClubId('/api/club/staff'), {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { items?: ClubStaffListItem[] };
+        if (cancelled) return;
+        setClubStaffItems(Array.isArray(data.items) ? data.items : []);
+      } catch {
+        if (!cancelled) setClubStaffItems([]);
+      }
+    };
+    void loadStaff();
+    window.addEventListener(CLUB_STAFF_CHANGED_EVENT, loadStaff);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(CLUB_STAFF_CHANGED_EVENT, loadStaff);
+    };
+  }, [clubCurrentOperatorsOpen, selectedEntityId]);
+
+  const goToClubStaffList = (preset?: 'coadmin' | 'operator' | 'collaborator') => {
+    writeClubWorkspaceTab('my-entity');
+    const qs = preset ? `?preset=${preset}` : '';
+    router.push(`/club/staff${qs}`);
+  };
+
+  const removeClubStaff = async (staffId: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+    if (!window.confirm('Remove this club staff member?')) return;
+    try {
+      const res = await fetch(withSelectedClubId(`/api/club/staff/${staffId}`), {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      setClubStaffItems((prev) => prev.filter((item) => item.id !== staffId));
+      window.dispatchEvent(new Event(CLUB_STAFF_CHANGED_EVENT));
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     if (!clubManagementOpen) {
@@ -3282,8 +3396,18 @@ export default function DarkSidebar({
                                   Administrator
                                 </div>
                                 <div className="flex gap-2 border-b border-gray-700 px-2 py-2">
-                                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-sm bg-gray-600">
-                                    <UserCircle className="h-10 w-10 text-gray-400" />
+                                  <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-gray-600">
+                                    {clubAdminOperatorImageSrc ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        key={clubAdminOperatorImageSrc}
+                                        src={clubAdminOperatorImageSrc}
+                                        alt=""
+                                        className="absolute inset-0 h-full w-full object-cover"
+                                      />
+                                    ) : (
+                                      <UserCircle className="h-10 w-10 text-gray-400" />
+                                    )}
                                   </div>
                                   <div className="min-w-0 flex-1 text-[11px] leading-snug">
                                     <div className="flex items-center gap-1.5 text-white">
@@ -3291,9 +3415,13 @@ export default function DarkSidebar({
                                       <span>Online</span>
                                     </div>
                                     <div className="text-yellow-300">Admin</div>
-                                    <div className="font-bold text-white">Ironelio Buonocore</div>
+                                    <div className="truncate font-bold text-white">
+                                      {clubAdminOperatorDisplayName}
+                                    </div>
                                     <div className="text-yellow-300">Country</div>
-                                    <div className="text-white">-</div>
+                                    <div className="truncate text-white">
+                                      {clubAdminOperatorCountry || '-'}
+                                    </div>
                                   </div>
                                 </div>
 
@@ -3313,30 +3441,44 @@ export default function DarkSidebar({
                                     <span>Co-admins</span>
                                     <button
                                       type="button"
+                                      onClick={() => goToClubStaffList('coadmin')}
                                       className="flex items-center gap-0.5 font-semibold hover:underline"
                                     >
                                       <Plus className="h-3 w-3" />
                                       Add
                                     </button>
                                   </div>
-                                  <div className="flex items-center gap-2 px-2 py-2">
-                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
-                                      <UserCircle className="h-7 w-7 text-gray-400" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="text-[11px] font-medium text-yellow-300">
-                                        shrutika chaudhari
-                                      </div>
-                                      <div className="text-[11px] text-white">90 Members</div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
-                                      aria-label="Remove"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </button>
-                                  </div>
+                                  {clubStaffItems
+                                    .filter((item) => item.staffType === 'coadmin')
+                                    .map((item) => {
+                                      const src = resolvePublicImageUrl(item.image);
+                                      return (
+                                        <div key={item.id} className="flex items-center gap-2 px-2 py-2">
+                                          {src ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={src} alt="" className="h-9 w-9 shrink-0 rounded-sm object-cover" />
+                                          ) : (
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
+                                              <UserCircle className="h-7 w-7 text-gray-400" />
+                                            </div>
+                                          )}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[11px] font-medium text-yellow-300">
+                                              {item.name}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white">@{item.username}</div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => void removeClubStaff(item.id)}
+                                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
+                                            aria-label="Remove"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
                                 </div>
 
                                 <div className="border-b border-gray-700">
@@ -3347,34 +3489,92 @@ export default function DarkSidebar({
                                     </div>
                                     <button
                                       type="button"
+                                      onClick={() => goToClubStaffList('operator')}
                                       className="flex items-center gap-0.5 font-semibold hover:underline"
                                     >
                                       <Plus className="h-3 w-3" />
                                       Add
                                     </button>
                                   </div>
+                                  {clubStaffItems
+                                    .filter((item) => item.staffType === 'operator')
+                                    .map((item) => {
+                                      const src = resolvePublicImageUrl(item.image);
+                                      return (
+                                        <div key={item.id} className="flex items-center gap-2 px-2 py-2">
+                                          {src ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={src} alt="" className="h-9 w-9 shrink-0 rounded-sm object-cover" />
+                                          ) : (
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
+                                              <UserCircle className="h-7 w-7 text-gray-400" />
+                                            </div>
+                                          )}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[11px] font-medium text-yellow-300">
+                                              {item.name}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white">@{item.username}</div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => void removeClubStaff(item.id)}
+                                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
+                                            aria-label="Remove"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
                                 </div>
 
                                 <div>
-                                  <div className="flex items-center gap-2 border-b border-gray-700 bg-[#383838] px-2 py-1.5 text-[11px] font-semibold text-white">
-                                    <Contact2 className="h-4 w-4 shrink-0 opacity-95" />
-                                    <span>Staff & collaborators</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 px-2 py-2">
-                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
-                                      <UserCircle className="h-7 w-7 text-gray-400" />
-                                    </div>
-                                    <div className="min-w-0 flex-1 text-[11px] font-medium text-yellow-300">
-                                      shrutika chaudhari
+                                  <div className="flex items-center justify-between bg-[#c4c4c4] px-2 py-1.5 text-[11px] font-semibold text-gray-900">
+                                    <div className="flex items-center gap-2">
+                                      <UserCircle className="h-4 w-4 text-emerald-700" />
+                                      <span>Collaborators</span>
                                     </div>
                                     <button
                                       type="button"
-                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
-                                      aria-label="Remove"
+                                      onClick={() => goToClubStaffList('collaborator')}
+                                      className="flex items-center gap-0.5 font-semibold hover:underline"
                                     >
-                                      <X className="h-3 w-3" />
+                                      <Plus className="h-3 w-3" />
+                                      Add
                                     </button>
                                   </div>
+                                  {clubStaffItems
+                                    .filter((item) => item.staffType === 'collaborator')
+                                    .map((item) => {
+                                      const src = resolvePublicImageUrl(item.image);
+                                      return (
+                                        <div key={item.id} className="flex items-center gap-2 px-2 py-2">
+                                          {src ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={src} alt="" className="h-9 w-9 shrink-0 rounded-sm object-cover" />
+                                          ) : (
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
+                                              <UserCircle className="h-7 w-7 text-gray-400" />
+                                            </div>
+                                          )}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[11px] font-medium text-yellow-300">
+                                              {item.name}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white">@{item.username}</div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => void removeClubStaff(item.id)}
+                                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
+                                            aria-label="Remove"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
                                 </div>
                               </div>
                             )}

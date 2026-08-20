@@ -105,6 +105,7 @@ model User {
   procedureReceiptsAsOperator  ProcedureReceipt[] @relation("ProcedureReceiptOperator")
   clubSharedOgpArticles        ClubSharedOgpArticle[] @relation("ClubSharedOgpBy")
   clubSharedNews               ClubSharedNews[]       @relation("ClubSharedNewsBy")
+  clubStaffRoles               ClubStaff[]
 
   @@map("users_new")
 }
@@ -1663,6 +1664,7 @@ model Club {
   admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
   sharedOgpArticles  ClubSharedOgpArticle[]
   sharedNews         ClubSharedNews[]
+  staff              ClubStaff[]
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
   @@map("clubs_new")
@@ -1792,6 +1794,28 @@ model ClubMemberGroupMember {
   @@unique([groupId, memberId])
   @@index([memberId])
   @@map("club_member_group_members")
+}
+
+/// Club-level staff (Operator / Collaborator / Coadmin) managed by the club admin.
+model ClubStaff {
+  id         String   @id @default(cuid())
+  clubId     String
+  userId     String
+  /// coadmin | operator | collaborator
+  staffType  String
+  /// Employment area / role (e.g. Instructor, Personal trainer)
+  role       String
+  /// JSON string array of permission keys (management, payment, …)
+  userLevels String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  club       Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, userId])
+  @@index([clubId])
+  @@index([userId])
+  @@map("club_staff")
 }
 
 /// Club members marked as favourites by the club admin.
@@ -2078,6 +2102,9 @@ enum UserType {
   TEAM_MANAGER
   CLUB
   CLUB_TRAINER
+  CLUB_COADMIN
+  CLUB_OPERATOR
+  CLUB_COLLABORATOR
   GROUP
   GROUP_ADMIN
   ADMIN

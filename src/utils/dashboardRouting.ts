@@ -12,6 +12,9 @@ export function getDashboardPathForUserType(userType: string): string {
     case 'TEAM_MANAGER':
       return '/team/dashboard';
     case 'CLUB_TRAINER':
+    case 'CLUB_COADMIN':
+    case 'CLUB_OPERATOR':
+    case 'CLUB_COLLABORATOR':
     case 'CLUB':
       return '/club/dashboard';
     case 'GROUP':
@@ -24,6 +27,15 @@ export function getDashboardPathForUserType(userType: string): string {
 
 export function isClubAccountUserType(userType: string): boolean {
   return userType === 'CLUB_TRAINER' || userType === 'CLUB';
+}
+
+/** Club staff accounts created from MY CLUB → Staff (coadmin / operator / collaborator). */
+export function isClubStaffAccountUserType(userType: string): boolean {
+  return (
+    userType === 'CLUB_COADMIN' ||
+    userType === 'CLUB_OPERATOR' ||
+    userType === 'CLUB_COLLABORATOR'
+  );
 }
 
 /** Team admin accounts (DB stores `TEAM`; legacy UI may use `TEAM_MANAGER`). */
