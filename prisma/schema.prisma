@@ -24,6 +24,8 @@ model User {
   securityQuestion         String?
   securityAnswer           String?
   clubMemberships          ClubMember[]
+  clubMemberGroupItems     ClubMemberGroupMember[]
+  clubMemberFavorites      ClubMemberFavorite[]
   ownedClubs               Club[]                @relation("ClubOwner")
   coaches                  CoachAthlete[]        @relation("AthleteCoaches")
   athletes                 CoachAthlete[]        @relation("CoachAthletes")
@@ -1651,6 +1653,8 @@ model Club {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   members            ClubMember[]
+  memberGroups       ClubMemberGroup[]
+  memberFavorites    ClubMemberFavorite[]
   websiteTopics      ClubWebsiteTopic[]
   procedureRecords   ProcedureRecord[]
   procedureReceipts  ProcedureReceipt[]
@@ -1761,6 +1765,47 @@ model ClubMember {
   @@unique([clubId, memberId])
   @@index([memberId], map: "club_members_new_memberId_fkey")
   @@map("club_members_new")
+}
+
+/// Named member lists created by club admin from Archive — Members.
+model ClubMemberGroup {
+  id        String                  @id @default(cuid())
+  clubId    String
+  name      String
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  club      Club                    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  members   ClubMemberGroupMember[]
+
+  @@index([clubId])
+  @@map("club_member_groups")
+}
+
+model ClubMemberGroupMember {
+  id        String          @id @default(cuid())
+  groupId   String
+  memberId  String
+  createdAt DateTime        @default(now())
+  group     ClubMemberGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  member    User            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, memberId])
+  @@index([memberId])
+  @@map("club_member_group_members")
+}
+
+/// Club members marked as favourites by the club admin.
+model ClubMemberFavorite {
+  id        String   @id @default(cuid())
+  clubId    String
+  memberId  String
+  createdAt DateTime @default(now())
+  club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  member    User     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, memberId])
+  @@index([memberId])
+  @@map("club_member_favorites")
 }
 
 model Group {

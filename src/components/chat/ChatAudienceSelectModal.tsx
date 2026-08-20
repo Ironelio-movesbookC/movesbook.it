@@ -11,6 +11,11 @@ import {
   DEFAULT_CLUB_MEMBER_NAME_VISIBILITY,
   type ClubMemberNameVisibility,
 } from '@/lib/chat/clubMemberNameVisibility';
+import {
+  DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY,
+  MOVESBOOK_USER_NAME_VISIBILITY_OPTIONS,
+  type MovesbookUserNameVisibility,
+} from '@/lib/chat/movesbookUserNameVisibility';
 
 type ChatAudienceSelectModalProps = {
   onSelect: (audience: ChatAudience) => void;
@@ -40,6 +45,17 @@ export default function ChatAudienceSelectModal({
   const [loadingVisibility, setLoadingVisibility] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState(false);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
+
+  const [movesbookNameVisibilityOpen, setMovesbookNameVisibilityOpen] = useState(false);
+  const [movesbookVisibility, setMovesbookVisibility] = useState<MovesbookUserNameVisibility>(
+    DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY
+  );
+  const [draftMovesbookVisibility, setDraftMovesbookVisibility] = useState<MovesbookUserNameVisibility>(
+    DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY
+  );
+  const [loadingMovesbookVisibility, setLoadingMovesbookVisibility] = useState(false);
+  const [savingMovesbookVisibility, setSavingMovesbookVisibility] = useState(false);
+  const [movesbookVisibilityError, setMovesbookVisibilityError] = useState<string | null>(null);
 
   const loadVisibility = useCallback(async () => {
     setLoadingVisibility(true);
@@ -71,6 +87,7 @@ export default function ChatAudienceSelectModal({
   const openNameVisibility = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    setMovesbookNameVisibilityOpen(false);
     setDraftVisibility(visibility);
     setNameVisibilityOpen(true);
   };
@@ -98,6 +115,67 @@ export default function ChatAudienceSelectModal({
       setVisibilityError('Could not save setting.');
     } finally {
       setSavingVisibility(false);
+    }
+  };
+
+  const loadMovesbookVisibility = useCallback(async () => {
+    setLoadingMovesbookVisibility(true);
+    setMovesbookVisibilityError(null);
+    try {
+      const res = await fetch('/api/chat/movesbook-user-name-visibility', {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const v =
+          (data.visibility as MovesbookUserNameVisibility) ||
+          DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY;
+        setMovesbookVisibility(v);
+        setDraftMovesbookVisibility(v);
+      }
+    } catch {
+      setMovesbookVisibilityError('Could not load name visibility setting.');
+    } finally {
+      setLoadingMovesbookVisibility(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!movesbookNameVisibilityOpen) return;
+    void loadMovesbookVisibility();
+  }, [movesbookNameVisibilityOpen, loadMovesbookVisibility]);
+
+  const openMovesbookUserNameVisibility = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setNameVisibilityOpen(false);
+    setDraftMovesbookVisibility(movesbookVisibility);
+    setMovesbookNameVisibilityOpen(true);
+  };
+
+  const saveMovesbookUserNameVisibility = async () => {
+    setSavingMovesbookVisibility(true);
+    setMovesbookVisibilityError(null);
+    try {
+      const res = await fetch('/api/chat/movesbook-user-name-visibility', {
+        method: 'PUT',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ visibility: draftMovesbookVisibility }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setMovesbookVisibilityError(data?.error || 'Could not save setting.');
+        return;
+      }
+      setMovesbookVisibility(draftMovesbookVisibility);
+      setMovesbookNameVisibilityOpen(false);
+    } catch {
+      setMovesbookVisibilityError('Could not save setting.');
+    } finally {
+      setSavingMovesbookVisibility(false);
     }
   };
 
@@ -153,6 +231,17 @@ export default function ChatAudienceSelectModal({
                   className="flex shrink-0 items-center justify-center rounded-r-lg px-3 text-gray-500 transition-colors hover:bg-blue-100 hover:text-gray-800"
                   title="Name visibility settings"
                   aria-label="Club member name visibility settings"
+                >
+                  <Settings className="h-5 w-5" />
+                </button>
+              )}
+              {option.value === 'movesbook-user' && (
+                <button
+                  type="button"
+                  onClick={openMovesbookUserNameVisibility}
+                  className="flex shrink-0 items-center justify-center rounded-r-lg px-3 text-gray-500 transition-colors hover:bg-blue-100 hover:text-gray-800"
+                  title="Name visibility settings"
+                  aria-label="Movesbook user name visibility settings"
                 >
                   <Settings className="h-5 w-5" />
                 </button>
@@ -246,6 +335,86 @@ export default function ChatAudienceSelectModal({
                 className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {savingVisibility ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {movesbookNameVisibilityOpen && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
+          <div
+            className="w-full max-w-sm rounded-lg bg-white shadow-xl"
+            role="dialog"
+            aria-labelledby="movesbook-user-name-visibility-title"
+          >
+            <div className="flex items-start justify-between border-b border-gray-200 px-5 py-4">
+              <div>
+                <h3
+                  id="movesbook-user-name-visibility-title"
+                  className="text-base font-semibold text-gray-900"
+                >
+                  Movesbook user name visibility
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Others can still find you by username or Telegram ID in Search.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMovesbookNameVisibilityOpen(false)}
+                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 px-5 py-4">
+              {loadingMovesbookVisibility ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : (
+                MOVESBOOK_USER_NAME_VISIBILITY_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 px-3 py-2.5 hover:bg-gray-50"
+                  >
+                    <input
+                      type="radio"
+                      name="movesbook-user-name-visibility"
+                      className="mt-1"
+                      checked={draftMovesbookVisibility === opt.value}
+                      onChange={() => setDraftMovesbookVisibility(opt.value)}
+                    />
+                    <span className="text-sm text-gray-800">
+                      {opt.label}
+                      {opt.value === DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY && (
+                        <span className="ml-1 text-xs text-gray-400">(default)</span>
+                      )}
+                    </span>
+                  </label>
+                ))
+              )}
+              {movesbookVisibilityError && (
+                <p className="text-sm text-red-600">{movesbookVisibilityError}</p>
+              )}
+            </div>
+
+            <div className="flex gap-2 border-t border-gray-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setMovesbookNameVisibilityOpen(false)}
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveMovesbookUserNameVisibility()}
+                disabled={savingMovesbookVisibility || loadingMovesbookVisibility}
+                className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {savingMovesbookVisibility ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>

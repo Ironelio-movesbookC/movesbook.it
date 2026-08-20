@@ -10,6 +10,11 @@ import {
   loadClubMemberNameVisibilityMap,
   resolveClubMemberPublicName,
 } from '@/lib/chat/loadClubMemberNameVisibility';
+import {
+  DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY,
+  resolveMovesbookUserPublicName,
+} from '@/lib/chat/movesbookUserNameVisibility';
+import { loadMovesbookUserNameVisibilityMap } from '@/lib/chat/loadMovesbookUserNameVisibility';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,6 +74,13 @@ export async function GET(request: NextRequest) {
           { username: { contains: searchNorm } },
           { name: { contains: searchNorm } },
         ];
+      } else if (audience === 'movesbook-user') {
+        // For movesbook-user, username / Telegram are always searchable; name match is gated by target's setting.
+        whereClause.OR = [
+          { telegramAccount: { contains: searchNorm } },
+          { username: { contains: searchNorm } },
+          { name: { contains: searchNorm } },
+        ];
       } else {
         whereClause.OR = [
           { telegramAccount: { contains: searchNorm } },
@@ -92,6 +104,11 @@ export async function GET(request: NextRequest) {
         ? await loadClubMemberNameVisibilityMap(users.map((u) => u.id))
         : null;
 
+    const movesbookVisibilityMap =
+      audience === 'movesbook-user'
+        ? await loadMovesbookUserNameVisibilityMap(users.map((u) => u.id))
+        : null;
+
     let orderedUsers = users;
 
     if (audience === 'club-member' && visibilityCtx && visibilityMap) {
@@ -113,6 +130,29 @@ export async function GET(request: NextRequest) {
           target: u,
           visibility,
           ctx: visibilityCtx,
+        });
+        return !resolved.nameHidden;
+      });
+    }
+
+    if (audience === 'movesbook-user' && movesbookVisibilityMap) {
+      orderedUsers = users.filter((u) => {
+        if (searchNorm.length === 0) return true;
+        const q = searchNorm.toLowerCase();
+        const tg = (u.telegramAccount ?? '').toLowerCase().replace(/^@+/, '');
+        const username = (u.username ?? '').toLowerCase();
+        const matchedIdentity = tg.includes(q) || username.includes(q);
+        if (matchedIdentity) return true;
+
+        // Name-only match: only if viewer may see this target's whole name
+        const name = u.name.toLowerCase();
+        if (!name.includes(q)) return false;
+        const visibility =
+          movesbookVisibilityMap.get(u.id) ?? DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY;
+        const resolved = resolveMovesbookUserPublicName({
+          viewerId: myId,
+          target: u,
+          visibility,
         });
         return !resolved.nameHidden;
       });
@@ -152,6 +192,16 @@ export async function GET(request: NextRequest) {
           target: u,
           visibility,
           ctx: visibilityCtx,
+        });
+        name = resolved.name;
+        nameHidden = resolved.nameHidden;
+      } else if (audience === 'movesbook-user' && movesbookVisibilityMap) {
+        const visibility =
+          movesbookVisibilityMap.get(u.id) ?? DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY;
+        const resolved = resolveMovesbookUserPublicName({
+          viewerId: myId,
+          target: u,
+          visibility,
         });
         name = resolved.name;
         nameHidden = resolved.nameHidden;

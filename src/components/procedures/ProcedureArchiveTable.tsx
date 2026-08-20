@@ -13,6 +13,8 @@ type Props = {
   emptyMessage?: string;
   /** Multi-select checkboxes (Archive of Deadlines → pay more). */
   selectable?: boolean;
+  /** When true, all rows with an id can be selected (default: only rows with rest > 0). */
+  selectableAll?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (row: Member) => void;
   onToggleSelectAll?: (checked: boolean) => void;
@@ -27,6 +29,7 @@ export default function ProcedureArchiveTable({
   loading,
   emptyMessage = 'No records found.',
   selectable,
+  selectableAll = false,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
@@ -39,7 +42,9 @@ export default function ProcedureArchiveTable({
     return <p className="text-gray-500 py-8 text-center">{emptyMessage}</p>;
   }
 
-  const selectableRows = rows.filter((r) => r.id && (r.rest ?? 0) > 0);
+  const selectableRows = selectableAll
+    ? rows.filter((r) => r.id)
+    : rows.filter((r) => r.id && (r.rest ?? 0) > 0);
   const allSelectableChecked =
     selectableRows.length > 0 &&
     selectableRows.every((r) => r.id && selectedIds?.has(r.id));
@@ -71,7 +76,7 @@ export default function ProcedureArchiveTable({
           {rows.map((row) => {
             const isSelected = selectedId && row.id === selectedId;
             const isChecked = Boolean(row.id && selectedIds?.has(row.id));
-            const canCheck = (row.rest ?? 0) > 0;
+            const canCheck = selectableAll ? Boolean(row.id) : (row.rest ?? 0) > 0;
             return (
               <tr
                 key={row.id ?? `${row.name}-${row.insertDate}`}

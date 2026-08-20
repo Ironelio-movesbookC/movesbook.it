@@ -14,6 +14,11 @@ import {
   loadClubMemberNameVisibilityMap,
   resolveClubMemberPublicName,
 } from '@/lib/chat/loadClubMemberNameVisibility';
+import {
+  DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY,
+  resolveMovesbookUserPublicName,
+} from '@/lib/chat/movesbookUserNameVisibility';
+import { loadMovesbookUserNameVisibilityMap } from '@/lib/chat/loadMovesbookUserNameVisibility';
 
 async function loadMyClubAdminIds(myId: string, clubId?: string | null): Promise<Set<string>> {
   const clubs = await prisma.club.findMany({
@@ -207,6 +212,13 @@ export async function GET(request: NextRequest) {
           )
         : null;
 
+    const movesbookVisibilityMap =
+      audience === 'movesbook-user'
+        ? await loadMovesbookUserNameVisibilityMap(
+            filtered.map((c) => (c.user1Id === myId ? c.user2.id : c.user1.id))
+          )
+        : null;
+
     const list = await Promise.all(
       filtered.map(async (c) => {
         const other = c.user1Id === myId ? c.user2 : c.user1;
@@ -233,6 +245,14 @@ export async function GET(request: NextRequest) {
             target: other,
             visibility,
             ctx: visibilityCtx,
+          }).name;
+        } else if (audience === 'movesbook-user' && movesbookVisibilityMap) {
+          const visibility =
+            movesbookVisibilityMap.get(other.id) ?? DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY;
+          displayName = resolveMovesbookUserPublicName({
+            viewerId: myId,
+            target: other,
+            visibility,
           }).name;
         }
 

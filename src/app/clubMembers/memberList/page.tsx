@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { UserPlus } from 'lucide-react';
-import ClubArchivePage from '@/components/club/archives/ClubArchivePage';
+import ClubMemberArchivePage, { memberTypeBadge } from '@/components/club/members/ClubMemberArchivePage';
 import AddMemberModal from '@/components/AddMemberModal';
 import ClubMemberArchiveHeader from './components/status';
 import { clubApiFetch, getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesClient';
@@ -18,34 +18,7 @@ import { SUBSCRIPTION_SETTINGS_UPDATED_EVENT } from '@/lib/admin/subscriptionSet
 import { useClubWorkspace } from '@/contexts/ClubWorkspaceContext';
 import type { Column, Member } from '@/types/clubTable';
 
-function memberTypeBadge(value: unknown) {
-  const label = String(value ?? 'Standard').trim() || 'Standard';
-  const lower = label.toLowerCase();
-  const className =
-    lower.includes('premium') || lower.includes('gold')
-      ? 'bg-violet-100 text-violet-800'
-      : lower.includes('vip')
-        ? 'bg-amber-100 text-amber-800'
-        : 'bg-gray-100 text-gray-700';
-  return (
-    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${className}`}>
-      {label}
-    </span>
-  );
-}
-
 const columns: Column[] = [
-  {
-    key: 'checked',
-    header: (
-      <span className="inline-flex w-4 justify-center" aria-hidden>
-        □
-      </span>
-    ),
-    render: () => (
-      <input type="checkbox" className="h-4 w-4 rounded border-gray-300" aria-label="Select member" />
-    ),
-  },
   {
     key: 'image',
     header: 'Image',
@@ -81,8 +54,7 @@ const columns: Column[] = [
   {
     key: 'insertDate',
     header: 'Insert Date',
-    render: (_value, row: Member) =>
-      String(row.insertDateDisplay || row.insertDate || '-'),
+    render: (_value, row) => String(row.insertDateDisplay || row.insertDate || '-'),
   },
 ];
 
@@ -217,14 +189,11 @@ export default function MemberListPage() {
       {addError ? (
         <p className="text-sm text-red-600">{addError}</p>
       ) : null}
-
-      <ClubArchivePage
-        title="Archive — Members"
-        archiveType="members"
+      <ClubMemberArchivePage
         columns={columns}
         refreshKey={refreshKey}
         footerHint="Live data from club members in the database."
-        headerAction={
+        addMemberAction={
           <button
             type="button"
             onClick={() => {
