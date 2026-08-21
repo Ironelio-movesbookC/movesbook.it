@@ -214,6 +214,15 @@ export function CountryEditModal({ row, onClose, onSave, onRegionsCountChange }:
     if (!row || !form || !extended) return;
     const payload = formToSavePayload(form, extended);
     saveCountryExtendedSettings(row.id, payload.extended);
+    void fetch('/api/admin/country-pricing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        countryName: row.name,
+        annualIncome: payload.extended.annualIncome,
+        ratioWithUs: payload.extended.ratioWithUs,
+      }),
+    }).catch(() => undefined);
     onSave(row.id, payload);
     onClose();
   };

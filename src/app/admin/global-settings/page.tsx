@@ -30,6 +30,28 @@ function resolvePanel(panel: string | null): 'user-types' | 'foods-and-dishes' {
 }
 
 function UserTypesPanel() {
+  const [checkDiscount100, setCheckDiscount100] = useState(true);
+  const [discountEvery100, setDiscountEvery100] = useState('0');
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('movesbook_discount_every_100');
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { enabled?: boolean; percent?: string };
+      if (typeof parsed.enabled === 'boolean') setCheckDiscount100(parsed.enabled);
+      if (typeof parsed.percent === 'string') setDiscountEvery100(parsed.percent);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const persistDiscount100 = (enabled: boolean, percent: string) => {
+    localStorage.setItem(
+      'movesbook_discount_every_100',
+      JSON.stringify({ enabled, percent })
+    );
+  };
+
   return (
     <div className="flex-1 bg-white p-6">
       <div className="flex justify-between items-center mb-6">
@@ -69,7 +91,15 @@ function UserTypesPanel() {
       <div className="border border-gray-200 mb-6 p-4 bg-[#fafafa]">
         <h3 className="font-bold text-gray-800 mb-2 text-sm">Versions — promocode discount</h3>
         <label className="flex items-start gap-3 text-sm text-gray-700 cursor-pointer">
-          <input type="checkbox" className="mt-1" defaultChecked />
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={checkDiscount100}
+            onChange={(e) => {
+              setCheckDiscount100(e.target.checked);
+              persistDiscount100(e.target.checked, discountEvery100);
+            }}
+          />
           <span>
             Check how much Discount will be done every 100 points (used when promocodes grant credits
             that convert to subscription discount). Configure the discount percentage on each
@@ -82,7 +112,11 @@ function UserTypesPanel() {
             type="number"
             min={0}
             max={100}
-            defaultValue={0}
+            value={discountEvery100}
+            onChange={(e) => {
+              setDiscountEvery100(e.target.value);
+              persistDiscount100(checkDiscount100, e.target.value);
+            }}
             className="w-20 border border-gray-300 px-2 py-1 rounded-sm"
           />
         </div>

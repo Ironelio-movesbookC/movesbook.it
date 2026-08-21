@@ -76,6 +76,7 @@ export default function QuickRegisterForm() {
   const [credit2, setCredit2] = useState('');
   const [membersNumber, setMembersNumber] = useState('');
   const [totalPayment, setTotalPayment] = useState('');
+  const [payWithVirtualCard, setPayWithVirtualCard] = useState(true);
 
   const [promoFeedback, setPromoFeedback] = useState<{ text: string; kind: 'success' | 'error' | '' }>({
     text: '',
@@ -168,7 +169,13 @@ export default function QuickRegisterForm() {
   );
 
   const loadSubscriptionData = useCallback(
-    async (opts?: { userTypeVal?: string; versionVal?: string; promo?: string; regType?: string }) => {
+    async (opts?: {
+      userTypeVal?: string;
+      versionVal?: string;
+      promo?: string;
+      regType?: string;
+      countryVal?: string;
+    }) => {
       const ut = opts?.userTypeVal ?? userType;
       const vid = opts?.versionVal ?? versionId;
       if (!ut || !vid) {
@@ -184,6 +191,7 @@ export default function QuickRegisterForm() {
             userType: ut,
             version_id: vid,
             promocode: opts?.promo ?? promocode,
+            country: opts?.countryVal ?? country,
           }),
         });
         const data = await res.json();
@@ -234,7 +242,7 @@ export default function QuickRegisterForm() {
         clearSubscriptionDetails();
       }
     },
-    [userType, versionId, promocode, registrationType, clearSubscriptionDetails]
+    [userType, versionId, promocode, registrationType, country, clearSubscriptionDetails]
   );
 
   const validatePromocode = useCallback(
@@ -419,7 +427,12 @@ export default function QuickRegisterForm() {
     try {
       const params = new URLSearchParams({ username: u, email: email.trim().toLowerCase() });
       const res = await fetch(`/api/users/quick-register/check-username?${params.toString()}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setUsernameStatus('Could not verify username. Please try again.');
+        setUsernameStatusColor('#a61b1b');
+        return;
+      }
       if (data.available) {
         setUsernameStatus('This username is available.');
         setUsernameStatusColor('#116611');
@@ -428,7 +441,8 @@ export default function QuickRegisterForm() {
         setUsernameStatusColor('#a61b1b');
       }
     } catch {
-      setUsernameStatus('');
+      setUsernameStatus('Could not verify username. Please try again.');
+      setUsernameStatusColor('#a61b1b');
     }
   };
 
@@ -580,7 +594,11 @@ export default function QuickRegisterForm() {
           email: email.trim().toLowerCase(),
         });
         const res = await fetch(`/api/users/quick-register/check-username?${params.toString()}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError('Could not verify username. Please try again.');
+          return;
+        }
         if (!data.available) {
           setError(data.message || 'This username is already taken. Please choose another.');
           return;
@@ -615,6 +633,8 @@ export default function QuickRegisterForm() {
           invite_by_movesbook: inviteByMovesbook,
           origin_email: originEmail || undefined,
           disccount_hidden: discountHidden,
+          payment_method: payWithVirtualCard ? 'virtual_card' : 'standard',
+          total_payment: totalPayment,
         }),
       });
       const raw = await res.text();
@@ -837,7 +857,18 @@ export default function QuickRegisterForm() {
               <div className="qr-field-row">
                 <span className="qr-label">Country*</span>
                 <div className="qr-control">
-                  <select id="sltCountry" name="country" value={country} onChange={(e) => setCountry(e.target.value)}>
+                  <select
+                    id="sltCountry"
+                    name="country"
+                    value={country}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setCountry(next);
+                      if (userType && versionId) {
+                        void loadSubscriptionData({ promo: promocode, countryVal: next });
+                      }
+                    }}
+                  >
                     <option value="">Select country</option>
                     {COUNTRY_SELECT_OPTIONS.map((c) => (
                       <option key={c.name} value={c.name}>
@@ -1081,6 +1112,14 @@ export default function QuickRegisterForm() {
                   />
                 </div>
                 <div className="payment-row-item payment-logos">
+                  <label className="inline-flex items-center gap-2 text-sm mr-3" style={{ color: '#7b0a26' }}>
+                    <input
+                      type="checkbox"
+                      checked={payWithVirtualCard}
+                      onChange={(e) => setPayWithVirtualCard(e.target.checked)}
+                    />
+                    Pay with virtual credit card
+                  </label>
                   <Image src="/img/payment_logo/logo_visa.svg" alt="Visa" width={45} height={28} />
                   <Image src="/img/payment_logo/logo_mc.svg" alt="Mastercard" width={45} height={28} />
                   <Image src="/img/payment_logo/logo_discover.svg" alt="Discover" width={45} height={28} />

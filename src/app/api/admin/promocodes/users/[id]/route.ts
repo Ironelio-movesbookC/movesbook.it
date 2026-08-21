@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requirePromocodeAccess } from '@/lib/promocodes/promocodeAccess';
 import {
+  listConnectionChartForUser,
   listCreditsForUser,
   listInvitesAndRegistrationsForUser,
 } from '@/lib/promocodes/promocodeUsersStatsService';
@@ -21,14 +22,16 @@ export async function GET(
   }
 
   try {
-    const [invitesData, credits] = await Promise.all([
+    const [invitesData, credits, connections] = await Promise.all([
       listInvitesAndRegistrationsForUser(id),
       listCreditsForUser(id),
+      listConnectionChartForUser(id),
     ]);
     return NextResponse.json({
       userId: id,
       ...invitesData,
       credits,
+      connections,
     });
   } catch (e) {
     console.error('promocodes users detail GET:', e);

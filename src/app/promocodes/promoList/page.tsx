@@ -28,6 +28,7 @@ export default function PromocodesPromoListPage() {
   const [usableBy, setUsableBy] = useState('');
   const [versionId, setVersionId] = useState('');
   const [available, setAvailable] = useState('');
+  const [creatorSource, setCreatorSource] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
@@ -47,6 +48,7 @@ export default function PromocodesPromoListPage() {
       if (usableBy) params.set('usableBy', usableBy);
       if (versionId) params.set('versionId', versionId);
       if (available) params.set('available', available);
+      if (creatorSource) params.set('creatorSource', creatorSource);
       const res = await promocodesFetch(`/api/admin/promocodes/settings?${params}`);
       setData(await res.json());
     } catch (e) {
@@ -54,7 +56,7 @@ export default function PromocodesPromoListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, appliedSearch, orderBy, usableBy, versionId, available]);
+  }, [page, appliedSearch, orderBy, usableBy, versionId, available, creatorSource]);
 
   const refreshAfterPromocodeCreate = useCallback(
     (createdId?: number) => {
@@ -260,7 +262,7 @@ export default function PromocodesPromoListPage() {
     <div className="promocodes-page max-w-[1400px] mx-auto">
       <div className="reddish_row1 mtop10">Subscriptions with Promo codes</div>
 
-      <PromocodesTabs active="promoList" showCreditsLink onAddPromocode={openAddPromocodePopup} />
+      <PromocodesTabs active="promoList" onAddPromocode={openAddPromocodePopup} />
 
       <form
         className="mt-4 flex flex-wrap items-center gap-3"
@@ -277,6 +279,18 @@ export default function PromocodesPromoListPage() {
         >
           Filter ▾
         </button>
+        <select
+          value={creatorSource}
+          onChange={(e) => {
+            setCreatorSource(e.target.value);
+            setPage(1);
+          }}
+          className="px-3 py-2 border text-sm min-w-[180px]"
+        >
+          <option value="">Movesbook and other users</option>
+          <option value="movesbook">Movesbook</option>
+          <option value="other">Other users</option>
+        </select>
         <select
           value={orderBy}
           onChange={(e) => setOrderBy(e.target.value)}
@@ -364,8 +378,8 @@ export default function PromocodesPromoListPage() {
 
       <PromocodeListSubTabs
         onRecipientsSelected={handleRecipientsSelected}
-        onAllRecipients={() => window.open('/promocodes/promoAll', '_blank')}
         onSendInvite={handleSendInvite}
+        onAddNew={openAddPromocodePopup}
       />
 
       {loading ? (

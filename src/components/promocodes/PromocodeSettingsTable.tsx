@@ -60,7 +60,9 @@ export default function PromocodeSettingsTable({
             <th className="p-2">Creator</th>
             <th className="p-2">Version</th>
             <th className="p-2">Usage</th>
-            <th className="p-2">Users</th>
+            <th className="p-2">Invites sent</th>
+            <th className="p-2">Last invite</th>
+            <th className="p-2">Last registration</th>
             <th className="p-2">Exp name</th>
             <th className="p-2">Created</th>
             <th className="p-2">Status</th>
@@ -71,7 +73,7 @@ export default function PromocodeSettingsTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={13} className="p-6 text-center text-gray-500">
+              <td colSpan={15} className="p-6 text-center text-gray-500">
                 No promocodes found.
               </td>
             </tr>
@@ -152,6 +154,8 @@ export default function PromocodeSettingsTable({
                     {row.inviteCount}
                   </button>
                 </td>
+                <td className="p-2">{row.lastInviteDate?.slice(0, 10) ?? ''}</td>
+                <td className="p-2">{row.lastRegistrationDate?.slice(0, 10) ?? ''}</td>
                 <td className="p-2">{row.recipient}</td>
                 <td className="p-2">{created}</td>
                 <td className="p-2">{status}</td>

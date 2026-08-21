@@ -24,6 +24,8 @@ import {
   normalizeLegacyLanguageCode,
 } from './legacyLanguageCode';
 import { coercePublicOrigin } from '@/lib/siteUrl';
+import { resolveInviteExpiryDate, userOwnsOrReceivedPromocode } from './childPromocode';
+import { incrementInviteStat } from './promocodeMonthlyStatsService';
 
 export type SendInvitePreview = {
   emailAddress: string;
@@ -235,6 +237,7 @@ export function buildInviteEmailHtml(data: {
   otherInfo: string;
   advPage: string;
   registrationUrl: string;
+  expiresAt?: string | null;
 }): string {
   const otherInfoLink = (() => {
     const url = data.otherInfo.trim();
@@ -272,6 +275,7 @@ export function buildInviteEmailHtml(data: {
       <span style="padding:5px 10px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;">${advPageLink}</span>
     </div>
   </div>
+  ${data.expiresAt ? `<p><span style="font-weight:bold;">Promocode expires on:</span> ${escapeHtml(data.expiresAt)}</p>` : ''}
   <p><a href="${data.registrationUrl}" target="_blank">Click here to register</a></p>
 </div>`;
 }
@@ -459,15 +463,11 @@ async function validateNonStaffInvite(params: {
     return { ok: false, message: 'Promocode applies table not found.' };
   }
 
-  const userPromoCheck = await runQuery<{ id: number | bigint }[]>(
-    `SELECT id FROM \`${appliesTable}\`
-     WHERE receiver_id = ? AND promocode_id = ? AND delete_status = 2 LIMIT 1`,
-    [params.senderLegacyUserId, params.promocodeId]
-  );
-  if (userPromoCheck.length === 0) {
+  const allowed = await userOwnsOrReceivedPromocode(params.senderLegacyUserId, params.promocodeId);
+  if (!allowed) {
     return {
       ok: false,
-      message: 'You can only use a promocode you received. Please select a valid promocode.',
+      message: 'You can only use a promocode you received or created. Please select a valid promocode.',
     };
   }
 
@@ -503,6 +503,8 @@ export async function sendPromocodeInvite(params: {
   senderLegacyUserId?: number | null;
   senderEmail?: string | null;
   senderName?: string | null;
+  introMessage?: string | null;
+  inviteMode?: string | null;
   sendEmail: (payload: { to: string; subject: string; html: string; replyTo?: string }) => Promise<void>;
 }): Promise<{ status: 'success' | 'error'; message: string }> {
   const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
@@ -545,6 +547,11 @@ export async function sendPromocodeInvite(params: {
     });
     finalMessage = built.body;
   }
+  const intro = params.introMessage?.trim() ?? '';
+  if (intro) {
+    finalMessage = `<p>${escapeHtml(intro).replace(/\n/g, '<br/>')}</p>${finalMessage}`;
+  }
+  const inviteExpiresAt = await resolveInviteExpiryDate(promocodeCheck.id);
 
   const { senderId, senderEmail, senderName } = await resolveApplySender({
     isStaff: params.isStaff,
@@ -590,6 +597,7 @@ export async function sendPromocodeInvite(params: {
         otherInfo: params.otherInfo,
         advPage: params.advPage,
         registrationUrl,
+        expiresAt: inviteExpiresAt,
       });
 
       await params.sendEmail({
@@ -620,6 +628,9 @@ export async function sendPromocodeInvite(params: {
       add('level', '1');
       add('other_info', params.otherInfo);
       add('adv_page', params.advPage);
+      add('invite_mode', params.inviteMode?.trim() || 'Mail');
+      add('invite_intro', intro || null);
+      add('invite_expires_at', inviteExpiresAt);
 
       if (fields.length > 0) {
         const placeholders = fields.map(() => '?').join(', ');
@@ -630,6 +641,7 @@ export async function sendPromocodeInvite(params: {
       }
 
       successCount++;
+      void incrementInviteStat(0, '').catch(() => undefined);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       errors.push(`Error sending email to ${email}: ${msg}`);

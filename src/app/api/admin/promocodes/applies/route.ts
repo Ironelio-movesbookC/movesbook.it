@@ -16,6 +16,11 @@ export async function GET(request: NextRequest) {
   const registeredOnly = url.searchParams.get('registeredOnly') === '1';
   const promocodeIdRaw = url.searchParams.get('promocodeId');
   const promocodeId = promocodeIdRaw ? parseInt(promocodeIdRaw, 10) : undefined;
+  const senderUsername = url.searchParams.get('senderUsername') || undefined;
+  const secondaryUsername = url.searchParams.get('secondaryUsername') || undefined;
+  const recipientUsername = url.searchParams.get('recipientUsername') || undefined;
+  const fromDate = url.searchParams.get('fromDate') || undefined;
+  const toDate = url.searchParams.get('toDate') || undefined;
 
   try {
     const scopeToCurrentUser =
@@ -29,6 +34,11 @@ export async function GET(request: NextRequest) {
       registeredOnly,
       promocodeId: Number.isFinite(promocodeId) ? promocodeId : undefined,
       senderScopeUserId: scopeToCurrentUser ? auth.access.legacyUserId : undefined,
+      senderUsername,
+      secondaryUsername,
+      recipientUsername,
+      fromDate,
+      toDate,
     });
     return NextResponse.json(result);
   } catch (e) {

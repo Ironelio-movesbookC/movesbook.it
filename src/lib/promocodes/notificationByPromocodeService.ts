@@ -12,6 +12,7 @@ import {
   getLegacyUsersTable,
   getPromocodeAppliesTable,
   getPromocodeSettingsTable,
+  getSettingsColumns,
   getSubscriptionSettingsTable,
   legacyUserExistsByEmail,
 } from '@/lib/promocodes/legacyDb';
@@ -22,6 +23,8 @@ import {
 } from '@/lib/promocodes/sendInviteService';
 import { buildPromocodeSettingsSelectSql } from '@/lib/promocodes/promocodeSettingsQuery';
 import { loadPromocodeInviteLanguageParagraph } from '@/lib/promocodes/promocodeInviteLanguage';
+import { getChildPromoRights, resolveInviteExpiryDate, userOwnsOrReceivedPromocode, type ChildPromoRights } from '@/lib/promocodes/childPromocode';
+import { incrementInviteStat } from '@/lib/promocodes/promocodeMonthlyStatsService';
 
 const ROLE_NAMES: Record<number, string> = {
   1: 'Super Admin',
@@ -33,7 +36,7 @@ const ROLE_NAMES: Record<number, string> = {
   9: 'Group',
 };
 
-const SUGGEST_TAB_ROLES = new Set([5, 6, 7, 8]);
+const SUGGEST_TAB_ROLES = new Set([5, 6, 7, 8, 9]);
 const ADMIN_ROLES = new Set([1, 2]);
 
 export type PromocodeOption = {
@@ -136,6 +139,8 @@ export type NotificationByPromocodeDashboard = {
   connectionChart: ConnectionChartData;
   roles: Record<number, string>;
   subscriptionsData: Record<number, string>;
+  childPromo: ChildPromoRights;
+  generatedPromocodes: PromocodeOption[];
 };
 
 type ApplyRow = Record<string, unknown>;
@@ -310,6 +315,7 @@ export async function getNotificationByPromocodeDashboard(params: {
   const usersTable = await getLegacyUsersTable();
 
   const promocodesList: PromocodeOption[] = [];
+  const generatedPromocodes: PromocodeOption[] = [];
   let promocode: PromocodeOption = {
     id: 0,
     code: '',
@@ -347,6 +353,35 @@ export async function getNotificationByPromocodeDashboard(params: {
         };
         promocodesList.push(option);
         if (promocode.id === 0) promocode = option;
+      }
+    }
+
+    const settingsCols = await getSettingsColumns();
+    const creatorCol = settingsCols.has('creator_id')
+      ? 'creator_id'
+      : settingsCols.has('creater_id')
+        ? 'creater_id'
+        : null;
+    if (creatorCol) {
+      const generatedRows = await prisma.$queryRawUnsafe<PromoRow[]>(
+        `SELECT ${await buildPromocodeSettingsSelectSql(settingsTable)}
+         FROM \`${settingsTable}\`
+         WHERE \`${creatorCol}\` = ? AND delete_status = 2
+         ORDER BY id DESC`,
+        legacyUserId
+      );
+      for (const p of generatedRows) {
+        const option: PromocodeOption = {
+          id: Number(p.id),
+          code: rowStr(p, 'code'),
+          validTo: formatDate(p.valid_to),
+          helpHtmlPagesId: rowStr(p, 'help_html_pages_id') ? Number(rowStr(p, 'help_html_pages_id')) : null,
+          languageId: rowNum(p, 'language_id') || null,
+        };
+        generatedPromocodes.push(option);
+        if (!promocodesList.some((existing) => existing.id === option.id)) {
+          promocodesList.push(option);
+        }
       }
     }
   }
@@ -879,6 +914,7 @@ export async function getNotificationByPromocodeDashboard(params: {
 
   const usedCreditsFinal = 0;
   const availableCreditsFinal = totalCredits - usedCreditsFinal;
+  const childPromo = await getChildPromoRights(legacyUserId);
 
   return {
     isAdmin,
@@ -908,6 +944,8 @@ export async function getNotificationByPromocodeDashboard(params: {
     },
     roles,
     subscriptionsData,
+    childPromo,
+    generatedPromocodes,
   };
 }
 
@@ -917,6 +955,8 @@ export async function sendNotificationByPromocodeInvite(params: {
   senderUsername: string;
   receiverEmail: string;
   promocodeId: number;
+  introMessage?: string;
+  inviteMode?: string;
   origin: string;
   sendEmail: (payload: {
     to: string;
@@ -960,16 +1000,11 @@ export async function sendNotificationByPromocodeInvite(params: {
     return { status: 'error', message: 'Promocode tables not found.' };
   }
 
-  const userPromoCheck = await prisma.$queryRawUnsafe<ApplyRow[]>(
-    `SELECT id FROM \`${appliesTable}\`
-     WHERE receiver_id = ? AND promocode_id = ? AND delete_status = 2 LIMIT 1`,
-    params.legacyUserId,
-    params.promocodeId
-  );
-  if (userPromoCheck.length === 0) {
+  const allowed = await userOwnsOrReceivedPromocode(params.legacyUserId, params.promocodeId);
+  if (!allowed) {
     return {
       status: 'error',
-      message: 'You can only use a promocode you received. Please select a valid promocode.',
+      message: 'You can only use a promocode you received or created. Please select a valid promocode.',
     };
   }
 
@@ -1018,7 +1053,10 @@ export async function sendNotificationByPromocodeInvite(params: {
   const inviteMessageParagraph = await loadPromocodeInviteLanguageParagraph(String(languageId));
   const helpHtmlPageId = rowStr(promocode, 'help_html_page_id');
   const helpContent = await resolveHelpHtmlContent(helpHtmlPageId);
-  const message = `${inviteMessageParagraph}${helpContent}`;
+  const intro = params.introMessage?.trim()
+    ? `<p>${params.introMessage.trim().replace(/</g, '&lt;').replace(/\n/g, '<br/>')}</p>`
+    : '';
+  const message = `${intro}${inviteMessageParagraph}${helpContent}`;
 
   const nameParts = await fetchUserNameParts(params.legacyUserId);
   const senderName = [nameParts.firstname, nameParts.lastname].filter(Boolean).join(' ').trim() || params.senderUsername;
@@ -1076,6 +1114,9 @@ export async function sendNotificationByPromocodeInvite(params: {
   add('level', '2');
   add('other_info', otherInfo);
   add('adv_page', advPage);
+  add('invite_mode', params.inviteMode?.trim() || 'Mail');
+  add('invite_intro', params.introMessage?.trim() || null);
+  add('invite_expires_at', await resolveInviteExpiryDate(params.promocodeId));
 
   if (fields.length > 0) {
     const placeholders = fields.map(() => '?').join(', ');
@@ -1092,5 +1133,6 @@ export async function sendNotificationByPromocodeInvite(params: {
     }
   }
 
+  void incrementInviteStat(0, '').catch(() => undefined);
   return { status: 'success', message: 'Your invitation was sent successfully.' };
 }

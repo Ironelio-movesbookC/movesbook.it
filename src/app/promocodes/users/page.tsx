@@ -26,7 +26,24 @@ export default function PromocodeUsersPage() {
   const [detail, setDetail] = useState<{
     invites: Record<string, unknown>[];
     registrations: Record<string, unknown>[];
+    friendInvites: Record<string, unknown>[];
+    friendRegistrations: Record<string, unknown>[];
+    totals: {
+      pendingInvites: number;
+      pendingFriendInvites: number;
+      connectedInvites: number;
+      friendRegistrations: number;
+      friendOfFriendRegistrations: number;
+      connectedRegistrations: number;
+      creditsEarned: number;
+    };
     credits: { asSender: Record<string, unknown>[]; asSecondary: Record<string, unknown>[] };
+    connections: {
+      currentUserUsername: string;
+      thanksTo: { username: string } | null;
+      direct: { username: string; credits: number }[];
+      indirect: { username: string; credits: number; senderUsername: string }[];
+    } | null;
   } | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -64,7 +81,21 @@ export default function PromocodeUsersPage() {
         setDetail({
           invites: Array.isArray(json.invites) ? json.invites : [],
           registrations: Array.isArray(json.registrations) ? json.registrations : [],
+          friendInvites: Array.isArray(json.friendInvites) ? json.friendInvites : [],
+          friendRegistrations: Array.isArray(json.friendRegistrations)
+            ? json.friendRegistrations
+            : [],
+          totals: json.totals ?? {
+            pendingInvites: 0,
+            pendingFriendInvites: 0,
+            connectedInvites: 0,
+            friendRegistrations: 0,
+            friendOfFriendRegistrations: 0,
+            connectedRegistrations: 0,
+            creditsEarned: 0,
+          },
           credits: json.credits ?? { asSender: [], asSecondary: [] },
+          connections: json.connections ?? null,
         });
       })
       .catch(() => setDetail(null))
@@ -137,10 +168,12 @@ export default function PromocodeUsersPage() {
                   <tr className="bg-[#3d3d3d] text-white text-left">
                     <th className="p-2">Username</th>
                     <th className="p-2">Name</th>
+                    <th className="p-2">Country</th>
                     <th className="p-2">Flag</th>
                     <th className="p-2">Type</th>
                     <th className="p-2">Version</th>
-                    <th className="p-2">First promocode</th>
+                    <th className="p-2">Expiration</th>
+                    <th className="p-2">1th promocode</th>
                     <th className="p-2">PG count</th>
                     <th className="p-2">Credits earned</th>
                     <th className="p-2">Used</th>
@@ -153,7 +186,7 @@ export default function PromocodeUsersPage() {
                 <tbody>
                   {(data?.items ?? []).length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="p-6 text-center text-gray-500">
+                      <td colSpan={15} className="p-6 text-center text-gray-500">
                         No users found.
                       </td>
                     </tr>
@@ -168,6 +201,7 @@ export default function PromocodeUsersPage() {
                       >
                         <td className="p-2 font-medium">{row.username}</td>
                         <td className="p-2">{row.wholeName}</td>
+                        <td className="p-2">{row.country ?? ''}</td>
                         <td className="p-2">
                           <PromocodeAssetImage
                             src={promocodeFlagImageUrl(row.flagImage, {
@@ -180,14 +214,27 @@ export default function PromocodeUsersPage() {
                         </td>
                         <td className="p-2">{row.userType}</td>
                         <td className="p-2">{row.version ?? ''}</td>
-                        <td className="p-2">{row.firstPromocode ?? ''}</td>
+                        <td className="p-2">{row.expiration ?? ''}</td>
+                        <td className="p-2" style={{ color: '#7b0a26' }}>{row.firstPromocode ?? ''}</td>
                         <td className="p-2 text-center">{row.promocodesGenerated}</td>
                         <td className="p-2 text-center">{row.creditsEarned.toFixed(2)}</td>
                         <td className="p-2 text-center">{row.creditsUsed.toFixed(2)}</td>
                         <td className="p-2 text-center">{row.creditsRemain.toFixed(2)}</td>
-                        <td className="p-2">{row.lastInviteDate?.slice(0, 10) ?? ''}</td>
-                        <td className="p-2 text-center">{row.daysSinceLastInvite ?? ''}</td>
-                        <td className="p-2">{row.lastRegistrationDate?.slice(0, 10) ?? ''}</td>
+                        <td className="p-2">
+                          {row.lastInviteDate?.slice(0, 10) ?? ''}
+                          {row.daysSinceLastInvite != null ? (
+                            <div style={{ color: '#cc0000' }}>({row.daysSinceLastInvite})</div>
+                          ) : null}
+                        </td>
+                        <td className="p-2 text-center" style={{ color: '#cc0000' }}>
+                          {row.daysSinceLastInvite ?? ''}
+                        </td>
+                        <td className="p-2">
+                          {row.lastRegistrationDate?.slice(0, 10) ?? ''}
+                          {row.daysSinceLastRegistration != null ? (
+                            <div style={{ color: '#cc0000' }}>({row.daysSinceLastRegistration})</div>
+                          ) : null}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -211,57 +258,152 @@ export default function PromocodeUsersPage() {
                 {selectedUser?.username ?? `User #${selectedUserId}`}
               </div>
               {detailTab === 'invites' && (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="font-bold mb-2">Invites sent ({detail?.invites.length ?? 0})</h3>
-                    <pre className="text-xs overflow-auto max-h-64 bg-gray-50 p-2">
-                      {JSON.stringify(detail?.invites ?? [], null, 2)}
-                    </pre>
+                <div className="overflow-x-auto">
+                  <div className="mb-4 grid gap-1 text-sm">
+                    <p>
+                      Invites sent, not yet registered:{' '}
+                      <strong>{detail?.totals.pendingInvites ?? 0}</strong>
+                    </p>
+                    <p>
+                      Invites sent by friends, not yet registered:{' '}
+                      <strong>{detail?.totals.pendingFriendInvites ?? 0}</strong>
+                    </p>
+                    <p>
+                      Total invites of connected users:{' '}
+                      <strong>{detail?.totals.connectedInvites ?? 0}</strong>
+                    </p>
+                    <p>
+                      Registrations by friends:{' '}
+                      <strong>{detail?.totals.friendRegistrations ?? 0}</strong>
+                    </p>
+                    <p>
+                      Registrations by friends of friends:{' '}
+                      <strong>{detail?.totals.friendOfFriendRegistrations ?? 0}</strong>
+                    </p>
+                    <p>
+                      Total connected registrations:{' '}
+                      <strong>{detail?.totals.connectedRegistrations ?? 0}</strong>
+                      {' — '}credits earned{' '}
+                      <strong>{(detail?.totals.creditsEarned ?? 0).toFixed(2)}</strong>
+                      {' — '}used <strong>{selectedUser?.creditsUsed.toFixed(2) ?? '0.00'}</strong>
+                      {' — '}available{' '}
+                      <strong>{selectedUser?.creditsRemain.toFixed(2) ?? '0.00'}</strong>
+                    </p>
                   </div>
-                  <div>
-                    <h3 className="font-bold mb-2">
-                      Registrations ({detail?.registrations.length ?? 0})
-                    </h3>
-                    <pre className="text-xs overflow-auto max-h-64 bg-gray-50 p-2">
-                      {JSON.stringify(detail?.registrations ?? [], null, 2)}
-                    </pre>
-                  </div>
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-[#3d3d3d] text-white text-left">
+                        <th className="p-2">Sender</th>
+                        <th className="p-2">Mail / Username</th>
+                        <th className="p-2">Promocode</th>
+                        <th className="p-2">Date mail</th>
+                        <th className="p-2">Registered</th>
+                        <th className="p-2">Credits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(detail?.invites ?? []).length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-4 text-gray-500">
+                            No invites.
+                          </td>
+                        </tr>
+                      ) : (
+                        (detail?.invites ?? []).map((row, idx) => (
+                          <tr key={idx} className="border-t">
+                            <td className="p-2">{String(row.sender_email ?? selectedUser?.username ?? '')}</td>
+                            <td className="p-2">{String(row.receiver_email ?? '')}</td>
+                            <td className="p-2">{String(row.promocode_code ?? row.promocode_id ?? '')}</td>
+                            <td className="p-2">{String(row.created ?? '').slice(0, 10)}</td>
+                            <td className="p-2">{Number(row.receiver_id ?? 0) > 0 ? 'Yes' : 'No'}</td>
+                            <td className="p-2">{String(row.sender_credit ?? '')}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               )}
               {detailTab === 'credits' && (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="font-bold mb-2">As primary sender</h3>
-                    <pre className="text-xs overflow-auto max-h-64 bg-gray-50 p-2">
-                      {JSON.stringify(detail?.credits.asSender ?? [], null, 2)}
-                    </pre>
-                  </div>
-                  <div>
-                    <h3 className="font-bold mb-2">As secondary sender</h3>
-                    <pre className="text-xs overflow-auto max-h-64 bg-gray-50 p-2">
-                      {JSON.stringify(detail?.credits.asSecondary ?? [], null, 2)}
-                    </pre>
-                  </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-[#3d3d3d] text-white text-left">
+                        <th className="p-2">Sender</th>
+                        <th className="p-2">Credits thanks to</th>
+                        <th className="p-2">Registered user</th>
+                        <th className="p-2">Version</th>
+                        <th className="p-2">Credits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...(detail?.credits.asSender ?? []), ...(detail?.credits.asSecondary ?? [])].length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-4 text-gray-500">
+                            No credits earned.
+                          </td>
+                        </tr>
+                      ) : (
+                        [...(detail?.credits.asSender ?? []), ...(detail?.credits.asSecondary ?? [])].map(
+                          (row, idx) => (
+                            <tr key={idx} className="border-t">
+                              <td className="p-2">{String(row.sender_email ?? '')}</td>
+                              <td className="p-2">{String(row.secondary_sender_username ?? '')}</td>
+                              <td className="p-2">{String(row.receiver_email ?? '')}</td>
+                              <td className="p-2">{String(row.receiver_version ?? '')}</td>
+                              <td className="p-2">
+                                {String(row.sender_credit ?? row.secondary_sender_credit ?? '')}
+                              </td>
+                            </tr>
+                          )
+                        )
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               )}
               {detailTab === 'connections' && selectedUser && (
-                <div className="text-sm space-y-2">
+                <div className="text-sm space-y-3">
                   <p>
                     Credits earned: <strong>{selectedUser.creditsEarned.toFixed(2)}</strong>
+                    {' · '}used <strong>{selectedUser.creditsUsed.toFixed(2)}</strong>
+                    {' · '}available <strong>{selectedUser.creditsRemain.toFixed(2)}</strong>
                   </p>
-                  <p>
-                    Credits used: <strong>{selectedUser.creditsUsed.toFixed(2)}</strong>
-                  </p>
-                  <p>
-                    Credits remain: <strong>{selectedUser.creditsRemain.toFixed(2)}</strong>
-                  </p>
-                  <p>
-                    Promocodes generated: <strong>{selectedUser.promocodesGenerated}</strong>
-                  </p>
-                  <p>
-                    Registrations attributed:{' '}
-                    <strong>{detail?.registrations.length ?? 0}</strong>
-                  </p>
+                  {detail?.connections?.thanksTo ? (
+                    <p>
+                      {selectedUser.username} allows to user{' '}
+                      <strong style={{ color: '#7b0a26' }}>
+                        {detail.connections.thanksTo.username}
+                      </strong>{' '}
+                      to earn credits
+                    </p>
+                  ) : (
+                    <p>No upstream promocode sender recorded.</p>
+                  )}
+                  <div>
+                    <div className="font-bold mb-1">Direct recipients who registered</div>
+                    {(detail?.connections?.direct ?? []).length === 0 ? (
+                      <p>No direct recipients registered yet.</p>
+                    ) : (
+                      (detail?.connections?.direct ?? []).map((d, i) => (
+                        <p key={i}>
+                          {d.username} — {d.credits.toFixed(2)}
+                        </p>
+                      ))
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-bold mb-1">Indirect secondary recipients who registered</div>
+                    {(detail?.connections?.indirect ?? []).length === 0 ? (
+                      <p>No indirect secondary recipients registered yet.</p>
+                    ) : (
+                      (detail?.connections?.indirect ?? []).map((d, i) => (
+                        <p key={i}>
+                          {d.username} — {d.credits.toFixed(2)} (by {d.senderUsername})
+                        </p>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
             </>

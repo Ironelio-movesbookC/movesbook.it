@@ -2,16 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  fetchSuggestMovesbookIntroText,
+  SUGGEST_MOVESBOOK_INTRO_EN,
+} from '@/constants/suggestMovesbookLongText';
 
 const STORAGE_KEY = 'suggest_mb_intro_seen';
 
-const DEFAULT_INTRO =
-  'Suggest Movesbook to friends and earn credits when they register with your promocode. Invite by email, WhatsApp or Telegram — and when allowed, create your own child promocodes to grow your network.';
-
 export default function SuggestMovesbookLoginPrompt() {
   const { isAuthenticated, user } = useAuth();
+  const { currentLanguage } = useLanguage();
   const [open, setOpen] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
+  const [intro, setIntro] = useState(SUGGEST_MOVESBOOK_INTRO_EN);
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
@@ -24,10 +28,11 @@ export default function SuggestMovesbookLoginPrompt() {
         return;
       }
       setOpen(true);
+      void fetchSuggestMovesbookIntroText(currentLanguage || 'en').then(setIntro);
     } catch {
       setOpen(true);
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, currentLanguage]);
 
   const dismiss = () => {
     try {
@@ -67,11 +72,11 @@ export default function SuggestMovesbookLoginPrompt() {
         }}
       >
         <h2 style={{ margin: '0 0 12px', color: '#7b0a26', fontSize: 22 }}>Suggest Movesbook</h2>
-        <p style={{ margin: '0 0 16px', lineHeight: 1.5, fontSize: 15 }}>{DEFAULT_INTRO}</p>
+        <p style={{ margin: '0 0 16px', lineHeight: 1.5, fontSize: 15 }}>{intro}</p>
         {!imgFailed && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src="/images/suggest-movesbook-guide.png"
+            src="/images/suggest-movesbook-guide.svg"
             alt=""
             onError={() => setImgFailed(true)}
             style={{ width: '100%', maxHeight: 220, objectFit: 'contain', marginBottom: 16 }}

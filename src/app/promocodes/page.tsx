@@ -22,9 +22,14 @@ export default function PromocodesIndexPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [orderBy, setOrderBy] = useState('');
+  const [orderBy, setOrderBy] = useState('created_desc');
   const [registeredOnly, setRegisteredOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [senderUsername, setSenderUsername] = useState('');
+  const [secondaryUsername, setSecondaryUsername] = useState('');
+  const [recipientUsername, setRecipientUsername] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [sendMessageOpen, setSendMessageOpen] = useState(false);
   const [sendMessageEmail, setSendMessageEmail] = useState('');
@@ -40,6 +45,11 @@ export default function PromocodesIndexPage() {
       });
       if (search.trim()) params.set('search', search.trim());
       if (orderBy) params.set('orderBy', orderBy);
+      if (fromDate) params.set('fromDate', fromDate);
+      if (toDate) params.set('toDate', toDate);
+      if (senderUsername) params.set('senderUsername', senderUsername);
+      if (secondaryUsername) params.set('secondaryUsername', secondaryUsername);
+      if (recipientUsername) params.set('recipientUsername', recipientUsername);
       const res = await promocodesFetch(`/api/admin/promocodes/applies?${params}`);
       const json = await res.json();
       setData(json);
@@ -48,7 +58,7 @@ export default function PromocodesIndexPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, orderBy, registeredOnly]);
+  }, [page, search, orderBy, registeredOnly, fromDate, toDate, senderUsername, secondaryUsername, recipientUsername]);
 
   useEffect(() => {
     if (ready) void load();
@@ -173,6 +183,24 @@ export default function PromocodesIndexPage() {
             <option value="created_desc">By date (newest first)</option>
             <option value="created_asc">By date (oldest first)</option>
           </select>
+          <label className="text-sm">
+            From
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="ml-2 px-2 py-2 border text-sm"
+            />
+          </label>
+          <label className="text-sm">
+            To
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="ml-2 px-2 py-2 border text-sm"
+            />
+          </label>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -205,6 +233,18 @@ export default function PromocodesIndexPage() {
           variant="index"
           selectedId={selectedId}
           onSelect={setSelectedId}
+          onSenderClick={(name) => {
+            setSenderUsername(name);
+            setPage(1);
+          }}
+          onSecondaryClick={(name) => {
+            setSecondaryUsername(name);
+            setPage(1);
+          }}
+          onRecipientClick={(name) => {
+            setRecipientUsername(name);
+            setPage(1);
+          }}
         />
       )}
 

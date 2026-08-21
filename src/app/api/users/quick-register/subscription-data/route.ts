@@ -13,11 +13,13 @@ export async function POST(req: NextRequest) {
         ? String(body.version_id)
         : '';
   const promocode = typeof body.promocode === 'string' ? body.promocode : '';
+  const country = typeof body.country === 'string' ? body.country : '';
 
   const data = await getQuickRegisterSubscriptionData({
     userType,
     versionId,
     promocode,
+    country,
   });
   return NextResponse.json(data);
 }

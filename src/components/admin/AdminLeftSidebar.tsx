@@ -374,9 +374,9 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
             
             {openSections.promo && (
               <div className="bg-[#2b2b2b] mt-1 space-y-1">
-                <Link href="/promocodes" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
+                <Link href="/promocodes/promoList" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
                   <Gift className="w-4 h-4 text-white" />
-                  <span>Subscriptions with Promocode</span>
+                  <span>Promocodes</span>
                 </Link>
               </div>
             )}

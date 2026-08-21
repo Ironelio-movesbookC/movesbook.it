@@ -27,6 +27,7 @@ import {
   getAppliesColumns,
   getHelpHtmlPagesTable,
   getLanguageValuesTable,
+  getLegacyUsersTable,
   getPromocodeAppliesTable,
   getPromocodeSettingsTable,
   getSettingsColumns,
@@ -400,6 +401,8 @@ async function buildApplyRows(
       promocodeValidTo: promocodeId != null ? promocodeValidToMap.get(promocodeId) ?? '' : '',
       flagImage,
       receiverCountryCode,
+      inviteMode: apply.invite_mode != null ? String(apply.invite_mode) : null,
+      inviteExpiresAt: formatDate(apply.invite_expires_at),
     });
   }
 
@@ -463,6 +466,52 @@ export async function listPromocodeApplies(
     } else {
       where.push(`sender_id IN (${senderPlaceholders})`);
       params.push(...allowedSenderIds);
+    }
+  }
+
+  if (filters.fromDate?.trim()) {
+    where.push('DATE(`created`) >= ?');
+    params.push(filters.fromDate.trim().slice(0, 10));
+  }
+  if (filters.toDate?.trim()) {
+    where.push('DATE(`created`) <= ?');
+    params.push(filters.toDate.trim().slice(0, 10));
+  }
+
+  const clickFilters: Array<{ username?: string; cols: string[] }> = [
+    { username: filters.senderUsername, cols: ['sender_id'] },
+    { username: filters.secondaryUsername, cols: ['secondary_sender_id'] },
+    {
+      username: filters.recipientUsername,
+      cols: ['receiver_id', 'sender_id', 'secondary_sender_id'],
+    },
+  ];
+  for (const click of clickFilters) {
+    const name = click.username?.trim();
+    if (!name) continue;
+    const ids = await findLegacyUsersByUsernameOrFirstname(name);
+    const applyCols = await getAppliesColumns();
+    const parts: string[] = [];
+    const extra: unknown[] = [];
+    for (const col of click.cols) {
+      if (!applyCols.has(col) || ids.length === 0) continue;
+      const placeholders = ids.map(() => '?').join(',');
+      parts.push(`\`${col}\` IN (${placeholders})`);
+      extra.push(...ids);
+    }
+    if (click.cols.includes('receiver_id') && applyCols.has('receiver_email')) {
+      parts.push('LOWER(`receiver_email`) = ?');
+      extra.push(name.toLowerCase());
+    }
+    if (click.cols.includes('secondary_sender_id') && applyCols.has('secondary_sender_username')) {
+      parts.push('LOWER(`secondary_sender_username`) = ?');
+      extra.push(name.toLowerCase());
+    }
+    if (parts.length === 0) {
+      where.push('1 = 0');
+    } else {
+      where.push(`(${parts.join(' OR ')})`);
+      params.push(...extra);
     }
   }
 
@@ -669,6 +718,34 @@ export async function listPromocodeSettings(
     params.push(filters.usableBy);
   }
 
+  if (filters.creatorSource === 'movesbook' || filters.creatorSource === 'other') {
+    const usersTable = await getLegacyUsersTable();
+    let staffIds: number[] = [1];
+    if (usersTable) {
+      try {
+        const staffRows = await prisma.$queryRawUnsafe<{ id: number | bigint }[]>(
+          `SELECT id FROM \`${usersTable}\` WHERE role_id IN (1, 2) AND delete_status = 'N'`
+        );
+        staffIds = staffRows.map((r) => Number(r.id)).filter((id) => id > 0);
+        if (staffIds.length === 0) staffIds = [1];
+      } catch {
+        staffIds = [1];
+      }
+    }
+    const placeholders = staffIds.map(() => '?').join(',');
+    const settingsCols = await getSettingsColumns();
+    const creatorExpr = settingsCols.has('creator_id')
+      ? 'CAST(COALESCE(`creator_id`, `creater_id`) AS UNSIGNED)'
+      : 'CAST(`creater_id` AS UNSIGNED)';
+    if (filters.creatorSource === 'movesbook') {
+      where.push(`${creatorExpr} IN (${placeholders})`);
+      params.push(...staffIds);
+    } else {
+      where.push(`(${creatorExpr} NOT IN (${placeholders}) OR ${creatorExpr} IS NULL OR ${creatorExpr} = 0)`);
+      params.push(...staffIds);
+    }
+  }
+
   if (filters.versionId) {
     where.push('version_id LIKE ?');
     params.push(`%${filters.versionId}%`);
@@ -771,6 +848,7 @@ export async function listPromocodeSettings(
     let inviteEntries: PromocodeInviteEntry[] = [];
     let inviteFlagImage: string | null = null;
     let inviteCountryCode: string | null = null;
+    let applyRows: PromocodeApplyRow[] = [];
     const settingEmailCountry = findModernUserCountry(settingEmailCountries, {
       email: row.email != null ? String(row.email) : null,
     });
@@ -784,7 +862,7 @@ export async function listPromocodeSettings(
          ORDER BY id DESC`,
         id
       );
-      const applyRows = await buildApplyRows(applyList, false);
+      applyRows = await buildApplyRows(applyList, false);
       const inviteEmailsList = applyRows
         .map((row) => row.receiverEmail?.trim() ?? '')
         .filter(Boolean);
@@ -807,6 +885,10 @@ export async function listPromocodeSettings(
       inviteFlagImage = inviteFlagRow?.flagImage ?? inviteFlagImage;
       inviteCountryCode = inviteCountryCode ?? inviteFlagRow?.receiverCountryCode ?? null;
     }
+
+    const lastInviteDate = applyRows[0]?.created ?? null;
+    const lastRegistered = applyRows.find((a) => (a.receiverId ?? 0) > 0);
+    const lastRegistrationDate = lastRegistered?.created ?? lastRegistered?.registrationDate ?? null;
 
     const versionId = row.version_id != null ? String(row.version_id) : '';
     const versionCount = versionId ? versionId.split(',').filter(Boolean).length : 0;
@@ -844,6 +926,14 @@ export async function listPromocodeSettings(
       inviteFlagImage,
       inviteCountryCode,
       versionCount,
+      lastInviteDate,
+      lastRegistrationDate,
+      allowChildPromocodes: Number(row.allow_child_promocodes ?? 0) === 1,
+      childPromoLimit: row.child_promo_limit != null ? Number(row.child_promo_limit) : null,
+      childPromoUntil: formatDate(row.child_promo_until),
+      childVersionIds: row.child_version_ids != null ? String(row.child_version_ids) : null,
+      childDurationDays: row.child_duration_days != null ? Number(row.child_duration_days) : null,
+      parentPromocodeId: row.parent_promocode_id != null ? Number(row.parent_promocode_id) : null,
     });
   }
 
@@ -917,6 +1007,12 @@ export async function getPromocodeSettingById(id: number): Promise<PromocodeSett
     creatorFlagImage,
     creatorCountryCode,
     versionCount: row.version_id ? String(row.version_id).split(',').filter(Boolean).length : 0,
+    allowChildPromocodes: Number(row.allow_child_promocodes ?? 0) === 1,
+    childPromoLimit: row.child_promo_limit != null ? Number(row.child_promo_limit) : null,
+    childPromoUntil: formatDate(row.child_promo_until),
+    childVersionIds: row.child_version_ids != null ? String(row.child_version_ids) : null,
+    childDurationDays: row.child_duration_days != null ? Number(row.child_duration_days) : null,
+    parentPromocodeId: row.parent_promocode_id != null ? Number(row.parent_promocode_id) : null,
   };
 }
 
@@ -1123,6 +1219,30 @@ export async function createPromocodeSetting(
   addField('help_html_pages_id', form.helpHtmlPagesId != null ? String(form.helpHtmlPagesId) : null);
   addField('email', form.email);
   addField('recipient', form.recipient);
+  addField('allow_child_promocodes', form.allowChildPromocodes ? 1 : 0);
+  addField(
+    'child_promo_limit',
+    form.childPromoLimit != null && String(form.childPromoLimit).trim() !== ''
+      ? Number(form.childPromoLimit)
+      : null
+  );
+  addField(
+    'child_promo_until',
+    form.childPromoUntil?.trim() ? form.childPromoUntil.trim().slice(0, 10) : null
+  );
+  addField(
+    'child_version_ids',
+    Array.isArray(form.childVersionIds) && form.childVersionIds.length > 0
+      ? form.childVersionIds.join(',')
+      : null
+  );
+  addField(
+    'child_duration_days',
+    form.childDurationDays != null && String(form.childDurationDays).trim() !== ''
+      ? Number(form.childDurationDays)
+      : null
+  );
+  addField('parent_promocode_id', form.parentPromocodeId ?? null);
   addField('delete_status', 2);
   addField('delete_date', null);
   addField('used', 0);
@@ -1190,6 +1310,29 @@ export async function updatePromocodeSetting(id: number, form: PromocodeSettingF
   addSet('language_id', form.languageId != null ? String(form.languageId) : null);
   addSet('email', form.email);
   addSet('recipient', form.recipient);
+  addSet('allow_child_promocodes', form.allowChildPromocodes ? 1 : 0);
+  addSet(
+    'child_promo_limit',
+    form.childPromoLimit != null && String(form.childPromoLimit).trim() !== ''
+      ? Number(form.childPromoLimit)
+      : null
+  );
+  addSet(
+    'child_promo_until',
+    form.childPromoUntil?.trim() ? form.childPromoUntil.trim().slice(0, 10) : null
+  );
+  addSet(
+    'child_version_ids',
+    Array.isArray(form.childVersionIds) && form.childVersionIds.length > 0
+      ? form.childVersionIds.join(',')
+      : null
+  );
+  addSet(
+    'child_duration_days',
+    form.childDurationDays != null && String(form.childDurationDays).trim() !== ''
+      ? Number(form.childDurationDays)
+      : null
+  );
   addSet('modified', new Date());
 
   if (sets.length === 0) return false;

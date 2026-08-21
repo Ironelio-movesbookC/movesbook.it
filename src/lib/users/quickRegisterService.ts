@@ -29,6 +29,8 @@ import {
   getSubscriptionSettingsTable,
 } from '@/lib/promocodes/legacyDb';
 import { QUICK_REGISTER_SUCCESS_MESSAGE, type RegistrationStatus } from '@/lib/users/quickRegisterShared';
+import { getCountryPriceCoefficient } from '@/lib/countries/countryPricingServer';
+import { incrementRegistrationStat } from '@/lib/promocodes/promocodeMonthlyStatsService';
 
 export { QUICK_REGISTER_SUCCESS_MESSAGE, type RegistrationStatus };
 
@@ -419,6 +421,7 @@ export async function getQuickRegisterSubscriptionData(params: {
   userType: string;
   versionId: string;
   promocode?: string;
+  country?: string;
 }): Promise<Record<string, unknown>> {
   await ensureQuickRegisterSubscriptionSettings();
 
@@ -444,6 +447,16 @@ export async function getQuickRegisterSubscriptionData(params: {
       if (allowedVersions.length === 0 || allowedVersions.includes(String(params.versionId))) {
         subscriptionData.discount_with_promocode = promo.discount;
       }
+    }
+  }
+
+  const country = params.country?.trim() ?? '';
+  if (country) {
+    const coeff = getCountryPriceCoefficient(country);
+    subscriptionData.price_coefficient = coeff;
+    const rawPrice = Number(subscriptionData.price);
+    if (Number.isFinite(rawPrice) && coeff > 0 && coeff !== 1) {
+      subscriptionData.price = Number((rawPrice * coeff).toFixed(2));
     }
   }
 
@@ -655,6 +668,9 @@ async function upsertQuickRegisterSubscriptionVersion(params: {
   versionName: string;
   dateStart: string;
   dateEnd: string;
+  paymentMethod?: string;
+  amountPaid?: string;
+  discountPercent?: string;
 }) {
   const versionName = params.versionName.trim();
   if (!versionName) return;
@@ -671,6 +687,9 @@ async function upsertQuickRegisterSubscriptionVersion(params: {
     dateEnd: params.dateEnd.slice(0, 10) || null,
     version: versionName,
     status: periodDisplayStatus(params.dateEnd),
+    paymentMethod: params.paymentMethod,
+    amountPaid: params.amountPaid,
+    discountPercent: params.discountPercent,
   };
 
   // Replace any previous active quick-register period with the new one; keep archived history.
@@ -723,6 +742,9 @@ async function syncQuickRegisterUserNew(params: {
   versionName?: string;
   subscriptionStart?: string;
   subscriptionEnd?: string;
+  paymentMethod?: string;
+  amountPaid?: string;
+  discountPercent?: string;
 }) {
   const username = params.username.trim();
   const email = params.email.trim();
@@ -782,6 +804,9 @@ async function syncQuickRegisterUserNew(params: {
       versionName: params.versionName,
       dateStart: params.subscriptionStart,
       dateEnd: params.subscriptionEnd,
+      paymentMethod: params.paymentMethod,
+      amountPaid: params.amountPaid,
+      discountPercent: params.discountPercent,
     });
   }
 }
@@ -804,6 +829,8 @@ export type QuickRegisterPayload = {
   origin_email?: string;
   disccount_hidden?: string;
   origin?: string;
+  payment_method?: string;
+  total_payment?: string;
 };
 
 function buildQuickRegisterConfirmationHtml(params: {
@@ -1043,10 +1070,37 @@ export async function quickRegisterUser(
   } else if (inviterUname) {
     const invUser = await fetchLegacyUserByUsername(inviterUname);
     if (!invUser) {
-      return { success: false, message: 'No user found with that inviter username.' };
+      return { success: false, message: 'username typed doesn\'t exist' };
     }
     if (!(await inviterAuthorizedForPromocode(invUser.id, promocode))) {
       return { success: false, message: 'That username is not valid for this promocode.' };
+    }
+
+    const appliesForExpiry = await getPromocodeAppliesTable();
+    if (appliesForExpiry) {
+      try {
+        const expireRows = await prisma.$queryRawUnsafe<{ invite_expires_at: unknown }[]>(
+          `SELECT CAST(invite_expires_at AS CHAR) AS invite_expires_at
+           FROM \`${appliesForExpiry}\`
+           WHERE promocode_id = ? AND sender_id = ? AND delete_status = 2
+             AND (LOWER(receiver_email) = ? OR receiver_id = 0)
+           ORDER BY id DESC LIMIT 1`,
+          promocode.id,
+          invUser.id,
+          emailNorm
+        );
+        const expires = expireRows[0]?.invite_expires_at
+          ? String(expireRows[0].invite_expires_at).slice(0, 10)
+          : '';
+        if (expires && expires < todayYmd()) {
+          return {
+            success: false,
+            message: 'This invite has expired. Ask the sender for a new promocode invitation.',
+          };
+        }
+      } catch {
+        /* invite_expires_at column may not exist yet */
+      }
     }
 
     const appliesTable = await getPromocodeAppliesTable();
@@ -1214,6 +1268,9 @@ export async function quickRegisterUser(
     versionName: rowString(subSettings, 'subscription_name') || rowString(subSettings, 'short_name'),
     subscriptionStart: currentDate,
     subscriptionEnd: endDate,
+    paymentMethod: payload.payment_method || 'virtual_card',
+    amountPaid: payload.total_payment,
+    discountPercent: payload.disccount_hidden,
   });
 
   const profileTable =
@@ -1305,6 +1362,11 @@ export async function quickRegisterUser(
           Number(receiverApply.id)
         );
       }
+
+      void incrementRegistrationStat(
+        countryId,
+        countryCodeFromName(payload.country) ?? payload.country
+      ).catch(() => undefined);
 
       const senderId = rowNumber(updates, 'sender_id') || rowNumber(receiverApply, 'sender_id');
       const senderCredit = Number(creditSender) || 0;

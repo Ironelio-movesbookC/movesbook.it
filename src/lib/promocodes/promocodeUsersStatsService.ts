@@ -102,6 +102,24 @@ export async function listUsersOfPromocodes(params: {
     }
   }
 
+  if (receiverIds.length === 0) {
+    return { items: [], total: 0, page, pageSize };
+  }
+
+  // Spec: list sorted by username (registered users only — already filtered by receiver_id > 0).
+  if (userColumns.has('username')) {
+    const placeholders = receiverIds.map(() => '?').join(',');
+    const ordered = await prisma.$queryRawUnsafe<{ id: number | bigint }[]>(
+      `SELECT id FROM \`${usersTable}\`
+       WHERE id IN (${placeholders})
+       ORDER BY LOWER(username) ASC, id ASC`,
+      ...receiverIds
+    );
+    receiverIds = ordered.map((r) => Number(r.id)).filter((id) => id > 0);
+  } else {
+    receiverIds.sort((a, b) => a - b);
+  }
+
   const total = receiverIds.length;
   if (total === 0) {
     return { items: [], total: 0, page, pageSize };
@@ -248,6 +266,7 @@ export async function listUsersOfPromocodes(params: {
     }
 
     let lastRegistrationDate: string | null = null;
+    let daysSinceLastRegistration: number | null = null;
     try {
       const regRows = await prisma.$queryRawUnsafe<{ created: unknown }[]>(
         `SELECT created FROM \`${appliesTable}\`
@@ -257,6 +276,10 @@ export async function listUsersOfPromocodes(params: {
       );
       if (regRows[0]?.created) {
         lastRegistrationDate = formatDateTime(regRows[0].created);
+        const d = new Date(String(regRows[0].created));
+        if (!Number.isNaN(d.getTime())) {
+          daysSinceLastRegistration = daysBetween(d, now);
+        }
       }
     } catch {
       /* ignore */
@@ -269,7 +292,7 @@ export async function listUsersOfPromocodes(params: {
       legacyUserId: id,
       username: user.username ?? '',
       wholeName: [user.firstname, user.lastname].filter(Boolean).join(' ').trim() || (user.username ?? ''),
-      country: countryCode,
+      country: modern?.country ?? countryCode,
       countryCode,
       flagImage,
       userType: ROLE_NAMES[roleId] ?? (roleId ? `Role ${roleId}` : ''),
@@ -283,37 +306,180 @@ export async function listUsersOfPromocodes(params: {
       lastInviteDate,
       daysSinceLastInvite,
       lastRegistrationDate,
+      daysSinceLastRegistration,
     });
   }
 
   return { items, total, page, pageSize };
 }
 
+function isPendingInvite(row: Record<string, unknown>): boolean {
+  return !(row.receiver_id != null && Number(row.receiver_id) > 0);
+}
+
+function creditOf(row: Record<string, unknown>, key: string): number {
+  const n = Number(row[key] ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export async function listInvitesAndRegistrationsForUser(legacyUserId: number) {
   const appliesTable = await getPromocodeAppliesTable();
   const settingsTable = await getPromocodeSettingsTable();
-  if (!appliesTable || legacyUserId <= 0) return { invites: [], registrations: [] };
+  if (!appliesTable || legacyUserId <= 0) {
+    return {
+      invites: [],
+      registrations: [],
+      friendInvites: [],
+      friendRegistrations: [],
+      totals: {
+        pendingInvites: 0,
+        pendingFriendInvites: 0,
+        connectedInvites: 0,
+        friendRegistrations: 0,
+        friendOfFriendRegistrations: 0,
+        connectedRegistrations: 0,
+        creditsEarned: 0,
+      },
+    };
+  }
+
+  const selectSql = settingsTable
+    ? `SELECT pa.*, ps.code AS promocode_code
+       FROM \`${appliesTable}\` pa
+       LEFT JOIN \`${settingsTable}\` ps ON ps.id = pa.promocode_id`
+    : `SELECT * FROM \`${appliesTable}\` pa`;
 
   const invites = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    settingsTable
-      ? `SELECT pa.*, ps.code AS promocode_code
-         FROM \`${appliesTable}\` pa
-         LEFT JOIN \`${settingsTable}\` ps ON ps.id = pa.promocode_id
-         WHERE pa.sender_id = ? AND pa.delete_status = 2
-         ORDER BY pa.created DESC
-         LIMIT 200`
-      : `SELECT * FROM \`${appliesTable}\`
-         WHERE sender_id = ? AND delete_status = 2
-         ORDER BY created DESC LIMIT 200`,
+    `${selectSql}
+     WHERE pa.sender_id = ? AND pa.delete_status = 2
+     ORDER BY pa.created DESC
+     LIMIT 200`,
     legacyUserId
   );
 
-  const registrations = invites.filter((row) => {
-    const rid = row.receiver_id != null ? Number(row.receiver_id) : 0;
-    return rid > 0;
-  });
+  const registrations = invites.filter((row) => !isPendingInvite(row));
+  const friendIds = Array.from(
+    new Set(registrations.map((r) => Number(r.receiver_id)).filter((id) => id > 0))
+  );
 
-  return { invites, registrations };
+  let friendInvites: Record<string, unknown>[] = [];
+  if (friendIds.length > 0) {
+    const placeholders = friendIds.map(() => '?').join(',');
+    friendInvites = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+      `${selectSql}
+       WHERE pa.sender_id IN (${placeholders}) AND pa.delete_status = 2
+       ORDER BY pa.created DESC
+       LIMIT 400`,
+      ...friendIds
+    );
+  }
+
+  const friendRegistrations = friendInvites.filter((row) => !isPendingInvite(row));
+  const pendingInvites = invites.filter(isPendingInvite);
+  const pendingFriendInvites = friendInvites.filter(isPendingInvite);
+  const creditsEarned =
+    registrations.reduce((sum, row) => sum + creditOf(row, 'sender_credit'), 0) +
+    friendRegistrations.reduce((sum, row) => sum + creditOf(row, 'secondary_sender_credit'), 0);
+
+  return {
+    invites: [...invites, ...friendInvites],
+    registrations,
+    friendInvites,
+    friendRegistrations,
+    totals: {
+      pendingInvites: pendingInvites.length,
+      pendingFriendInvites: pendingFriendInvites.length,
+      connectedInvites: pendingInvites.length + pendingFriendInvites.length,
+      friendRegistrations: registrations.length,
+      friendOfFriendRegistrations: friendRegistrations.length,
+      connectedRegistrations: registrations.length + friendRegistrations.length,
+      creditsEarned,
+    },
+  };
+}
+
+export async function listConnectionChartForUser(legacyUserId: number) {
+  const appliesTable = await getPromocodeAppliesTable();
+  const usersTable = await getLegacyUsersTable();
+  if (!appliesTable || !usersTable || legacyUserId <= 0) {
+    return {
+      currentUserUsername: '',
+      thanksTo: null as { username: string } | null,
+      direct: [] as { username: string; credits: number }[],
+      indirect: [] as { username: string; credits: number; senderUsername: string }[],
+    };
+  }
+
+  const current = (await fetchLegacyUsersByIds([legacyUserId])).get(legacyUserId);
+  const thanksRows = await prisma.$queryRawUnsafe<{ sender_id: number | bigint | null }[]>(
+    `SELECT sender_id FROM \`${appliesTable}\`
+     WHERE receiver_id = ? AND delete_status = 2
+     ORDER BY created DESC LIMIT 1`,
+    legacyUserId
+  );
+  const thanksId = thanksRows[0]?.sender_id != null ? Number(thanksRows[0].sender_id) : 0;
+  const thanksUser = thanksId > 0 ? (await fetchLegacyUsersByIds([thanksId])).get(thanksId) : null;
+
+  const directRows = await prisma.$queryRawUnsafe<
+    { receiver_id: number | bigint | null; sender_credit: unknown }[]
+  >(
+    `SELECT receiver_id, sender_credit FROM \`${appliesTable}\`
+     WHERE sender_id = ? AND receiver_id > 0 AND delete_status = 2
+     ORDER BY created DESC`,
+    legacyUserId
+  );
+  const directIds = directRows.map((r) => Number(r.receiver_id)).filter((id) => id > 0);
+  const directUsers = await fetchLegacyUsersByIds(directIds);
+  const direct = directRows
+    .map((row) => {
+      const id = Number(row.receiver_id);
+      const u = directUsers.get(id);
+      if (!u) return null;
+      return { username: u.username ?? '', credits: Number(row.sender_credit ?? 0) || 0 };
+    })
+    .filter((v): v is { username: string; credits: number } => v != null);
+
+  let indirect: { username: string; credits: number; senderUsername: string }[] = [];
+  if (directIds.length > 0) {
+    const placeholders = directIds.map(() => '?').join(',');
+    const indirectRows = await prisma.$queryRawUnsafe<
+      {
+        sender_id: number | bigint | null;
+        receiver_id: number | bigint | null;
+        secondary_sender_credit: unknown;
+      }[]
+    >(
+      `SELECT sender_id, receiver_id, secondary_sender_credit FROM \`${appliesTable}\`
+       WHERE sender_id IN (${placeholders}) AND receiver_id > 0 AND delete_status = 2
+       ORDER BY created DESC`,
+      ...directIds
+    );
+    const allIds = Array.from(
+      new Set(
+        indirectRows.flatMap((r) => [Number(r.sender_id), Number(r.receiver_id)]).filter((id) => id > 0)
+      )
+    );
+    const people = await fetchLegacyUsersByIds(allIds);
+    indirect = indirectRows
+      .map((row) => {
+        const ru = people.get(Number(row.receiver_id));
+        const su = people.get(Number(row.sender_id));
+        if (!ru || !su) return null;
+        return {
+          username: ru.username ?? '',
+          credits: Number(row.secondary_sender_credit ?? 0) || 0,
+          senderUsername: su.username ?? '',
+        };
+      })
+      .filter((v): v is { username: string; credits: number; senderUsername: string } => v != null);
+  }
+
+  return {
+    currentUserUsername: current?.username ?? '',
+    thanksTo: thanksUser ? { username: thanksUser.username ?? '' } : null,
+    direct,
+    indirect,
+  };
 }
 
 export async function listCreditsForUser(legacyUserId: number) {
