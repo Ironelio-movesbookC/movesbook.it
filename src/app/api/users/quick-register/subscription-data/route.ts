@@ -14,12 +14,15 @@ export async function POST(req: NextRequest) {
         : '';
   const promocode = typeof body.promocode === 'string' ? body.promocode : '';
   const country = typeof body.country === 'string' ? body.country : '';
+  const registrationType =
+    body.registration_type === 'renewal' ? 'renewal' : ('first' as const);
 
   const data = await getQuickRegisterSubscriptionData({
     userType,
     versionId,
     promocode,
     country,
+    registrationType,
   });
   return NextResponse.json(data);
 }

@@ -449,7 +449,7 @@ export default function ProfileDropdownMenu({
             transition={{ delay: 0.15, duration: 0.5 }}
             className="text-sm font-semibold"
           >
-            Profile Menu
+            Quick menu
           </motion.p>
 
           <motion.p

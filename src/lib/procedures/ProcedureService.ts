@@ -472,7 +472,13 @@ export class ProcedureService {
     ctx: ClubAuthContext,
     procedureTypeCode: string,
     recordId: string,
-    input: { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number }
+    input: {
+      recordDate?: string;
+      dueDate?: string | null;
+      notes?: string;
+      operatorId?: string;
+      totalAmount?: number;
+    }
   ) {
     const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
     if (!procedureType) throw new Error('Unknown procedure type');
@@ -489,6 +495,7 @@ export class ProcedureService {
 
     const data: Record<string, unknown> = {};
     if (input.recordDate) data.recordDate = toDateOnly(input.recordDate);
+    if (input.dueDate !== undefined) data.dueDate = input.dueDate ? toDateOnly(input.dueDate) : null;
     if (input.notes !== undefined) data.notes = input.notes;
     if (input.operatorId) data.operatorId = input.operatorId;
     if (input.totalAmount !== undefined) {

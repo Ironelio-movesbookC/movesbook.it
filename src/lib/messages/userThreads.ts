@@ -403,6 +403,7 @@ export async function countUserSupportThreads(userId: string): Promise<number> {
 
 export async function listBugFixedMemos(filters: {
   searchQuery?: string;
+  status?: string;
   page?: number;
   pageSize?: number;
 }): Promise<PaginatedFeedResult> {
@@ -413,7 +414,10 @@ export async function listBugFixedMemos(filters: {
     kind: 'SUPPORT',
     supportCategory: 'bug_fixed',
     isPublic: false,
-    ...buildSearchWhere(filters.searchQuery || ''),
+    AND: [
+      buildSearchWhere(filters.searchQuery || ''),
+      ...(filters.status ? [buildStatusWhere(filters.status)] : []),
+    ],
   };
 
   const [total, threads] = await Promise.all([
@@ -478,7 +482,7 @@ export async function listBugFixedMemos(filters: {
       likeCount: 0,
       dislikeCount: 0,
       myReaction: null as 'L' | 'D' | null,
-      status: null,
+      status: th.status,
       imageUrls: imageUrlsById.get(th.id) ?? [],
     })),
     total,
@@ -793,7 +797,7 @@ export async function getThreadForUser(
   };
 }
 
-/** Staff-only: update Suggestions/Problems workflow status. */
+/** Staff-only: update workflow status for supported assistance categories. */
 export async function updateSupportThreadStatus(
   threadId: string,
   status: SupportWorkflowStatus,

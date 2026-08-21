@@ -36,11 +36,18 @@ import {
   ListMusic
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { usePcuAlert } from '@/contexts/PcuAlertContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  fetchPcuAlert,
+  shouldShowPcuAtLogin,
+  storePendingPcuAlert,
+} from '@/lib/user/pcuAlertClient';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 import { clearClubWorkspaceSessionOnLogout } from '@/lib/club/clearClubWorkspaceSession';
 import SuggestMovesbookLoginPrompt from '@/components/promocodes/SuggestMovesbookLoginPrompt';
 import { persistAdminLoginSession } from '@/lib/panelSession';
+import QuickMenuButton from '@/app/my-page/components/QuickMenuButton';
 
 // Map language codes to flag file names
 const getFlagFileName = (code: string): string => {
@@ -94,6 +101,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout, isAuthenticated, requireAuth, login } = useAuth();
+  const { showAlert } = usePcuAlert();
   const { currentLanguage, setLanguage, t, availableLanguages } = useLanguage();
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -225,16 +233,16 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
     () => [
       { href: '/', label: t('nav_home'), icon: Home },
       // Removed non-existent routes: /athletes, /coaches, /teams, /groups, /clubs
-      { href: '/testimonials', label: 'Testimonials', icon: MessageCircle },
+      { href: '/testimonials', label: t('nav_testimonials'), icon: MessageCircle },
       { href: '/blog', label: t('nav_blog'), icon: MessageCircle },
       { href: navNewsHref, label: t('nav_news'), icon: Newspaper },
       { href: '/news-by-movesbook', label: t('nav_news_by_movesbook'), icon: Newspaper },
-      { href: '/sell-buy', label: 'Sell/Buy', icon: ShoppingCart },
-      { href: '/job-offers', label: 'Jobs', icon: Briefcase },
-      { href: '/promote-yourself', label: 'Promote', icon: Megaphone },
-      { href: '/our-shop', label: 'Shop', icon: ShoppingBag },
-      { href: navAddSongsHref, label: 'Add Songs', icon: ListMusic },
-      { href: navMusicHref, label: 'Music Panel', icon: Music },
+      { href: '/sell-buy', label: t('nav_sell_buy_short'), icon: ShoppingCart },
+      { href: '/job-offers', label: t('nav_jobs_short'), icon: Briefcase },
+      { href: '/promote-yourself', label: t('nav_promote_short'), icon: Megaphone },
+      { href: '/our-shop', label: t('nav_shop_short'), icon: ShoppingBag },
+      { href: navAddSongsHref, label: t('nav_songs_short'), icon: ListMusic },
+      { href: navMusicHref, label: t('nav_music_short'), icon: Music },
     ],
     [navNewsHref, navAddSongsHref, navMusicHref, t]
   );
@@ -249,11 +257,20 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
   // Get current language display code
   const currentLangDisplay = currentLanguage.toUpperCase();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
     setIsUserDropdownOpen(false);
     setIsMobileMenuOpen(false);
-    router.push('/');
+    const lang = user?.language || currentLanguage || 'en';
+    const alert = await fetchPcuAlert('logout', lang);
+    const finishLogout = () => {
+      logout();
+      router.push('/');
+    };
+    if (alert) {
+      showAlert(alert, finishLogout);
+    } else {
+      finishLogout();
+    }
   };
 
   const networkSearchScopeLabel = useMemo(() => {
@@ -663,9 +680,9 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
           }
           if (groupIdMatch?.[1]) {
             const id = decodeURIComponent(groupIdMatch[1]);
-            if (path.includes('my-coaching-group')) {
+            if (path.includes('my-coaching-group') || path.includes('/coach/dashboard')) {
               localStorage.setItem('selectedCoachingGroup', id);
-            } else if (path.includes('my-group')) {
+            } else if (path.includes('my-group') || path.includes('/group/dashboard')) {
               localStorage.setItem('selectedGroup', id);
             }
           }
@@ -673,7 +690,42 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
             localStorage.setItem('selectedTeam', decodeURIComponent(teamMatch[1]));
           }
         }
-        login(data.token, data.user, redirectTo);
+        const entityAccessMode =
+          typeof data.entityAccessMode === 'string'
+            ? data.entityAccessMode
+            : typeof data.clubAccessMode === 'string'
+              ? data.clubAccessMode
+              : undefined;
+        const entityKind =
+          typeof data.entityKind === 'string' ? data.entityKind : undefined;
+        const entityId =
+          typeof data.entityId === 'string'
+            ? data.entityId
+            : typeof data.clubId === 'string'
+              ? data.clubId
+              : undefined;
+        if (
+          data.pcuAlert &&
+          (data.pcuAlert.bodyHtml?.trim() || data.pcuAlert.title?.trim()) &&
+          shouldShowPcuAtLogin(data.user.userType, entityAccessMode)
+        ) {
+          storePendingPcuAlert({
+            title: data.pcuAlert.title ?? '',
+            bodyHtml: data.pcuAlert.bodyHtml ?? '',
+          });
+        }
+        login(data.token, data.user, redirectTo, {
+          entityAccessMode,
+          entityKind: entityKind as
+            | 'club'
+            | 'team'
+            | 'group'
+            | 'coach'
+            | undefined,
+          entityId,
+          clubAccessMode: entityAccessMode,
+          clubId: entityKind === 'club' ? entityId : undefined,
+        });
         
         // Clear form
         setLoginUsername('');
@@ -852,8 +904,8 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
 
             {/* Desktop: nav links + network search (legacy “Search in …”) */}
             {!hideContentNav && (
-            <div className="hidden lg:flex min-w-0 flex-1 items-center gap-3 overflow-visible mx-2 lg:mx-4">
-              <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-hide lg:gap-2">
+            <div className="hidden lg:flex min-w-0 flex-1 items-center gap-1.5 overflow-visible mx-1 lg:mx-2">
+              <div className="flex min-w-0 flex-1 items-center gap-0 overflow-x-auto scrollbar-hide">
                 {menuItems.map((item, index) => {
                   const isActive = pathname === item.href;
                   const isHome = item.href === '/';
@@ -882,13 +934,13 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
                           handleProtectedLinkClick(item.href, e);
                         }
                       }}
-                      className={`shrink-0 px-2 lg:px-4 py-2.5 rounded-xl text-xs lg:text-sm font-semibold transition-all duration-200 whitespace-nowrap ${
+                      className={`shrink-0 px-1.5 lg:px-2 py-1.5 rounded-lg text-[11px] lg:text-xs font-semibold transition-all duration-200 whitespace-nowrap ${
                         isActive
                           ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-2xl'
                           : canAccess
                           ? 'text-cyan-100 hover:bg-white hover:bg-opacity-10 hover:text-white'
                           : 'text-cyan-100 opacity-60'
-                      } ${isHome ? 'mr-4 lg:mr-8' : ''}`}
+                      }`}
                       style={canAccess ? {} : { cursor: 'default' }}
                     >
                       {item.label}
@@ -900,24 +952,24 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
               <form
                 onSubmit={handleNetworkSearchSubmit}
                 data-search-anchor="desktop"
-                className="flex shrink-0 items-center gap-2 lg:-mt-7"
+                className="flex shrink-0 items-center gap-1"
                 role="search"
                 aria-label={t('nav_search_network_form_aria')}
               >
-                <span className="hidden text-xs font-semibold text-white xl:inline">
+                <span className="hidden text-[11px] font-semibold text-white 2xl:inline">
                   {t('nav_search_in')}
                 </span>
                 <label htmlFor="navbar-network-search-scope" className="sr-only">
                   {t('nav_search_scope_label')}
                 </label>
-                <div className="flex h-10 max-w-[5.5rem] shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70">
+                <div className="flex h-8 max-w-[4.25rem] shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70">
                   <select
                     id="navbar-network-search-scope"
                     value={networkSearchScope}
                     onChange={(e) =>
                       setNetworkSearchScope(e.target.value as typeof networkSearchScope)
                     }
-                    className="h-full min-h-0 w-full cursor-pointer border-0 bg-transparent py-0 pl-2.5 pr-2 text-xs font-medium leading-none text-zinc-900 focus:outline-none focus:ring-0"
+                    className="h-full min-h-0 w-full cursor-pointer border-0 bg-transparent py-0 pl-1.5 pr-1 text-[11px] font-medium leading-none text-zinc-900 focus:outline-none focus:ring-0"
                   >
                     <option value="single_user">{t('nav_search_scope_single_user')}</option>
                     <option value="coach">{t('nav_search_scope_coach')}</option>
@@ -927,7 +979,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
                 </div>
                 <div
                   ref={networkSearchDesktopInputWrapRef}
-                  className="relative flex h-10 w-36 shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70 sm:w-44"
+                  className="relative flex h-8 w-24 shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70 xl:w-28"
                 >
                   <label htmlFor="navbar-network-search-query" className="sr-only">
                     {t('nav_search_placeholder')}
@@ -939,15 +991,15 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
                     onChange={(e) => setNetworkSearchQuery(e.target.value)}
                     placeholder={t('nav_search_placeholder')}
                     autoComplete="off"
-                    className="h-full min-h-0 w-full border-0 bg-transparent py-0 pl-3 pr-9 text-xs leading-none text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-0"
+                    className="h-full min-h-0 w-full border-0 bg-transparent py-0 pl-2 pr-7 text-[11px] leading-none text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-0"
                   />
                   <button
                     type="button"
                     onClick={() => void runNetworkSearch('desktop')}
-                    className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+                    className="absolute right-0.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
                     aria-label={t('nav_search_submit')}
                   >
-                    <Search className="h-4 w-4" aria-hidden />
+                    <Search className="h-3.5 w-3.5" aria-hidden />
                   </button>
                 </div>
               </form>
@@ -956,7 +1008,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
 
             {/* User Actions */}
             {!hideContentNav && (
-            <div className="hidden lg:flex items-center space-x-4 flex-shrink-0" style={{ overflow: 'visible', position: 'relative', zIndex: 100 }}>
+            <div className="hidden lg:flex items-center gap-2 flex-shrink-0" style={{ overflow: 'visible', position: 'relative', zIndex: 100 }}>
               {isAdmin ? (
                 /* Admin Logged In - Show Admin Button and Logout */
                 <div className="flex items-center space-x-3">
@@ -1092,12 +1144,18 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
                   </div>
                 </div>
               )}
+              {isAuthenticated && (
+                <QuickMenuButton onLogout={handleLogout} />
+              )}
             </div>
             )}
 
             {/* Mobile Menu Button */}
             {!hideContentNav && (
-            <div className="lg:hidden flex-shrink-0">
+            <div className="lg:hidden flex-shrink-0 flex items-center gap-2">
+              {isAuthenticated && (
+                <QuickMenuButton onLogout={handleLogout} />
+              )}
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 className="p-3 bg-white bg-opacity-10 rounded-2xl hover:bg-opacity-20 transition-all duration-300 text-white"

@@ -417,7 +417,7 @@ export default function MusicOGPPanel({
   return (
     <div
       className={`flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden ${
-        embedded ? 'flex-1 min-h-0 max-h-[158vh]' : ''
+        embedded ? 'h-full min-h-0 flex-1' : ''
       }`}
     >
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50">

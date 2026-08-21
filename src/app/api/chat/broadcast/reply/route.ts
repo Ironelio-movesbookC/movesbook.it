@@ -2,23 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
+import { parseReplyMeta, userCanSeeBroadcastRow } from '@/lib/chat/broadcastVisibility';
 
 export const dynamic = 'force-dynamic';
 
 const BROADCAST_MODES = new Set(['all', 'group', 'subscribers', 'favourites']);
-
-function parseReplyMeta(recipientIds: string | null): { parentId: string | null; senderUserId: string | null } {
-  if (!recipientIds) return { parentId: null, senderUserId: null };
-  try {
-    const meta = JSON.parse(recipientIds) as { parentId?: string; senderUserId?: string };
-    return {
-      parentId: typeof meta.parentId === 'string' ? meta.parentId : null,
-      senderUserId: typeof meta.senderUserId === 'string' ? meta.senderUserId : null,
-    };
-  } catch {
-    return { parentId: null, senderUserId: null };
-  }
-}
 
 async function requireUser(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -77,9 +65,30 @@ export async function POST(request: NextRequest) {
 
     const parent = await prisma.chatBroadcastMessage.findUnique({
       where: { id: replyToId },
-      select: { id: true, content: true, mode: true, senderName: true, clubId: true },
+      select: {
+        id: true,
+        content: true,
+        mode: true,
+        senderName: true,
+        clubId: true,
+        recipientIds: true,
+      },
     });
     if (!parent || !BROADCAST_MODES.has(parent.mode)) {
+      return NextResponse.json({ error: 'Broadcast message not found' }, { status: 404 });
+    }
+
+    const rowById = new Map([
+      [
+        parent.id,
+        {
+          id: parent.id,
+          recipientIds: parent.recipientIds,
+          mode: parent.mode,
+        },
+      ],
+    ]);
+    if (!userCanSeeBroadcastRow(parent, user.id, rowById)) {
       return NextResponse.json({ error: 'Broadcast message not found' }, { status: 404 });
     }
 

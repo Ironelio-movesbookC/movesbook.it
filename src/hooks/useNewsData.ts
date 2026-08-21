@@ -56,7 +56,20 @@ export interface UseNewsDataResult {
   addTopic: (name: string) => Promise<void>;
   updateTopic: (id: string, name: string) => Promise<void>;
   deleteTopic: (id: string) => Promise<void>;
-  addPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport; languageCode?: string | null; musicalGenre?: string | null; artist?: string | null; musicTitle?: string | null; registrationType?: string | null; isFavourite?: boolean }, topic: string) => Promise<void>;
+  addPastedArticle: (
+    data: OGPData & {
+      customDescription?: string;
+      visibility?: OgpVisibilitySettingsExport;
+      languageCode?: string | null;
+      musicalGenre?: string | null;
+      artist?: string | null;
+      musicTitle?: string | null;
+      registrationType?: string | null;
+      isFavourite?: boolean;
+    },
+    topic: string,
+    options?: { shareToClubId?: string | null }
+  ) => Promise<{ id: string; sharedClubIds?: string[] } | void>;
   removePastedArticle: (id: string) => Promise<void>;
   updatePastedArticleSettings: (id: string, settings: OgpVisibilitySettingsExport) => Promise<void>;
   updatePastedArticleTopic: (id: string, topic: string, customDescription?: string) => Promise<void>;
@@ -98,6 +111,11 @@ export interface UseNewsDataResult {
   removeTypedArticle: (id: string) => Promise<void>;
   /** Super admin: toggle OGP article in Global News feed. */
   toggleOgpGlobalNews: (id: string, inGlobalNews: boolean) => Promise<void>;
+  /** Super admin: toggle featured News Card flags on an OGP article. */
+  toggleOgpFeatured: (
+    id: string,
+    patch: { isFeatured?: boolean; displayInEvidence?: boolean },
+  ) => Promise<void>;
 }
 
 export interface UseNewsDataOptions {
@@ -125,6 +143,42 @@ function appendQuery(url: string, params: Record<string, string | null | undefin
   const qs = sp.toString();
   if (!qs) return url;
   return url.includes('?') ? `${url}&${qs}` : `${url}?${qs}`;
+}
+
+/** Normalize OGP group API payloads (includes Club OGP audienceMode → clubAudienceMode). */
+function mapGroupFromApi(g: any): OgpNewsGroupCard {
+  return {
+    id: g.id,
+    name: g.name,
+    topic: g.topic,
+    savedAt: g.savedAt,
+    memberCount: g.memberCount ?? (g.memberIds?.length ?? 0),
+    memberIds: Array.isArray(g.memberIds) ? g.memberIds : [],
+    userId: g.userId,
+    creatorUsername: g.creatorUsername ?? null,
+    creatorName: g.creatorName ?? g.creatorUsername ?? null,
+    creatorCountry: g.creatorCountry ?? null,
+    createdByCurrentUser: g.createdByCurrentUser === true,
+    title: g.title,
+    image: g.image,
+    coverImage: g.coverImage ?? null,
+    description: g.description,
+    url: g.url ?? '',
+    siteName: g.siteName,
+    type: g.type,
+    customDescription: g.customDescription,
+    deletedAt: g.deletedAt ?? null,
+    visibility: {
+      userTypes: g.visibilityUserTypes ?? g.visibility?.userTypes ?? [],
+      countries: g.visibilityCountries ?? g.visibility?.countries ?? [],
+      languages: g.visibilityLanguages ?? g.visibility?.languages ?? [],
+      sports: g.visibilitySports ?? g.visibility?.sports ?? [],
+      expiresAt: g.expiresAt ?? g.visibility?.expiresAt ?? null,
+    },
+    clubAudienceMode: g.audienceMode ?? g.clubAudienceMode ?? 'me-and-club-members',
+    previewTopic: g.previewTopic ?? g.topic,
+    previewCreatorUsername: g.previewCreatorUsername ?? g.creatorUsername ?? null,
+  };
 }
 
 export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
@@ -289,7 +343,10 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           isFavourite: a.isFavourite === true,
           languageCode: a.languageCode ?? undefined,
           savedAt: a.savedAt,
+          viewCount: typeof a.viewCount === 'number' ? a.viewCount : Number(a.viewCount) || 0,
           inGlobalNews: a.inGlobalNews === true,
+          isFeatured: a.isFeatured === true,
+          displayInEvidence: a.displayInEvidence !== false,
           deletedAt: a.deletedAt,
           deletedByUserId: a.deletedByUserId,
           deletedByName: a.deletedByName,
@@ -304,39 +361,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       );
 
       setOgpNewsGroups(
-        Array.isArray(groupsData)
-          ? (groupsData as any[]).map((g) => ({
-              id: g.id,
-              name: g.name,
-              topic: g.topic,
-              savedAt: g.savedAt,
-              memberCount: g.memberCount ?? (g.memberIds?.length ?? 0),
-              memberIds: Array.isArray(g.memberIds) ? g.memberIds : [],
-              userId: g.userId,
-              creatorUsername: g.creatorUsername ?? null,
-              creatorName: g.creatorName ?? g.creatorUsername ?? null,
-              creatorCountry: g.creatorCountry ?? null,
-              createdByCurrentUser: g.createdByCurrentUser === true,
-              title: g.title,
-              image: g.image,
-              coverImage: g.coverImage ?? null,
-              description: g.description,
-              url: g.url ?? '',
-              siteName: g.siteName,
-              type: g.type,
-              customDescription: g.customDescription,
-              deletedAt: g.deletedAt ?? null,
-              visibility: {
-                userTypes: g.visibilityUserTypes ?? [],
-                countries: g.visibilityCountries ?? [],
-                languages: g.visibilityLanguages ?? [],
-                sports: g.visibilitySports ?? [],
-                expiresAt: g.expiresAt ?? null,
-              },
-              previewTopic: g.previewTopic ?? g.topic,
-              previewCreatorUsername: g.previewCreatorUsername ?? g.creatorUsername ?? null,
-            }))
-          : []
+        Array.isArray(groupsData) ? (groupsData as any[]).map(mapGroupFromApi) : []
       );
 
       setTypedArticles(
@@ -472,11 +497,13 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         registrationType?: string | null;
         isFavourite?: boolean;
       },
-      topic: string
+      topic: string,
+      options?: { shareToClubId?: string | null }
     ) => {
       if (!effectiveUserId) return;
       const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const vis = data.visibility;
+      const shareToClubId = options?.shareToClubId?.trim() || null;
       const res = await fetch(`${apiBase}/ogp`, {
         method: 'POST',
         headers,
@@ -501,6 +528,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           visibilityLanguages: vis?.languages ?? [],
           visibilitySports: vis?.sports ?? [],
           ...(category ? { category } : {}),
+          ...(shareToClubId ? { shareToClubId } : {}),
         }),
       });
       if (!res.ok) {
@@ -508,6 +536,11 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         throw new Error(err.error || 'Failed to save article');
       }
       const created = await res.json();
+      const sharedClubIds: string[] = Array.isArray(created.sharedClubIds)
+        ? created.sharedClubIds
+        : shareToClubId
+          ? [shareToClubId]
+          : [];
       setPastedArticles((prev) => [
         ...prev,
         {
@@ -529,6 +562,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           isFavourite: created.isFavourite ?? data.isFavourite ?? false,
           languageCode: created.languageCode ?? undefined,
           savedAt: created.savedAt,
+          viewCount: typeof created.viewCount === 'number' ? created.viewCount : 0,
+          sharedClubIds,
           visibility: {
             userTypes: vis?.userTypes ?? [],
             countries: vis?.countries ?? [],
@@ -538,6 +573,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           },
         },
       ]);
+      return { id: created.id as string, sharedClubIds };
     },
     [effectiveUserId, getHeaders, user?.country, apiBase, defaultTopics, category]
   );
@@ -701,38 +737,6 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     [effectiveUserId, getHeaders, apiBase]
   );
 
-  const mapGroupFromApi = (g: any): OgpNewsGroupCard => ({
-    id: g.id,
-    name: g.name,
-    topic: g.topic,
-    savedAt: g.savedAt,
-    memberCount: g.memberCount ?? (g.memberIds?.length ?? 0),
-    memberIds: Array.isArray(g.memberIds) ? g.memberIds : [],
-    userId: g.userId,
-    creatorUsername: g.creatorUsername ?? null,
-    creatorName: g.creatorName ?? g.creatorUsername ?? null,
-    creatorCountry: g.creatorCountry ?? null,
-    createdByCurrentUser: g.createdByCurrentUser === true,
-    title: g.title,
-    image: g.image,
-    coverImage: g.coverImage ?? null,
-    description: g.description,
-    url: g.url ?? '',
-    siteName: g.siteName,
-    type: g.type,
-    customDescription: g.customDescription,
-    deletedAt: g.deletedAt ?? null,
-    visibility: {
-      userTypes: g.visibilityUserTypes ?? g.visibility?.userTypes ?? [],
-      countries: g.visibilityCountries ?? g.visibility?.countries ?? [],
-      languages: g.visibilityLanguages ?? g.visibility?.languages ?? [],
-      sports: g.visibilitySports ?? g.visibility?.sports ?? [],
-      expiresAt: g.expiresAt ?? g.visibility?.expiresAt ?? null,
-    },
-    previewTopic: g.previewTopic ?? g.topic,
-    previewCreatorUsername: g.previewCreatorUsername ?? g.creatorUsername ?? null,
-  });
-
   const saveOgpNewsGroup = useCallback(
     async (payload: {
       name: string;
@@ -841,6 +845,9 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           visibilityLanguages: settings.languages ?? [],
           visibilitySports: settings.sports ?? [],
           expiresAt: settings.expiresAt ?? null,
+          ...(settings.clubAudienceMode
+            ? { audienceMode: settings.clubAudienceMode }
+            : {}),
         }),
       });
       if (!res.ok) throw new Error('Failed to update group settings');
@@ -857,6 +864,9 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
                   sports: settings.sports ?? [],
                   expiresAt: settings.expiresAt ?? null,
                 },
+                ...(settings.clubAudienceMode
+                  ? { clubAudienceMode: settings.clubAudienceMode }
+                  : {}),
               }
         )
       );
@@ -937,6 +947,43 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     [],
   );
 
+  const toggleOgpFeatured = useCallback(
+    async (id: string, patch: { isFeatured?: boolean; displayInEvidence?: boolean }) => {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+      if (!token) throw new Error('Not authenticated');
+      const res = await fetch(`/api/admin/ogp-featured/${id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error('Failed to update featured flags');
+      const updated = await res.json();
+      setPastedArticles((prev) =>
+        prev.map((a) =>
+          a.id === id
+            ? {
+                ...a,
+                ...(typeof updated.isFeatured === 'boolean'
+                  ? { isFeatured: updated.isFeatured }
+                  : patch.isFeatured !== undefined
+                    ? { isFeatured: patch.isFeatured }
+                    : {}),
+                ...(typeof updated.displayInEvidence === 'boolean'
+                  ? { displayInEvidence: updated.displayInEvidence }
+                  : patch.displayInEvidence !== undefined
+                    ? { displayInEvidence: patch.displayInEvidence }
+                    : {}),
+              }
+            : a,
+        ),
+      );
+    },
+    [],
+  );
+
   return {
     topics,
     customTopics,
@@ -970,5 +1017,6 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     addTypedArticle,
     removeTypedArticle,
     toggleOgpGlobalNews,
+    toggleOgpFeatured,
   };
 }

@@ -3,7 +3,9 @@
 import type { ReactNode } from 'react';
 import {
   STATS_KIND_LABELS,
+  STATS_TYPE_KIND_FILTER_LABELS,
   STATS_USER_KINDS,
+  type StatsTypeKindFilter,
   type StatsUserKind,
 } from '@/lib/admin/statisticsKinds';
 import { formatCount, formatEuro } from '@/components/admin/statistics/useAdminStatistics';
@@ -30,44 +32,47 @@ export default function StatisticsPageShell({
   children,
 }: StatisticsPageShellProps) {
   return (
-    <div className="min-h-[70vh] bg-[#ececec] p-4 md:p-6">
-      <div className="mb-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#058592]">
-          Statistics Super Admin
-        </p>
-        <h1 className="text-2xl font-bold text-[#222] mt-1">{title}</h1>
-        {description ? <p className="text-sm text-[#555] mt-1 max-w-3xl">{description}</p> : null}
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        <div className="bg-white border border-[#cfcfcf] px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-[#666]">Users</div>
-          <div className="text-2xl font-bold text-[#058592] mt-1">
-            {loading ? '…' : formatCount(totalUsers)}
-          </div>
+    <div className="h-full min-h-0 overflow-y-auto bg-[#ececec] p-3 md:p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#058592]">
+            General graphs
+          </p>
+          <h1 className="mt-0.5 text-xl font-bold text-[#222]">{title}</h1>
+          {description ? (
+            <p className="mt-0.5 max-w-3xl text-sm text-[#555]">{description}</p>
+          ) : null}
         </div>
-        <div className="bg-white border border-[#cfcfcf] px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-[#666]">Income (€)</div>
-          <div className="text-2xl font-bold text-[#941751] mt-1">
-            {loading ? '…' : formatEuro(incomeEuro)}
+        <div className="flex shrink-0 gap-2">
+          <div className="min-w-[7.5rem] border border-[#cfcfcf] bg-white px-3 py-2">
+            <div className="text-[10px] uppercase tracking-wide text-[#666]">Users</div>
+            <div className="mt-0.5 text-xl font-bold text-[#058592]">
+              {loading ? '…' : formatCount(totalUsers)}
+            </div>
+          </div>
+          <div className="min-w-[7.5rem] border border-[#cfcfcf] bg-white px-3 py-2">
+            <div className="text-[10px] uppercase tracking-wide text-[#666]">Income (€)</div>
+            <div className="mt-0.5 text-xl font-bold text-[#941751]">
+              {loading ? '…' : formatEuro(incomeEuro)}
+            </div>
           </div>
         </div>
       </div>
 
       {filters ? (
-        <div className="bg-white border border-[#cfcfcf] p-3 mb-4 flex flex-wrap gap-3 items-end">
+        <div className="mb-3 flex flex-wrap items-end gap-3 border border-[#cfcfcf] bg-white p-2.5">
           {filters}
         </div>
       ) : null}
 
       {error ? (
-        <div className="bg-[#fde8e8] border border-[#e0a0a0] text-[#8a1f1f] px-4 py-3 mb-4 text-sm">
+        <div className="mb-3 border border-[#e0a0a0] bg-[#fde8e8] px-4 py-2.5 text-sm text-[#8a1f1f]">
           {error}
         </div>
       ) : null}
 
       {loading && !error ? (
-        <div className="bg-white border border-[#cfcfcf] p-8 text-center text-[#666]">
+        <div className="border border-[#cfcfcf] bg-white p-8 text-center text-[#666]">
           Loading statistics…
         </div>
       ) : (
@@ -118,6 +123,34 @@ export function userTypeFilterOptions(includeAll = true) {
     label: STATS_KIND_LABELS[k],
   }));
   return includeAll ? [{ value: 'all', label: 'All types' }, ...kinds] : kinds;
+}
+
+/** Dropdown for users-by-country bars (Each type = 5 colored bars). */
+export function usersByCountryFilterOptions() {
+  return [
+    { value: 'all', label: 'Each type of users' },
+    ...STATS_USER_KINDS.map((k) => ({
+      value: k,
+      label:
+        k === 'single'
+          ? 'Athletes'
+          : k === 'clubs'
+            ? 'Clubs'
+            : STATS_KIND_LABELS[k],
+    })),
+  ];
+}
+
+/** Options for type-by-country pie (includes ALL Users / except Groups). */
+export function typeKindFilterOptions() {
+  const extras: StatsTypeKindFilter[] = ['all', 'except_groups'];
+  return [
+    ...extras.map((k) => ({ value: k, label: STATS_TYPE_KIND_FILTER_LABELS[k] })),
+    ...STATS_USER_KINDS.map((k) => ({
+      value: k,
+      label: STATS_KIND_LABELS[k],
+    })),
+  ];
 }
 
 export function kindLabel(kind: StatsUserKind): string {

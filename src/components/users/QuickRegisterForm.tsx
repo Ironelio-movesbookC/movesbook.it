@@ -77,6 +77,10 @@ export default function QuickRegisterForm() {
   const [membersNumber, setMembersNumber] = useState('');
   const [totalPayment, setTotalPayment] = useState('');
   const [payWithVirtualCard, setPayWithVirtualCard] = useState(true);
+  const [tripleDurationDays, setTripleDurationDays] = useState('');
+  const [tripleDurationPrice, setTripleDurationPrice] = useState('');
+  const [tripleDurationDiscount, setTripleDurationDiscount] = useState('');
+  const [useTripleSubscription, setUseTripleSubscription] = useState(false);
 
   const [promoFeedback, setPromoFeedback] = useState<{ text: string; kind: 'success' | 'error' | '' }>({
     text: '',
@@ -136,6 +140,10 @@ export default function QuickRegisterForm() {
     setMembersNumber('');
     setTotalPayment('');
     setVersionDurationDays('');
+    setTripleDurationDays('');
+    setTripleDurationPrice('');
+    setTripleDurationDiscount('');
+    setUseTripleSubscription(false);
   }, []);
 
   const applyRegistrationStatus = useCallback(
@@ -192,6 +200,7 @@ export default function QuickRegisterForm() {
             version_id: vid,
             promocode: opts?.promo ?? promocode,
             country: opts?.countryVal ?? country,
+            registration_type: (opts?.regType ?? registrationType) === 'renewal' ? 'renewal' : 'first',
           }),
         });
         const data = await res.json();
@@ -214,6 +223,17 @@ export default function QuickRegisterForm() {
           rec.days_duration != null && rec.days_duration !== '' ? parseInt(String(rec.days_duration), 10) : NaN;
         setVersionDurationDays(Number.isFinite(duration) ? String(duration) : '');
 
+        setTripleDurationDays(
+          rec.triple_duration_days != null ? String(rec.triple_duration_days) : ''
+        );
+        setTripleDurationPrice(
+          rec.triple_duration_price != null ? String(rec.triple_duration_price) : ''
+        );
+        setTripleDurationDiscount(
+          rec.triple_duration_discount != null ? String(rec.triple_duration_discount) : ''
+        );
+        setUseTripleSubscription(false);
+
         const regType = opts?.regType ?? registrationType;
         let membersVal = '';
         if (String(ut) === '8') {
@@ -231,10 +251,11 @@ export default function QuickRegisterForm() {
 
         const priceNum = parseFloat(priceVal);
         const discNum = parseFloat(discountVal);
-        if (Number.isFinite(priceNum) && Number.isFinite(discNum)) {
-          setTotalPayment((priceNum * (1 - discNum / 100)).toFixed(2));
-        } else if (Number.isFinite(priceNum)) {
-          setTotalPayment(priceNum.toFixed(2));
+        const activePrice = priceNum;
+        if (Number.isFinite(activePrice) && Number.isFinite(discNum)) {
+          setTotalPayment((activePrice * (1 - discNum / 100)).toFixed(2));
+        } else if (Number.isFinite(activePrice)) {
+          setTotalPayment(activePrice.toFixed(2));
         } else {
           setTotalPayment('');
         }
@@ -459,6 +480,22 @@ export default function QuickRegisterForm() {
       clearSubscriptionDetails();
     }
   };
+
+  useEffect(() => {
+    if (!userType || !versionId) return;
+    void loadSubscriptionData({ regType: registrationType });
+  }, [registrationType, userType, versionId, loadSubscriptionData]);
+
+  useEffect(() => {
+    const basePrice = useTripleSubscription ? tripleDurationPrice : price;
+    const priceNum = parseFloat(basePrice);
+    const discNum = parseFloat(discount);
+    if (Number.isFinite(priceNum) && Number.isFinite(discNum)) {
+      setTotalPayment((priceNum * (1 - discNum / 100)).toFixed(2));
+    } else if (Number.isFinite(priceNum)) {
+      setTotalPayment(priceNum.toFixed(2));
+    }
+  }, [useTripleSubscription, price, tripleDurationPrice, discount]);
 
   const confirmRenewal = (): boolean => {
     if (registrationType !== 'renewal') return true;
@@ -912,17 +949,34 @@ export default function QuickRegisterForm() {
                   </select>
                 </div>
                 <span className="qr-hint">The version chosen will affect the cost.</span>
-                <div className="qr-cost-control">
-                  <span className="qr-label-inline">Cost</span>
-                  <input
-                    type="text"
-                    className="qr-input-numeric"
-                    id="price"
-                    readOnly
-                    value={price}
-                    style={compactInputWidth(price, 3, 8)}
-                  />
-                </div>
+                <span className="qr-label-inline">
+                  {registrationType === 'renewal' ? 'Renewal cost' : 'First subscription cost'}
+                </span>
+                <input
+                  type="text"
+                  className="qr-input-numeric"
+                  id="price"
+                  readOnly
+                  value={useTripleSubscription ? tripleDurationPrice : price}
+                  style={compactInputWidth(useTripleSubscription ? tripleDurationPrice : price, 3, 8)}
+                />
+                {versionDurationDays ? (
+                  <span className="qr-hint">
+                    Duration: {useTripleSubscription ? tripleDurationDays : versionDurationDays} days
+                  </span>
+                ) : null}
+                {tripleDurationPrice ? (
+                  <label className="flex items-center gap-2 text-sm text-gray-700 mt-1">
+                    <input
+                      type="checkbox"
+                      checked={useTripleSubscription}
+                      onChange={(e) => setUseTripleSubscription(e.target.checked)}
+                    />
+                    Triple subscription — {tripleDurationPrice}
+                    {tripleDurationDiscount ? ` (${tripleDurationDiscount}% discount)` : ''}
+                    {tripleDurationDays ? ` · ${tripleDurationDays} days` : ''}
+                  </label>
+                ) : null}
                 {!loadingVersions && userType && versions.length === 0 ? (
                   <span className="qr-hint qr-hint-block">No versions available for this user type.</span>
                 ) : null}

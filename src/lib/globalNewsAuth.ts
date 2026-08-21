@@ -50,3 +50,56 @@ export type GlobalNewsFeedItem =
       customDescription: string | null;
       inGlobalNews: true;
     };
+
+/** Merged News + OGP marked for Global News, newest first. */
+export async function fetchGlobalNewsFeedItems(): Promise<GlobalNewsFeedItem[]> {
+  const [newsRows, ogpRows] = await Promise.all([
+    prisma.news.findMany({
+      where: { inGlobalNews: true } as { inGlobalNews: boolean },
+      orderBy: { date: 'desc' },
+      include: {
+        category: { select: { categoryName: true } },
+      },
+    }),
+    prisma.ogpArticle.findMany({
+      where: { inGlobalNews: true, deletedAt: null } as {
+        inGlobalNews: boolean;
+        deletedAt: null;
+      },
+      orderBy: { savedAt: 'desc' },
+      include: {
+        user: { select: { username: true } },
+      },
+    }),
+  ]);
+
+  const items: GlobalNewsFeedItem[] = [
+    ...newsRows.map((n) => ({
+      kind: 'news' as const,
+      id: n.id,
+      title: n.title,
+      date: n.date.toISOString(),
+      author: n.author ?? n.originalAuthor,
+      categoryName: n.category?.categoryName ?? null,
+      method: n.method,
+      image: n.image,
+      inGlobalNews: true as const,
+    })),
+    ...ogpRows.map((a) => ({
+      kind: 'ogp' as const,
+      id: a.id,
+      title: a.title,
+      date: a.savedAt.toISOString(),
+      topic: a.topic,
+      creatorUsername: a.user?.username ?? null,
+      image: a.image,
+      url: a.url,
+      description: a.description,
+      customDescription: a.customDescription,
+      inGlobalNews: true as const,
+    })),
+  ];
+
+  items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return items;
+}

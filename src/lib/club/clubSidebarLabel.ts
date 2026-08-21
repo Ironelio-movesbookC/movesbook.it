@@ -1,7 +1,13 @@
 export type ClubDescriptionMeta = {
   createdViaForm?: boolean;
+  /** ISO date (YYYY-MM-DD) — current network subscription start for this club. */
+  subscriptionStart?: string;
   /** ISO date (YYYY-MM-DD) — network subscription end for this club. */
   subscriptionEnd?: string;
+  /** Cumulative member slots purchased before the current subscription allowance. */
+  membersPurchasedBase?: number;
+  /** Number of subscription renewals applied (0 = first subscription period). */
+  subscriptionRenewalCount?: number;
   username?: string;
   directAccess?: string;
   category?: string;
@@ -17,6 +23,8 @@ export type ClubDescriptionMeta = {
   /** Rich-text references for the club (not the club admin user). */
   referencesHtml?: string;
   referencesLevel?: string;
+  /** Public path under `/uploads/entity_logos/` (or absolute URL). */
+  logoUrl?: string;
 };
 
 export function parseClubDescriptionMeta(

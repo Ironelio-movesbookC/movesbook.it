@@ -285,7 +285,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   <span>Access to advertisings</span>
                 </Link>
 
-                {/* Statistics Super Admin — nested menu */}
+                {/* General graphs — nested menu */}
                 <div className="space-y-1 pt-1">
                   <button
                     type="button"
@@ -294,7 +294,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   >
                     <div className="flex items-center gap-3">
                       <PieChart className="w-4 h-4 text-white shrink-0" />
-                      <span>Statistics Super Admin</span>
+                      <span>General graphs</span>
                     </div>
                     <Triangle
                       className={`w-3 h-3 text-white fill-[#ff8d00] transition-transform ${
@@ -620,7 +620,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   >
                     <Users2 className="w-4 h-4 shrink-0 opacity-95" />
                     <span className="leading-snug">
-                      My feedbacks for Staff ({myFeedbackCount})
+                      Feedbacks for our Staff ({myFeedbackCount})
                     </span>
                   </Link>
                 ) : null}

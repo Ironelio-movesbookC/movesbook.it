@@ -39,7 +39,8 @@ function mapPurchase(
     typology: p.typology,
     course: p.sectorName,
     service: p.serviceName,
-    insertDate: p.paydate ?? undefined,
+    insertDate: p.recordDate ?? undefined,
+    expirationDate: p.expireDate ?? p.paydate ?? undefined,
     value: p.value,
     paid: p.pay,
     rest: p.rest,
@@ -233,7 +234,9 @@ function ArchiveServiceListInner() {
           onSaved={() => load()}
           purchase={{
             id: editTarget.id,
+            recordDate: editTarget.recordDate,
             paydate: editTarget.paydate,
+            expireDate: editTarget.expireDate,
             notes: editTarget.notes,
             operatorId: editTarget.operatorId,
           }}

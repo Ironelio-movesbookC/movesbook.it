@@ -4,17 +4,21 @@ import { useCallback, useState } from 'react';
 import type { CreateEntityFormPayload } from '@/components/entity/CreateEntityModal';
 import type { ManagedEntityKind } from '@/lib/entity/entityProfileLabels';
 import { getFormCreatedEntitiesSortedByCreatedAt } from '@/lib/entity/entityForm';
+import { clubProfilePayloadForApi } from '@/lib/club/clubProfilePayload';
+import { applyEntityLogoOnSave } from '@/lib/entity/applyEntityLogoOnSave';
 
 type EntityRow = { id: string; description?: string | null };
 
 export function useManagedEntityCreation(options: {
   createApiPath: string;
   responseEntityKey: string;
+  entityKind: ManagedEntityKind;
   onReload: () => Promise<void>;
   onEntityCreated?: (id: string) => void;
   storageKey?: string;
 }) {
-  const { createApiPath, responseEntityKey, onReload, onEntityCreated, storageKey } = options;
+  const { createApiPath, responseEntityKey, entityKind, onReload, onEntityCreated, storageKey } =
+    options;
 
   const [showAdminPasswordConfirm, setShowAdminPasswordConfirm] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -42,14 +46,17 @@ export function useManagedEntityCreation(options: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ create: true, ...payload }),
+          body: JSON.stringify({ create: true, ...clubProfilePayloadForApi(payload) }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(data.error || 'Failed to create');
         }
-        await onReload();
         const entity = data[responseEntityKey] as { id?: string } | undefined;
+        if (entity?.id && (payload.logoFile || payload.removeLogo)) {
+          await applyEntityLogoOnSave(entityKind, entity.id, payload);
+        }
+        await onReload();
         if (entity?.id) {
           if (storageKey) localStorage.setItem(storageKey, entity.id);
           onEntityCreated?.(entity.id);
@@ -59,7 +66,7 @@ export function useManagedEntityCreation(options: {
         setCreateSaving(false);
       }
     },
-    [createApiPath, responseEntityKey, onReload, onEntityCreated, storageKey],
+    [createApiPath, responseEntityKey, entityKind, onReload, onEntityCreated, storageKey],
   );
 
   return {

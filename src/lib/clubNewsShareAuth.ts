@@ -52,6 +52,14 @@ export async function verifyClubOwnership(
   return Boolean(club);
 }
 
+export type { ClubOgpAudienceMode } from '@/lib/clubOgpAudience';
+export {
+  CLUB_OGP_AUDIENCE_MODES,
+  isClubOgpAudienceMode,
+  parseJsonStringArray,
+  canViewerSeeClubSharedOgp,
+} from '@/lib/clubOgpAudience';
+
 export type ClubSharedFeedItem =
   | {
       kind: 'news';
@@ -64,6 +72,7 @@ export type ClubSharedFeedItem =
       method: string | null;
       image: string | null;
       sharedAt: string;
+      inClubGlobalNews: boolean;
     }
   | {
       kind: 'ogp';
@@ -78,4 +87,5 @@ export type ClubSharedFeedItem =
       description: string | null;
       customDescription: string | null;
       sharedAt: string;
+      inClubGlobalNews: boolean;
     };

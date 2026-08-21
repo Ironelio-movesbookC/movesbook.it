@@ -138,7 +138,11 @@ function AdminDashboardInner() {
 
 export default function AdminDashboard() {
   return (
-    <Suspense fallback={<div className="p-6 text-gray-500">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="flex flex-1 items-center justify-center p-6 text-gray-500">Loading...</div>
+      }
+    >
       <AdminDashboardInner />
     </Suspense>
   );

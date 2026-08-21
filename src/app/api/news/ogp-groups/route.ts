@@ -17,6 +17,7 @@ function mapGroupResponse(
     visibilityCountries: string | null;
     visibilityLanguages: string | null;
     visibilitySports: string | null;
+    audienceMode?: string | null;
     user: { username: string; name: string | null; country: string | null } | null;
     items: Array<{
       ogpArticleId: string;
@@ -83,6 +84,7 @@ function mapGroupResponse(
     visibilityLanguages: parseVis(g.visibilityLanguages),
     visibilitySports: parseVis(g.visibilitySports),
     expiresAt: g.expiresAt?.toISOString() ?? null,
+    audienceMode: g.audienceMode ?? 'me-and-club-members',
     // Custom cover when set; otherwise preview from the 1st OGP News in the group
     title: first?.title ?? g.name,
     image: g.coverImage ?? first?.image ?? null,

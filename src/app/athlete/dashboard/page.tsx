@@ -71,7 +71,9 @@ import WorkoutSection from '@/components/workouts/WorkoutSection';
 import NutritionSection from '@/components/nutrition/NutritionSection';
 import ChatPanel from '@/components/chat/ChatPanel';
 import ChatAudienceSelectModal from '@/components/chat/ChatAudienceSelectModal';
+import ChatUnreadBadge from '@/components/chat/ChatUnreadBadge';
 import type { ChatAudience } from '@/lib/chat/chatAudience';
+import { useChatUnreadCount } from '@/hooks/useChatUnreadCount';
 import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
@@ -82,6 +84,9 @@ import MyMusicPanel from '@/components/music/MyMusicPanel';
 import MusicOGPPanel from '@/components/music/MusicOGPPanel';
 import PostsPanel from '@/components/posts/PostsPanel';
 import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
+import ClubNewsArchivePanel from '@/components/club/ClubNewsArchivePanel';
+import ClubSharedNewsPanel from '@/components/club/ClubSharedNewsPanel';
+import ClubMovesbookNewsPanel from '@/components/club/ClubMovesbookNewsPanel';
 import AthleteLegacyBanner, {
   type AthleteLegacyBannerProfile,
 } from '@/components/athlete/AthleteLegacyBanner';
@@ -92,7 +97,19 @@ import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModa
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
 import AthleteMyClubRightSidebar from '@/components/dashboard/AthleteMyClubRightSidebar';
+import MemberRegistrationInfoPanel from '@/components/member/MemberRegistrationInfoPanel';
 import { isClubAccountUserType, showSuggestMovesbookForTab } from '@/utils/dashboardRouting';
+import {
+  getEntityDirectAccessLock,
+  getEntityDirectAccessProfilePath,
+} from '@/lib/entity/entityDirectAccessSession';
+
+type AthleteClubMainPanel =
+  | 'default'
+  | 'club-news'
+  | 'club-news-ogp'
+  | 'club-global-news'
+  | 'club-movesbook-news';
 
 function heroBannerStripBgUrl(p: AthleteLegacyBannerProfile | null): string {
   return getHeroBannerDisplayUrl(p);
@@ -110,9 +127,24 @@ function AthleteDashboardContent() {
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
+  const { unreadCount: chatUnreadCount } = useChatUnreadCount();
   
   // All hooks must be called before any conditional returns
-  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'nutrition' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news' | 'posts' | 'music' | 'music-editor' | 'staff-feedbacks'>('overview');
+  const [activeSection, setActiveSection] = useState<
+    | 'overview'
+    | 'workouts'
+    | 'nutrition'
+    | 'progress'
+    | 'settings'
+    | 'personal-settings'
+    | 'chat'
+    | 'news'
+    | 'posts'
+    | 'music'
+    | 'music-editor'
+    | 'registration-info'
+    | 'staff-feedbacks'
+  >('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -136,6 +168,8 @@ function AthleteDashboardContent() {
   const [clubChatOpen, setClubChatOpen] = useState(false);
   /** After Telegram join, open club chat instead of My Page audience picker. */
   const [pendingClubChatOpen, setPendingClubChatOpen] = useState(false);
+  /** My Club → Club News panels (member view). */
+  const [clubMainPanel, setClubMainPanel] = useState<AthleteClubMainPanel>('default');
   
   // Entities athlete belongs to
   const [myCoaches, setMyCoaches] = useState<any[]>([]);
@@ -187,6 +221,11 @@ function AthleteDashboardContent() {
   useEffect(() => {
     if (user && !['ATHLETE', 'ADMIN'].includes(user.userType)) {
       if (isClubAccountUserType(user.userType)) {
+        const lock = getEntityDirectAccessLock();
+        if (lock) {
+          router.replace(getEntityDirectAccessProfilePath(lock));
+          return;
+        }
         const q = typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : '';
         router.replace(q ? `/club/dashboard?${q}` : '/club/dashboard');
       } else {
@@ -202,6 +241,10 @@ function AthleteDashboardContent() {
     if (open === 'news') {
       setActiveTab('my-page');
       setActiveSection('news');
+      router.replace('/athlete/dashboard', { scroll: false });
+    } else if (open === 'registration-info') {
+      setActiveTab('my-page');
+      setActiveSection('registration-info');
       router.replace('/athlete/dashboard', { scroll: false });
     } else if (open === 'music') {
       setActiveTab('my-page');
@@ -221,6 +264,7 @@ function AthleteDashboardContent() {
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
       setClubChatOpen(false);
+      setClubMainPanel('default');
     }
   }, [activeTab]);
 
@@ -228,8 +272,17 @@ function AthleteDashboardContent() {
     if (myClubs.length === 0 && activeTab === 'my-entity') {
       setActiveTab('my-page');
       setClubChatOpen(false);
+      setClubMainPanel('default');
     }
   }, [myClubs.length, activeTab]);
+
+  const openClubNewsPanel = useCallback((panel: Exclude<AthleteClubMainPanel, 'default'>) => {
+    setActiveTab('my-entity');
+    setClubChatOpen(false);
+    setClubAddSongsOgpOpen(false);
+    setClubAddSongsOgpExpanded(false);
+    setClubMainPanel(panel);
+  }, []);
 
   // Load entities the athlete belongs to
   useEffect(() => {
@@ -281,6 +334,7 @@ function AthleteDashboardContent() {
     }
     setActiveTab('my-entity');
     setClubAddSongsOgpOpen(false);
+    setClubMainPanel('default');
     setClubChatOpen(true);
   }, [selectedClubId, myClubs]);
 
@@ -758,6 +812,7 @@ function AthleteDashboardContent() {
                     >
                       <MessageSquare className="w-4 h-4" />
                       Chat panel
+                      <ChatUnreadBadge count={chatUnreadCount} />
                     </button>
                     <button
                       type="button"
@@ -840,6 +895,10 @@ function AthleteDashboardContent() {
                   setActiveTab('my-page');
                   setActiveSection('posts');
                 }}
+                onRegistrationInfoClick={() => {
+                  setActiveTab('my-page');
+                  setActiveSection('registration-info');
+                }}
                 onMyFeedbacksStaffClick={() => {
                   setActiveTab('my-page');
                   setActiveSection('staff-feedbacks');
@@ -847,11 +906,30 @@ function AthleteDashboardContent() {
                 onMyClubClick={() => setActiveTab('my-entity')}
                 onClubChatClick={handleClubChatClick}
                 onClubAddSongsPlaylistsClick={() => {
-                  setActiveTab('my-entity');
+                  // Same as navbar "Add Songs" → Music OGP editor
+                  setActiveTab('my-page');
                   setClubChatOpen(false);
-                  setClubAddSongsOgpOpen(true);
+                  setClubAddSongsOgpOpen(false);
+                  setClubAddSongsOgpExpanded(false);
+                  setClubMainPanel('default');
+                  setActiveSection('music-editor');
+                  setMusicExpanded(false);
                 }}
                 onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
+                onClubMusicPanelClick={() => {
+                  // Same as navbar "Music Panel" → My Music panel
+                  setActiveTab('my-page');
+                  setClubChatOpen(false);
+                  setClubAddSongsOgpOpen(false);
+                  setClubAddSongsOgpExpanded(false);
+                  setClubMainPanel('default');
+                  setActiveSection('music');
+                  setMusicExpanded(false);
+                }}
+                onClubMovesbookNewsSectionClick={() => openClubNewsPanel('club-movesbook-news')}
+                onClubNewsSectionClick={() => openClubNewsPanel('club-news')}
+                onClubOgpNewsSectionClick={() => openClubNewsPanel('club-news-ogp')}
+                onClubGlobalNewsSectionClick={() => openClubNewsPanel('club-global-news')}
               />
             </div>
           )}
@@ -932,6 +1010,14 @@ function AthleteDashboardContent() {
                     />
                   </div>
                 )}
+                {activeSection === 'registration-info' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <MemberRegistrationInfoPanel
+                      embedded
+                      onClose={() => setActiveSection('overview')}
+                    />
+                  </div>
+                )}
                 {activeSection === 'staff-feedbacks' && (
                   <div className="flex-1 flex flex-col min-h-0">
                     <MyStaffFeedbacksPanel onClose={() => setActiveSection('overview')} />
@@ -962,6 +1048,66 @@ function AthleteDashboardContent() {
                     chatAudience="club-member"
                     onClose={() => setClubChatOpen(false)}
                   />
+                </div>
+              ) : clubMainPanel === 'club-news' ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {selectedClubId ?? myClubs[0]?.id ? (
+                    <ClubNewsArchivePanel
+                      clubId={(selectedClubId ?? myClubs[0]?.id)!}
+                      sharedWithClubOnly
+                      title="News"
+                      onClose={() => setClubMainPanel('default')}
+                    />
+                  ) : (
+                    <div className="rounded-lg border bg-white p-6 shadow-sm">
+                      <p className="py-12 text-center text-sm text-gray-600">
+                        Select a club in the sidebar to view shared News.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : clubMainPanel === 'club-news-ogp' ? (
+                <div className="flex min-h-0 flex-1 flex-col py-4">
+                  {selectedClubId ?? myClubs[0]?.id ? (
+                    <NewsOGPPanel
+                      title="OGP News"
+                      clubId={(selectedClubId ?? myClubs[0]?.id)!}
+                      sharedWithClubOnly
+                      onClose={() => {
+                        setClubMainPanel('default');
+                        setClubAddSongsOgpExpanded(false);
+                      }}
+                      embedded
+                      isExpanded={clubAddSongsOgpExpanded}
+                      onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
+                    />
+                  ) : (
+                    <div className="rounded-lg border bg-white p-6 shadow-sm">
+                      <p className="py-12 text-center text-sm text-gray-600">
+                        Select a club in the sidebar to view shared OGP News.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : clubMainPanel === 'club-global-news' ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {selectedClubId ?? myClubs[0]?.id ? (
+                    <ClubSharedNewsPanel
+                      clubId={(selectedClubId ?? myClubs[0]?.id)!}
+                      type="all"
+                      title="Club Global News"
+                    />
+                  ) : (
+                    <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
+                      <p className="py-12 text-center text-sm text-gray-600">
+                        Select a club in the sidebar to view Club Global News.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : clubMainPanel === 'club-movesbook-news' ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <ClubMovesbookNewsPanel title="Movesbook News" />
                 </div>
               ) : (
                 <div className="bg-white rounded-lg shadow-sm border p-8 pt-12 flex-1 flex items-start justify-center">

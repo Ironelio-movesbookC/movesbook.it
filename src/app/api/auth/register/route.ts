@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import { UserType, SportType } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
 

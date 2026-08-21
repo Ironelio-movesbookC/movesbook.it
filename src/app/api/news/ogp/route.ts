@@ -1,6 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuthWithUser, requireAuthForNews, getOrCreateUserForSuperAdmin, getSuperAdminCreatorIds } from '../auth';
+import { verifyClubOwnership } from '@/lib/clubNewsShareAuth';
+
+/** Load viewCount even if Prisma client is stale (dev server locking generate). */
+async function loadOgpViewCounts(ids: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (ids.length === 0) return map;
+  try {
+    const rows = await prisma.$queryRaw<{ id: string; viewCount: number | null }[]>`
+      SELECT id, viewCount FROM ogp_articles WHERE id IN (${Prisma.join(ids)})
+    `;
+    for (const row of rows) {
+      map.set(row.id, typeof row.viewCount === 'number' ? row.viewCount : 0);
+    }
+  } catch {
+    /* column may not exist yet */
+  }
+  return map;
+}
 
 function parseJsonArray(str: string | null | undefined): string[] {
   if (str == null || str === '') return [];
@@ -115,6 +134,7 @@ export async function GET(request: NextRequest) {
 
       const superAdminCreatorIds = await getSuperAdminCreatorIds();
       const filtered = list.filter((a) => ogpVisibleToViewer(a, viewer));
+      const viewById = await loadOgpViewCounts(filtered.map((a) => a.id));
 
       const articles = filtered.map((a) => ({
         id: a.id,
@@ -133,6 +153,7 @@ export async function GET(request: NextRequest) {
         topic: a.topic,
         languageCode: a.languageCode ?? null,
         savedAt: a.savedAt.toISOString(),
+        viewCount: viewById.get(a.id) ?? (a as { viewCount?: number }).viewCount ?? 0,
         visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
         visibilityCountries: parseJsonArray(a.visibilityCountries),
         visibilityLanguages: parseJsonArray(a.visibilityLanguages),
@@ -187,6 +208,7 @@ export async function GET(request: NextRequest) {
 
     const now = new Date();
     const superAdminCreatorIds = await getSuperAdminCreatorIds();
+    const viewById = await loadOgpViewCounts(list.map((a) => a.id));
     const filtered = list.filter((a) => {
       const isCreator = a.userId === userId;
 
@@ -241,7 +263,10 @@ export async function GET(request: NextRequest) {
       topic: a.topic,
       languageCode: a.languageCode ?? null,
       savedAt: a.savedAt.toISOString(),
+      viewCount: viewById.get(a.id) ?? (a as { viewCount?: number }).viewCount ?? 0,
       inGlobalNews: a.inGlobalNews === true,
+      isFeatured: a.isFeatured === true,
+      displayInEvidence: a.displayInEvidence !== false,
       visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
       visibilityCountries: parseJsonArray(a.visibilityCountries),
       visibilityLanguages: parseJsonArray(a.visibilityLanguages),
@@ -263,7 +288,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
-  const { userId } = auth;
+  const { userId, userType } = auth;
 
   try {
     const body = await request.json();
@@ -282,10 +307,25 @@ export async function POST(request: NextRequest) {
       visibilityCountries,
       visibilityLanguages,
       visibilitySports,
+      shareToClubId,
     } = body;
     if (!url || typeof url !== 'string' || !url.trim()) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
+
+    const clubIdToShare =
+      typeof shareToClubId === 'string' && shareToClubId.trim() ? shareToClubId.trim() : null;
+    if (clubIdToShare) {
+      const isClubAdminType = userType === 'CLUB' || userType === 'CLUB_TRAINER';
+      if (!isClubAdminType) {
+        return NextResponse.json({ error: 'Club admin only' }, { status: 403 });
+      }
+      const ownsClub = await verifyClubOwnership(userId, clubIdToShare);
+      if (!ownsClub) {
+        return NextResponse.json({ error: 'Club not found or access denied' }, { status: 403 });
+      }
+    }
+
     const topicName = typeof topic === 'string' && topic.trim() ? topic.trim() : 'News';
     const created = await prisma.ogpArticle.create({
       data: {
@@ -306,6 +346,23 @@ export async function POST(request: NextRequest) {
         visibilitySports: Array.isArray(visibilitySports) ? JSON.stringify(visibilitySports) : null,
       },
     });
+
+    let sharedClubIds: string[] = [];
+    if (clubIdToShare) {
+      await prisma.clubSharedOgpArticle.upsert({
+        where: {
+          clubId_ogpArticleId: { clubId: clubIdToShare, ogpArticleId: created.id },
+        },
+        create: {
+          clubId: clubIdToShare,
+          ogpArticleId: created.id,
+          sharedById: userId,
+        },
+        update: { sharedById: userId },
+      });
+      sharedClubIds = [clubIdToShare];
+    }
+
     return NextResponse.json({
       id: created.id,
       title: created.title,
@@ -318,6 +375,7 @@ export async function POST(request: NextRequest) {
       topic: created.topic,
       languageCode: created.languageCode ?? null,
       savedAt: created.savedAt.toISOString(),
+      sharedClubIds,
     });
   } catch (e) {
     console.error('POST /api/news/ogp', e);

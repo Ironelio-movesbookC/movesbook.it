@@ -24,6 +24,8 @@ model User {
   securityQuestion         String?
   securityAnswer           String?
   clubMemberships          ClubMember[]
+  clubMemberGroupItems     ClubMemberGroupMember[]
+  clubMemberFavorites      ClubMemberFavorite[]
   ownedClubs               Club[]                @relation("ClubOwner")
   coaches                  CoachAthlete[]        @relation("AthleteCoaches")
   athletes                 CoachAthlete[]        @relation("CoachAthletes")
@@ -103,6 +105,7 @@ model User {
   procedureReceiptsAsOperator  ProcedureReceipt[] @relation("ProcedureReceiptOperator")
   clubSharedOgpArticles        ClubSharedOgpArticle[] @relation("ClubSharedOgpBy")
   clubSharedNews               ClubSharedNews[]       @relation("ClubSharedNewsBy")
+  clubStaffRoles               ClubStaff[]
 
   @@map("users_new")
 }
@@ -202,6 +205,10 @@ model OgpArticle {
   visibilityLanguages   String?   @db.Text // JSON array of language codes e.g. ["en","de"]
   visibilitySports      String?   @db.Text // JSON array of SportType e.g. ["RUN","SWIM"]
   inGlobalNews          Boolean   @default(false) // Super admin: shown in Global News merged feed
+  isFeatured            Boolean   @default(false) // Super admin: promoted to featured News Card (hero)
+  displayInEvidence     Boolean   @default(true) // Super admin: show/hide in featured News Card when isFeatured
+  /// Times this OGP News was opened. Used for News Headlines / Top Stories ranking.
+  viewCount             Int       @default(0)
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy             User?     @relation("OgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   likes                 OgpArticleLike[]
@@ -211,6 +218,7 @@ model OgpArticle {
   @@index([userId])
   @@index([userId, topic])
   @@index([deletedAt])
+  @@index([viewCount])
   @@map("ogp_articles")
 }
 
@@ -245,6 +253,8 @@ model OgpNewsGroup {
   visibilityCountries   String?   @db.Text
   visibilityLanguages   String?   @db.Text
   visibilitySports      String?   @db.Text
+  /// Club OGP News audience: only-me | me-and-club-members | me-club-members-and-filters
+  audienceMode          String    @default("me-and-club-members")
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   items                 OgpNewsGroupItem[]
   likes                 OgpNewsGroupLike[]
@@ -284,6 +294,40 @@ model OgpNewsGroupLike {
   @@index([groupId])
   @@index([userId])
   @@map("ogp_news_group_likes")
+}
+
+/// Singleton placement rules for OGP News sponsored cards (super admin).
+model OgpNewsSponsorSettings {
+  id           String           @id @default("default")
+  /// A: first sponsor row (1–5). If that row does not exist on a page, use the last row available.
+  startRow     Int              @default(2)
+  /// B: repeat every N rows after the first sponsor (3–99), counting across pages.
+  intervalRows Int              @default(12)
+  /// Rotation delay in milliseconds when more than one sponsor is configured.
+  delayMs      Int              @default(5000)
+  updatedAt    DateTime         @updatedAt
+  sponsors     OgpNewsSponsor[]
+
+  @@map("ogp_news_sponsor_settings")
+}
+
+model OgpNewsSponsor {
+  id          String                  @id @default(cuid())
+  settingsId  String                  @default("default")
+  image       String                  @db.Text
+  /// "single" (1 grid cell) or "double" (2 grid cells).
+  size        String                  @default("single")
+  hoverTitle  String?                 @db.Text
+  linkUrl     String                  @db.Text
+  /// "tab" (new browser tab) or "window" (new browser window).
+  linkTarget  String                  @default("tab")
+  sortOrder   Int                     @default(0)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  settings    OgpNewsSponsorSettings  @relation(fields: [settingsId], references: [id], onDelete: Cascade)
+
+  @@index([settingsId, sortOrder])
+  @@map("ogp_news_sponsors")
 }
 
 model NewsTypedArticle {
@@ -664,7 +708,7 @@ model UserMessageThread {
   realPath        String?               @db.VarChar(2048)
   errorMessage    String?               @db.VarChar(1000)
   supportCategory String?               @db.VarChar(32)
-  /// Workflow status for Suggestions/Problems (pending|progress|future|solved|unsolvable).
+  /// Workflow status for Suggestions, Problems, and bug/fix memos.
   /// Legacy assistance also used: S=Started, C=Completed, D=Decline
   status          String?               @db.VarChar(32)
   /// JSON array of up to 3 public image URLs attached to the first post
@@ -1610,6 +1654,8 @@ model Club {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   members            ClubMember[]
+  memberGroups       ClubMemberGroup[]
+  memberFavorites    ClubMemberFavorite[]
   websiteTopics      ClubWebsiteTopic[]
   procedureRecords   ProcedureRecord[]
   procedureReceipts  ProcedureReceipt[]
@@ -1618,6 +1664,7 @@ model Club {
   admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
   sharedOgpArticles  ClubSharedOgpArticle[]
   sharedNews         ClubSharedNews[]
+  staff              ClubStaff[]
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
   @@map("clubs_new")
@@ -1625,37 +1672,45 @@ model Club {
 
 /// OGP News article shared by a club admin into one of their clubs.
 model ClubSharedOgpArticle {
-  id           String     @id @default(cuid())
-  clubId       String
-  ogpArticleId String
-  sharedById   String
-  createdAt    DateTime   @default(now())
-  club         Club       @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  ogpArticle   OgpArticle @relation(fields: [ogpArticleId], references: [id], onDelete: Cascade)
-  sharedBy     User       @relation("ClubSharedOgpBy", fields: [sharedById], references: [id], onDelete: Cascade)
+  id                String     @id @default(cuid())
+  clubId            String
+  ogpArticleId      String
+  sharedById        String
+  /// Club admin: promoted into Club Global News merged feed for this club.
+  inClubGlobalNews  Boolean    @default(false)
+  /// Club OGP News audience: only-me | me-and-club-members | me-club-members-and-filters
+  audienceMode      String     @default("me-and-club-members")
+  createdAt         DateTime   @default(now())
+  club              Club       @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  ogpArticle        OgpArticle @relation(fields: [ogpArticleId], references: [id], onDelete: Cascade)
+  sharedBy          User       @relation("ClubSharedOgpBy", fields: [sharedById], references: [id], onDelete: Cascade)
 
   @@unique([clubId, ogpArticleId])
   @@index([clubId])
   @@index([ogpArticleId])
   @@index([sharedById])
+  @@index([clubId, inClubGlobalNews])
   @@map("club_shared_ogp_articles")
 }
 
 /// Editorial News article shared by a club admin into one of their clubs.
 model ClubSharedNews {
-  id         String   @id @default(cuid())
-  clubId     String
-  newsId     String
-  sharedById String
-  createdAt  DateTime @default(now())
-  club       Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  news       News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
-  sharedBy   User     @relation("ClubSharedNewsBy", fields: [sharedById], references: [id], onDelete: Cascade)
+  id               String   @id @default(cuid())
+  clubId           String
+  newsId           String
+  sharedById       String
+  /// Club admin: promoted into Club Global News merged feed for this club.
+  inClubGlobalNews Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  club             Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  news             News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  sharedBy         User     @relation("ClubSharedNewsBy", fields: [sharedById], references: [id], onDelete: Cascade)
 
   @@unique([clubId, newsId])
   @@index([clubId])
   @@index([newsId])
   @@index([sharedById])
+  @@index([clubId, inClubGlobalNews])
   @@map("club_shared_news")
 }
 
@@ -1712,6 +1767,69 @@ model ClubMember {
   @@unique([clubId, memberId])
   @@index([memberId], map: "club_members_new_memberId_fkey")
   @@map("club_members_new")
+}
+
+/// Named member lists created by club admin from Archive — Members.
+model ClubMemberGroup {
+  id        String                  @id @default(cuid())
+  clubId    String
+  name      String
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  club      Club                    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  members   ClubMemberGroupMember[]
+
+  @@index([clubId])
+  @@map("club_member_groups")
+}
+
+model ClubMemberGroupMember {
+  id        String          @id @default(cuid())
+  groupId   String
+  memberId  String
+  createdAt DateTime        @default(now())
+  group     ClubMemberGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  member    User            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, memberId])
+  @@index([memberId])
+  @@map("club_member_group_members")
+}
+
+/// Club-level staff (Operator / Collaborator / Coadmin) managed by the club admin.
+model ClubStaff {
+  id         String   @id @default(cuid())
+  clubId     String
+  userId     String
+  /// coadmin | operator | collaborator
+  staffType  String
+  /// Employment area / role (e.g. Instructor, Personal trainer)
+  role       String
+  /// JSON string array of permission keys (management, payment, …)
+  userLevels String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  club       Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, userId])
+  @@index([clubId])
+  @@index([userId])
+  @@map("club_staff")
+}
+
+/// Club members marked as favourites by the club admin.
+model ClubMemberFavorite {
+  id        String   @id @default(cuid())
+  clubId    String
+  memberId  String
+  createdAt DateTime @default(now())
+  club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  member    User     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, memberId])
+  @@index([memberId])
+  @@map("club_member_favorites")
 }
 
 model Group {
@@ -1984,6 +2102,9 @@ enum UserType {
   TEAM_MANAGER
   CLUB
   CLUB_TRAINER
+  CLUB_COADMIN
+  CLUB_OPERATOR
+  CLUB_COLLABORATOR
   GROUP
   GROUP_ADMIN
   ADMIN

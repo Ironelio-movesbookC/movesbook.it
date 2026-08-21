@@ -30,29 +30,21 @@ export async function fetchClubOperatorOptions(clubId: string): Promise<Operator
     seen.add(club.admin.id);
   }
 
-  const staffMembers = await prisma.clubMember.findMany({
+  const staffMembers = await prisma.clubStaff.findMany({
     where: { clubId },
     include: {
-      member: {
+      user: {
         select: { id: true, firstName: true, surname: true, name: true, username: true },
       },
     },
   });
 
   for (const row of staffMembers) {
-    if (seen.has(row.member.id)) continue;
-    const role = String(row.role ?? '').toLowerCase();
-    const isStaff =
-      !role ||
-      role.includes('trainer') ||
-      role.includes('operator') ||
-      role.includes('staff') ||
-      role.includes('employee');
-    if (!isStaff) continue;
-    const name = formatUserName(row.member);
+    if (seen.has(row.user.id)) continue;
+    const name = formatUserName(row.user);
     if (!name) continue;
-    operators.push({ id: row.member.id, name });
-    seen.add(row.member.id);
+    operators.push({ id: row.user.id, name });
+    seen.add(row.user.id);
   }
 
   operators.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));

@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
@@ -12,7 +12,10 @@ import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolba
 import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { isClubAccountUserType, showSuggestMovesbookForTab } from '@/utils/dashboardRouting';
+import {
+  canAccessClubWorkspace,
+  showSuggestMovesbookForTab,
+} from '@/utils/dashboardRouting';
 import {
   getClubMyPageDisplayName,
   getFormCreatedClubsSortedByCreatedAt,
@@ -33,14 +36,40 @@ import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/Ch
 import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import { ClubWorkspaceContext } from '@/contexts/ClubWorkspaceContext';
+import { clubProfilePayloadForApi } from '@/lib/club/clubProfilePayload';
+import { type CreatableCompaniesQuota } from '@/lib/club/creatableCompaniesQuota.shared';
+import {
+  canCreateAnotherCompany,
+  getCreatableCompaniesLimit,
+  isCreatableCompaniesUnlimited,
+  remainingCreatableCompanies,
+} from '@/lib/admin/subscriptionManageableUsers';
+import { SUBSCRIPTION_SETTINGS_UPDATED_EVENT } from '@/lib/admin/subscriptionSettingsMock';
+import { getDefaultVersionId } from '@/lib/registration/waysToGetStarted';
+import { applyEntityLogoOnSave } from '@/lib/entity/applyEntityLogoOnSave';
+import {
+  useEntityDirectAccessGuard,
+  useEntityDirectAccessLockedForKind,
+} from '@/hooks/useEntityDirectAccessGuard';
+import { clearEntityCompanyLoginSession, isEntityWorkspaceSession } from '@/lib/entity/entityDirectAccessSession';
+import { fetchPcuAlert } from '@/lib/user/pcuAlertClient';
+import { usePcuAlert } from '@/contexts/PcuAlertContext';
+import { useEntityWorkspaceDashboardNav } from '@/hooks/useEntityWorkspaceDashboardNav';
 import TopBar from '@/app/club/dashboard/components/topbar/TopBar';
 import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
+import ChatPanel from '@/components/chat/ChatPanel';
+import ChatAudienceSelectModal from '@/components/chat/ChatAudienceSelectModal';
+import type { ChatAudience } from '@/lib/chat/chatAudience';
 
 function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
+  const { showAlert } = usePcuAlert();
+  const clubDirectAccessLocked = useEntityDirectAccessLockedForKind('club');
+  useEntityDirectAccessGuard(!loading && !!user);
 
   const {
     showAdBanner,
@@ -63,12 +92,58 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
   const [createClubModalKey, setCreateClubModalKey] = useState(0);
   const [createClubSaving, setCreateClubSaving] = useState(false);
+  const [myClubTabVisible, setMyClubTabVisible] = useState(false);
+  const [subscriptionSettingId, setSubscriptionSettingId] = useState<number | null>(null);
+  const [settingsRevision, setSettingsRevision] = useState(0);
   const [showStaffFeedbacks, setShowStaffFeedbacks] = useState(false);
+  const [userTelegramAccount, setUserTelegramAccount] = useState<string | null>(null);
+  const [telegramAccount, setTelegramAccount] = useState('');
+  const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showChatAudienceModal, setShowChatAudienceModal] = useState(false);
+  const [chatAudience, setChatAudience] = useState<ChatAudience | null>(null);
+  const [showChatPanel, setShowChatPanel] = useState(false);
+
+  const showMyClubTab = useCallback(() => {
+    setMyClubTabVisible(true);
+  }, []);
+
+  const hideMyClubTab = useCallback(() => {
+    setMyClubTabVisible(false);
+  }, []);
+
+  useEntityWorkspaceDashboardNav({
+    kind: 'club',
+    searchParams,
+    router,
+    entityDirectAccessLocked: clubDirectAccessLocked,
+    activeTab,
+    setActiveTab,
+    setSelectedEntityId: setSelectedClubId,
+    setMyEntityTabVisible: setMyClubTabVisible,
+  });
 
   const formClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(clubs),
     [clubs],
   );
+
+  const creatableCompaniesQuota = useMemo((): CreatableCompaniesQuota | null => {
+    void settingsRevision;
+    const created = formClubs.length;
+    const limit = getCreatableCompaniesLimit(subscriptionSettingId);
+    if (limit == null) return null;
+
+    const unlimited = isCreatableCompaniesUnlimited(limit);
+    return {
+      limit,
+      created,
+      remaining: remainingCreatableCompanies(limit, created),
+      canCreate: canCreateAnotherCompany(limit, created),
+      unlimited,
+    };
+  }, [formClubs.length, subscriptionSettingId, settingsRevision]);
+
   const hasFormClub = formClubs.length > 0;
   const activeClub = selectedClubId
     ? formClubs.find((c) => c.id === selectedClubId) ?? null
@@ -92,6 +167,28 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
       console.error('Error loading clubs:', error);
     } finally {
       setClubsLoaded(true);
+    }
+  }, []);
+
+  const loadSubscriptionSettingId = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const response = await fetch('/api/user/member-registration-info', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const fallbackId = getDefaultVersionId('club');
+        if (fallbackId) setSubscriptionSettingId(fallbackId);
+        return;
+      }
+      const data = (await response.json()) as { subscriptionSettingId?: number };
+      if (typeof data.subscriptionSettingId === 'number') {
+        setSubscriptionSettingId(data.subscriptionSettingId);
+      }
+    } catch {
+      /* optional */
     }
   }, []);
 
@@ -120,12 +217,104 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const loadTelegramAccount = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const response = await fetch('/api/user/telegram-account', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUserTelegramAccount(data.telegramAccount ?? null);
+      }
+    } catch (error) {
+      console.error('Error loading Telegram account:', error);
+    }
+  }, []);
+
+  const handleChatPanelClick = useCallback(() => {
+    setShowStaffFeedbacks(false);
+    writeClubWorkspaceTab('my-page');
+    setActiveTab('my-page');
+    if (userTelegramAccount) {
+      setShowChatAudienceModal(true);
+    } else {
+      setShowJoinModal(true);
+    }
+  }, [userTelegramAccount]);
+
+  const handleChatAudienceSelect = useCallback((audience: ChatAudience) => {
+    setChatAudience(audience);
+    setShowChatAudienceModal(false);
+    setShowStaffFeedbacks(false);
+    setShowChatPanel(true);
+  }, []);
+
+  const handleJoinChat = useCallback(async () => {
+    if (!telegramAccount.trim()) {
+      alert('Please enter your Telegram account');
+      return;
+    }
+
+    const formattedAccount = telegramAccount.startsWith('@')
+      ? telegramAccount
+      : `@${telegramAccount}`;
+
+    setIsLoadingTelegram(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/user/telegram-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ telegramAccount: formattedAccount }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setUserTelegramAccount(formattedAccount);
+          setShowJoinModal(false);
+          setTelegramAccount('');
+          setShowChatAudienceModal(true);
+        } else {
+          alert(data.error || 'Failed to save Telegram account');
+        }
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || 'Failed to save Telegram account');
+      }
+    } catch (error) {
+      console.error('Error saving Telegram account:', error);
+      alert('Error saving Telegram account. Please try again.');
+    } finally {
+      setIsLoadingTelegram(false);
+    }
+  }, [telegramAccount]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const savedClubId = localStorage.getItem('selectedClub');
     if (savedClubId) setSelectedClubId(savedClubId);
     const savedTab = readClubWorkspaceTab();
     if (savedTab) setActiveTab(savedTab);
+  }, []);
+
+  useEffect(() => {
+    void loadSubscriptionSettingId();
+  }, [loadSubscriptionSettingId]);
+
+  useEffect(() => {
+    const refresh = () => setSettingsRevision((value) => value + 1);
+    window.addEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener(SUBSCRIPTION_SETTINGS_UPDATED_EVENT, refresh);
+      window.removeEventListener('focus', refresh);
+    };
   }, []);
 
   useEffect(() => {
@@ -182,37 +371,66 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   }, [user, loading, router]);
 
   useEffect(() => {
-    if (user && !isClubAccountUserType(user.userType)) {
+    if (user && !canAccessClubWorkspace(user.userType)) {
       router.push('/my-page');
     }
   }, [user, router]);
 
   useEffect(() => {
-    if (user && isClubAccountUserType(user.userType)) {
+    if (user && canAccessClubWorkspace(user.userType)) {
       void loadClubs();
       void loadBannerProfile();
+      void loadTelegramAccount();
     }
-  }, [user, loadClubs, loadBannerProfile]);
+  }, [user, loadClubs, loadBannerProfile, loadTelegramAccount]);
 
   const handleTabChange = useCallback((tab: ClubWorkspaceTab) => {
+    if (tab === 'my-page') {
+      clearEntityCompanyLoginSession();
+      hideMyClubTab();
+    } else {
+      setShowChatPanel(false);
+      setChatAudience(null);
+      setShowStaffFeedbacks(false);
+    }
     writeClubWorkspaceTab(tab);
     setActiveTab(tab);
-  }, []);
+  }, [hideMyClubTab]);
 
-  const handleClubSelect = useCallback((clubId: string) => {
-    localStorage.setItem('selectedClub', clubId);
-    setSelectedClubId(clubId);
-    writeClubWorkspaceTab('my-entity');
-    setActiveTab('my-entity');
-  }, []);
+  const handleClubSelect = useCallback(
+    async (clubId: string) => {
+      const openMyClub = () => {
+        localStorage.setItem('selectedClub', clubId);
+        setSelectedClubId(clubId);
+        writeClubWorkspaceTab('my-entity');
+        setActiveTab('my-entity');
+        showMyClubTab();
+      };
+
+      if (!isEntityWorkspaceSession('club')) {
+        const alert = await fetchPcuAlert('login', user?.language || 'en', clubId);
+        if (alert) {
+          showAlert(alert, openMyClub);
+          return;
+        }
+      }
+
+      openMyClub();
+    },
+    [showAlert, showMyClubTab, user?.language],
+  );
 
   const handleMyPageTabClick = useCallback(() => {
+    clearEntityCompanyLoginSession();
+    hideMyClubTab();
     writeClubWorkspaceTab('my-page');
     setActiveTab('my-page');
+    setShowChatPanel(false);
+    setChatAudience(null);
     if (pathname !== '/club/dashboard') {
       router.push('/club/dashboard');
     }
-  }, [pathname, router]);
+  }, [hideMyClubTab, pathname, router]);
 
   const handleMyClubTabClick = useCallback(() => {
     const clubId = selectedClubId ?? formClubs[0]?.id ?? null;
@@ -228,7 +446,16 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     router.push(`/my-club?clubId=${encodeURIComponent(clubId)}`);
   }, [selectedClubId, formClubs, router]);
 
-  const openCreateClubFlow = () => setShowAdminPasswordConfirm(true);
+  const openCreateClubFlow = () => {
+    if (creatableCompaniesQuota && !creatableCompaniesQuota.canCreate) {
+      showAlert({
+        title: 'Company limit reached',
+        bodyHtml: `<p>You cannot create more companies for this subscription version.</p><p><strong>Limit:</strong> ${creatableCompaniesQuota.limit} · <strong>Already created:</strong> ${creatableCompaniesQuota.created}</p>`,
+      });
+      return;
+    }
+    setShowAdminPasswordConfirm(true);
+  };
 
   const handleAdminPasswordVerified = () => {
     setShowAdminPasswordConfirm(false);
@@ -248,19 +475,24 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ create: true, ...payload }),
+        body: JSON.stringify({ create: true, ...clubProfilePayloadForApi(payload) }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.error || 'Failed to create club');
       }
+      const clubId = data.club?.id as string | undefined;
+      if (clubId && (payload.logoFile || payload.removeLogo)) {
+        await applyEntityLogoOnSave('club', clubId, payload);
+      }
       await loadClubs();
-      if (data.club?.id) {
-        setSelectedClubId(data.club.id);
-        localStorage.setItem('selectedClub', data.club.id);
+      if (clubId) {
+        setSelectedClubId(clubId);
+        localStorage.setItem('selectedClub', clubId);
         writeClubFormProfileHint(true);
         writeClubWorkspaceTab('my-entity');
         setActiveTab('my-entity');
+        showMyClubTab();
       }
       setShowCreateClubModal(false);
     } finally {
@@ -279,6 +511,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
         | 'club-news'
         | 'club-news-ogp'
         | 'club-global-news'
+        | 'club-movesbook-news'
     ) => {
       if (!hasFormClub) return;
       const clubId = selectedClubId ?? formClubs[0]?.id ?? null;
@@ -301,7 +534,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     [formClubs, hasFormClub, router, selectedClubId],
   );
 
-  if (loading || !user || !isClubAccountUserType(user.userType)) {
+  if (loading || !user || !canAccessClubWorkspace(user.userType)) {
     return null;
   }
 
@@ -356,21 +589,28 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 entities={formClubs}
                 selectedEntityId={selectedClubId}
                 clubProfileLoaded={clubsLoaded}
+                clubMyClubTabVisible={myClubTabVisible || clubDirectAccessLocked}
+                hideMyPageTab={clubDirectAccessLocked}
                 onEntitySelect={handleClubSelect}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
                 onMyPageClick={handleMyPageTabClick}
                 onMyClubClick={handleMyClubTabClick}
-                onClubAddSongsPlaylistsClick={() => goToDashboardPanel('news')}
+                onClubAddSongsPlaylistsClick={() => router.push('/add-songs')}
+                onClubMusicPanelClick={() => router.push('/music-panel')}
                 onIdentificationDevicesClick={() => goToDashboardPanel('identification-devices')}
                 onAccessOutcomeSettingsClick={() => goToDashboardPanel('outcome-settings')}
                 onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
                 onClubChatClick={() => goToDashboardPanel('chat')}
                 onClubNewsSectionClick={() => goToDashboardPanel('club-news')}
+                onClubMovesbookNewsSectionClick={() => goToDashboardPanel('club-movesbook-news')}
                 onClubOgpNewsSectionClick={() => goToDashboardPanel('club-news-ogp')}
                 onClubGlobalNewsSectionClick={() => goToDashboardPanel('club-global-news')}
                 onCreateClubClick={openCreateClubFlow}
+                creatableCompaniesQuota={creatableCompaniesQuota}
                 onMyFeedbacksStaffClick={() => {
+                  setShowChatPanel(false);
+                  setChatAudience(null);
                   setActiveTab('my-page');
                   setShowStaffFeedbacks(true);
                 }}
@@ -379,9 +619,22 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
           )}
 
           <main className="flex-1 min-w-0 flex flex-col px-4 overflow-y-auto">
-            <TopBar/>
+            <TopBar onChatPanelClick={handleChatPanelClick} />
             {showStaffFeedbacks ? (
               <MyStaffFeedbacksPanel onClose={() => setShowStaffFeedbacks(false)} />
+            ) : showChatPanel && chatAudience ? (
+              <div className="flex-1 flex flex-col min-h-0 max-h-[75vh]">
+                <ChatPanel
+                  key={chatAudience}
+                  embedded
+                  chatAudience={chatAudience}
+                  userType={user.userType}
+                  onClose={() => {
+                    setShowChatPanel(false);
+                    setChatAudience(null);
+                  }}
+                />
+              </div>
             ) : (
               children
             )}
@@ -443,6 +696,86 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
         currentBannerVideoPath={bannerProfile?.profileBannerVideo}
         t={t}
       />
+
+      {showJoinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="mx-4 w-full max-w-md rounded-lg bg-white shadow-xl">
+            <div className="p-6">
+              <h2 className="mb-4 text-2xl font-bold text-gray-900">
+                Provide &apos;I&apos;ve joined&apos; confirmation button
+              </h2>
+
+              <div className="mb-6">
+                <p className="mb-4 text-sm text-gray-600">
+                  Let them confirm inside Movesbook chat page UI
+                </p>
+
+                <div className="mb-4">
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Telegram Account
+                  </label>
+                  <input
+                    type="text"
+                    value={telegramAccount}
+                    onChange={(e) => setTelegramAccount(e.target.value)}
+                    placeholder="@username"
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Enter your Telegram username (e.g., @username)
+                  </p>
+                </div>
+
+                {!telegramAccount && (
+                  <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                    <p className="mb-2 text-sm text-gray-700">
+                      Don&apos;t have a Telegram account?
+                    </p>
+                    <a
+                      href="https://telegram.org/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800"
+                    >
+                      Create a Telegram account
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowJoinModal(false);
+                    setTelegramAccount('');
+                  }}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleJoinChat()}
+                  disabled={isLoadingTelegram || !telegramAccount.trim()}
+                  className="flex-1 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isLoadingTelegram ? 'Saving...' : "I've joined"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showChatAudienceModal && (
+        <ChatAudienceSelectModal
+          userType={user.userType}
+          onSelect={handleChatAudienceSelect}
+          onCancel={() => setShowChatAudienceModal(false)}
+        />
+      )}
 
       <SimpleFooter />
     </div>

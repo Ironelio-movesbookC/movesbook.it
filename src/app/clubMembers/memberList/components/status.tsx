@@ -1,51 +1,95 @@
 'use client';
-import { Users, UserCheck, UserPlus } from "lucide-react";
 
-export default function MemberStats() {
-  const maxMembers = 50;
-  const currentMembers = 32;
-  const availableMembers = maxMembers - currentMembers;
+import { Info } from 'lucide-react';
+import type { ClubMemberCapacityStats } from '@/lib/club/clubMemberCapacity';
 
-  const stats = [
-    {
-      title: "Maximum Members",
-      value: `${maxMembers}`,
-      icon: Users,
-      gradient: "from-blue-500 to-blue-600"
-    },
-    {
-      title: "Current Members",
-      value: `${currentMembers}`,
-      icon: UserCheck,
-      gradient: "from-green-500 to-green-600"
-    },
-    {
-      title: "Available Slots",
-      value: `${availableMembers}`,
-      icon: UserPlus,
-      gradient: "from-purple-500 to-purple-600"
-    }
-  ];
+type ClubMemberArchiveHeaderProps = {
+  capacity: ClubMemberCapacityStats;
+  onPurchaseMembers?: () => void;
+  onStatusAccounts?: () => void;
+};
+
+function StatCard({
+  title,
+  value,
+  gradient,
+}: {
+  title: string;
+  value: string;
+  gradient: string;
+}) {
+  return (
+    <div
+      className={`rounded-xl bg-gradient-to-r ${gradient} p-5 text-white shadow-md min-w-[160px] flex-1`}
+    >
+      <p className="text-sm font-medium opacity-95">{title}</p>
+      <p className="mt-2 text-3xl font-bold leading-none">{value}</p>
+    </div>
+  );
+}
+
+export default function ClubMemberArchiveHeader({
+  capacity,
+  onPurchaseMembers,
+  onStatusAccounts,
+}: ClubMemberArchiveHeaderProps) {
+  const availableLabel = capacity.unlimited
+    ? 'Unlimited'
+    : String(capacity.availableSlots ?? 0);
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      {stats.map((stat, i) => {
-        const Icon = stat.icon;
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold text-gray-900">Archive of Members of the Club</h1>
 
-        return (
-          <div
-            key={i}
-            className={`p-6 rounded-xl shadow-md text-white bg-gradient-to-r ${stat.gradient} flex justify-between items-start`}
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            title="Current Members"
+            value={String(capacity.currentMembers)}
+            gradient="from-emerald-500 to-emerald-600"
+          />
+          <StatCard
+            title="Members purchased"
+            value={String(capacity.membersPurchased)}
+            gradient="from-sky-500 to-blue-600"
+          />
+          <StatCard
+            title="Members added"
+            value={String(capacity.membersAdded)}
+            gradient="from-violet-500 to-purple-600"
+          />
+          <StatCard
+            title="Available Slots"
+            value={availableLabel}
+            gradient="from-fuchsia-400 to-purple-500"
+          />
+        </div>
+
+        <div className="flex shrink-0 flex-col items-stretch gap-3 xl:w-56">
+          <button
+            type="button"
+            onClick={onPurchaseMembers}
+            className="rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-3 text-sm font-bold text-white shadow hover:from-red-600 hover:to-red-800"
           >
-            <div>
-              <p className="text-sm opacity-90">{stat.title}</p>
-              <h2 className="text-3xl font-bold mt-2">{stat.value}</h2>
-            </div>
-
-            <Icon size={22} className="opacity-80" />
-          </div>
-        );
-      })}
+            Purchase members
+          </button>
+          <button
+            type="button"
+            onClick={onStatusAccounts}
+            className="rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-3 text-sm font-bold text-white shadow hover:from-red-600 hover:to-red-800"
+          >
+            Status accounts
+          </button>
+          {capacity.subscriptionExpirationLabel ? (
+            <p className="flex items-start gap-1 text-sm font-semibold text-red-600">
+              <span>
+                Expiration date of the Subscription: {capacity.subscriptionExpirationLabel}
+              </span>
+              <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            </p>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

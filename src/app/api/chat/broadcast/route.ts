@@ -11,6 +11,13 @@ import {
   getClubMemberUserIds,
   resolveBroadcastAdminAuth,
 } from '@/lib/chat/clubChannelAuth';
+import {
+  listClubMemberFavouriteIdsForClub,
+  listClubMemberGroupMemberIds,
+} from '@/lib/club/memberLists';
+import {
+  userCanSeeBroadcastRow,
+} from '@/lib/chat/broadcastVisibility';
 
 export const dynamic = 'force-dynamic';
 
@@ -127,9 +134,9 @@ async function resolveRecipientIds(opts: {
   sports: string[];
   userTypes: string[];
   countries: string[];
+  memberGroupId?: string | null;
 }): Promise<string[] | null> {
   const audience = await loadAudienceUsers(opts.clubId);
-  const withTelegram = audience.filter((u) => Boolean(u.telegramAccount?.trim()));
 
   if (opts.mode === 'all') {
     return null; // visible to every channel viewer
@@ -137,22 +144,39 @@ async function resolveRecipientIds(opts: {
 
   if (opts.mode === 'repliers') {
     const set = new Set(opts.subscriberIds);
-    return withTelegram.filter((u) => set.has(u.id)).map((u) => u.id);
+    return audience.filter((u) => set.has(u.id)).map((u) => u.id);
   }
 
   if (opts.mode === 'subscribers') {
     const set = new Set(opts.subscriberIds);
-    return withTelegram.filter((u) => set.has(u.id)).map((u) => u.id);
+    return audience.filter((u) => set.has(u.id)).map((u) => u.id);
   }
 
   if (opts.mode === 'favourites') {
-    return withTelegram
+    if (opts.clubId) {
+      const favouriteIds = await listClubMemberFavouriteIdsForClub(opts.clubId);
+      const set = new Set(favouriteIds);
+      return audience.filter((u) => set.has(u.id)).map((u) => u.id);
+    }
+    return audience
       .filter((u) => {
         const panel = readProfilePanelSettings(u.settings?.adminSettings);
         return panel.favouritePriority !== 'not_selected';
       })
       .map((u) => u.id);
   }
+
+  if (opts.mode === 'group') {
+    if (opts.clubId) {
+      const groupId = typeof opts.memberGroupId === 'string' ? opts.memberGroupId.trim() : '';
+      if (!groupId) return [];
+      const memberIds = await listClubMemberGroupMemberIds(opts.clubId, groupId);
+      const set = new Set(memberIds);
+      return audience.filter((u) => set.has(u.id)).map((u) => u.id);
+    }
+  }
+
+  const withTelegram = audience.filter((u) => Boolean(u.telegramAccount?.trim()));
 
   const hasFiltersConfigured =
     opts.sports.length > 0 || opts.userTypes.length > 0 || opts.countries.length > 0;
@@ -185,19 +209,11 @@ async function resolveRecipientIds(opts: {
 }
 
 function userCanSeeBroadcast(
-  row: { recipientIds: string | null; mode: string },
-  myId: string
+  row: { id: string; recipientIds: string | null; mode: string },
+  myId: string,
+  rowById: Map<string, { id: string; recipientIds: string | null; mode: string }>
 ): boolean {
-  if (row.mode === 'repliers') {
-    if (!row.recipientIds) return false;
-    try {
-      const ids = JSON.parse(row.recipientIds) as unknown;
-      return Array.isArray(ids) && ids.some((id) => String(id) === myId);
-    } catch {
-      return false;
-    }
-  }
-  return true;
+  return userCanSeeBroadcastRow(row, myId, rowById);
 }
 
 function clubScopeWhere(clubId: string | null) {
@@ -265,6 +281,10 @@ export async function GET(request: NextRequest) {
         .map((r) => [r.id, { content: r.content, senderName: r.senderName }] as const)
     );
 
+    const rowById = new Map(
+      rows.map((r) => [r.id, { id: r.id, recipientIds: r.recipientIds, mode: r.mode }])
+    );
+
     let messages;
     if (isAdmin && wantAll) {
       messages = rows.map((row) => mapMessage(row, { parentById }));
@@ -274,7 +294,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'User not found' }, { status: 401 });
       }
       messages = rows
-        .filter((row) => userCanSeeBroadcast(row, myId))
+        .filter((row) => userCanSeeBroadcast(row, myId, rowById))
         .map((row) => mapMessage(row, { myId, parentById }));
     }
 
@@ -353,6 +373,8 @@ export async function POST(request: NextRequest) {
           sports: asStringArray(item.sports),
           userTypes: asStringArray(item.userTypes),
           countries: asStringArray(item.countries),
+          memberGroupId:
+            typeof item.memberGroupId === 'string' ? item.memberGroupId : null,
         });
 
         const storedRecipients =
@@ -409,6 +431,7 @@ export async function POST(request: NextRequest) {
       sports: asStringArray(body.sports),
       userTypes: asStringArray(body.userTypes),
       countries: asStringArray(body.countries),
+      memberGroupId: typeof body.memberGroupId === 'string' ? body.memberGroupId : null,
     });
 
     if (mode !== 'all' && Array.isArray(recipientIds) && recipientIds.length === 0) {
