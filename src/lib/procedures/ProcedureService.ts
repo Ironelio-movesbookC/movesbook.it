@@ -32,6 +32,50 @@ function toDateOnly(value: string): Date {
   return new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
 }
 
+async function memberIdsMatchingSearch(search: string): Promise<string[]> {
+  const q = search.trim();
+  if (!q) return [];
+  const users = await prisma.user.findMany({
+    where: {
+      OR: [
+        { name: { contains: q } },
+        { firstName: { contains: q } },
+        { surname: { contains: q } },
+        { username: { contains: q } },
+      ],
+    },
+    select: { id: true },
+    take: 300,
+  });
+  return users.map((u) => u.id);
+}
+
+async function recordListFilterExtras(query: ListQuery): Promise<{
+  whereExtras: Prisma.ProcedureRecordWhereInput;
+  orderBy: Prisma.ProcedureRecordOrderByWithRelationInput;
+}> {
+  const whereExtras: Prisma.ProcedureRecordWhereInput = {};
+  if (query.fromDate || query.toDate) {
+    whereExtras.recordDate = {
+      ...(query.fromDate ? { gte: toDateOnly(query.fromDate) } : {}),
+      ...(query.toDate ? { lte: toDateOnly(query.toDate) } : {}),
+    };
+  }
+  const search = query.search?.trim();
+  if (search) {
+    const memberIds = await memberIdsMatchingSearch(search);
+    whereExtras.OR = [
+      { notes: { contains: search } },
+      ...(memberIds.length > 0 ? [{ memberId: { in: memberIds } }] : []),
+    ];
+  }
+  const orderBy: Prisma.ProcedureRecordOrderByWithRelationInput =
+    query.orderBy === 'old'
+      ? { recordDate: 'asc' }
+      : { recordDate: 'desc' };
+  return { whereExtras, orderBy };
+}
+
 
 function buildPaymentCreateData(data: {
   procedureRecordId: string;
@@ -234,7 +278,9 @@ export class ProcedureService {
 
     const recordDate = toDateOnly(input.recordDate);
     const paymentDate = input.paymentDate ? toDateOnly(input.paymentDate) : recordDate;
-    const dueDate = input.dueDate ? toDateOnly(input.dueDate) : paymentDate;
+    // An explicit null means "no expiration"; only an omitted dueDate inherits the payment date.
+    const dueDate =
+      input.dueDate === undefined ? paymentDate : input.dueDate ? toDateOnly(input.dueDate) : null;
 
     const metadata = mergeMetadata(input.metadata ?? null, {
       ...(input.paymentType ? { paymentType: input.paymentType } : {}),
@@ -667,6 +713,7 @@ export class ProcedureService {
     if (!procedureType) throw new Error('Unknown procedure type');
 
     const { page, pageSize, skip } = parsePagination(query);
+    const { whereExtras, orderBy } = await recordListFilterExtras(query);
     const where: Prisma.ProcedureRecordWhereInput = {
       clubId: ctx.club.id,
       procedureTypeId: procedureType.id,
@@ -679,13 +726,14 @@ export class ProcedureService {
           ? { id: query.recordId }
           : {}),
       ...(options.onlyWithBalance ? { balanceAmount: { gt: 0 } } : {}),
+      ...whereExtras,
     };
 
     const [total, rows] = await Promise.all([
       prisma.procedureRecord.count({ where }),
       prisma.procedureRecord.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip,
         take: pageSize,
         include: {
@@ -726,6 +774,8 @@ export class ProcedureService {
     if (!procedureType) throw new Error('Unknown procedure type');
 
     const { page, pageSize, skip } = parsePagination(query);
+    const search = query.search?.trim();
+    const memberIds = search ? await memberIdsMatchingSearch(search) : [];
     const where: Prisma.ProcedurePaymentWhereInput = {
       procedureRecord: {
         clubId: ctx.club.id,
@@ -739,13 +789,34 @@ export class ProcedureService {
             ? { id: query.recordId }
             : {}),
       },
+      ...(query.fromDate || query.toDate
+        ? {
+            paymentDate: {
+              ...(query.fromDate ? { gte: toDateOnly(query.fromDate) } : {}),
+              ...(query.toDate ? { lte: toDateOnly(query.toDate) } : {}),
+            },
+          }
+        : {}),
+      ...(search
+        ? {
+            OR: [
+              { notes: { contains: search } },
+              ...(memberIds.length > 0
+                ? [{ procedureRecord: { memberId: { in: memberIds } } }]
+                : []),
+            ],
+          }
+        : {}),
     };
 
     const [total, rows] = await Promise.all([
       prisma.procedurePayment.count({ where }),
       prisma.procedurePayment.findMany({
         where,
-        orderBy: [{ paymentDate: 'desc' }, { createdAt: 'desc' }],
+        orderBy:
+          query.orderBy === 'old'
+            ? [{ paymentDate: 'asc' }, { createdAt: 'asc' }]
+            : [{ paymentDate: 'desc' }, { createdAt: 'desc' }],
         skip,
         take: pageSize,
         include: { procedureRecord: { select: { memberId: true, metadata: true, totalAmount: true, balanceAmount: true } } },
@@ -763,6 +834,7 @@ export class ProcedureService {
       return {
         id: row.id,
         procedureRecordId: row.procedureRecordId,
+        memberId: row.procedureRecord.memberId,
         memberName: nameById.get(row.procedureRecord.memberId) ?? row.procedureRecord.memberId,
         amount: decimalToNumber(row.amount),
         paymentDate: row.paymentDate.toISOString().slice(0, 10),
@@ -786,6 +858,8 @@ export class ProcedureService {
     if (!procedureType) throw new Error('Unknown procedure type');
 
     const { page, pageSize, skip } = parsePagination(query);
+    const search = query.search?.trim();
+    const memberIds = search ? await memberIdsMatchingSearch(search) : [];
     const where: Prisma.ProcedureReceiptWhereInput = {
       clubId: ctx.club.id,
       ...(query.memberId ? { memberId: query.memberId } : {}),
@@ -799,13 +873,31 @@ export class ProcedureService {
             ? { id: query.recordId }
             : {}),
       },
+      ...(query.fromDate || query.toDate
+        ? {
+            receiptDate: {
+              ...(query.fromDate ? { gte: toDateOnly(query.fromDate) } : {}),
+              ...(query.toDate ? { lte: toDateOnly(query.toDate) } : {}),
+            },
+          }
+        : {}),
+      ...(search
+        ? {
+            OR: [
+              { annotations: { contains: search } },
+              { documentNumber: { contains: search } },
+              { serviceName: { contains: search } },
+              ...(memberIds.length > 0 ? [{ memberId: { in: memberIds } }] : []),
+            ],
+          }
+        : {}),
     };
 
     const [total, rows] = await Promise.all([
       prisma.procedureReceipt.count({ where }),
       prisma.procedureReceipt.findMany({
         where,
-        orderBy: { receiptDate: 'desc' },
+        orderBy: query.orderBy === 'old' ? { receiptDate: 'asc' } : { receiptDate: 'desc' },
         skip,
         take: pageSize,
         include: {
@@ -829,6 +921,7 @@ export class ProcedureService {
         id: row.id,
         procedureRecordId: row.procedureRecordId,
         procedurePaymentId: row.procedurePaymentId,
+        memberId: row.memberId,
         memberName: receiptMemberName(row.memberId, metadata, nameById),
         documentType: row.documentType,
         documentNumber: row.documentNumber,

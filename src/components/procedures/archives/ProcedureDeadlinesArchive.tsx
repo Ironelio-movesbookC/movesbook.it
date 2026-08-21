@@ -2,13 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Pencil, Trash2 } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTabs from '@/components/procedures/ProcedureArchiveTabs';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import DeadlineTypologyNav from '@/components/procedures/DeadlineTypologyNav';
+import ArchiveListToolbar from '@/components/procedures/ArchiveListToolbar';
+import { useArchiveListFilters } from '@/components/procedures/useArchiveListFilters';
+import {
+  DeleteRowButton,
+  EditRowButton,
+  usePasswordGate,
+} from '@/components/procedures/ArchiveRowActions';
 import { buildProcedureColumns } from '@/components/procedures/configs/buildColumns';
+import EditRecordModal from '@/components/club/archives/EditRecordModal';
 import type { ProcedureTab } from '@/components/procedures/types';
 import { createProcedureClient, type ProcedureRecordView } from '@/lib/club/procedureClient';
 import {
@@ -32,10 +39,10 @@ type DeadlineRow = Member & {
 
 function toDeadlineRow(
   record: ProcedureRecordView,
-  onEdit?: (id: string) => void,
-  onDelete?: (id: string) => void
+  onEdit: (record: ProcedureRecordView) => void,
+  onDelete: (id: string) => void
 ): DeadlineRow {
-  const row: DeadlineRow = {
+  return {
     id: record.id,
     memberId: record.userId,
     name: record.memberName,
@@ -45,46 +52,16 @@ function toDeadlineRow(
     service: record.primaryLabel,
     course: record.secondaryLabel || undefined,
     insertDate: record.recordDate ?? undefined,
-    expirationDate: record.expireDate ?? record.paydate ?? undefined,
+    expirationDate: record.expireDate ?? undefined,
     value: record.value,
     paid: record.pay,
     rest: record.rest,
     casual: record.notes,
     operator: record.operatorName,
     dateEnd: record.lastPaymentDate ?? undefined,
+    edit: <EditRowButton onClick={() => onEdit(record)} />,
+    delete: <DeleteRowButton onClick={() => onDelete(record.id)} />,
   };
-
-  if (onEdit) {
-    row.edit = (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onEdit(record.id);
-        }}
-        className="text-blue-600 hover:text-blue-800"
-      >
-        <Pencil className="w-4 h-4" />
-      </button>
-    );
-  }
-
-  if (onDelete) {
-    row.delete = (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete(record.id);
-        }}
-        className="text-red-500 hover:text-red-700"
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
-    );
-  }
-
-  return row;
 }
 
 function selectionIsPayable(rows: DeadlineRow[]): boolean {
@@ -98,7 +75,10 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
   const def = getProcedureDefinition(procedureCode)!;
   const client = useMemo(() => createProcedureClient(procedureCode), [procedureCode]);
   const columns = useMemo(() => buildProcedureColumns(def), [def]);
+  const { request: requestPassword, modal: passwordModal } = usePasswordGate();
+  const filters = useArchiveListFilters();
 
+  const [editTarget, setEditTarget] = useState<ProcedureRecordView | null>(null);
   const [data, setData] = useState<DeadlineRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
@@ -107,6 +87,7 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(client.pageSize);
   const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
@@ -116,28 +97,25 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
     try {
       const res = await client.fetchDeadlines({
         page,
-        pageSize: client.pageSize,
+        pageSize,
         includePaid: displayAlsoPaid,
+        ...filters.applied,
       });
       setTotal(res.total);
       setData(
         res.items.map((record) =>
           toDeadlineRow(
             record,
-            (id) => {
-              // Edit logic: navigate to record edit page or open modal
-              // For now, mirroring the Historical tab's lack of explicit edit route but providing the button
-              router.push(def.routes.paymentDetail(id));
-            },
-            async (id) => {
-              if (!confirm(`Delete this deadline record?`)) return;
-              try {
-                await client.deleteRecord(id);
-                load();
-              } catch (e) {
-                alert(e instanceof Error ? e.message : 'Delete failed');
-              }
-            }
+            (target) => requestPassword(() => setEditTarget(target)),
+            (id) =>
+              requestPassword(async () => {
+                try {
+                  await client.deleteRecord(id);
+                  load();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : 'Delete failed');
+                }
+              })
           )
         )
       );
@@ -147,7 +125,7 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
     } finally {
       setLoading(false);
     }
-  }, [client, page, displayAlsoPaid]);
+  }, [client, page, pageSize, displayAlsoPaid, filters.applied, requestPassword]);
 
   useEffect(() => {
     load();
@@ -224,6 +202,22 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
     openPayment(checkedRows.map((r) => r.id));
   }
 
+  function handleDeleteSelected() {
+    const ids = Array.from(checkedIds);
+    if (ids.length === 0) return;
+    requestPassword(async () => {
+      try {
+        for (const id of ids) {
+          await client.deleteRecord(id);
+        }
+        setCheckedIds(new Set());
+        load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Delete failed');
+      }
+    });
+  }
+
   const tabs: ProcedureTab[] = [
     ...getProcedureTabs(procedureCode, activeTab, selectedId, selectedMemberId),
     {
@@ -251,47 +245,7 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
     </label>
   );
 
-  const typologyButtons = (
-    <div className="flex flex-col gap-2 mb-4">
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="text-xs font-bold text-red-600 mr-2">Deadlines incoming - Payment will be IN</span>
-        {[
-          { id: 'memberships', label: 'Memberships', href: '/clubs/memberships/deadlines' },
-          { id: 'subscriptions', label: 'Subscriptions', href: '/clubs/courses/deadlines' },
-          { id: 'services', label: 'Services', href: '/clubs/dead_line' },
-          { id: 'sellings', label: 'Sellings', href: '/ArchiveSeles/product_deadline' },
-          { id: 'member_debts', label: 'Member debts', href: '/clubs/member_debt_dead_line' },
-        ].map((b) => (
-          <Link
-            key={b.id}
-            href={b.href}
-            className={`px-3 py-1 text-[13px] font-bold text-white rounded shadow-sm ${
-              def.routes.deadlines === b.href ? 'bg-blue-600 ring-2 ring-blue-300' : 'bg-[#222] hover:bg-black'
-            }`}
-          >
-            {b.label}
-          </Link>
-        ))}
-      </div>
-      <div className="flex flex-wrap items-center gap-1 border-t border-gray-100 pt-2">
-        <span className="text-xs font-bold text-red-600 mr-2">Deadlines outcoming - Payment will be OUT</span>
-        {[
-          { id: 'member_credits', label: 'Member credits', href: '/clubs/member_credit_dead_line' },
-          { id: 'employ_to_pay', label: 'Employ to pay', href: '/clubs/member_credit_dead_line' },
-        ].map((b) => (
-          <Link
-            key={b.id}
-            href={b.href}
-            className={`px-3 py-1 text-[13px] font-bold text-white rounded shadow-sm ${
-              def.routes.deadlines === b.href ? 'bg-blue-600 ring-2 ring-blue-300' : 'bg-[#222] hover:bg-black'
-            }`}
-          >
-            {b.label}
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
+  const typologyButtons = <DeadlineTypologyNav activeHref={def.routes.deadlines} />;
 
   return (
     <ProcedureArchiveShell
@@ -308,16 +262,35 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
         </div>
       }
       error={error || selectionError}
-      footerHint="Double-click a row with Rest > 0 to pay. Or check several (same member, Rest > 0) and use Pay more deadlines."
-      pagination={
-        <ProcedurePagination
-          page={page}
-          pageSize={client.pageSize}
-          total={total}
-          onPageChange={setPage}
-        />
-      }
+      footerHint="Double-click a row with Rest > 0 to pay. Or check several (same member, Rest > 0) and use Pay more deadlines. Edit and Delete ask for your password."
     >
+      <ArchiveListToolbar
+        title={`Filter · ${def.archiveTitles.deadlines}`}
+        values={filters.draft}
+        onChange={filters.onChange}
+        onApply={() => {
+          if (filters.apply()) setPage(1);
+        }}
+        onClear={() => {
+          filters.clear();
+          setPage(1);
+        }}
+        dateRangeError={filters.dateRangeError}
+        selectedCount={checkedIds.size}
+        onDeleteSelected={handleDeleteSelected}
+        pagination={
+          <ProcedurePagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => {
+              setPageSize(n);
+              setPage(1);
+            }}
+          />
+        }
+      />
       <ProcedureArchiveTable
         columns={columns.deadlineColumns}
         rows={data}
@@ -330,6 +303,25 @@ export default function ProcedureDeadlinesArchive({ procedureCode, activeTab }: 
         onToggleSelect={handleToggleCheck}
         onToggleSelectAll={handleToggleCheckAll}
       />
+
+      {passwordModal}
+
+      {editTarget && (
+        <EditRecordModal
+          isOpen
+          procedureCode={procedureCode}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => load()}
+          record={{
+            id: editTarget.id,
+            recordDate: editTarget.recordDate,
+            paydate: editTarget.paydate,
+            expireDate: editTarget.expireDate,
+            notes: editTarget.notes,
+            operatorId: editTarget.operatorId,
+          }}
+        />
+      )}
     </ProcedureArchiveShell>
   );
 }

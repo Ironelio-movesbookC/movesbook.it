@@ -50,9 +50,15 @@ export type Member = {
   payed?: number;
   description?: string;
   operator?: string;
+  /** Operator id behind `operator` — needed to preselect the operator when editing a row. */
+  operatorId?: string;
   /** Parent procedure record id (cash movement drill-down). */
   procedureRecordId?: string;
   procedureType?: string;
+  /** Position of this deadline inside its record, e.g. "2 of 3". */
+  deadlineNo?: string;
+  /** Creation timestamp of a deadline — shows the time next to the expire date. */
+  expireAt?: string;
 
   // credit
   cost?: number;
@@ -84,4 +90,6 @@ export type Column = {
   key: keyof Member;
   header: string | React.ReactNode;
   render?: (value: any, row: Member) => React.ReactNode; // ✅ FIXED
+  /** When false, header shows no sort arrows and is not clickable. Default: true for data cols. */
+  sortable?: boolean;
 };

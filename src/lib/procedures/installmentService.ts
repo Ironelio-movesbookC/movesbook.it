@@ -52,6 +52,57 @@ export async function listInstallments(recordId: string): Promise<InstallmentDto
   return rows.map(mapRow);
 }
 
+/** Installments of many records in one query — list views cannot afford a round trip per record. */
+export async function listInstallmentsForRecords(
+  recordIds: string[]
+): Promise<Map<string, InstallmentDto[]>> {
+  const byRecord = new Map<string, InstallmentDto[]>();
+  if (recordIds.length === 0) return byRecord;
+
+  const rows = await prisma.procedureInstallment.findMany({
+    where: { procedureRecordId: { in: recordIds } },
+    orderBy: [{ expireDate: 'asc' }, { paymentDate: 'asc' }, { createdAt: 'asc' }],
+  });
+
+  for (const row of rows) {
+    const dto = mapRow(row);
+    const list = byRecord.get(dto.procedureRecordId);
+    if (list) list.push(dto);
+    else byRecord.set(dto.procedureRecordId, [dto]);
+  }
+  return byRecord;
+}
+
+/**
+ * Read-only twin of `reconcileInstallmentsWithRecord`: settles stale rests oldest-first against the
+ * parent balance so a list never shows a rest the record no longer owes, without writing on a GET.
+ */
+export function projectInstallmentsOnBalance(
+  installments: InstallmentDto[],
+  recordBalance: number
+): InstallmentDto[] {
+  const rows = installments.map((row) => ({ ...row }));
+  if (rows.length === 0) return rows;
+
+  const balance = roundMoney(recordBalance);
+  if (balance <= 0.005) {
+    return rows.map((row) => ({ ...row, paid: roundMoney(row.paid + row.balance), balance: 0 }));
+  }
+
+  let excess = roundMoney(rows.reduce((sum, row) => sum + row.balance, 0) - balance);
+  if (excess <= 0.005) return rows;
+
+  for (const row of rows) {
+    if (excess <= 0) break;
+    const apply = Math.min(row.balance, excess);
+    if (apply <= 0) continue;
+    row.balance = roundMoney(row.balance - apply);
+    row.paid = roundMoney(row.paid + apply);
+    excess = roundMoney(excess - apply);
+  }
+  return rows;
+}
+
 export async function createInstallment(
   input: {
     procedureRecordId: string;

@@ -1,14 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
-import { updatePurchase, fetchFormOptions, type ServiceSaleFormOptions } from '@/lib/club/serviceSaleClient';
+import { createProcedureClient } from '@/lib/club/procedureClient';
+import { toDateInputValue } from '@/lib/club/servicePurchasesClient';
+import { getProcedureDefinition } from '@/lib/procedures/registry';
+import { PROCEDURE_TYPE_CODES, type ProcedureTypeCode } from '@/lib/procedures/types';
 
-type EditServicePurchaseModalProps = {
+type EditRecordModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSaved: () => void;
-  purchase: {
+  procedureCode?: ProcedureTypeCode;
+  record: {
     id: string;
     recordDate: string | null;
     paydate: string | null;
@@ -18,30 +22,39 @@ type EditServicePurchaseModalProps = {
   };
 };
 
-export default function EditServicePurchaseModal({
+export default function EditRecordModal({
   isOpen,
   onClose,
   onSaved,
-  purchase,
-}: EditServicePurchaseModalProps) {
+  procedureCode = PROCEDURE_TYPE_CODES.SERVICE_SALE,
+  record,
+}: EditRecordModalProps) {
+  const client = useMemo(() => createProcedureClient(procedureCode), [procedureCode]);
+  const title = getProcedureDefinition(procedureCode)?.name ?? 'Record';
   const [recordDate, setRecordDate] = useState('');
   const [expireDate, setExpireDate] = useState('');
   const [notes, setNotes] = useState('');
   const [operatorId, setOperatorId] = useState('');
-  const [options, setOptions] = useState<ServiceSaleFormOptions | null>(null);
+  const [operators, setOperators] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
-    setRecordDate(purchase.recordDate ?? '');
-    setExpireDate(purchase.expireDate ?? purchase.paydate ?? '');
-    setNotes(purchase.notes ?? '');
-    setOperatorId(purchase.operatorId ?? '');
+    setRecordDate(toDateInputValue(record.recordDate));
+    // A caller that supplies `expireDate` owns the value, even when it is null (no expiration set).
+    setExpireDate(
+      toDateInputValue(record.expireDate !== undefined ? record.expireDate : record.paydate)
+    );
+    setNotes(record.notes ?? '');
+    setOperatorId(record.operatorId ?? '');
     setError(null);
     setSaving(false);
-    fetchFormOptions().then(setOptions).catch(() => {});
-  }, [isOpen, purchase]);
+    client
+      .fetchFormOptions<{ operators?: { id: string; name: string }[] }>()
+      .then((options) => setOperators(options.operators ?? []))
+      .catch(() => {});
+  }, [isOpen, record, client]);
 
   if (!isOpen) return null;
 
@@ -49,7 +62,7 @@ export default function EditServicePurchaseModal({
     setSaving(true);
     setError(null);
     try {
-      await updatePurchase(purchase.id, {
+      await client.updateRecord(record.id, {
         recordDate: recordDate || undefined,
         dueDate: expireDate || undefined,
         notes: notes || undefined,
@@ -82,7 +95,7 @@ export default function EditServicePurchaseModal({
         </button>
 
         <div className="bg-[#6b1020] px-4 py-2.5 pr-10 text-sm font-semibold text-white">
-          Edit Service Record
+          Edit {title} Record
         </div>
 
         <div className="space-y-4 p-5">
@@ -134,7 +147,7 @@ export default function EditServicePurchaseModal({
               className="w-full rounded border border-gray-400 bg-white px-3 py-2 text-sm disabled:opacity-60"
             >
               <option value="">Select operator</option>
-              {options?.operators.map((op) => (
+              {operators.map((op) => (
                 <option key={op.id} value={op.id}>{op.name}</option>
               ))}
             </select>

@@ -73,6 +73,10 @@ export type ListParams = {
   recordId?: string;
   memberId?: string;
   includePaid?: boolean;
+  search?: string;
+  fromDate?: string;
+  toDate?: string;
+  orderBy?: 'recent' | 'old';
 };
 
 export type PaginatedResult<T> = {
@@ -100,7 +104,7 @@ function mapRecord(def: ProcedureDefinition, record: ProcedureRecordDto): Proced
     memberName: record.memberName,
     memberImage: record.memberImage ?? null,
     typology: getProcedureTypology(def.code),
-    procedureType: record.procedureType,
+    procedureType: record.procedureTypeCode,
     primaryLabel: metaString(metadata, def.metadataKeys.primary) || '-',
     secondaryLabel: def.metadataKeys.secondary
       ? metaString(metadata, def.metadataKeys.secondary) || '-'
@@ -108,7 +112,8 @@ function mapRecord(def: ProcedureDefinition, record: ProcedureRecordDto): Proced
     recordDate: record.recordDate,
     // Keep legacy `paydate` field aligned with deadline expiry for existing code paths.
     paydate: record.dueDate ?? record.recordDate,
-    expireDate: record.dueDate ?? record.recordDate,
+    // Never fall back to the record date: an absent expiration must stay visibly absent.
+    expireDate: record.dueDate,
     createdAt: record.createdAt,
     value: record.totalAmount,
     pay: record.paidAmount,
@@ -165,6 +170,10 @@ function buildQuery(params?: ListParams & { view?: string }): string {
   if (params?.recordId) qs.set('recordId', params.recordId);
   if (params?.memberId) qs.set('memberId', params.memberId);
   if (params?.includePaid) qs.set('includePaid', 'true');
+  if (params?.search) qs.set('search', params.search);
+  if (params?.fromDate) qs.set('fromDate', params.fromDate);
+  if (params?.toDate) qs.set('toDate', params.toDate);
+  if (params?.orderBy) qs.set('orderBy', params.orderBy);
   return qs.toString();
 }
 
@@ -216,7 +225,13 @@ export function createProcedureClient(code: ProcedureTypeCode) {
 
     async updateRecord(
       id: string,
-      input: { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number }
+      input: {
+        recordDate?: string;
+        dueDate?: string | null;
+        notes?: string;
+        operatorId?: string;
+        totalAmount?: number;
+      }
     ): Promise<void> {
       await clubApiFetch(`${base}/records/${encodeURIComponent(id)}`, {
         method: 'PATCH',
@@ -296,6 +311,20 @@ export function createProcedureClient(code: ProcedureTypeCode) {
       };
     },
 
+    async updatePayment(
+      id: string,
+      input: { paymentDate?: string; notes?: string; operatorId?: string }
+    ): Promise<void> {
+      await clubApiFetch(`${base}/payments/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      });
+    },
+
+    async deletePayment(id: string): Promise<void> {
+      await clubApiFetch(`${base}/payments/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    },
+
     async fetchReceipts(params?: ListParams): Promise<PaginatedResult<ProcedureReceiptView>> {
       const res = await clubApiFetch<PaginatedResult<ProcedureReceiptDto>>(
         `${base}/receipts?${buildQuery({ ...params, pageSize: params?.pageSize ?? pageSize })}`
@@ -306,6 +335,26 @@ export function createProcedureClient(code: ProcedureTypeCode) {
         page: res.page,
         pageSize: res.pageSize,
       };
+    },
+
+    async updateReceipt(
+      id: string,
+      input: {
+        documentType?: string;
+        documentNumber?: string;
+        annotations?: string;
+        /** Re-send with `true` after the API rejects a duplicate document type + number. */
+        confirmDuplicate?: boolean;
+      }
+    ): Promise<void> {
+      await clubApiFetch(`${base}/receipts/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      });
+    },
+
+    async deleteReceipt(id: string): Promise<void> {
+      await clubApiFetch(`${base}/receipts/${encodeURIComponent(id)}`, { method: 'DELETE' });
     },
   };
 }

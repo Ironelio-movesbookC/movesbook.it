@@ -3,6 +3,7 @@ import type { Column, Member } from '@/types/clubTable';
 export const archiveImageColumn: Column = {
   key: 'image',
   header: 'Image',
+  sortable: false,
   render: (value) =>
     value ? (
       <img src={String(value)} alt="" className="w-10 h-10 rounded-full mx-auto object-cover" />

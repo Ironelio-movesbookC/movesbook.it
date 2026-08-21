@@ -7,7 +7,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 export function useScopedRecordIds(): string[] {
   const searchParams = useSearchParams();
   return useMemo(() => {
-    const raw = searchParams.get('ids') ?? '';
+    const raw = searchParams?.get('ids') ?? '';
     return raw
       .split(',')
       .map((s) => s.trim())
@@ -21,7 +21,7 @@ const EMPTY_IDS: string[] = [];
 export function useEffectiveScopedRecordIds(): string[] {
   const searchParams = useSearchParams();
   const scopedIds = useScopedRecordIds();
-  const displayAll = searchParams.get('all') === '1';
+  const displayAll = searchParams?.get('all') === '1';
   return useMemo(() => (displayAll ? EMPTY_IDS : scopedIds), [displayAll, scopedIds]);
 }
 
@@ -43,14 +43,14 @@ export default function DisplayAllArchivesCheckbox({ archiveLabel }: Props) {
 
   if (scopedIds.length === 0) return null;
 
-  const displayAll = searchParams.get('all') === '1';
+  const displayAll = searchParams?.get('all') === '1';
 
   function toggle(checked: boolean) {
-    const next = new URLSearchParams(searchParams.toString());
+    const next = new URLSearchParams(searchParams?.toString() ?? '');
     if (checked) next.set('all', '1');
     else next.delete('all');
     const qs = next.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
+    router.push(qs ? `${pathname}?${qs}` : (pathname ?? '/'));
   }
 
   return (
@@ -67,7 +67,10 @@ export default function DisplayAllArchivesCheckbox({ archiveLabel }: Props) {
 }
 
 /** Preserve ids (+ optional all) when building sibling archive tab hrefs. */
-export function scopedArchiveQuery(searchParams: URLSearchParams): string {
+export function scopedArchiveQuery(
+  searchParams: URLSearchParams | { get(name: string): string | null } | null | undefined
+): string {
+  if (!searchParams) return '';
   const ids = searchParams.get('ids');
   const all = searchParams.get('all');
   const qs = new URLSearchParams();

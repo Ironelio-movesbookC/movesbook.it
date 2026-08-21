@@ -44,7 +44,7 @@ export default function ShareModal({ open, onClose }: ShareModalProps) {
 
         {/* Title */}
         <h2 className="text-lg font-semibold mb-5">
-          Share this article
+          Share this page
         </h2>
 
         {/* Social Share */}
