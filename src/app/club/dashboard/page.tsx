@@ -6,7 +6,7 @@ import NewsOGPPanel from '@/components/news/NewsOGPPanel';
 import AddMemberModal from '@/components/AddMemberModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import { canAccessClubWorkspace } from '@/utils/dashboardRouting';
 import ClubIdentificationDevicesPanel from './components/ClubIdentificationDevicesPanel';
 import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettingsPanel';
 import ClubBachecaMemberPanel from '@/components/club/websiteSettings/ClubBachecaMemberPanel';
@@ -225,7 +225,7 @@ function ClubDashboardContent() {
   }, [searchParams, router]);
 
   useEffect(() => {
-    if (user && isClubAccountUserType(user.userType)) {
+    if (user && canAccessClubWorkspace(user.userType)) {
       void loadClubs();
     }
   }, [user]);

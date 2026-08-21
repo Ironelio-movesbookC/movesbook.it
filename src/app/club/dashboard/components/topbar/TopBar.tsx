@@ -1,9 +1,11 @@
 "use client";
 
 import { useRef } from "react";
-import { Settings, Menu, ChevronDown } from "lucide-react";
+import { Settings, Menu, ChevronDown, MessageSquare } from "lucide-react";
 
 import useTopBarSettings from "./hooks/useTopBarSettings";
+import { useChatUnreadCount } from "@/hooks/useChatUnreadCount";
+import ChatUnreadBadge from "@/components/chat/ChatUnreadBadge";
 
 import CustomizeMenu from "./components/CustomizeMenu";
 import GeneralSettingsMenu from "./components/GeneralSettingsMenu";
@@ -13,7 +15,11 @@ import HorizontalItemsBar from "./components/HorizontalItemsBar";
 import ToastContainer from "./components/ToastContainer";
 import HeaderBar from "./components/HeaderBar";
 
-export default function TopBar() {
+type TopBarProps = {
+    onChatPanelClick?: () => void;
+};
+
+export default function TopBar({ onChatPanelClick }: TopBarProps) {
 
     const {
         menuData,
@@ -39,6 +45,8 @@ export default function TopBar() {
         showHelpInfo,
         toggleHelpInfo,
     } = useTopBarSettings();
+
+    const { unreadCount } = useChatUnreadCount();
 
     const itemsContainerRef = useRef<HTMLDivElement>(null);
 
@@ -107,6 +115,16 @@ export default function TopBar() {
 
                 {/* Right section */}
                 <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => onChatPanelClick?.()}
+                        className="h-[28px] px-3 bg-white border border-gray-300 rounded-sm text-[13px] font-medium text-gray-800 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                        <MessageSquare size={14} />
+                        Chat panel
+                        <ChatUnreadBadge count={unreadCount} />
+                    </button>
+
                     <button
                         onClick={() => handleMainMenuItemClick("newPosts")}
                         className="h-[28px] px-4 bg-black text-white rounded-sm text-[13px] hover:bg-gray-800"

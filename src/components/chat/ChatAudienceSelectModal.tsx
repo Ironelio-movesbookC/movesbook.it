@@ -6,6 +6,7 @@ import {
   CHAT_AUDIENCE_OPTIONS,
   type ChatAudience,
 } from '@/lib/chat/chatAudience';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import {
   CLUB_MEMBER_NAME_VISIBILITY_OPTIONS,
   DEFAULT_CLUB_MEMBER_NAME_VISIBILITY,
@@ -20,6 +21,11 @@ import {
 type ChatAudienceSelectModalProps = {
   onSelect: (audience: ChatAudience) => void;
   onCancel: () => void;
+  /**
+   * When set to a club owner account (CLUB / CLUB_TRAINER), hides "Chatting with Club Admin"
+   * and phrases staff/member options around clubs you own.
+   */
+  userType?: string | null;
 };
 
 function getAuthHeaders(): HeadersInit {
@@ -34,7 +40,33 @@ function getAuthHeaders(): HeadersInit {
 export default function ChatAudienceSelectModal({
   onSelect,
   onCancel,
+  userType = null,
 }: ChatAudienceSelectModalProps) {
+  const isClubOwnerAccount = isClubAccountUserType(String(userType ?? ''));
+
+  const audienceOptions = CHAT_AUDIENCE_OPTIONS.filter((o) => {
+    if (!o.enabled) return false;
+    // Club owner accounts chat with their own staff/members — not other club admins
+    if (isClubOwnerAccount && o.value === 'club-admin') return false;
+    return true;
+  }).map((o) => {
+    if (!isClubOwnerAccount) return o;
+    if (o.value === 'club-staff') {
+      return {
+        ...o,
+        description:
+          '1:1 chat with staff of clubs you own — pick a club first (Telegram required)',
+      };
+    }
+    if (o.value === 'club-member') {
+      return {
+        ...o,
+        description:
+          '1:1 chat with members of clubs you own — pick a club first (Telegram required; staff excluded)',
+      };
+    }
+    return o;
+  });
   const [nameVisibilityOpen, setNameVisibilityOpen] = useState(false);
   const [visibility, setVisibility] = useState<ClubMemberNameVisibility>(
     DEFAULT_CLUB_MEMBER_NAME_VISIBILITY
@@ -211,7 +243,7 @@ export default function ChatAudienceSelectModal({
         </div>
 
         <div className="space-y-2 p-4">
-          {CHAT_AUDIENCE_OPTIONS.filter((o) => o.enabled).map((option) => (
+          {audienceOptions.map((option) => (
             <div
               key={option.value}
               className="flex items-stretch gap-1 rounded-lg border border-gray-200 transition-colors hover:border-blue-400 hover:bg-blue-50"

@@ -38,6 +38,11 @@ export function isClubStaffAccountUserType(userType: string): boolean {
   );
 }
 
+/** Club admin/trainer or club staff — may use `/club/dashboard` workspace shell. */
+export function canAccessClubWorkspace(userType: string): boolean {
+  return isClubAccountUserType(userType) || isClubStaffAccountUserType(userType);
+}
+
 /** Team admin accounts (DB stores `TEAM`; legacy UI may use `TEAM_MANAGER`). */
 export function isTeamAccountUserType(userType: string): boolean {
   return userType === 'TEAM' || userType === 'TEAM_MANAGER';
