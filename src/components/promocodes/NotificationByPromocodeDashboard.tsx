@@ -7,6 +7,7 @@ import {
   promocodeFlagImageUrl,
   promocodeProfileImageUrl,
 } from '@/components/promocodes/promocodeImageUrls';
+import { formatChartCredits } from '@/lib/promocodes/formatPromocodeCredits';
 import PromocodeAssetImage from '@/components/promocodes/PromocodeAssetImage';
 import '@/components/promocodes/notification-by-promocode.css';
 
@@ -20,10 +21,6 @@ async function userPromocodeFetch(path: string, init?: RequestInit) {
     headers.set('Content-Type', 'application/json');
   }
   return fetch(path, { ...init, headers });
-}
-
-function formatChartCredits(credits: number): string {
-  return ((credits * 100)).toFixed(1).padStart(4, '0');
 }
 
 function formatRoleName(roleName: string, roleId?: number | null): string {

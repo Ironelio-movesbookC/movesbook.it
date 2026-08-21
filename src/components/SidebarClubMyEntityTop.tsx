@@ -16,6 +16,7 @@ import ClubSocialSubmenu from '@/components/club/ClubSocialSubmenu';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import { canManageClubWebsite } from '@/lib/club/clubWebsitePermissions';
 import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
+import { resolveManagedEntityDisplayImageUrl } from '@/lib/entity/resolveManagedEntityDisplayImage';
 import { useAuth } from '@/hooks/useAuth';
 import MubSidebarBar from '@/components/mub/MubSidebarBar';
 
@@ -87,7 +88,11 @@ export default function SidebarClubMyEntityTop({
     clubMeta.category?.trim() ||
     (club?.description?.trim().startsWith('{') ? '' : club?.description?.trim()) ||
     '';
-  const logoUrl = userImageUrl ?? club?.imageUrl;
+  const logoUrl = resolveManagedEntityDisplayImageUrl({
+    description: club?.description,
+    imageUrl: club?.imageUrl,
+    userImageUrl,
+  });
   const country = userCountry ?? fallbackCountry;
 
   return (

@@ -24,15 +24,44 @@ export function extractStaffDetailTargetId(pathname: string): string | null {
   return m?.[1] ?? null;
 }
 
-function readCachedLinkedOperatorIds(): string[] {
-  if (typeof window === 'undefined') return [];
+const COADMIN_LINKED_OPS_CACHE_KEY = 'coAdminLinkedOperatorIds';
+
+function readCachedLinkedOperatorIds(coAdminId: string): string[] {
+  if (typeof window === 'undefined' || !coAdminId) return [];
   try {
-    const raw = sessionStorage.getItem('coAdminLinkedOperatorIds');
+    const raw = sessionStorage.getItem(COADMIN_LINKED_OPS_CACHE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.map((x) => String(x)).filter(Boolean) : [];
+    if (Array.isArray(parsed)) {
+      return parsed.map((x) => String(x)).filter(Boolean);
+    }
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      'coAdminId' in parsed &&
+      'operatorIds' in parsed
+    ) {
+      const row = parsed as { coAdminId: string; operatorIds: unknown };
+      if (String(row.coAdminId) !== coAdminId) return [];
+      return Array.isArray(row.operatorIds)
+        ? row.operatorIds.map((x) => String(x)).filter(Boolean)
+        : [];
+    }
+    return [];
   } catch {
     return [];
+  }
+}
+
+export function cacheCoAdminLinkedOperatorIds(coAdminId: string, operatorIds: string[]): void {
+  if (typeof window === 'undefined' || !coAdminId) return;
+  try {
+    sessionStorage.setItem(
+      COADMIN_LINKED_OPS_CACHE_KEY,
+      JSON.stringify({ coAdminId, operatorIds }),
+    );
+  } catch {
+    /* ignore */
   }
 }
 
@@ -41,7 +70,7 @@ export async function fetchCoAdminLinkedOperatorIds(
   coAdminId: string,
   token: string,
 ): Promise<string[]> {
-  const cached = readCachedLinkedOperatorIds();
+  const cached = readCachedLinkedOperatorIds(coAdminId);
   if (cached.length > 0) return cached;
 
   const res = await fetch(`/api/admin/co-admins/${coAdminId}/operator-links`, {
@@ -52,11 +81,7 @@ export async function fetchCoAdminLinkedOperatorIds(
   if (!res.ok) return [];
   const rows = Array.isArray(data.assignedOperators) ? data.assignedOperators : [];
   const ids = rows.map((o: { id: string }) => String(o.id)).filter(Boolean);
-  try {
-    sessionStorage.setItem('coAdminLinkedOperatorIds', JSON.stringify(ids));
-  } catch {
-    /* ignore */
-  }
+  cacheCoAdminLinkedOperatorIds(coAdminId, ids);
   return ids;
 }
 

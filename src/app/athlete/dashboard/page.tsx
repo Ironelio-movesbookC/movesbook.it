@@ -71,7 +71,9 @@ import WorkoutSection from '@/components/workouts/WorkoutSection';
 import NutritionSection from '@/components/nutrition/NutritionSection';
 import ChatPanel from '@/components/chat/ChatPanel';
 import ChatAudienceSelectModal from '@/components/chat/ChatAudienceSelectModal';
+import ChatUnreadBadge from '@/components/chat/ChatUnreadBadge';
 import type { ChatAudience } from '@/lib/chat/chatAudience';
+import { useChatUnreadCount } from '@/hooks/useChatUnreadCount';
 import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
@@ -95,7 +97,12 @@ import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModa
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
 import AthleteMyClubRightSidebar from '@/components/dashboard/AthleteMyClubRightSidebar';
+import MemberRegistrationInfoPanel from '@/components/member/MemberRegistrationInfoPanel';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import {
+  getEntityDirectAccessLock,
+  getEntityDirectAccessProfilePath,
+} from '@/lib/entity/entityDirectAccessSession';
 
 type AthleteClubMainPanel =
   | 'default'
@@ -120,9 +127,24 @@ function AthleteDashboardContent() {
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
+  const { unreadCount: chatUnreadCount } = useChatUnreadCount();
   
   // All hooks must be called before any conditional returns
-  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'nutrition' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news' | 'posts' | 'music' | 'music-editor' | 'staff-feedbacks'>('overview');
+  const [activeSection, setActiveSection] = useState<
+    | 'overview'
+    | 'workouts'
+    | 'nutrition'
+    | 'progress'
+    | 'settings'
+    | 'personal-settings'
+    | 'chat'
+    | 'news'
+    | 'posts'
+    | 'music'
+    | 'music-editor'
+    | 'registration-info'
+    | 'staff-feedbacks'
+  >('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -199,6 +221,11 @@ function AthleteDashboardContent() {
   useEffect(() => {
     if (user && !['ATHLETE', 'ADMIN'].includes(user.userType)) {
       if (isClubAccountUserType(user.userType)) {
+        const lock = getEntityDirectAccessLock();
+        if (lock) {
+          router.replace(getEntityDirectAccessProfilePath(lock));
+          return;
+        }
         const q = typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : '';
         router.replace(q ? `/club/dashboard?${q}` : '/club/dashboard');
       } else {
@@ -214,6 +241,10 @@ function AthleteDashboardContent() {
     if (open === 'news') {
       setActiveTab('my-page');
       setActiveSection('news');
+      router.replace('/athlete/dashboard', { scroll: false });
+    } else if (open === 'registration-info') {
+      setActiveTab('my-page');
+      setActiveSection('registration-info');
       router.replace('/athlete/dashboard', { scroll: false });
     } else if (open === 'music') {
       setActiveTab('my-page');
@@ -778,6 +809,7 @@ function AthleteDashboardContent() {
                     >
                       <MessageSquare className="w-4 h-4" />
                       Chat panel
+                      <ChatUnreadBadge count={chatUnreadCount} />
                     </button>
                     <button
                       type="button"
@@ -859,6 +891,10 @@ function AthleteDashboardContent() {
                 onPostsClick={() => {
                   setActiveTab('my-page');
                   setActiveSection('posts');
+                }}
+                onRegistrationInfoClick={() => {
+                  setActiveTab('my-page');
+                  setActiveSection('registration-info');
                 }}
                 onMyFeedbacksStaffClick={() => {
                   setActiveTab('my-page');
@@ -967,6 +1003,14 @@ function AthleteDashboardContent() {
                     <PostsPanel
                       onClose={() => setActiveSection('overview')}
                       embedded
+                    />
+                  </div>
+                )}
+                {activeSection === 'registration-info' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <MemberRegistrationInfoPanel
+                      embedded
+                      onClose={() => setActiveSection('overview')}
                     />
                   </div>
                 )}

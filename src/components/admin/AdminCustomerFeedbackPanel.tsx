@@ -296,8 +296,8 @@ export default function AdminCustomerFeedbackPanel({
     'w-full border border-slate-300 rounded px-2 py-2 text-sm bg-white text-slate-900';
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-6">
+    <div className="w-full p-2 sm:p-3">
+      <div className="mb-3">
         <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
         <p className="text-sm text-slate-600 mt-1">{description}</p>
       </div>
@@ -437,7 +437,7 @@ export default function AdminCustomerFeedbackPanel({
                           </div>
                           {showWorkflowStatus ? (
                             <div className="mt-1.5">
-                              <span className="inline-block text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                              <span className="inline-block text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-red-600 border border-slate-200">
                                 {supportWorkflowStatusLabel(item.status)}
                               </span>
                             </div>
@@ -502,7 +502,7 @@ export default function AdminCustomerFeedbackPanel({
                           onChange={(e) =>
                             void updateThreadStatus(e.target.value as SupportWorkflowStatus)
                           }
-                          className="border border-slate-300 rounded px-2 py-1 text-xs bg-white text-slate-900 disabled:opacity-50"
+                          className="border border-slate-300 rounded px-2 py-1 text-xs font-semibold bg-white text-red-600 disabled:opacity-50"
                         >
                           {SUPPORT_WORKFLOW_STATUS_CODES.map((code) => (
                             <option key={code} value={code}>

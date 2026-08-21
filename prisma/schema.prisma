@@ -24,6 +24,8 @@ model User {
   securityQuestion         String?
   securityAnswer           String?
   clubMemberships          ClubMember[]
+  clubMemberGroupItems     ClubMemberGroupMember[]
+  clubMemberFavorites      ClubMemberFavorite[]
   ownedClubs               Club[]                @relation("ClubOwner")
   coaches                  CoachAthlete[]        @relation("AthleteCoaches")
   athletes                 CoachAthlete[]        @relation("CoachAthletes")
@@ -103,6 +105,7 @@ model User {
   procedureReceiptsAsOperator  ProcedureReceipt[] @relation("ProcedureReceiptOperator")
   clubSharedOgpArticles        ClubSharedOgpArticle[] @relation("ClubSharedOgpBy")
   clubSharedNews               ClubSharedNews[]       @relation("ClubSharedNewsBy")
+  clubStaffRoles               ClubStaff[]
 
   @@map("users_new")
 }
@@ -705,7 +708,7 @@ model UserMessageThread {
   realPath        String?               @db.VarChar(2048)
   errorMessage    String?               @db.VarChar(1000)
   supportCategory String?               @db.VarChar(32)
-  /// Workflow status for Suggestions/Problems (pending|progress|future|solved|unsolvable).
+  /// Workflow status for Suggestions, Problems, and bug/fix memos.
   /// Legacy assistance also used: S=Started, C=Completed, D=Decline
   status          String?               @db.VarChar(32)
   /// JSON array of up to 3 public image URLs attached to the first post
@@ -1651,6 +1654,8 @@ model Club {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   members            ClubMember[]
+  memberGroups       ClubMemberGroup[]
+  memberFavorites    ClubMemberFavorite[]
   websiteTopics      ClubWebsiteTopic[]
   procedureRecords   ProcedureRecord[]
   procedureReceipts  ProcedureReceipt[]
@@ -1659,6 +1664,7 @@ model Club {
   admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
   sharedOgpArticles  ClubSharedOgpArticle[]
   sharedNews         ClubSharedNews[]
+  staff              ClubStaff[]
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
   @@map("clubs_new")
@@ -1761,6 +1767,69 @@ model ClubMember {
   @@unique([clubId, memberId])
   @@index([memberId], map: "club_members_new_memberId_fkey")
   @@map("club_members_new")
+}
+
+/// Named member lists created by club admin from Archive — Members.
+model ClubMemberGroup {
+  id        String                  @id @default(cuid())
+  clubId    String
+  name      String
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  club      Club                    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  members   ClubMemberGroupMember[]
+
+  @@index([clubId])
+  @@map("club_member_groups")
+}
+
+model ClubMemberGroupMember {
+  id        String          @id @default(cuid())
+  groupId   String
+  memberId  String
+  createdAt DateTime        @default(now())
+  group     ClubMemberGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  member    User            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, memberId])
+  @@index([memberId])
+  @@map("club_member_group_members")
+}
+
+/// Club-level staff (Operator / Collaborator / Coadmin) managed by the club admin.
+model ClubStaff {
+  id         String   @id @default(cuid())
+  clubId     String
+  userId     String
+  /// coadmin | operator | collaborator
+  staffType  String
+  /// Employment area / role (e.g. Instructor, Personal trainer)
+  role       String
+  /// JSON string array of permission keys (management, payment, …)
+  userLevels String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  club       Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, userId])
+  @@index([clubId])
+  @@index([userId])
+  @@map("club_staff")
+}
+
+/// Club members marked as favourites by the club admin.
+model ClubMemberFavorite {
+  id        String   @id @default(cuid())
+  clubId    String
+  memberId  String
+  createdAt DateTime @default(now())
+  club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  member    User     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, memberId])
+  @@index([memberId])
+  @@map("club_member_favorites")
 }
 
 model Group {
@@ -2033,6 +2102,9 @@ enum UserType {
   TEAM_MANAGER
   CLUB
   CLUB_TRAINER
+  CLUB_COADMIN
+  CLUB_OPERATOR
+  CLUB_COLLABORATOR
   GROUP
   GROUP_ADMIN
   ADMIN

@@ -3,11 +3,16 @@ export type FavouritePriority = 'not_selected' | 'low' | 'medium' | 'high';
 export type ProfilePanelSettings = {
   tagged: boolean;
   favouritePriority: FavouritePriority;
+  /** Rich-text references for the admin user account (not the club/team/group). */
+  referencesHtml?: string;
+  referencesLevel?: string;
 };
 
 export const DEFAULT_PROFILE_PANEL_SETTINGS: ProfilePanelSettings = {
   tagged: false,
   favouritePriority: 'not_selected',
+  referencesHtml: '',
+  referencesLevel: '1',
 };
 
 const FAVOURITE_PRIORITIES = new Set<FavouritePriority>([
@@ -48,6 +53,22 @@ export function readProfilePanelSettings(adminSettingsRaw: string | null | undef
   return {
     tagged: Boolean(record.tagged),
     favouritePriority: normalizeFavouritePriority(record.favouritePriority),
+    referencesHtml: typeof record.referencesHtml === 'string' ? record.referencesHtml : '',
+    referencesLevel:
+      typeof record.referencesLevel === 'string' && record.referencesLevel.trim()
+        ? record.referencesLevel.trim()
+        : '1',
+  };
+}
+
+export function readAdminReferences(adminSettingsRaw: string | null | undefined): {
+  referencesHtml: string;
+  referencesLevel: string;
+} {
+  const panel = readProfilePanelSettings(adminSettingsRaw);
+  return {
+    referencesHtml: panel.referencesHtml?.trim() ?? '',
+    referencesLevel: panel.referencesLevel?.trim() || '1',
   };
 }
 
@@ -63,6 +84,12 @@ export function mergeProfilePanelIntoAdminSettings(
       patch.favouritePriority !== undefined
         ? normalizeFavouritePriority(patch.favouritePriority)
         : current.favouritePriority,
+    referencesHtml:
+      patch.referencesHtml !== undefined ? String(patch.referencesHtml) : current.referencesHtml,
+    referencesLevel:
+      patch.referencesLevel !== undefined
+        ? String(patch.referencesLevel).trim() || '1'
+        : current.referencesLevel,
   };
   return JSON.stringify({
     ...adminSettings,

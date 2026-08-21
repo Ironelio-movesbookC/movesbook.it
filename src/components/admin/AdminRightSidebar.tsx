@@ -300,6 +300,7 @@ export default function AdminRightSidebar({ isOpen, onToggle }: AdminRightSideba
   const lastLoggedViewAllHref = useMemo(() => {
     const qs = new URLSearchParams();
     qs.set('date', lastLoggedDate);
+    qs.set('type', 'in');
     if (lastLoggedType !== 'all') qs.set('userType', lastLoggedType);
     if (lastLoggedCountry) qs.set('country', lastLoggedCountry);
     return `/admin/users/logged_users?${qs.toString()}`;
@@ -782,14 +783,14 @@ export default function AdminRightSidebar({ isOpen, onToggle }: AdminRightSideba
                 type="text"
                 value={msgSubject}
                 onChange={(e) => setMsgSubject(e.target.value)}
-                className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm"
+                className="send-message-field mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
               />
               <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
               <textarea
                 value={msgDraft}
                 onChange={(e) => setMsgDraft(e.target.value)}
                 rows={5}
-                className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm"
+                className="send-message-field mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
               />
               {msgError ? <p className="mb-2 text-sm text-red-600">{msgError}</p> : null}
               <div className="flex justify-end gap-2">

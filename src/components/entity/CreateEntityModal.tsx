@@ -2,11 +2,11 @@
 
 import { X } from 'lucide-react';
 import ClubProfileEditor, {
-  type ClubProfileFormPayload,
+  type ClubProfileSavePayload,
 } from '@/components/club/ClubProfileEditor';
 import type { ManagedEntityKind } from '@/lib/entity/entityProfileLabels';
 
-export type CreateEntityFormPayload = ClubProfileFormPayload;
+export type CreateEntityFormPayload = ClubProfileSavePayload;
 
 type CreateEntityModalProps = {
   entityKind: ManagedEntityKind;

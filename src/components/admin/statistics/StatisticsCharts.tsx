@@ -60,6 +60,11 @@ type PieBlockProps = {
   className?: string;
   /** Called when a slice / legend item is selected (null when cleared). */
   onSelect?: (slice: StatsSlice | null) => void;
+  /**
+   * Legend primary figure: absolute count (default on versions drilldown)
+   * or percent. Tooltip always includes both when available.
+   */
+  legendValueMode?: 'count' | 'percent';
 };
 
 function PieTooltip({
@@ -134,6 +139,7 @@ export function StatisticsPieBlock({
   height = 280,
   className,
   onSelect,
+  legendValueMode = 'percent',
 }: PieBlockProps) {
   const chartData = useMemo(() => slices.filter((s) => s.count > 0), [slices]);
   const legendData = useMemo(() => {
@@ -276,8 +282,17 @@ export function StatisticsPieBlock({
                       className="truncate text-base"
                       title={`${entry.label}: ${entry.count} (${entry.percent}%)`}
                     >
-                      {entry.label} ({entry.percent}%){' '}
-                      <span className="font-bold text-[#111]">{entry.count}</span>
+                      {legendValueMode === 'count' ? (
+                        <>
+                          {entry.label}{' '}
+                          <span className="font-bold text-[#111]">{entry.count}</span>
+                        </>
+                      ) : (
+                        <>
+                          {entry.label} ({entry.percent}%){' '}
+                          <span className="font-bold text-[#111]">{entry.count}</span>
+                        </>
+                      )}
                     </span>
                   </button>
                 </li>
@@ -666,10 +681,11 @@ function VersionAxisTick({
   const ty = typeof y === 'number' ? y : Number(y) || 0;
   return (
     <g transform={`translate(${tx},${ty})`}>
-      <text dy={14} textAnchor="middle" fill="#333" fontSize={12}>
+      <text dy={14} textAnchor="middle" fill="#333" fontSize={12} fontWeight={600}>
         {version}
       </text>
-      <text dy={32} textAnchor="middle" fill="#941751" fontSize={14} fontWeight={800}>
+      {/* Absolute user count (not %) — Base/Premium/Professional already include PFU variants */}
+      <text dy={34} textAnchor="middle" fill="#941751" fontSize={16} fontWeight={800}>
         {count}
       </text>
     </g>
@@ -747,14 +763,14 @@ export function StatisticsVersionsBars({
           width={Math.max(width, 280)}
           height={chartHeight}
           data={data}
-          margin={{ top: 28, right: 24, left: 8, bottom: 40 }}
+          margin={{ top: 28, right: 24, left: 8, bottom: 56 }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
           <XAxis
             dataKey="version"
             interval={0}
             tick={(props) => <VersionAxisTick {...props} counts={countsByVersion} />}
-            height={44}
+            height={58}
           />
           <YAxis allowDecimals={false} />
           <Tooltip

@@ -6,8 +6,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import ModernNavbar from '@/components/ModernNavbar';
 import ClubProfileEditor, {
-  type ClubProfileFormPayload,
+  type ClubProfileSavePayload,
 } from '@/components/club/ClubProfileEditor';
+import { clubProfilePayloadForApi } from '@/lib/club/clubProfilePayload';
+import { applyEntityLogoOnSave } from '@/lib/entity/applyEntityLogoOnSave';
 import { useAuth } from '@/hooks/useAuth';
 import { isClubCreatedFromForm } from '@/lib/club/clubSidebarLabel';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
@@ -70,20 +72,23 @@ function EditClubProfileContent() {
     void loadClub();
   }, [clubId, loadClub]);
 
-  const handleSave = async (payload: ClubProfileFormPayload) => {
+  const handleSave = async (payload: ClubProfileSavePayload) => {
     if (!clubId) return;
     const token = localStorage.getItem('token');
     if (!token) throw new Error('Not signed in');
 
     setSaving(true);
     try {
+      if (payload.logoFile || payload.removeLogo) {
+        await applyEntityLogoOnSave('club', clubId, payload);
+      }
       const res = await fetch(`/api/clubs/${clubId}`, {
         method: 'PATCH',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(clubProfilePayloadForApi(payload)),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

@@ -5,8 +5,16 @@ import { verifyToken } from '@/lib/auth';
 import { readProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import { getClubMemberUserIds } from '@/lib/chat/clubChannelAuth';
+import {
+  listClubMemberFavouriteIdsForClub,
+  listClubMemberGroupMemberIds,
+} from '@/lib/club/memberLists';
+import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
+import { CLUB_STAFF_TYPES } from '@/lib/club/clubStaff.constants';
 
 export const dynamic = 'force-dynamic';
+
+const CLUB_STAFF_TYPE_VALUES = CLUB_STAFF_TYPES.map((t) => t.value);
 
 const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
 
@@ -23,6 +31,7 @@ type StatsFilters = {
   candidateMode: string;
   candidateSearch: string;
   clubId: string | null;
+  memberGroupId: string | null;
 };
 
 function parseCsvParam(raw: string | null | undefined): string[] {
@@ -48,7 +57,23 @@ function isFullSelection(selected: string[], universe: string[]): boolean {
   return universe.every((v) => set.has(v));
 }
 
-function authorize(request: NextRequest): { userId: string } | NextResponse {
+/** Same “Name” value as Archive — Members (firstName, with fallbacks). */
+function formatMemberDisplayName(user: {
+  firstName: string | null;
+  surname: string | null;
+  name: string;
+  username: string;
+}): string {
+  const first =
+    (user.firstName || '').trim() ||
+    (user.name || '').trim().split(/\s+/).filter(Boolean)[0] ||
+    (user.username || '').trim();
+  return first || 'User';
+}
+
+async function authorize(
+  request: NextRequest
+): Promise<{ userId: string } | NextResponse> {
   const authHeader = request.headers.get('authorization');
   if (!authHeader?.startsWith('Bearer ')) {
     return NextResponse.json({ error: 'Authorization required' }, { status: 401 });
@@ -57,7 +82,11 @@ function authorize(request: NextRequest): { userId: string } | NextResponse {
   if (!decoded?.userId) {
     return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
   }
-  return { userId: decoded.userId };
+  const userId = await resolveMessageDatabaseUserId(decoded.userId, decoded.userType);
+  if (!userId) {
+    return NextResponse.json({ error: 'User not found' }, { status: 401 });
+  }
+  return { userId };
 }
 
 function filtersFromSearchParams(request: NextRequest): StatsFilters {
@@ -73,22 +102,39 @@ function filtersFromSearchParams(request: NextRequest): StatsFilters {
       .replace(/^@+/, '')
       .toLowerCase(),
     clubId: parseClubId(request.nextUrl.searchParams.get('clubId')),
+    memberGroupId: request.nextUrl.searchParams.get('memberGroupId')?.trim() || null,
   };
 }
 
 async function buildStatsResponse(filters: StatsFilters) {
-  const memberIds = filters.clubId ? await getClubMemberUserIds(filters.clubId) : null;
+  // Club Channel: include both club members and club staff (coadmin/operator/collaborator).
+  let clubScopedIds: string[] | null = null;
+  if (filters.clubId) {
+    const [memberIds, staffRows] = await Promise.all([
+      getClubMemberUserIds(filters.clubId),
+      prisma.clubStaff.findMany({
+        where: {
+          clubId: filters.clubId,
+          staffType: { in: [...CLUB_STAFF_TYPE_VALUES] },
+        },
+        select: { userId: true },
+      }),
+    ]);
+    clubScopedIds = [...new Set([...memberIds, ...staffRows.map((r) => r.userId)])];
+  }
 
   const users =
-    memberIds && memberIds.length === 0
+    clubScopedIds && clubScopedIds.length === 0
       ? []
       : await prisma.user.findMany({
           where: filters.clubId
-            ? { id: { in: memberIds! } }
+            ? { id: { in: clubScopedIds! } }
             : { superAdminId: null },
           select: {
             id: true,
             name: true,
+            firstName: true,
+            surname: true,
             username: true,
             country: true,
             userType: true,
@@ -138,9 +184,11 @@ async function buildStatsResponse(filters: StatsFilters) {
   const subscriberIdSet = new Set(filters.subscriberIds);
   const adminIdSet = new Set(filters.adminIds);
 
+  // Club channel / Archive — Members style: always expose firstName+surname
+  // (same as member archive). Club admins manage subscribers and must see names.
   const toSubscriber = (u: (typeof users)[number]) => ({
     id: u.id,
-    name: (u.name || u.username || 'User').trim() || 'User',
+    name: formatMemberDisplayName(u).trim() || 'User',
     telegramAccount: u.telegramAccount?.trim() || null,
     image: u.image || null,
     isOnline: u.lastSeenAt != null && now - u.lastSeenAt.getTime() < ONLINE_THRESHOLD_MS,
@@ -156,6 +204,31 @@ async function buildStatsResponse(filters: StatsFilters) {
   const admins =
     adminIdSet.size === 0 ? [] : users.filter((u) => adminIdSet.has(u.id)).map(toSubscriber);
 
+  const matchesCandidateSearch = (u: {
+    firstName: string | null;
+    surname: string | null;
+    name: string;
+    username: string;
+    telegramAccount: string | null;
+  }) => {
+    if (!filters.candidateSearch) return true;
+    const tg = (u.telegramAccount || '').toLowerCase().replace(/^@+/, '');
+    const fullName = formatMemberDisplayName(u).toLowerCase();
+    const firstName = (u.firstName || '').toLowerCase();
+    const surname = (u.surname || '').toLowerCase();
+    const name = (u.name || '').toLowerCase();
+    const username = (u.username || '').toLowerCase();
+    return (
+      tg.includes(filters.candidateSearch) ||
+      fullName.includes(filters.candidateSearch) ||
+      firstName.includes(filters.candidateSearch) ||
+      surname.includes(filters.candidateSearch) ||
+      name.includes(filters.candidateSearch) ||
+      username.includes(filters.candidateSearch)
+    );
+  };
+
+  // Add Subscribers / Add Admin: club pool is members + staff; require Telegram.
   const candidates = filters.candidates
     ? users
         .filter((u) => {
@@ -164,17 +237,7 @@ async function buildStatsResponse(filters: StatsFilters) {
           if (filters.candidateMode === 'admins') return !adminIdSet.has(u.id);
           return !subscriberIdSet.has(u.id);
         })
-        .filter((u) => {
-          if (!filters.candidateSearch) return true;
-          const tg = (u.telegramAccount || '').toLowerCase().replace(/^@+/, '');
-          const name = (u.name || '').toLowerCase();
-          const username = (u.username || '').toLowerCase();
-          return (
-            tg.includes(filters.candidateSearch) ||
-            name.includes(filters.candidateSearch) ||
-            username.includes(filters.candidateSearch)
-          );
-        })
+        .filter(matchesCandidateSearch)
         .slice(0, 80)
         .map(toSubscriber)
     : undefined;
@@ -192,25 +255,41 @@ async function buildStatsResponse(filters: StatsFilters) {
     ? []
     : filters.countries;
 
-  const groupUsersCount = !hasGroupFiltersConfigured
-    ? 0
-    : telegramUsers.filter((u) => {
-        if (effectiveUserTypes.length > 0 && !effectiveUserTypes.includes(u.userType)) return false;
-        if (effectiveCountries.length > 0) {
-          const country = (u.country || '').trim();
-          if (!country || !effectiveCountries.includes(country)) return false;
-        }
-        if (effectiveSports.length > 0) {
-          const sports = u.mainSports.map((s) => s.sport);
-          if (!effectiveSports.some((s) => sports.includes(s))) return false;
-        }
-        return true;
-      }).length;
+  let groupUsersCount = 0;
+  if (filters.clubId) {
+    if (filters.memberGroupId) {
+      const memberIds = await listClubMemberGroupMemberIds(filters.clubId, filters.memberGroupId);
+      const set = new Set(memberIds);
+      groupUsersCount = telegramUsers.filter((u) => set.has(u.id)).length;
+    }
+  } else {
+    groupUsersCount = !hasGroupFiltersConfigured
+      ? 0
+      : telegramUsers.filter((u) => {
+          if (effectiveUserTypes.length > 0 && !effectiveUserTypes.includes(u.userType)) return false;
+          if (effectiveCountries.length > 0) {
+            const country = (u.country || '').trim();
+            if (!country || !effectiveCountries.includes(country)) return false;
+          }
+          if (effectiveSports.length > 0) {
+            const sports = u.mainSports.map((s) => s.sport);
+            if (!effectiveSports.some((s) => sports.includes(s))) return false;
+          }
+          return true;
+        }).length;
+  }
 
-  const favouritesCount = telegramUsers.filter((u) => {
-    const panel = readProfilePanelSettings(u.settings?.adminSettings);
-    return panel.favouritePriority !== 'not_selected';
-  }).length;
+  let favouritesCount = 0;
+  if (filters.clubId) {
+    const favouriteIds = await listClubMemberFavouriteIdsForClub(filters.clubId);
+    const set = new Set(favouriteIds);
+    favouritesCount = telegramUsers.filter((u) => set.has(u.id)).length;
+  } else {
+    favouritesCount = telegramUsers.filter((u) => {
+      const panel = readProfilePanelSettings(u.settings?.adminSettings);
+      return panel.favouritePriority !== 'not_selected';
+    }).length;
+  }
 
   return {
     chatUsersCount: totalAll,
@@ -235,7 +314,7 @@ async function buildStatsResponse(filters: StatsFilters) {
 /** GET - lightweight loads (e.g. add-subscriber candidates). Prefer POST when group filters are large. */
 export async function GET(request: NextRequest) {
   try {
-    const auth = authorize(request);
+    const auth = await authorize(request);
     if (auth instanceof NextResponse) return auth;
 
     const data = await buildStatsResponse(filtersFromSearchParams(request));
@@ -249,7 +328,7 @@ export async function GET(request: NextRequest) {
 /** POST - primary stats load; group filters go in the body to avoid oversized query strings. */
 export async function POST(request: NextRequest) {
   try {
-    const auth = authorize(request);
+    const auth = await authorize(request);
     if (auth instanceof NextResponse) return auth;
 
     let body: Record<string, unknown> = {};
@@ -277,6 +356,10 @@ export async function POST(request: NextRequest) {
       clubId:
         parseClubId(body.clubId) ??
         parseClubId(request.nextUrl.searchParams.get('clubId')),
+      memberGroupId:
+        typeof body.memberGroupId === 'string'
+          ? body.memberGroupId.trim() || null
+          : request.nextUrl.searchParams.get('memberGroupId')?.trim() || null,
     });
     return NextResponse.json(data);
   } catch (error) {

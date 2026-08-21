@@ -15,6 +15,7 @@ import {
   STATS_USER_KINDS,
   type StatsUserKind,
 } from '@/lib/admin/statisticsKinds';
+import AdminUserPanelButton from '@/components/admin/AdminUserPanelButton';
 
 const TYPE_OPTIONS: Array<{ value: StatsUserKind | 'all'; label: string }> = [
   { value: 'all', label: 'All users' },
@@ -228,7 +229,7 @@ export default function AdminUsersConnectedPage() {
               const online = user.presence === 'online';
               const accent = online ? 'text-green-700' : 'text-orange-600';
               return (
-                <li key={user.id} className="flex gap-3 px-4 py-3">
+                <li key={user.id} className="flex items-start gap-3 px-4 py-3">
                   <GenderOrPhoto user={user} accentClass={accent} />
                   <div className="min-w-0 flex-1">
                     <Link
@@ -249,6 +250,7 @@ export default function AdminUsersConnectedPage() {
                       Send Message
                     </button>
                   </div>
+                  <AdminUserPanelButton userId={user.id} userType={user.userType} />
                   <span
                     className={`shrink-0 self-start rounded px-2 py-0.5 text-xs font-bold ${
                       online
@@ -275,14 +277,14 @@ export default function AdminUsersConnectedPage() {
               type="text"
               value={msgSubject}
               onChange={(e) => setMsgSubject(e.target.value)}
-              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm"
+              className="send-message-field mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
             <textarea
               value={msgDraft}
               onChange={(e) => setMsgDraft(e.target.value)}
               rows={5}
-              className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm"
+              className="send-message-field mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
             {msgError ? <p className="mb-2 text-sm text-red-600">{msgError}</p> : null}
             <div className="flex justify-end gap-2">

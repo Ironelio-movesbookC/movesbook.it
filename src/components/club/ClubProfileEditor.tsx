@@ -17,7 +17,9 @@ import { getRegionsForCountry } from '@/constants/countryRegions.constants';
 import {
   clubToFormPayload,
   type ClubProfileFormPayload,
+  type ClubProfileSavePayload,
 } from '@/lib/club/clubProfilePayload';
+import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 import {
   getEntityProfileLabels,
   type ManagedEntityKind,
@@ -34,7 +36,7 @@ export const CLUB_CATEGORY_OPTIONS = [
   'Other',
 ] as const;
 
-export type { ClubProfileFormPayload };
+export type { ClubProfileFormPayload, ClubProfileSavePayload };
 
 type ClubProfileEditorProps = {
   mode: 'create' | 'edit';
@@ -45,7 +47,7 @@ type ClubProfileEditorProps = {
     description?: string | null;
     location?: string | null;
   };
-  onSave: (payload: ClubProfileFormPayload) => Promise<void>;
+  onSave: (payload: ClubProfileSavePayload) => Promise<void>;
   saving?: boolean;
   onCancel?: () => void;
 };
@@ -60,7 +62,9 @@ export default function ClubProfileEditor({
   onCancel,
 }: ClubProfileEditorProps) {
   const labels = getEntityProfileLabels(entityKind);
-  const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(null);
+  const [clubLogoPreview, setClubLogoPreview] = useState<string | null>(null);
+  const [clubLogoFile, setClubLogoFile] = useState<File | null>(null);
+  const [logoRemoved, setLogoRemoved] = useState(false);
   const [clubUsername, setClubUsername] = useState('');
   const [clubCategory, setClubCategory] = useState('Gym');
   const [clubCountry, setClubCountry] = useState('Italy');
@@ -94,7 +98,9 @@ export default function ClubProfileEditor({
 
   useEffect(() => {
     if (mode === 'create') {
-      setClubLogoUrl(null);
+      setClubLogoPreview(null);
+      setClubLogoFile(null);
+      setLogoRemoved(false);
       setClubUsername('');
       setClubCategory('Gym');
       setClubCountry('Italy');
@@ -119,6 +125,9 @@ export default function ClubProfileEditor({
 
     if (mode === 'edit' && initialClub) {
       const payload = clubToFormPayload(initialClub);
+      setClubLogoPreview(getLogoUrlFromEntityDescription(initialClub.description));
+      setClubLogoFile(null);
+      setLogoRemoved(false);
       setClubUsername(payload.username);
       setClubCategory(payload.category || 'Gym');
       setClubCountry(payload.country || 'Italy');
@@ -143,7 +152,22 @@ export default function ClubProfileEditor({
   const handleLogoPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setClubLogoUrl(URL.createObjectURL(file));
+    setClubLogoFile(file);
+    setLogoRemoved(false);
+    setClubLogoPreview((prev) => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleRemoveLogo = () => {
+    setClubLogoFile(null);
+    setLogoRemoved(true);
+    setClubLogoPreview((prev) => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return null;
+    });
   };
 
   const handleSave = async () => {
@@ -190,6 +214,8 @@ export default function ClubProfileEditor({
           mode === 'create' ? clubMyPassword.trim() : clubNewPassword.trim(),
         referencesHtml: showClubReferences ? clubReferencesHtml : '',
         referencesLevel: showClubReferences ? clubReferencesLevel : '1',
+        logoFile: clubLogoFile,
+        removeLogo: logoRemoved,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : labels.saveError);
@@ -224,16 +250,16 @@ export default function ClubProfileEditor({
                 className="sr-only"
                 onChange={handleLogoPick}
               />
-              {clubLogoUrl ? (
+              {clubLogoPreview ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={clubLogoUrl} alt="" className="h-full w-full object-cover" />
+                <img src={clubLogoPreview} alt="" className="h-full w-full object-cover" />
               ) : (
                 <User className="h-10 w-10 text-gray-400" />
               )}
             </label>
             <button
               type="button"
-              onClick={() => setClubLogoUrl(null)}
+              onClick={handleRemoveLogo}
               className="text-sm text-blue-700 hover:underline"
             >
               [ Remove Logo ]

@@ -1,5 +1,5 @@
-import ClubWorkspaceShell from '@/components/club/ClubWorkspaceShell';
+import ClubsLayoutClient from './ClubsLayoutClient';
 
 export default function ClubsLayout({ children }: { children: React.ReactNode }) {
-  return <ClubWorkspaceShell>{children}</ClubWorkspaceShell>;
+  return <ClubsLayoutClient>{children}</ClubsLayoutClient>;
 }
