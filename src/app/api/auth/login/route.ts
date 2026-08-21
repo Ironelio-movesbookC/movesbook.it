@@ -644,7 +644,15 @@ export async function POST(request: NextRequest) {
     // Check user type if specified
     if (userType) {
       const expectedUserType = mapUserType(userType);
-      if (user.userType !== expectedUserType) {
+      const clubStaffTypes = new Set<string>([
+        UserType.CLUB_TRAINER,
+        'CLUB_COADMIN',
+        'CLUB_OPERATOR',
+        'CLUB_COLLABORATOR',
+      ]);
+      const matchesClubStaffAsClub =
+        expectedUserType === UserType.CLUB && clubStaffTypes.has(String(user.userType));
+      if (user.userType !== expectedUserType && !matchesClubStaffAsClub) {
         return NextResponse.json(
           { error: `This account is not registered as a ${userType}` },
           { status: 403 }
@@ -753,6 +761,12 @@ function mapUserType(roleIdOrType: number | string): UserType {
       'CLUB': UserType.CLUB,
       'CLUB_TRAINER': UserType.CLUB,
       'club_trainer': UserType.CLUB,
+      'CLUB_COADMIN': 'CLUB_COADMIN' as UserType,
+      'club_coadmin': 'CLUB_COADMIN' as UserType,
+      'CLUB_OPERATOR': 'CLUB_OPERATOR' as UserType,
+      'club_operator': 'CLUB_OPERATOR' as UserType,
+      'CLUB_COLLABORATOR': 'CLUB_COLLABORATOR' as UserType,
+      'club_collaborator': 'CLUB_COLLABORATOR' as UserType,
       'group': UserType.GROUP,
       'GROUP': UserType.GROUP,
       'groupAdmin': UserType.GROUP_ADMIN,

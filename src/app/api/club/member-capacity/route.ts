@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getClubAuthContext } from '@/lib/procedures';
-import { listClubMembersArchive } from '@/lib/club/archives/clubArchiveService';
 import { computeClubMemberCapacityFromClub } from '@/lib/club/clubMemberCapacity';
 import { getMemberRegistrationInfoForUser } from '@/lib/registration/memberRegistrationInfoService';
 
@@ -25,13 +24,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Club not found' }, { status: 404 });
     }
 
-    const membersArchive = await listClubMembersArchive(auth.ctx, { page: 1, pageSize: 1 });
+    const membersAdded = await prisma.clubMember.count({
+      where: { clubId: auth.ctx.club.id },
+    });
     const registrationInfo = await getMemberRegistrationInfoForUser(auth.ctx.userId);
 
     const capacity = computeClubMemberCapacityFromClub({
       description: club.description,
       createdAt: club.createdAt,
-      membersAdded: membersArchive.total,
+      membersAdded,
       subscriptionSettingId: registrationInfo?.subscriptionSettingId ?? null,
     });
 

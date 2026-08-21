@@ -71,7 +71,9 @@ import WorkoutSection from '@/components/workouts/WorkoutSection';
 import NutritionSection from '@/components/nutrition/NutritionSection';
 import ChatPanel from '@/components/chat/ChatPanel';
 import ChatAudienceSelectModal from '@/components/chat/ChatAudienceSelectModal';
+import ChatUnreadBadge from '@/components/chat/ChatUnreadBadge';
 import type { ChatAudience } from '@/lib/chat/chatAudience';
+import { useChatUnreadCount } from '@/hooks/useChatUnreadCount';
 import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
@@ -125,6 +127,7 @@ function AthleteDashboardContent() {
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
+  const { unreadCount: chatUnreadCount } = useChatUnreadCount();
   
   // All hooks must be called before any conditional returns
   const [activeSection, setActiveSection] = useState<
@@ -806,6 +809,7 @@ function AthleteDashboardContent() {
                     >
                       <MessageSquare className="w-4 h-4" />
                       Chat panel
+                      <ChatUnreadBadge count={chatUnreadCount} />
                     </button>
                     <button
                       type="button"

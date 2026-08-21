@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
@@ -12,7 +12,7 @@ import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolba
 import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import { canAccessClubWorkspace } from '@/utils/dashboardRouting';
 import {
   getClubMyPageDisplayName,
   getFormCreatedClubsSortedByCreatedAt,
@@ -54,6 +54,9 @@ import { usePcuAlert } from '@/contexts/PcuAlertContext';
 import { useEntityWorkspaceDashboardNav } from '@/hooks/useEntityWorkspaceDashboardNav';
 import TopBar from '@/app/club/dashboard/components/topbar/TopBar';
 import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
+import ChatPanel from '@/components/chat/ChatPanel';
+import ChatAudienceSelectModal from '@/components/chat/ChatAudienceSelectModal';
+import type { ChatAudience } from '@/lib/chat/chatAudience';
 
 function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -90,6 +93,13 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const [subscriptionSettingId, setSubscriptionSettingId] = useState<number | null>(null);
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [showStaffFeedbacks, setShowStaffFeedbacks] = useState(false);
+  const [userTelegramAccount, setUserTelegramAccount] = useState<string | null>(null);
+  const [telegramAccount, setTelegramAccount] = useState('');
+  const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showChatAudienceModal, setShowChatAudienceModal] = useState(false);
+  const [chatAudience, setChatAudience] = useState<ChatAudience | null>(null);
+  const [showChatPanel, setShowChatPanel] = useState(false);
 
   const showMyClubTab = useCallback(() => {
     setMyClubTabVisible(true);
@@ -204,6 +214,84 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const loadTelegramAccount = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const response = await fetch('/api/user/telegram-account', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUserTelegramAccount(data.telegramAccount ?? null);
+      }
+    } catch (error) {
+      console.error('Error loading Telegram account:', error);
+    }
+  }, []);
+
+  const handleChatPanelClick = useCallback(() => {
+    setShowStaffFeedbacks(false);
+    writeClubWorkspaceTab('my-page');
+    setActiveTab('my-page');
+    if (userTelegramAccount) {
+      setShowChatAudienceModal(true);
+    } else {
+      setShowJoinModal(true);
+    }
+  }, [userTelegramAccount]);
+
+  const handleChatAudienceSelect = useCallback((audience: ChatAudience) => {
+    setChatAudience(audience);
+    setShowChatAudienceModal(false);
+    setShowStaffFeedbacks(false);
+    setShowChatPanel(true);
+  }, []);
+
+  const handleJoinChat = useCallback(async () => {
+    if (!telegramAccount.trim()) {
+      alert('Please enter your Telegram account');
+      return;
+    }
+
+    const formattedAccount = telegramAccount.startsWith('@')
+      ? telegramAccount
+      : `@${telegramAccount}`;
+
+    setIsLoadingTelegram(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/user/telegram-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ telegramAccount: formattedAccount }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setUserTelegramAccount(formattedAccount);
+          setShowJoinModal(false);
+          setTelegramAccount('');
+          setShowChatAudienceModal(true);
+        } else {
+          alert(data.error || 'Failed to save Telegram account');
+        }
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || 'Failed to save Telegram account');
+      }
+    } catch (error) {
+      console.error('Error saving Telegram account:', error);
+      alert('Error saving Telegram account. Please try again.');
+    } finally {
+      setIsLoadingTelegram(false);
+    }
+  }, [telegramAccount]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const savedClubId = localStorage.getItem('selectedClub');
@@ -280,22 +368,27 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   }, [user, loading, router]);
 
   useEffect(() => {
-    if (user && !isClubAccountUserType(user.userType)) {
+    if (user && !canAccessClubWorkspace(user.userType)) {
       router.push('/my-page');
     }
   }, [user, router]);
 
   useEffect(() => {
-    if (user && isClubAccountUserType(user.userType)) {
+    if (user && canAccessClubWorkspace(user.userType)) {
       void loadClubs();
       void loadBannerProfile();
+      void loadTelegramAccount();
     }
-  }, [user, loadClubs, loadBannerProfile]);
+  }, [user, loadClubs, loadBannerProfile, loadTelegramAccount]);
 
   const handleTabChange = useCallback((tab: ClubWorkspaceTab) => {
     if (tab === 'my-page') {
       clearEntityCompanyLoginSession();
       hideMyClubTab();
+    } else {
+      setShowChatPanel(false);
+      setChatAudience(null);
+      setShowStaffFeedbacks(false);
     }
     writeClubWorkspaceTab(tab);
     setActiveTab(tab);
@@ -329,6 +422,8 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     hideMyClubTab();
     writeClubWorkspaceTab('my-page');
     setActiveTab('my-page');
+    setShowChatPanel(false);
+    setChatAudience(null);
     if (pathname !== '/club/dashboard') {
       router.push('/club/dashboard');
     }
@@ -436,7 +531,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     [formClubs, hasFormClub, router, selectedClubId],
   );
 
-  if (loading || !user || !isClubAccountUserType(user.userType)) {
+  if (loading || !user || !canAccessClubWorkspace(user.userType)) {
     return null;
   }
 
@@ -510,6 +605,8 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onCreateClubClick={openCreateClubFlow}
                 creatableCompaniesQuota={creatableCompaniesQuota}
                 onMyFeedbacksStaffClick={() => {
+                  setShowChatPanel(false);
+                  setChatAudience(null);
                   setActiveTab('my-page');
                   setShowStaffFeedbacks(true);
                 }}
@@ -518,9 +615,22 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
           )}
 
           <main className="flex-1 min-w-0 flex flex-col px-4 overflow-y-auto">
-            <TopBar/>
+            <TopBar onChatPanelClick={handleChatPanelClick} />
             {showStaffFeedbacks ? (
               <MyStaffFeedbacksPanel onClose={() => setShowStaffFeedbacks(false)} />
+            ) : showChatPanel && chatAudience ? (
+              <div className="flex-1 flex flex-col min-h-0 max-h-[75vh]">
+                <ChatPanel
+                  key={chatAudience}
+                  embedded
+                  chatAudience={chatAudience}
+                  userType={user.userType}
+                  onClose={() => {
+                    setShowChatPanel(false);
+                    setChatAudience(null);
+                  }}
+                />
+              </div>
             ) : (
               children
             )}
@@ -582,6 +692,86 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
         currentBannerVideoPath={bannerProfile?.profileBannerVideo}
         t={t}
       />
+
+      {showJoinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="mx-4 w-full max-w-md rounded-lg bg-white shadow-xl">
+            <div className="p-6">
+              <h2 className="mb-4 text-2xl font-bold text-gray-900">
+                Provide &apos;I&apos;ve joined&apos; confirmation button
+              </h2>
+
+              <div className="mb-6">
+                <p className="mb-4 text-sm text-gray-600">
+                  Let them confirm inside Movesbook chat page UI
+                </p>
+
+                <div className="mb-4">
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Telegram Account
+                  </label>
+                  <input
+                    type="text"
+                    value={telegramAccount}
+                    onChange={(e) => setTelegramAccount(e.target.value)}
+                    placeholder="@username"
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Enter your Telegram username (e.g., @username)
+                  </p>
+                </div>
+
+                {!telegramAccount && (
+                  <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                    <p className="mb-2 text-sm text-gray-700">
+                      Don&apos;t have a Telegram account?
+                    </p>
+                    <a
+                      href="https://telegram.org/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800"
+                    >
+                      Create a Telegram account
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowJoinModal(false);
+                    setTelegramAccount('');
+                  }}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleJoinChat()}
+                  disabled={isLoadingTelegram || !telegramAccount.trim()}
+                  className="flex-1 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isLoadingTelegram ? 'Saving...' : "I've joined"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showChatAudienceModal && (
+        <ChatAudienceSelectModal
+          userType={user.userType}
+          onSelect={handleChatAudienceSelect}
+          onCancel={() => setShowChatAudienceModal(false)}
+        />
+      )}
 
       <SimpleFooter />
     </div>

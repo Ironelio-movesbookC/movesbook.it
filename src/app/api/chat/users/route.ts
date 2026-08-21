@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
 import { buildChatAudienceWhere, isChatAudience } from '@/lib/chat/chatAudience';
+import { userBelongsToClub } from '@/lib/chat/userBelongsToClub';
 import { DEFAULT_CLUB_MEMBER_NAME_VISIBILITY } from '@/lib/chat/clubMemberNameVisibility';
 import {
   loadClubMemberNameVisibilityContext,
@@ -49,13 +50,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ users: [] });
     }
 
-    // When scoping club-member/club-admin to a club, require caller membership
-    if (clubId && (audience === 'club-member' || audience === 'club-admin')) {
-      const membership = await prisma.clubMember.findUnique({
-        where: { clubId_memberId: { clubId, memberId: myId } },
-        select: { id: true },
-      });
-      if (!membership) {
+    // When scoping club-member/club-admin/club-staff to a club, require caller membership or staff role
+    if (
+      clubId &&
+      (audience === 'club-member' || audience === 'club-admin' || audience === 'club-staff')
+    ) {
+      const belongs = await userBelongsToClub(myId, clubId);
+      if (!belongs) {
         return NextResponse.json({ users: [] });
       }
     }

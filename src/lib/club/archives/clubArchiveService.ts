@@ -4,6 +4,7 @@ import { procedureService } from '@/lib/procedures';
 import { getProcedureTypology } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import type { ClubAuthContext } from '@/lib/procedures/types';
+import { staffTypeLabel } from '@/lib/club/clubStaff.constants';
 import {
   type ArchiveQueryParams,
   applyFilters,
@@ -40,66 +41,150 @@ function titleCaseRole(role: string | null | undefined): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
+type ArchivePerson = {
+  id: string;
+  firstName: string | null;
+  surname: string | null;
+  name: string;
+  username: string;
+  image: string | null;
+  gender: string | null;
+  birthdate: Date | null;
+  country: string | null;
+};
+
+function mapArchivePersonRow(params: {
+  person: ArchivePerson;
+  joinedAt: Date;
+  membershipType: string | null;
+  operatorLabel: string;
+  staffType?: string | null;
+  staffRole?: string | null;
+}): Record<string, unknown> {
+  const { person, joinedAt, membershipType, operatorLabel, staffType, staffRole } = params;
+  const firstName =
+    text(person.firstName) ||
+    text(person.name).split(/\s+/)[0] ||
+    text(person.username) ||
+    '-';
+  const surname =
+    text(person.surname) ||
+    (() => {
+      const parts = text(person.name).split(/\s+/).filter(Boolean);
+      return parts.length > 1 ? parts.slice(1).join(' ') : '';
+    })();
+
+  return {
+    id: person.id,
+    memberId: person.id,
+    name: firstName,
+    surname: surname || '-',
+    fullName: formatName(person.firstName, person.surname, person.name),
+    image: person.image,
+    gender: text(person.gender) || '-',
+    dateOfBirth: formatArchiveDate(person.birthdate),
+    memberType: text(membershipType) || 'Standard',
+    localCity: text(person.country) || '-',
+    Localcity: text(person.country) || '-',
+    phone: '-',
+    /** ISO for From/To filters; UI formats for display. */
+    insertDate: joinedAt.toISOString().slice(0, 10),
+    insertDateDisplay: formatArchiveDate(joinedAt),
+    operator: operatorLabel,
+    typology: operatorLabel,
+    staffType: staffType ?? null,
+    staffRole: staffRole ?? null,
+  };
+}
+
 export async function listClubMembersArchive(
   ctx: ClubAuthContext,
   params: ArchiveQueryParams = {}
 ): Promise<PaginatedArchive<Record<string, unknown>>> {
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? 25;
-  const rows = await prisma.clubMember.findMany({
-    where: { clubId: ctx.club.id },
-    include: {
-      member: {
-        select: {
-          id: true,
-          firstName: true,
-          surname: true,
-          name: true,
-          username: true,
-          image: true,
-          gender: true,
-          birthdate: true,
-          country: true,
-          createdAt: true,
+
+  const [rows, staffRows] = await Promise.all([
+    prisma.clubMember.findMany({
+      where: { clubId: ctx.club.id },
+      include: {
+        member: {
+          select: {
+            id: true,
+            firstName: true,
+            surname: true,
+            name: true,
+            username: true,
+            image: true,
+            gender: true,
+            birthdate: true,
+            country: true,
+            createdAt: true,
+          },
         },
       },
-    },
-    orderBy: { joinedAt: 'desc' },
+      orderBy: { joinedAt: 'desc' },
+    }),
+    prisma.clubStaff.findMany({
+      where: { clubId: ctx.club.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            surname: true,
+            name: true,
+            username: true,
+            image: true,
+            gender: true,
+            birthdate: true,
+            country: true,
+            createdAt: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+  ]);
+
+  const staffByUserId = new Map(staffRows.map((row) => [row.userId, row]));
+  const memberUserIds = new Set(rows.map((row) => row.memberId));
+
+  const memberItems = rows.map((row) => {
+    const staff = staffByUserId.get(row.memberId);
+    const operatorLabel = staff
+      ? staffTypeLabel(staff.staffType)
+      : titleCaseRole(row.role);
+    return mapArchivePersonRow({
+      person: row.member,
+      joinedAt: row.joinedAt,
+      membershipType: row.membershipType,
+      operatorLabel,
+      staffType: staff?.staffType ?? null,
+      staffRole: staff?.role ?? null,
+    });
   });
 
-  const items = rows.map((row, i) => {
-    const firstName =
-      text(row.member.firstName) ||
-      text(row.member.name).split(/\s+/)[0] ||
-      text(row.member.username) ||
-      '-';
-    const surname =
-      text(row.member.surname) ||
-      (() => {
-        const parts = text(row.member.name).split(/\s+/).filter(Boolean);
-        return parts.length > 1 ? parts.slice(1).join(' ') : '';
-      })();
+  const staffOnlyItems = staffRows
+    .filter((row) => !memberUserIds.has(row.userId))
+    .map((row) =>
+      mapArchivePersonRow({
+        person: row.user,
+        joinedAt: row.createdAt,
+        membershipType: 'Staff',
+        operatorLabel: staffTypeLabel(row.staffType),
+        staffType: row.staffType,
+        staffRole: row.role,
+      })
+    );
 
-    return {
-      id: row.member.id,
-      memberId: row.member.id,
-      number: i + 1,
-      name: firstName,
-      surname: surname || '-',
-      fullName: formatName(row.member.firstName, row.member.surname, row.member.name),
-      image: row.member.image,
-      gender: text(row.member.gender) || '-',
-      dateOfBirth: formatArchiveDate(row.member.birthdate),
-      memberType: text(row.membershipType) || 'Standard',
-      localCity: text(row.member.country) || '-',
-      Localcity: text(row.member.country) || '-',
-      phone: '-',
-      /** ISO for From/To filters; UI formats for display. */
-      insertDate: row.joinedAt.toISOString().slice(0, 10),
-      insertDateDisplay: formatArchiveDate(row.joinedAt),
-      operator: titleCaseRole(row.role),
-      typology: titleCaseRole(row.role),
-    };
+  const items = [...memberItems, ...staffOnlyItems].sort((a, b) => {
+    const aDate = String(a.insertDate ?? '');
+    const bDate = String(b.insertDate ?? '');
+    return bDate.localeCompare(aDate);
+  });
+  items.forEach((item, i) => {
+    item.number = i + 1;
   });
 
   return paginate(applyFilters(items, params), page, pageSize);

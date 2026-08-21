@@ -50,6 +50,10 @@ export type Member = {
   payed?: number;
   description?: string;
   operator?: string;
+  /** Club staff type when row comes from club_staff (coadmin/operator/collaborator). */
+  staffType?: string | null;
+  /** Club staff employment area / role when row comes from club_staff. */
+  staffRole?: string | null;
   /** Parent procedure record id (cash movement drill-down). */
   procedureRecordId?: string;
   procedureType?: string;
