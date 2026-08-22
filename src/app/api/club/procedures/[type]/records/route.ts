@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClubAuthContext, procedureService } from '@/lib/procedures';
+import { parseArchiveListFilters } from '@/lib/procedures/parseArchiveListFilters';
 import { isKnownProcedureType, parseCreateRecord } from '@/lib/procedures/validators';
 
 export const dynamic = 'force-dynamic';
@@ -30,11 +31,12 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const recordIds = idsRaw
       ? idsRaw.split(',').map((s) => s.trim()).filter(Boolean)
       : undefined;
+    const filters = parseArchiveListFilters(request.nextUrl.searchParams);
 
     const result = await procedureService.listRecords(
       auth.ctx,
       params.type,
-      { page, pageSize, memberId, recordId, recordIds },
+      { page, pageSize, memberId, recordId, recordIds, ...filters },
       { onlyWithBalance: view === 'deadlines' && !includePaid }
     );
 

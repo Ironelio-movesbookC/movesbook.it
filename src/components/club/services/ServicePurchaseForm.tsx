@@ -85,7 +85,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
   const [pay, setPay] = useState('');
   const [movementDate, setMovementDate] = useState(todayDate);
   const [movementTime, setMovementTime] = useState(nowTime);
-  const [paydate, setPaydate] = useState(todayDate);
+  const [expireDate, setExpireDate] = useState('');
   const [causal, setCausal] = useState('');
   const [payMode, setPayMode] = useState('cash');
   const [taxDoc, setTaxDoc] = useState(true);
@@ -203,6 +203,9 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
     if (!serviceId) return setError('Please select a service.');
     if (!value || Number(value) < 0) return setError('Please enter a valid cost.');
     if (paid > total) return setError('Payment cannot exceed total cost.');
+    if (!expireDate) return setError('Please enter the expiration date of the service.');
+    if (expireDate < movementDate)
+      return setError('The expiration date cannot be earlier than the date of the movement.');
     if (!operatorId) return setError('Please select an operator.');
     if (isPasswordEnabled && !operatorPassword.trim()) return setError('Operator password is required.');
 
@@ -220,7 +223,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
         pay: paid,
         recordDate: movementDate,
         movementTime,
-        paydate,
+        expireDate,
         causal,
         payMode,
         operatorId,
@@ -364,14 +367,15 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
                 placeholder="0"
               />
             </ProcedureFormCell>
-            <ProcedureFormCell label="Expiration Date">
+            <ProcedureFormCell label="Expiration Date *">
               <input
                 type="date"
-                min={todayDate()}
+                required
+                min={movementDate}
                 className={procedureHighlightInputClass}
                 style={{ backgroundColor: '#d3f07b' }}
-                value={paydate}
-                onChange={(e) => setPaydate(e.target.value)}
+                value={expireDate}
+                onChange={(e) => setExpireDate(e.target.value)}
               />
             </ProcedureFormCell>
             <ProcedureFormCell label="Causal">

@@ -6,6 +6,9 @@ import { Pencil, Trash2 } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import ArchiveListToolbar from '@/components/procedures/ArchiveListToolbar';
+import { useArchiveListFilters } from '@/components/procedures/useArchiveListFilters';
+import ArchiveScopeRadios, { useArchiveScope } from '@/components/procedures/ArchiveScopeRadios';
 import DisplayAllArchivesCheckbox, {
   scopedArchiveQuery,
   useEffectiveScopedRecordIds,
@@ -27,7 +30,7 @@ import {
   type ServiceSaleReceipt,
 } from '@/lib/club/serviceSaleClient';
 import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
-import EditServiceReceiptModal from '@/components/club/archives/EditServiceReceiptModal';
+import EditReceiptModal from '@/components/club/archives/EditReceiptModal';
 
 function mapReceipt(
   r: ServiceSaleReceipt,
@@ -82,21 +85,23 @@ function ServiceReceiptsInner() {
   const scopedIds = useScopedRecordIds();
   const effectiveIds = useEffectiveScopedRecordIds();
   const scopeQuery = scopedArchiveQuery(searchParams);
-  const memberId = scopedIds.length === 0 ? searchParams.get('memberId') : null;
+  const scope = useArchiveScope();
+  const filters = useArchiveListFilters();
 
-  const [scope, setScope] = useState<'member' | 'all'>(memberId ? 'member' : 'all');
   const [data, setData] = useState<Member[]>([]);
   const [receiptsById, setReceiptsById] = useState<Record<string, ServiceSaleReceipt>>({});
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(SERVICE_SALE_PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editTarget, setEditTarget] = useState<ServiceSaleReceipt | null>(null);
   const [taxTarget, setTaxTarget] = useState<ServiceSaleReceipt | null>(null);
   const [showDeletePasswordModal, setShowDeletePasswordModal] = useState(false);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteTargetIds, setDeleteTargetIds] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,9 +109,10 @@ function ServiceReceiptsInner() {
     try {
       const res = await fetchReceipts({
         page,
-        pageSize: SERVICE_SALE_PAGE_SIZE,
+        pageSize,
         recordIds: effectiveIds.length > 0 ? effectiveIds : undefined,
-        memberId: scope === 'member' && memberId ? memberId : undefined,
+        ...scope.filters,
+        ...filters.applied,
       });
       setTotal(res.total);
       const byId: Record<string, ServiceSaleReceipt> = {};
@@ -121,23 +127,27 @@ function ServiceReceiptsInner() {
               setShowPasswordModal(true);
             },
             (id) => {
-              setDeleteTargetId(id);
+              setDeleteTargetIds([id]);
               setShowDeletePasswordModal(true);
             }
           )
         )
       );
+      setSelectedIds(new Set());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
-  }, [page, effectiveIds, scope, memberId]);
+  }, [page, pageSize, effectiveIds, scope.filters, filters.applied]);
 
   const performDelete = useCallback(
-    async (id: string) => {
+    async (ids: string[]) => {
       try {
-        await deleteReceipt(id);
+        for (const id of ids) {
+          await deleteReceipt(id);
+        }
+        setSelectedIds(new Set());
         load();
       } catch (e) {
         alert(e instanceof Error ? e.message : 'Delete failed');
@@ -175,7 +185,14 @@ function ServiceReceiptsInner() {
 
   useEffect(() => {
     setPage(1);
-  }, [effectiveIds.join(',')]);
+  }, [effectiveIds.join(','), filters.applied]);
+
+  function handleDeleteSelected() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setDeleteTargetIds(ids);
+    setShowDeletePasswordModal(true);
+  }
 
   return (
     <ProcedureArchiveShell
@@ -183,62 +200,75 @@ function ServiceReceiptsInner() {
       activeTab="receipts"
       tabs={getServiceSaleTabs(
         'receipts',
-        null,
+        scope.recordId,
         scopedIds.length > 0 ? scopedIds : null,
         scopeQuery || null,
-        memberId
+        scope.memberId
       )}
       tabsTrailing={
-        memberId ? (
-          <div className="flex items-center gap-4 text-sm text-gray-700">
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="radio"
-                name="receiptsScope"
-                checked={scope === 'member'}
-                onChange={() => {
-                  setScope('member');
-                  setPage(1);
-                }}
-              />
-              Member selected
-            </label>
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="radio"
-                name="receiptsScope"
-                checked={scope === 'all'}
-                onChange={() => {
-                  setScope('all');
-                  setPage(1);
-                }}
-              />
-              All members
-            </label>
-          </div>
-        ) : (
+        scopedIds.length > 0 ? (
           <DisplayAllArchivesCheckbox archiveLabel="receipts" />
+        ) : (
+          <ArchiveScopeRadios state={scope} name="receiptsScope" onChange={() => setPage(1)} />
         )
       }
       error={error}
       footerHint={
         effectiveIds.length > 0
           ? `Showing receipts for ${effectiveIds.length} selected deadline(s) only. Check “Display all receipts” for the full list.`
-          : undefined
-      }
-      pagination={
-        <ProcedurePagination
-          page={page}
-          pageSize={SERVICE_SALE_PAGE_SIZE}
-          total={total}
-          onPageChange={setPage}
-        />
+          : 'Check rows to delete selected · Double-click to open receipt'
       }
     >
+      <ArchiveListToolbar
+        title="Filter · Archive of Receipts (Services)"
+        values={filters.draft}
+        onChange={filters.onChange}
+        onApply={() => {
+          if (filters.apply()) setPage(1);
+        }}
+        onClear={() => {
+          filters.clear();
+          setPage(1);
+        }}
+        dateRangeError={filters.dateRangeError}
+        selectedCount={selectedIds.size}
+        onDeleteSelected={handleDeleteSelected}
+        pagination={
+          <ProcedurePagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => {
+              setPageSize(n);
+              setPage(1);
+            }}
+          />
+        }
+      />
       <ProcedureArchiveTable
         columns={serviceSaleReceiptColumns}
         rows={data}
         loading={loading}
+        selectable
+        selectOnlyOpenRest={false}
+        selectedIds={selectedIds}
+        onToggleSelect={(row) => {
+          if (!row.id) return;
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(row.id!)) next.delete(row.id!);
+            else next.add(row.id!);
+            return next;
+          });
+        }}
+        onToggleSelectAll={(checked) => {
+          if (!checked) {
+            setSelectedIds(new Set());
+            return;
+          }
+          setSelectedIds(new Set(data.map((r) => r.id).filter(Boolean) as string[]));
+        }}
         onRowDoubleClick={handleOpenReceipt}
       />
 
@@ -279,7 +309,7 @@ function ServiceReceiptsInner() {
       />
 
       {editTarget && (
-        <EditServiceReceiptModal
+        <EditReceiptModal
           isOpen={showEditModal}
           onClose={() => {
             setShowEditModal(false);
@@ -299,12 +329,12 @@ function ServiceReceiptsInner() {
         isOpen={showDeletePasswordModal}
         onClose={() => {
           setShowDeletePasswordModal(false);
-          setDeleteTargetId(null);
+          setDeleteTargetIds([]);
         }}
         onVerified={() => {
           setShowDeletePasswordModal(false);
-          if (deleteTargetId) performDelete(deleteTargetId);
-          setDeleteTargetId(null);
+          if (deleteTargetIds.length > 0) performDelete(deleteTargetIds);
+          setDeleteTargetIds([]);
         }}
       />
     </ProcedureArchiveShell>

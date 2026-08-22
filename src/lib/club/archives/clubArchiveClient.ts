@@ -40,8 +40,12 @@ export type ArchiveFetchParams = {
   toDate?: string;
   orderBy?: 'recent' | 'old';
   includePaid?: boolean;
+  /** Deadlines archive: one row per installment instead of one row per record. */
+  expandDeadlines?: boolean;
   /** Scope to a single member (e.g. "Member selected" vs "All members" toggle). */
   memberId?: string;
+  /** Scope to the record selected in the archive we came from ("Record selected"). */
+  recordId?: string;
 };
 
 export async function fetchClubArchive(
@@ -57,7 +61,9 @@ export async function fetchClubArchive(
   if (params?.toDate) qs.set('toDate', params.toDate);
   if (params?.orderBy) qs.set('orderBy', params.orderBy);
   if (params?.includePaid) qs.set('includePaid', '1');
+  if (params?.expandDeadlines) qs.set('expandDeadlines', '1');
   if (params?.memberId) qs.set('memberId', params.memberId);
+  if (params?.recordId) qs.set('recordId', params.recordId);
   const query = qs.toString();
   const url = `/api/club/archives/${type}${query ? `?${query}` : ''}`;
   return clubApiFetch<ArchiveListResult>(url);
