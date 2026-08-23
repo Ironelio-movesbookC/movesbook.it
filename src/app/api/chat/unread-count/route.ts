@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET — Total unread 1:1 chat messages for the current user
  * (sum of unread counts across all conversations).
