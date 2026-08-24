@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createProcedureClient } from '@/lib/club/procedureClient';
 import { getProcedureDefinition } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
@@ -33,6 +33,13 @@ function FieldRow({
 
 export default function DebtMemberForm() {
   const router = useRouter();
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const presetMemberId =
+    (typeof params?.memberId === 'string' ? params.memberId : '') ||
+    searchParams.get('memberId') ||
+    searchParams.get('userId') ||
+    '';
   const def = getProcedureDefinition(PROCEDURE_TYPE_CODES.MEMBER_DEBT)!;
   const client = useMemo(() => createProcedureClient(PROCEDURE_TYPE_CODES.MEMBER_DEBT), []);
 
@@ -45,11 +52,12 @@ export default function DebtMemberForm() {
 
   const [memberId, setMemberId] = useState('');
   const [amount, setAmount] = useState('');
-  const [debtDate, setDebtDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // PHP starts empty; user picks a date via the datepicker.
+  const [debtDate, setDebtDate] = useState('');
   const [causal, setCausal] = useState('');
   const [operatorId, setOperatorId] = useState('');
   const [typologyOfDeadline, setTypologyOfDeadline] = useState('5');
-  const [openPaymentAfterSave, setOpenPaymentAfterSave] = useState(true);
+  const [openPaymentAfterSave, setOpenPaymentAfterSave] = useState(false);
   const [companyId, setCompanyId] = useState('');
 
   useEffect(() => {
@@ -57,13 +65,13 @@ export default function DebtMemberForm() {
       .fetchFormOptions<MemberDebtFormOptions>()
       .then((opts) => {
         setOptions(opts);
-        if (opts.currentOperatorId) setOperatorId(opts.currentOperatorId);
-        else if (opts.operators[0]?.id) setOperatorId(opts.operators[0].id);
-        if (opts.companies[0]?.id) setCompanyId(opts.companies[0].id);
+        if (presetMemberId && opts.members.some((m) => m.id === presetMemberId)) {
+          setMemberId(presetMemberId);
+        }
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Load failed'))
       .finally(() => setLoading(false));
-  }, [client]);
+  }, [client, presetMemberId]);
 
   const selectedMember = options?.members.find((m) => m.id === memberId);
   const selectedCompany = options?.companies.find((c) => c.id === companyId);
@@ -76,11 +84,6 @@ export default function DebtMemberForm() {
     const t = window.setTimeout(() => setMemberLoading(false), 250);
     return () => window.clearTimeout(t);
   }, [memberId]);
-
-  useEffect(() => {
-    if (!selectedMember) return;
-    setCausal(`Debt of ${selectedMember.name}`);
-  }, [memberId]); // eslint-disable-line react-hooks/exhaustive-deps -- only refill when member changes
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -190,7 +193,7 @@ export default function DebtMemberForm() {
       {/* Pay a member section */}
       <div className="m-0 border-x-0 border-b border-t-0 border-gray-300 sm:m-0">
         <div className="bg-[#d9d9d9] px-3 py-2 text-[13px] font-semibold text-gray-800">
-          Pay a member (or Pay a employee)
+          Add a debt
         </div>
 
         <div className="bg-white px-2 py-2">
@@ -205,9 +208,7 @@ export default function DebtMemberForm() {
             />
           </FieldRow>
 
-          <FieldRow
-            label="Date"
-          >
+          <FieldRow label="Date" labelExtra={<span className="text-xl">📅</span>}>
             <input
               type="date"
               className={fieldInputClass}
@@ -300,6 +301,19 @@ export default function DebtMemberForm() {
                 ))}
               </select>
             </div>
+            <div className="bg-[#d9d9d9] px-3 py-2 text-[13px] font-semibold text-gray-800">
+              Put this expense as item of this center revenue
+            </div>
+            <FieldRow label="select the type of center revenue in which to put this expenses 1">
+              <select className={fieldInputClass} disabled>
+                <option>See the setting company Default= main company</option>
+              </select>
+            </FieldRow>
+            <FieldRow label="select the type of center revenue in which to put this expenses 1">
+              <select className={fieldInputClass} disabled>
+                <option>See the setting company Default= main company</option>
+              </select>
+            </FieldRow>
           </div>
         )}
       </div>
@@ -314,7 +328,7 @@ export default function DebtMemberForm() {
         </button>
         <button
           type="button"
-          onClick={() => router.push(def.routes.deadlines)}
+          onClick={() => router.back()}
           className="min-w-[88px] rounded-sm bg-[#424242] px-5 py-1.5 text-[13px] font-semibold text-white hover:bg-[#303030]"
         >
           cancel

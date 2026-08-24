@@ -215,7 +215,7 @@ function isPasswordEnabledSetting(value: string): boolean {
 
 async function assertOperatorPassword(
   procedureTypeCode: string,
-  operatorId: string,
+  operatorId: string | null | undefined,
   password: string | null | undefined,
   clubId?: string,
   userId?: string
@@ -231,6 +231,7 @@ async function assertOperatorPassword(
   }
   const trimmed = password?.trim();
   if (!trimmed) throw new Error('Operator password is required');
+  if (!operatorId) throw new Error('Operator is required');
   const ok = await verifyOperatorPassword(operatorId, trimmed);
   if (!ok) throw new Error('Operator password is incorrect');
 }
@@ -273,7 +274,9 @@ export class ProcedureService {
     if (initialPayment > totalAmount) throw new Error('Initial payment exceeds total amount');
 
     const balanceAmount = roundMoney(totalAmount - initialPayment);
-    const operatorId = input.operatorId ?? ctx.userId;
+    // PHP allowed “operator” to be empty on some screens. We treat `undefined` as “use current user”,
+    // but preserve an explicit `null` so procedureRecord.operatorId can be null.
+    const operatorId = input.operatorId === undefined ? ctx.userId : input.operatorId;
     await assertOperatorPassword(procedureTypeCode, operatorId, input.operatorPassword, ctx.club.id, ctx.userId);
 
     const recordDate = toDateOnly(input.recordDate);
