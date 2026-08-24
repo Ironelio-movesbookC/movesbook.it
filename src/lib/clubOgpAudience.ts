@@ -8,6 +8,15 @@ export const CLUB_OGP_AUDIENCE_MODES = [
 
 export type ClubOgpAudienceMode = (typeof CLUB_OGP_AUDIENCE_MODES)[number];
 
+export const CLUB_AUDIENCE_OPTIONS: { value: ClubOgpAudienceMode; label: string }[] = [
+  { value: 'only-me', label: 'Only me' },
+  { value: 'me-and-club-members', label: 'Me and members of my clubs' },
+  {
+    value: 'me-club-members-and-filters',
+    label: 'Me, members of my clubs and users who match these parameters here below',
+  },
+];
+
 export function isClubOgpAudienceMode(value: unknown): value is ClubOgpAudienceMode {
   return (
     typeof value === 'string' &&
@@ -89,4 +98,42 @@ export function canViewerSeeClubSharedOgp(params: {
   }
   if (vSports.length > 0 && !vSports.some((s) => viewer.sports.includes(s))) return false;
   return true;
+}
+
+/** Map News article settings to club visibility fields (same shape as OGP visibility). */
+export function newsSettingsToClubVisibility(
+  settings:
+    | Array<{
+        duration: number | null;
+        sports?: Array<{ sport: string }>;
+        roles?: Array<{ role: string }>;
+        languages?: Array<{ language: { code: string } }>;
+        countries?: Array<{ countryCode: string }>;
+      }>
+    | null
+    | undefined,
+  newsCreatedAt: Date,
+): {
+  userTypes: string[];
+  countries: string[];
+  languages: string[];
+  sports: string[];
+  expiresAt: Date | null;
+} {
+  const s = settings?.[0];
+  if (!s) {
+    return { userTypes: [], countries: [], languages: [], sports: [], expiresAt: null };
+  }
+  let expiresAt: Date | null = null;
+  if (s.duration != null && s.duration > 0) {
+    expiresAt = new Date(newsCreatedAt);
+    expiresAt.setDate(expiresAt.getDate() + s.duration);
+  }
+  return {
+    userTypes: s.roles?.map((r) => r.role) ?? [],
+    countries: s.countries?.map((c) => c.countryCode) ?? [],
+    languages: s.languages?.map((l) => l.language.code) ?? [],
+    sports: s.sports?.map((sp) => sp.sport) ?? [],
+    expiresAt,
+  };
 }

@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import {
   isClubOgpAudienceMode,
   type ClubOgpAudienceMode,
+  CLUB_AUDIENCE_OPTIONS,
 } from '@/lib/clubOgpAudience';
 
 export type { ClubOgpAudienceMode };
@@ -70,15 +71,6 @@ interface NewsSettingModalProps {
    */
   showClubAudienceRadios?: boolean;
 }
-
-const CLUB_AUDIENCE_OPTIONS: { value: ClubOgpAudienceMode; label: string }[] = [
-  { value: 'only-me', label: 'Only me' },
-  { value: 'me-and-club-members', label: 'Me and members of my clubs' },
-  {
-    value: 'me-club-members-and-filters',
-    label: 'Me, members of my clubs and users who match these parameters here below',
-  },
-];
 
 export default function NewsSettingModal({
   isOpen,

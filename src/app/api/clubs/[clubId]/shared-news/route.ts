@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { deserializeMultiLanguageContent } from '@/lib/news/contentParser';
 import {
   canViewerSeeClubSharedOgp,
+  newsSettingsToClubVisibility,
   parseJsonStringArray,
   type ClubSharedFeedItem,
 } from '@/lib/clubNewsShareAuth';
@@ -138,7 +139,100 @@ export async function GET(request: NextRequest, context: RouteContext) {
           };
         });
 
-      return NextResponse.json({ articles, items: articles });
+      const ogpGroupShares = await prisma.clubSharedOgpGroup.findMany({
+        where: { clubId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          ogpNewsGroup: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  name: true,
+                  country: true,
+                  userType: true,
+                },
+              },
+              items: {
+                orderBy: [{ sortOrder: 'asc' }, { addedAt: 'asc' }],
+                include: {
+                  ogpArticle: {
+                    include: {
+                      user: { select: { username: true, country: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const groups = ogpGroupShares
+        .filter((row) => !row.ogpNewsGroup.deletedAt)
+        .filter((row) => {
+          const g = row.ogpNewsGroup;
+          return canViewerSeeClubSharedOgp({
+            audienceMode: row.audienceMode,
+            isClubAdmin: access.isClubAdmin,
+            isClubMember: access.isClubMember,
+            viewer,
+            visibility: {
+              userTypes: parseJsonStringArray(g.visibilityUserTypes),
+              countries: parseJsonStringArray(g.visibilityCountries),
+              languages: parseJsonStringArray(g.visibilityLanguages),
+              sports: parseJsonStringArray(g.visibilitySports),
+              expiresAt: g.expiresAt,
+            },
+          });
+        })
+        .map((row) => {
+          const g = row.ogpNewsGroup;
+          const sortedItems = [...g.items].sort(
+            (a, b) => a.sortOrder - b.sortOrder || a.addedAt.getTime() - b.addedAt.getTime(),
+          );
+          const first = sortedItems[0]?.ogpArticle ?? null;
+          const creatorName =
+            (g.user?.name && g.user.name.trim()) || g.user?.username || null;
+
+          return {
+            id: g.id,
+            userId: g.userId,
+            name: g.name,
+            topic: g.topic,
+            savedAt: g.savedAt.toISOString(),
+            memberCount: sortedItems.length,
+            memberIds: sortedItems.map((i) => i.ogpArticleId),
+            creatorUsername: g.user?.username ?? null,
+            creatorName,
+            creatorCountry: g.user?.country ?? null,
+            createdByCurrentUser: g.userId === decoded.userId,
+            customDescription: g.customDescription ?? first?.customDescription ?? null,
+            coverImage: g.coverImage ?? null,
+            deletedAt: g.deletedAt?.toISOString() ?? null,
+            visibilityUserTypes: parseJsonStringArray(g.visibilityUserTypes),
+            visibilityCountries: parseJsonStringArray(g.visibilityCountries),
+            visibilityLanguages: parseJsonStringArray(g.visibilityLanguages),
+            visibilitySports: parseJsonStringArray(g.visibilitySports),
+            expiresAt: g.expiresAt?.toISOString() ?? null,
+            audienceMode: row.audienceMode,
+            clubAudienceMode: row.audienceMode,
+            inClubGlobalNews: row.inClubGlobalNews === true,
+            title: first?.title ?? g.name,
+            image: g.coverImage ?? first?.image ?? null,
+            description: first?.description ?? null,
+            url: first?.url ?? '',
+            siteName: first?.siteName ?? null,
+            type: first?.type ?? null,
+            previewTopic: first?.topic ?? g.topic,
+            previewCreatorUsername: first?.user?.username ?? g.user?.username ?? null,
+            sharedAt: row.createdAt.toISOString(),
+            sharedClubIds: [clubId],
+          };
+        });
+
+      return NextResponse.json({ articles, groups, items: articles });
     }
 
     /** Full NewsList-compatible payload for the Club News → News archive UI. */
@@ -162,6 +256,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
               settings: {
                 include: {
                   sports: { select: { sport: true } },
+                  roles: { select: { role: true } },
+                  languages: {
+                    include: { language: { select: { code: true } } },
+                  },
+                  countries: { select: { countryCode: true } },
                 },
               },
             },
@@ -170,6 +269,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
 
       const userIds = newsShares
+        .filter((row) =>
+          canViewerSeeClubSharedOgp({
+            audienceMode: row.audienceMode,
+            isClubAdmin: access.isClubAdmin,
+            isClubMember: access.isClubMember,
+            viewer,
+            visibility: newsSettingsToClubVisibility(row.news.settings, row.news.createdAt),
+          }),
+        )
         .map((row) => row.news.userId)
         .filter((id): id is string => id !== null);
 
@@ -194,7 +302,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
         });
       }
 
-      const news = newsShares.map((row) => {
+      const news = newsShares
+        .filter((row) =>
+          canViewerSeeClubSharedOgp({
+            audienceMode: row.audienceMode,
+            isClubAdmin: access.isClubAdmin,
+            isClubMember: access.isClubMember,
+            viewer,
+            visibility: newsSettingsToClubVisibility(row.news.settings, row.news.createdAt),
+          }),
+        )
+        .map((row) => {
         const item = row.news;
         let deserializedContent: Record<string, string> = {};
         if (item.content) {
@@ -241,6 +359,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           sharedAt: row.createdAt.toISOString(),
           sharedClubIds: [clubId],
           inClubGlobalNews: row.inClubGlobalNews === true,
+          clubAudienceMode: row.audienceMode,
         };
       });
 
@@ -348,6 +467,86 @@ export async function GET(request: NextRequest, context: RouteContext) {
           url: row.ogpArticle.url,
           description: row.ogpArticle.description,
           customDescription: row.ogpArticle.customDescription,
+          sharedAt: row.createdAt.toISOString(),
+          inClubGlobalNews: row.inClubGlobalNews === true,
+        });
+      }
+    }
+
+    if (type === 'all' || type === 'ogp') {
+      const ogpGroupShares = await prisma.clubSharedOgpGroup.findMany({
+        where: shareWhere,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          ogpNewsGroup: {
+            select: {
+              id: true,
+              name: true,
+              topic: true,
+              savedAt: true,
+              coverImage: true,
+              customDescription: true,
+              deletedAt: true,
+              visibilityUserTypes: true,
+              visibilityCountries: true,
+              visibilityLanguages: true,
+              visibilitySports: true,
+              expiresAt: true,
+              user: { select: { username: true, name: true } },
+              items: {
+                orderBy: [{ sortOrder: 'asc' }, { addedAt: 'asc' }],
+                take: 1,
+                include: {
+                  ogpArticle: {
+                    select: {
+                      title: true,
+                      image: true,
+                      description: true,
+                      url: true,
+                      customDescription: true,
+                    },
+                  },
+                },
+              },
+              _count: { select: { items: true } },
+            },
+          },
+        },
+      });
+      for (const row of ogpGroupShares) {
+        if (row.ogpNewsGroup.deletedAt) continue;
+        const g = row.ogpNewsGroup;
+        if (
+          !canViewerSeeClubSharedOgp({
+            audienceMode: row.audienceMode,
+            isClubAdmin: access.isClubAdmin,
+            isClubMember: access.isClubMember,
+            viewer,
+            visibility: {
+              userTypes: parseJsonStringArray(g.visibilityUserTypes),
+              countries: parseJsonStringArray(g.visibilityCountries),
+              languages: parseJsonStringArray(g.visibilityLanguages),
+              sports: parseJsonStringArray(g.visibilitySports),
+              expiresAt: g.expiresAt,
+            },
+          })
+        ) {
+          continue;
+        }
+        const first = g.items[0]?.ogpArticle ?? null;
+        items.push({
+          kind: 'ogp-group',
+          id: g.id,
+          shareId: row.id,
+          title: first?.title ?? g.name,
+          date: g.savedAt.toISOString(),
+          topic: g.topic,
+          creatorUsername: g.user?.username ?? null,
+          image: g.coverImage ?? first?.image ?? null,
+          url: first?.url ?? '',
+          description: first?.description ?? null,
+          customDescription: g.customDescription ?? first?.customDescription ?? null,
+          memberCount: g._count.items,
           sharedAt: row.createdAt.toISOString(),
           inClubGlobalNews: row.inClubGlobalNews === true,
         });

@@ -58,6 +58,7 @@ export {
   isClubOgpAudienceMode,
   parseJsonStringArray,
   canViewerSeeClubSharedOgp,
+  newsSettingsToClubVisibility,
 } from '@/lib/clubOgpAudience';
 
 export type ClubSharedFeedItem =
@@ -86,6 +87,22 @@ export type ClubSharedFeedItem =
       url: string;
       description: string | null;
       customDescription: string | null;
+      sharedAt: string;
+      inClubGlobalNews: boolean;
+    }
+  | {
+      kind: 'ogp-group';
+      id: string;
+      shareId: string;
+      title: string | null;
+      date: string;
+      topic: string;
+      creatorUsername: string | null;
+      image: string | null;
+      url: string;
+      description: string | null;
+      customDescription: string | null;
+      memberCount: number;
       sharedAt: string;
       inClubGlobalNews: boolean;
     };

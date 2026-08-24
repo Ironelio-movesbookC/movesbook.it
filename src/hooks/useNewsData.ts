@@ -528,7 +528,14 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           visibilityLanguages: vis?.languages ?? [],
           visibilitySports: vis?.sports ?? [],
           ...(category ? { category } : {}),
-          ...(shareToClubId ? { shareToClubId } : {}),
+          ...(shareToClubId
+            ? {
+                shareToClubId,
+                ...(vis?.clubAudienceMode
+                  ? { audienceMode: vis.clubAudienceMode }
+                  : {}),
+              }
+            : {}),
         }),
       });
       if (!res.ok) {
@@ -571,6 +578,9 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
             sports: vis?.sports ?? [],
             expiresAt: vis?.expiresAt ?? null,
           },
+          ...(vis?.clubAudienceMode
+            ? { clubAudienceMode: vis.clubAudienceMode }
+            : {}),
         },
       ]);
       return { id: created.id as string, sharedClubIds };
