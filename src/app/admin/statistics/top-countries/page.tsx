@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import StatisticsPageShell from '@/components/admin/statistics/StatisticsPageShell';
 import { StatisticsPieBlock } from '@/components/admin/statistics/StatisticsCharts';
+import { useStatisticsGraphTheme } from '@/components/admin/statistics/StatisticsGraphTheme';
 import VersionDistributionDrilldown from '@/components/admin/statistics/VersionDistributionDrilldown';
 import { useAdminStatistics } from '@/components/admin/statistics/useAdminStatistics';
 import { aggregateVersionsForScope } from '@/lib/admin/statisticsDrilldown';
@@ -11,6 +12,18 @@ import {
   type StatsUserKind,
 } from '@/lib/admin/statisticsKinds';
 import type { StatsSlice } from '@/lib/admin/buildStatistics';
+
+function EmptyCountriesNotice() {
+  const theme = useStatisticsGraphTheme();
+  return (
+    <div
+      className="border p-8 text-center"
+      style={{ ...theme.panelStyle, color: theme.background.muted }}
+    >
+      No country registrations yet.
+    </div>
+  );
+}
 
 type Selection = {
   country: string;
@@ -86,9 +99,7 @@ export default function TopCountriesDistributionPage() {
         </div>
 
         {!loading && (data?.topCountries?.length ?? 0) === 0 ? (
-          <div className="bg-white border border-[#cfcfcf] p-8 text-center text-[#888]">
-            No country registrations yet.
-          </div>
+          <EmptyCountriesNotice />
         ) : null}
 
         {rest ? (
