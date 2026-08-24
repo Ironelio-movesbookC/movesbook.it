@@ -467,10 +467,13 @@ export async function ensurePromocodeMetaTables(): Promise<void> {
       const settingColumns = await getTableColumns('promocode_settings');
       const settingAlters: Array<[string, string]> = [
         ['allow_child_promocodes', 'TINYINT NOT NULL DEFAULT 0'],
+        ['allow_generate_promocodes', 'TINYINT NOT NULL DEFAULT 0'],
         ['child_promo_limit', 'INT NULL'],
         ['child_promo_until', 'DATE NULL'],
         ['child_version_ids', 'VARCHAR(255) NULL'],
         ['child_duration_days', 'INT NULL'],
+        ['child_invite_duration_days', 'INT NULL'],
+        ['max_child_promocodes', 'INT NULL'],
         ['parent_promocode_id', 'INT NULL'],
       ];
       for (const [col, def] of settingAlters) {
