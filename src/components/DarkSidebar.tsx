@@ -119,6 +119,7 @@ import {
   isGroupAccountUserType,
   isManagedEntityAdminUserType,
   isTeamAccountUserType,
+  showSuggestMovesbookForTab,
   userOwnsMovesbookWebsite,
 } from '@/utils/dashboardRouting';
 import {
@@ -462,6 +463,7 @@ export default function DarkSidebar({
 
   const currentTab = onTabChange ? activeTab : internalActiveTab;
   const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
+  const showSuggestMovesbook = showSuggestMovesbookForTab(userType, currentTab);
 
   const [communitiesOpen, setCommunitiesOpen] = useState(false);
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
@@ -1527,13 +1529,15 @@ export default function DarkSidebar({
             </div>
 
             <div className="py-3 bg-gray-850 border-t border-gray-700">
-              <button
-                type="button"
-                onClick={handleSuggestMovesbookClick}
-                className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
-              >
-                Suggest Movesbook to your friends
-              </button>
+              {showSuggestMovesbook ? (
+                <button
+                  type="button"
+                  onClick={handleSuggestMovesbookClick}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                >
+                  Suggest Movesbook to your friends
+                </button>
+              ) : null}
             </div>
           </div>
         )}
@@ -2644,13 +2648,15 @@ export default function DarkSidebar({
                   </div>
 
                   <div className="py-3 bg-gray-850 border-t border-gray-700">
-                    <button
-                      type="button"
-                      onClick={handleSuggestMovesbookClick}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
-                    >
-                      Suggest Movesbook to your friends
-                    </button>
+                    {showSuggestMovesbook ? (
+                      <button
+                        type="button"
+                        onClick={handleSuggestMovesbookClick}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                      >
+                        Suggest Movesbook to your friends
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -4764,6 +4770,18 @@ export default function DarkSidebar({
                       </div>
                     </button>
                   </>
+                )}
+
+                {showSuggestMovesbook && (
+                  <div className="py-3 px-3 bg-gray-850 border-t border-gray-700">
+                    <button
+                      type="button"
+                      onClick={handleSuggestMovesbookClick}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                    >
+                      Suggest Movesbook to your friends
+                    </button>
+                  </div>
                 )}
               </>
             )}

@@ -23,7 +23,9 @@ export default function HtmlPageView({ data }: HtmlPageViewProps) {
 
   const onLanguageChange = (nextLangId: string) => {
     document.cookie = `selected_lang_ID=${nextLangId}; path=/; max-age=31536000`;
-    window.location.reload();
+    const url = new URL(window.location.href);
+    url.searchParams.set('language_id', nextLangId);
+    window.location.href = url.toString();
   };
 
   if (!page) {

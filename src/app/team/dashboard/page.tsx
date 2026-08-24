@@ -225,6 +225,7 @@ function TeamDashboardContent() {
                   }
                 }}
                 onCreateTeamClick={entityCreation.openCreateFlow}
+                onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
                 onMyFeedbacksStaffClick={() => {
                   setActiveTab('my-page');
                   setShowStaffFeedbacks(true);

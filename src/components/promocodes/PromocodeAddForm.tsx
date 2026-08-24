@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Eye,
   FileText,
@@ -18,6 +19,7 @@ import {
   PROMOCODE_FORM_LANGUAGES,
 } from '@/lib/promocodes/promocodeLanguages';
 import { fetchGeneratedPromocode } from '@/lib/promocodes/generatePromocode';
+import { markPromocodeListForRefresh } from '@/lib/promocodes/promocodeInviteEvents';
 import './promocode-add.css';
 
 const MONTHS: Record<string, string> = {
@@ -168,6 +170,7 @@ export default function PromocodeAddForm({
   initialSocialOptions,
 }: PromocodeAddFormProps) {
   const isEdit = mode === 'edit';
+  const router = useRouter();
   const { showAlert, dialogs } = usePromocodeDialogs();
   const now = new Date();
   const [meta, setMeta] = useState<PromocodeMeta | null>(null);
@@ -179,6 +182,11 @@ export default function PromocodeAddForm({
   const [versionIds, setVersionIds] = useState<number[]>([]);
   const [discount, setDiscount] = useState('');
   const [usableBy, setUsableBy] = useState('');
+  const [allowChildPromocodes, setAllowChildPromocodes] = useState(false);
+  const [childPromoLimit, setChildPromoLimit] = useState('');
+  const [childPromoUntil, setChildPromoUntil] = useState('');
+  const [childVersionIds, setChildVersionIds] = useState<number[]>([]);
+  const [childDurationDays, setChildDurationDays] = useState('');
   const [email, setEmail] = useState('');
   const [recipient, setRecipient] = useState('');
   const [helpHtmlPagesId, setHelpHtmlPagesId] = useState<number | ''>('');
@@ -246,6 +254,19 @@ export default function PromocodeAddForm({
     );
     setDiscount(initialSetting.discount ?? '');
     setUsableBy(initialSetting.usableBy ?? '');
+    setAllowChildPromocodes(Boolean(initialSetting.allowChildPromocodes));
+    setChildPromoLimit(
+      initialSetting.childPromoLimit != null ? String(initialSetting.childPromoLimit) : ''
+    );
+    setChildPromoUntil(initialSetting.childPromoUntil ?? '');
+    setChildVersionIds(
+      initialSetting.childVersionIds
+        ? initialSetting.childVersionIds.split(',').map((v) => Number(v)).filter((n) => Number.isFinite(n))
+        : []
+    );
+    setChildDurationDays(
+      initialSetting.childDurationDays != null ? String(initialSetting.childDurationDays) : ''
+    );
     setEmail(initialSetting.email ?? '');
     setRecipient(initialSetting.recipient ?? '');
     setHelpHtmlPagesId(initialSetting.helpHtmlPagesId ?? '');
@@ -318,7 +339,12 @@ export default function PromocodeAddForm({
   const openPreview = () => {
     const page = meta?.helpHtmlPages.find((p) => p.id === helpHtmlPagesId);
     if (!page?.title) return;
-    window.open(`/users/htmlpage/${encodeURIComponent(page.title)}`, '_blank');
+    const lang = Number(languageId) > 0 ? Number(languageId) : 1;
+    const params = new URLSearchParams({ language_id: String(lang) });
+    window.open(
+      `/users/htmlpage/${encodeURIComponent(page.title)}?${params.toString()}`,
+      '_blank'
+    );
   };
 
   const openInviteModal = () => {
@@ -400,6 +426,11 @@ export default function PromocodeAddForm({
         versionIds,
         discount,
         usableBy,
+        allowChildPromocodes,
+        childPromoLimit,
+        childPromoUntil,
+        childVersionIds,
+        childDurationDays,
         enableExtension,
         subscriptionExtends,
         managementSection,
@@ -422,7 +453,21 @@ export default function PromocodeAddForm({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
-      setFlashMessage(isEdit ? 'Promocode has been updated.' : 'Promocode has been saved.');
+
+      if (isEdit) {
+        setFlashMessage('Promocode has been updated.');
+        return;
+      }
+
+      const createdId = typeof data.id === 'number' ? data.id : Number(data.id);
+      markPromocodeListForRefresh(Number.isFinite(createdId) ? createdId : undefined);
+
+      window.setTimeout(() => {
+        window.close();
+        if (!window.closed) {
+          router.push('/promocodes/promoList');
+        }
+      }, 50);
     } catch (err) {
       showAlert(err instanceof Error ? err.message : 'Save failed', 'Error');
     } finally {
@@ -613,6 +658,73 @@ export default function PromocodeAddForm({
                       <option value="Always">Always</option>
                     </select>
                   </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td colSpan={4} style={{ padding: '12px 8px' }}>
+                  <label style={{ fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={allowChildPromocodes}
+                      onChange={(e) => setAllowChildPromocodes(e.target.checked)}
+                    />{' '}
+                    Enable registered users with this promocode to create other promocodes
+                  </label>
+                  {allowChildPromocodes ? (
+                    <div style={{ marginTop: 10, display: 'grid', gap: 8, maxWidth: 640 }}>
+                      <label>
+                        How many promocodes can be created
+                        <input
+                          type="number"
+                          min={1}
+                          value={childPromoLimit}
+                          onChange={(e) => setChildPromoLimit(e.target.value)}
+                          style={{ marginLeft: 8, width: 80 }}
+                        />
+                      </label>
+                      <label>
+                        Until what date they can create other promocodes
+                        <input
+                          type="date"
+                          value={childPromoUntil}
+                          onChange={(e) => setChildPromoUntil(e.target.value)}
+                          style={{ marginLeft: 8 }}
+                        />
+                      </label>
+                      <div>
+                        Versions selectable by them
+                        <div style={{ marginTop: 6 }}>
+                          {(meta?.subscriptions ?? []).map((sub) => (
+                            <label key={sub.id} style={{ display: 'block' }}>
+                              <input
+                                type="checkbox"
+                                checked={childVersionIds.includes(sub.id)}
+                                onChange={(e) => {
+                                  setChildVersionIds((prev) =>
+                                    e.target.checked
+                                      ? [...prev, sub.id]
+                                      : prev.filter((id) => id !== sub.id)
+                                  );
+                                }}
+                              />{' '}
+                              {sub.name}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <label>
+                        Days of duration for registration with the created promocode
+                        <input
+                          type="number"
+                          min={1}
+                          value={childDurationDays}
+                          onChange={(e) => setChildDurationDays(e.target.value)}
+                          style={{ marginLeft: 8, width: 80 }}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                 </td>
               </tr>
 

@@ -45,6 +45,7 @@ import {
 } from '@/lib/user/pcuAlertClient';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 import { clearClubWorkspaceSessionOnLogout } from '@/lib/club/clearClubWorkspaceSession';
+import SuggestMovesbookLoginPrompt from '@/components/promocodes/SuggestMovesbookLoginPrompt';
 import { persistAdminLoginSession } from '@/lib/panelSession';
 import QuickMenuButton from '@/app/my-page/components/QuickMenuButton';
 
@@ -1633,6 +1634,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
           </div>
         </div>
       )}
+      <SuggestMovesbookLoginPrompt />
     </>
   );
 }

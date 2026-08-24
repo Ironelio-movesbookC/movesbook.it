@@ -18,6 +18,8 @@ export interface TranslationKey {
   descriptionEn: string;
   values: Record<string, string>;
   isDeleted?: boolean;
+  /** True when created/managed under Language → Long texts (even if text is short). */
+  isLongText?: boolean;
 }
 
 export type LanguageTab = 'official' | 'settings' | 'texts';
@@ -168,14 +170,15 @@ export function sortLanguagesByOrder(
  * Helper: Filter translation keys for long texts
  */
 export function filterLongTexts(keys: TranslationKey[]): TranslationKey[] {
-  // Lazy import pattern avoided — registry checked by key name at call sites that import both.
   // Keep in sync with `KNOWN_LONG_TEXT_ENTRIES` in knownLongTextRegistry.ts
   const knownKeys = new Set([
     'AutoProcessInfo',
     'InfoReps',
     'IdentificationDevicesInfo',
+    'SuggestMovesbookIntro',
   ]);
   return keys.filter((key) => {
+    if (key.isLongText) return true;
     if (knownKeys.has(key.key)) return true;
     const hasLongText = Object.values(key.values).some(
       (val) => val && val.length > LONG_TEXT_THRESHOLD,

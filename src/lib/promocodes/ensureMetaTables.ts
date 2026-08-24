@@ -442,8 +442,64 @@ export async function ensurePromocodeMetaTables(): Promise<void> {
           `ALTER TABLE promocode_applies ADD COLUMN adv_page VARCHAR(512) NULL DEFAULT NULL`
         );
       }
+      if (!applyColumns.has('invite_mode')) {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE promocode_applies ADD COLUMN invite_mode VARCHAR(32) NULL DEFAULT NULL`
+        );
+      }
+      if (!applyColumns.has('invite_intro')) {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE promocode_applies ADD COLUMN invite_intro TEXT NULL`
+        );
+      }
+      if (!applyColumns.has('invite_expires_at')) {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE promocode_applies ADD COLUMN invite_expires_at DATE NULL`
+        );
+      }
     } catch (err) {
       console.warn('promocode_applies column migration skipped:', err);
+    }
+  }
+
+  if (await tableExists('promocode_settings')) {
+    try {
+      const settingColumns = await getTableColumns('promocode_settings');
+      const settingAlters: Array<[string, string]> = [
+        ['allow_child_promocodes', 'TINYINT NOT NULL DEFAULT 0'],
+        ['child_promo_limit', 'INT NULL'],
+        ['child_promo_until', 'DATE NULL'],
+        ['child_version_ids', 'VARCHAR(255) NULL'],
+        ['child_duration_days', 'INT NULL'],
+        ['parent_promocode_id', 'INT NULL'],
+      ];
+      for (const [col, def] of settingAlters) {
+        if (!settingColumns.has(col)) {
+          await prisma.$executeRawUnsafe(
+            `ALTER TABLE promocode_settings ADD COLUMN \`${col}\` ${def}`
+          );
+        }
+      }
+    } catch (err) {
+      console.warn('promocode_settings child-promo column migration skipped:', err);
+    }
+  }
+
+  if (!(await tableExists('promocode_monthly_stats'))) {
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE promocode_monthly_stats (
+          year INT NOT NULL,
+          month INT NOT NULL,
+          country_id INT NOT NULL DEFAULT 0,
+          country_code VARCHAR(8) NOT NULL DEFAULT '',
+          invites_sent INT NOT NULL DEFAULT 0,
+          registrations INT NOT NULL DEFAULT 0,
+          PRIMARY KEY (year, month, country_id, country_code)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      `);
+    } catch (err) {
+      console.warn('promocode_monthly_stats create skipped:', err);
     }
   }
 

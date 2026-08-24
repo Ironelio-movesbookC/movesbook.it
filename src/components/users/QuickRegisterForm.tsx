@@ -5,7 +5,10 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { COUNTRY_SELECT_OPTIONS } from '@/constants/countries.constants';
-import type { RegistrationStatus } from '@/lib/users/quickRegisterService';
+import {
+  QUICK_REGISTER_SUCCESS_MESSAGE,
+  type RegistrationStatus,
+} from '@/lib/users/quickRegisterShared';
 
 type VersionOption = { id: string; name: string };
 type SelectOption = { id: string; name: string };
@@ -22,6 +25,15 @@ function compactInputWidth(value: string, minCh = 3, maxCh = 10): CSSProperties 
   return { width: `${Math.min(maxCh, len)}ch` };
 }
 
+/** Default username: local part of the email (before @). */
+function usernameDefaultFromEmail(email: string): string {
+  const trimmed = email.trim();
+  if (!trimmed || trimmed.includes(',')) return '';
+  const at = trimmed.indexOf('@');
+  if (at <= 0) return '';
+  return trimmed.slice(0, at).trim();
+}
+
 export default function QuickRegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -31,7 +43,7 @@ export default function QuickRegisterForm() {
   const inviteByMovesbook = searchParams?.get('invite_by') === 'movesbook';
   const inviterFromUrl = searchParams?.get('inviter')?.trim() ?? '';
 
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(() => usernameDefaultFromEmail(originEmail));
   const [email, setEmail] = useState(originEmail);
   const [reEmail, setReEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -64,6 +76,7 @@ export default function QuickRegisterForm() {
   const [credit2, setCredit2] = useState('');
   const [membersNumber, setMembersNumber] = useState('');
   const [totalPayment, setTotalPayment] = useState('');
+  const [payWithVirtualCard, setPayWithVirtualCard] = useState(true);
   const [tripleDurationDays, setTripleDurationDays] = useState('');
   const [tripleDurationPrice, setTripleDurationPrice] = useState('');
   const [tripleDurationDiscount, setTripleDurationDiscount] = useState('');
@@ -78,10 +91,45 @@ export default function QuickRegisterForm() {
   const [usernameStatus, setUsernameStatus] = useState('');
   const [usernameStatusColor, setUsernameStatusColor] = useState('#116611');
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
 
   const initDone = useRef(false);
+  const usernameEditedRef = useRef(false);
+  const reEmailTouchedRef = useRef(false);
+  const [reEmailConfirmReady, setReEmailConfirmReady] = useState(false);
+
+  const handleReEmailFocus = () => {
+    reEmailTouchedRef.current = true;
+    setReEmailConfirmReady(true);
+  };
+
+  const handleReEmailChange = (value: string) => {
+    reEmailTouchedRef.current = true;
+    setReEmail(value);
+  };
+
+  const clearReEmailAutofill = useCallback(() => {
+    if (!reEmailTouchedRef.current) {
+      setReEmail('');
+    }
+  }, []);
+
+  useEffect(() => {
+    const timers = [0, 50, 150, 350, 700].map((ms) =>
+      window.setTimeout(() => clearReEmailAutofill(), ms)
+    );
+    return () => {
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [clearReEmailAutofill]);
+
+  const applyUsernameFromEmail = useCallback((emailVal: string, opts?: { force?: boolean }) => {
+    if (usernameEditedRef.current && !opts?.force) return;
+    const suggested = usernameDefaultFromEmail(emailVal);
+    if (suggested) setUsername(suggested);
+  }, []);
 
   const clearSubscriptionDetails = useCallback(() => {
     setCredit('');
@@ -129,7 +177,13 @@ export default function QuickRegisterForm() {
   );
 
   const loadSubscriptionData = useCallback(
-    async (opts?: { userTypeVal?: string; versionVal?: string; promo?: string; regType?: string }) => {
+    async (opts?: {
+      userTypeVal?: string;
+      versionVal?: string;
+      promo?: string;
+      regType?: string;
+      countryVal?: string;
+    }) => {
       const ut = opts?.userTypeVal ?? userType;
       const vid = opts?.versionVal ?? versionId;
       if (!ut || !vid) {
@@ -145,6 +199,7 @@ export default function QuickRegisterForm() {
             userType: ut,
             version_id: vid,
             promocode: opts?.promo ?? promocode,
+            country: opts?.countryVal ?? country,
             registration_type: (opts?.regType ?? registrationType) === 'renewal' ? 'renewal' : 'first',
           }),
         });
@@ -208,7 +263,7 @@ export default function QuickRegisterForm() {
         clearSubscriptionDetails();
       }
     },
-    [userType, versionId, promocode, registrationType, clearSubscriptionDetails]
+    [userType, versionId, promocode, registrationType, country, clearSubscriptionDetails]
   );
 
   const validatePromocode = useCallback(
@@ -329,6 +384,12 @@ export default function QuickRegisterForm() {
         .then((data) => {
           if (data.success && data.status) {
             applyRegistrationStatus(data.status, { showEmailStatus: false });
+            if (data.status.type === 'renewal' && data.status.existing_username) {
+              setUsername(data.status.existing_username);
+              usernameEditedRef.current = true;
+            } else {
+              applyUsernameFromEmail(originEmail);
+            }
           }
         })
         .catch(() => undefined);
@@ -337,7 +398,7 @@ export default function QuickRegisterForm() {
     if (initialPromocode) {
       void validatePromocode(initialPromocode);
     }
-  }, [originEmail, initialPromocode, inviteByMovesbook, inviterFromUrl, applyRegistrationStatus, validatePromocode]);
+  }, [originEmail, initialPromocode, inviteByMovesbook, inviterFromUrl, applyRegistrationStatus, validatePromocode, applyUsernameFromEmail]);
 
   const handleEmailChange = async () => {
     const val = email.trim();
@@ -356,6 +417,12 @@ export default function QuickRegisterForm() {
       const data = await res.json();
       if (data.success && data.status) {
         applyRegistrationStatus(data.status);
+        if (data.status.type === 'renewal' && data.status.existing_username) {
+          setUsername(data.status.existing_username);
+          usernameEditedRef.current = true;
+        } else {
+          applyUsernameFromEmail(val);
+        }
         if (userType && versionId) {
           void loadSubscriptionData({ regType: data.status.type });
         }
@@ -381,7 +448,12 @@ export default function QuickRegisterForm() {
     try {
       const params = new URLSearchParams({ username: u, email: email.trim().toLowerCase() });
       const res = await fetch(`/api/users/quick-register/check-username?${params.toString()}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setUsernameStatus('Could not verify username. Please try again.');
+        setUsernameStatusColor('#a61b1b');
+        return;
+      }
       if (data.available) {
         setUsernameStatus('This username is available.');
         setUsernameStatusColor('#116611');
@@ -390,7 +462,8 @@ export default function QuickRegisterForm() {
         setUsernameStatusColor('#a61b1b');
       }
     } catch {
-      setUsernameStatus('');
+      setUsernameStatus('Could not verify username. Please try again.');
+      setUsernameStatusColor('#a61b1b');
     }
   };
 
@@ -476,6 +549,7 @@ export default function QuickRegisterForm() {
 
   const handleRegister = async () => {
     setError('');
+    setSuccessMessage('');
 
     if (registrationType === 'renewal' && existingUsername) {
       if (username.trim().toLowerCase() !== existingUsername.toLowerCase()) {
@@ -557,7 +631,11 @@ export default function QuickRegisterForm() {
           email: email.trim().toLowerCase(),
         });
         const res = await fetch(`/api/users/quick-register/check-username?${params.toString()}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError('Could not verify username. Please try again.');
+          return;
+        }
         if (!data.available) {
           setError(data.message || 'This username is already taken. Please choose another.');
           return;
@@ -592,6 +670,8 @@ export default function QuickRegisterForm() {
           invite_by_movesbook: inviteByMovesbook,
           origin_email: originEmail || undefined,
           disccount_hidden: discountHidden,
+          payment_method: payWithVirtualCard ? 'virtual_card' : 'standard',
+          total_payment: totalPayment,
         }),
       });
       const raw = await res.text();
@@ -613,7 +693,8 @@ export default function QuickRegisterForm() {
       if (!res.ok || !data.success) {
         throw new Error(data.message || data.error || 'Registration failed');
       }
-      router.push('/');
+      setSuccessMessage(data.message || QUICK_REGISTER_SUCCESS_MESSAGE);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
@@ -631,7 +712,22 @@ export default function QuickRegisterForm() {
         </Link>
       </div>
 
-      <form id="quick-register-form" onSubmit={(e) => e.preventDefault()} noValidate>
+      {successMessage ? (
+        <div className="qr-registration-success" role="status">
+          <p>{successMessage}</p>
+          <Link href="/" className="btnRed qr-registration-success-link">
+            Go to Movesbook
+          </Link>
+        </div>
+      ) : null}
+
+      <form
+        id="quick-register-form"
+        onSubmit={(e) => e.preventDefault()}
+        noValidate
+        autoComplete="off"
+        style={{ display: successMessage ? 'none' : undefined }}
+      >
         {inviteByMovesbook ? <input type="hidden" name="invite_by_movesbook" value="1" /> : null}
         <input type="hidden" name="origin_email" id="origin_email" value={originEmail} />
         <input type="hidden" id="registration_type" value={registrationType} />
@@ -639,6 +735,17 @@ export default function QuickRegisterForm() {
         <input type="hidden" id="subscription_end_date" value={subscriptionEndDate} />
         <input type="hidden" id="existing_username" value={existingUsername} />
         <input type="hidden" id="version_duration_days" value={versionDurationDays} />
+        {/* Absorb browser autofill so the confirmation field stays empty */}
+        <input
+          type="email"
+          name="email"
+          tabIndex={-1}
+          autoComplete="email"
+          className="qr-autofill-trap"
+          aria-hidden="true"
+          defaultValue=""
+          readOnly
+        />
 
         <div className="quickregi-form">
           <div className="quickregi-left" style={{ border: 'none', paddingRight: 0 }}>
@@ -654,7 +761,10 @@ export default function QuickRegisterForm() {
                 id="textUsername"
                 value={username}
                 autoComplete="off"
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => {
+                  usernameEditedRef.current = true;
+                  setUsername(e.target.value);
+                }}
                 onBlur={() => void handleUsernameBlur()}
               />
               {usernameStatus ? (
@@ -676,9 +786,10 @@ export default function QuickRegisterForm() {
                 type="email"
                 className="input-highlight"
                 placeholder="mail address"
-                name="email"
+                name="register_email"
                 id="textEmail"
                 value={email}
+                autoComplete="email"
                 onChange={(e) => {
                   setEmail(e.target.value);
                 }}
@@ -716,15 +827,31 @@ export default function QuickRegisterForm() {
             </div>
 
             <div className="div-row">
+              <span className="span-label-title">Retype your email *</span>
               <input
                 style={{ border: '2px solid #7f7f7f !important' }}
-                type="email"
-                className="input-highlight"
+                type="text"
+                inputMode="email"
+                className="input-highlight qr-email-confirm-input"
                 placeholder="Retype your email"
-                name="re_email"
+                name="register_email_confirm"
                 id="textReEmail"
                 value={reEmail}
-                onChange={(e) => setReEmail(e.target.value)}
+                readOnly={!reEmailConfirmReady}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                data-lpignore="true"
+                data-1p-ignore
+                data-form-type="other"
+                onFocus={handleReEmailFocus}
+                onChange={(e) => handleReEmailChange(e.target.value)}
+                onAnimationStart={(e) => {
+                  if (e.animationName === 'qr-detect-autofill' && !reEmailTouchedRef.current) {
+                    setReEmail('');
+                  }
+                }}
               />
             </div>
 
@@ -767,7 +894,18 @@ export default function QuickRegisterForm() {
               <div className="qr-field-row">
                 <span className="qr-label">Country*</span>
                 <div className="qr-control">
-                  <select id="sltCountry" name="country" value={country} onChange={(e) => setCountry(e.target.value)}>
+                  <select
+                    id="sltCountry"
+                    name="country"
+                    value={country}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setCountry(next);
+                      if (userType && versionId) {
+                        void loadSubscriptionData({ promo: promocode, countryVal: next });
+                      }
+                    }}
+                  >
                     <option value="">Select country</option>
                     {COUNTRY_SELECT_OPTIONS.map((c) => (
                       <option key={c.name} value={c.name}>
@@ -897,29 +1035,30 @@ export default function QuickRegisterForm() {
                   invite to register
                 </span>
               </div>
-              {promoFeedback.text ? (
-                <div
-                  id="promocode-feedback"
-                  className={`promocode-feedback ${promoFeedback.kind === 'success' ? 'promo-success' : 'promo-error'}`}
-                >
-                  {promoFeedback.text}
-                </div>
-              ) : null}
-
               <div className="qr-promo-banner">
                 Discount, number of members assigned, and credits earned using your promocode
               </div>
 
               <div className="qr-promo-discount-row">
-                <span className="qr-promo-label">Discount with promocode</span>
-                <input
-                  type="text"
-                  className="qr-input-numeric"
-                  id="discount_with_promocode"
-                  value={discount}
-                  readOnly
-                  style={compactInputWidth(discount, 3, 6)}
-                />
+                <div className="qr-promo-discount-control">
+                  <span className="qr-promo-label">Discount with promocode</span>
+                  <input
+                    type="text"
+                    className="qr-input-numeric"
+                    id="discount_with_promocode"
+                    value={discount}
+                    readOnly
+                    style={compactInputWidth(discount, 3, 6)}
+                  />
+                </div>
+                {promoFeedback.text ? (
+                  <div
+                    id="promocode-feedback"
+                    className={`promocode-feedback ${promoFeedback.kind === 'success' ? 'promo-success' : 'promo-error'}`}
+                  >
+                    {promoFeedback.text}
+                  </div>
+                ) : null}
               </div>
 
               <div className="qr-promo-credits">
@@ -977,14 +1116,6 @@ export default function QuickRegisterForm() {
                         id="sender_email"
                         readOnly
                       />
-                      <span className="qr-row-label">Retype here</span>
-                      <input
-                        type="text"
-                        className="qr-row-input input-highlight"
-                        value={movesbookOfficialEmail}
-                        id="confirm_sender_email"
-                        readOnly
-                      />
                     </div>
                     <p className="qr-note">(Invitation from Movesbook – official address)</p>
                   </>
@@ -1035,6 +1166,14 @@ export default function QuickRegisterForm() {
                   />
                 </div>
                 <div className="payment-row-item payment-logos">
+                  <label className="inline-flex items-center gap-2 text-sm mr-3" style={{ color: '#7b0a26' }}>
+                    <input
+                      type="checkbox"
+                      checked={payWithVirtualCard}
+                      onChange={(e) => setPayWithVirtualCard(e.target.checked)}
+                    />
+                    Pay with virtual credit card
+                  </label>
                   <Image src="/img/payment_logo/logo_visa.svg" alt="Visa" width={45} height={28} />
                   <Image src="/img/payment_logo/logo_mc.svg" alt="Mastercard" width={45} height={28} />
                   <Image src="/img/payment_logo/logo_discover.svg" alt="Discover" width={45} height={28} />

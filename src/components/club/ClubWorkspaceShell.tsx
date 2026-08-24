@@ -12,7 +12,10 @@ import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolba
 import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { canAccessClubWorkspace } from '@/utils/dashboardRouting';
+import {
+  canAccessClubWorkspace,
+  showSuggestMovesbookForTab,
+} from '@/utils/dashboardRouting';
 import {
   getClubMyPageDisplayName,
   getFormCreatedClubsSortedByCreatedAt,
@@ -573,6 +576,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
             }
             onCoverCameraClick={() => setShowChangeBannerModal(true)}
             onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
+            showSuggestMovesbook={showSuggestMovesbookForTab(user.userType, shellActiveTab)}
             showSponsored={shellActiveTab === 'my-page'}
           />
         )}

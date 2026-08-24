@@ -2473,8 +2473,7 @@ model NewsSharePost {
 
 model FoodDatabaseSection {
   id               String              @id @default(cuid())
-  legacyId         Int?
-  sourceId         String              @default("movesbook_bundled")
+  legacyId         Int?                @unique
   name             String
   nameTranslations String?             @db.Text
   displayOrder     Int                 @default(0)
@@ -2484,15 +2483,12 @@ model FoodDatabaseSection {
   foods            FoodDatabaseItem[]
   recipes          FoodDatabaseRecipe[]
 
-  @@unique([sourceId, legacyId])
-  @@index([sourceId])
   @@map("food_database_sections")
 }
 
 model FoodDatabaseItem {
   id               String              @id @default(cuid())
-  legacyId         Int?
-  sourceId         String              @default("movesbook_bundled")
+  legacyId         Int?                @unique
   sectionId        String
   name             String
   nameTranslations String?             @db.Text
@@ -2521,17 +2517,14 @@ model FoodDatabaseItem {
   updatedAt        DateTime            @updatedAt
   section          FoodDatabaseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
-  @@unique([sourceId, legacyId])
   @@index([sectionId])
-  @@index([sourceId])
   @@index([name])
   @@map("food_database_items")
 }
 
 model FoodDatabaseRecipe {
   id               String              @id @default(cuid())
-  legacyId         Int?
-  sourceId         String              @default("movesbook_bundled")
+  legacyId         Int?                @unique
   sectionId        String
   name             String
   nameTranslations String?             @db.Text
@@ -2563,31 +2556,9 @@ model FoodDatabaseRecipe {
   updatedAt        DateTime            @updatedAt
   section          FoodDatabaseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
-  @@unique([sourceId, legacyId])
   @@index([sectionId])
-  @@index([sourceId])
   @@index([name])
   @@map("food_database_recipes")
-}
-
-model FoodDatabaseSourceImport {
-  sourceId    String   @id
-  importedAt  DateTime @default(now())
-  foodCount   Int      @default(0)
-  recipeCount Int      @default(0)
-  summary     String?  @db.Text
-
-  @@map("food_database_source_imports")
-}
-
-model FoodDatabaseSourceState {
-  id              String    @id @default("default")
-  activeSourceId  String    @default("fosav")
-  lastLoadedAt    DateTime?
-  lastLoadSummary String?   @db.Text
-  updatedAt       DateTime  @updatedAt
-
-  @@map("food_database_source_state")
 }
 
 // ---------------------------------------------------------------------------

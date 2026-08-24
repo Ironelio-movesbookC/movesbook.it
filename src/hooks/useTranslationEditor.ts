@@ -21,7 +21,8 @@ interface UseTranslationEditorReturn {
     newKeyTranslations: Record<string, string>,
     newKeyCategory: string,
     allKeys: TranslationKey[],
-    onSuccess: () => void
+    onSuccess: () => void,
+    options?: { isLongText?: boolean; allowUpdateExisting?: boolean }
   ) => Promise<void>;
   
   // Delete or restore translation (with password)
@@ -160,15 +161,17 @@ export function useTranslationEditor(): UseTranslationEditorReturn {
     newKeyTranslations: Record<string, string>,
     newKeyCategory: string,
     allKeys: TranslationKey[],
-    onSuccess: () => void
+    onSuccess: () => void,
+    options?: { isLongText?: boolean; allowUpdateExisting?: boolean }
   ) => {
     if (!newKeyName.trim()) {
       alert('Please enter a variable name');
       return;
     }
 
-    // Check if key already exists
-    if (allKeys.find(k => k.key === newKeyName)) {
+    const isLongText = Boolean(options?.isLongText);
+    const existing = allKeys.find((k) => k.key === newKeyName);
+    if (existing && !(options?.allowUpdateExisting && isLongText)) {
       alert('This variable name already exists. Please use a different name.');
       return;
     }
@@ -182,6 +185,7 @@ export function useTranslationEditor(): UseTranslationEditorReturn {
           key: newKeyName,
           translations: newKeyTranslations,
           category: newKeyCategory,
+          isLongText,
         }),
       });
 
@@ -205,8 +209,9 @@ export function useTranslationEditor(): UseTranslationEditorReturn {
       
       // Check if any translation is long (> 100 chars) 
       const hasLongText = Object.values(newKeyTranslations).some(val => val && val.length > 100);
+      const showInLongTexts = isLongText || hasLongText;
       
-      const locationMessage = hasLongText 
+      const locationMessage = showInLongTexts 
         ? `You can find it in:\n• Tab 1 "Official Languages" (if searching by variable name)\n• Tab 3 "Language Long Texts" > ${categoryName}`
         : `You can find it in:\n• Tab 1 "Official Languages"\n• Tab 2 "Language Settings"`;
       

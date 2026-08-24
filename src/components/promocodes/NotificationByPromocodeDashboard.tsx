@@ -1,7 +1,11 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import type { NotificationByPromocodeDashboard } from '@/lib/promocodes/notificationByPromocodeService';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import type { NotificationByPromocodeDashboard, PromocodeOption } from '@/lib/promocodes/notificationByPromocodeService';
+import {
+  isPromocodeInviteSentMessage,
+} from '@/lib/promocodes/promocodeInviteEvents';
 import {
   PROMOCODE_NO_FLAG_IMAGE,
   promocodeFlagImageUrl,
@@ -10,8 +14,21 @@ import {
 import { formatChartCredits } from '@/lib/promocodes/formatPromocodeCredits';
 import PromocodeAssetImage from '@/components/promocodes/PromocodeAssetImage';
 import '@/components/promocodes/notification-by-promocode.css';
+import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  fetchSuggestMovesbookIntroText,
+  SUGGEST_MOVESBOOK_INTRO_EN,
+} from '@/constants/suggestMovesbookLongText';
+import {
+  buildWhatsAppShareUrl,
+  buildTelegramSharePickerUrl,
+  buildSmsShareUrl,
+  ensureShareLinkInMessage,
+  openExternalShareUrl,
+} from '@/utils/socialShareUrls';
 
 type TabId = 'suggest' | 'invitations' | 'registered' | 'credits' | 'connections';
+type ShareChannel = 'WhatsApp' | 'Telegram' | 'SMS';
 
 async function userPromocodeFetch(path: string, init?: RequestInit) {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -29,6 +46,37 @@ function formatRoleName(roleName: string, roleId?: number | null): string {
   return roleName.charAt(0).toUpperCase() + roleName.slice(1);
 }
 
+function validateInviteForm(receiverEmail: string, promocodeId: string): string | null {
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!receiverEmail.trim()) {
+    return 'Please enter the mail address for recipient.';
+  }
+  if (!emailPattern.test(receiverEmail.trim())) {
+    return 'Please enter valid mail address.';
+  }
+  if (!promocodeId) {
+    return 'Please select a promocode to use for the invite.';
+  }
+  return null;
+}
+
+function buildSendInvitePreviewUrl(
+  email: string,
+  option: PromocodeOption,
+  introMessage?: string
+): string {
+  const params = new URLSearchParams({
+    email_address: email.trim(),
+    promocode: option.code,
+    other_info: '',
+    adv_page: '',
+    html_page_id: option.helpHtmlPagesId != null ? String(option.helpHtmlPagesId) : '',
+    language_id: String(option.languageId ?? 1),
+  });
+  if (introMessage?.trim()) params.set('intro_message', introMessage.trim());
+  return `/promocodes/send-invite?${params.toString()}`;
+}
+
 export default function NotificationByPromocodeDashboardView() {
   const [data, setData] = useState<NotificationByPromocodeDashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,8 +85,14 @@ export default function NotificationByPromocodeDashboardView() {
   const [receiverEmail, setReceiverEmail] = useState('');
   const [promocodeId, setPromocodeId] = useState('');
   const [validEndDate, setValidEndDate] = useState('');
-  const [sending, setSending] = useState(false);
   const [highlightedPromoId, setHighlightedPromoId] = useState<number | null>(null);
+  const [introMessage, setIntroMessage] = useState('');
+  const [introText, setIntroText] = useState(SUGGEST_MOVESBOOK_INTRO_EN);
+  const [shareChannel, setShareChannel] = useState<ShareChannel>('WhatsApp');
+  const [smsPhone, setSmsPhone] = useState('');
+  const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
+  const { currentLanguage } = useLanguage();
+  const invitePopupPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,11 +121,54 @@ export default function NotificationByPromocodeDashboardView() {
     }
   }, []);
 
+  const watchInvitePopupUntilClosed = useCallback(
+    (popup: Window | null) => {
+      if (!popup) return;
+      if (invitePopupPollRef.current) {
+        clearInterval(invitePopupPollRef.current);
+      }
+      invitePopupPollRef.current = setInterval(() => {
+        if (!popup.closed) return;
+        if (invitePopupPollRef.current) {
+          clearInterval(invitePopupPollRef.current);
+          invitePopupPollRef.current = null;
+        }
+        void load();
+      }, 400);
+    },
+    [load]
+  );
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (isPromocodeInviteSentMessage(event.data)) {
+        void load();
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('message', onMessage);
+      if (invitePopupPollRef.current) {
+        clearInterval(invitePopupPollRef.current);
+      }
+    };
+  }, [load]);
+
   useEffect(() => {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    void fetchSuggestMovesbookIntroText(currentLanguage || 'en').then(setIntroText);
+  }, [currentLanguage]);
+
   const promocodeOptions = useMemo(() => data?.promocodesList ?? [], [data]);
+
+  const selectedPromocode = useMemo(
+    () => promocodeOptions.find((p) => String(p.id) === promocodeId) ?? null,
+    [promocodeOptions, promocodeId]
+  );
 
   const onPromocodeChange = (value: string) => {
     setPromocodeId(value);
@@ -79,45 +176,162 @@ export default function NotificationByPromocodeDashboardView() {
     setValidEndDate(selected?.validTo ?? '');
   };
 
-  const sendInvite = async () => {
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!receiverEmail.trim()) {
-      window.alert('Please enter the mail address for recipient.');
+  const openInvitePreview = () => {
+    const validationError = validateInviteForm(receiverEmail, promocodeId);
+    if (validationError) {
+      window.alert(validationError);
       return;
     }
-    if (!emailPattern.test(receiverEmail.trim())) {
-      window.alert('Please enter valid mail address.');
-      return;
-    }
-    if (!promocodeId) {
+
+    const selected = promocodeOptions.find((p) => String(p.id) === promocodeId);
+    if (!selected?.code) {
       window.alert('Please select a promocode to use for the invite.');
       return;
     }
 
-    setSending(true);
+    const popup = window.open(
+      buildSendInvitePreviewUrl(receiverEmail, selected, introMessage),
+      '_blank',
+      'noopener,noreferrer'
+    );
+    if (!popup) {
+      window.alert('Please allow pop-ups for this site to open the invitation preview.');
+      return;
+    }
+    watchInvitePopupUntilClosed(popup);
+  };
+
+  const sendInvite = async () => {
+    const validationError = validateInviteForm(receiverEmail, promocodeId);
+    if (validationError) {
+      window.alert(validationError);
+      return;
+    }
+
     try {
       const res = await userPromocodeFetch('/api/users/notification-by-promocode/send-invite', {
         method: 'POST',
         body: JSON.stringify({
           receiverEmail: receiverEmail.trim(),
           promocodeId: Number(promocodeId),
+          introMessage: introMessage.trim(),
+          inviteMode: 'Mail',
         }),
       });
       const json = await res.json();
-      window.alert(json.message || (json.status === 'success' ? 'Your invitation was sent successfully.' : 'Requesting member failed.'));
+      window.alert(
+        json.message ||
+          (json.status === 'success'
+            ? 'Your invitation was sent successfully.'
+            : 'Requesting member failed.')
+      );
       if (json.status === 'success') {
         setReceiverEmail('');
         void load();
       }
     } catch {
       window.alert('An error occurred while sending the invitation. Please try again.');
-    } finally {
-      setSending(false);
     }
   };
 
   const onSearchSubmit = (e: FormEvent) => {
     e.preventDefault();
+  };
+
+  const createChildPromocode = async () => {
+    try {
+      const res = await userPromocodeFetch('/api/users/notification-by-promocode/create-promocode', {
+        method: 'POST',
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        window.alert(json.error || 'A new Promocode cannot be generated anymore.');
+        return;
+      }
+      window.alert(`Promocode created: ${json.code}`);
+      void load();
+    } catch {
+      window.alert('Could not create promocode.');
+    }
+  };
+
+  const buildInviteSharePayload = (): { registerUrl: string; text: string; code: string } | null => {
+    const selected = promocodeOptions.find((p) => String(p.id) === promocodeId);
+    const code = selected?.code || data?.promocode.code || '';
+    if (!code) {
+      window.alert('Please select a promocode to use for the invite.');
+      return null;
+    }
+
+    const inviter =
+      data?.connectionChart.currentUserUsername?.trim() ||
+      data?.registeredUsers[0]?.senderUsername?.trim() ||
+      '';
+    const params = new URLSearchParams({ promocode: code });
+    if (inviter) params.set('inviter', inviter);
+    if (currentLanguage) params.set('lang', currentLanguage);
+    const registerUrl = `${window.location.origin}/users/quickRegister?${params.toString()}`;
+
+    const body = [introMessage.trim(), introText, `Promocode: ${code}`]
+      .filter(Boolean)
+      .join('\n\n');
+    const text = ensureShareLinkInMessage(body, registerUrl);
+    return { registerUrl, text, code };
+  };
+
+  const shareInvite = (mode: ShareChannel = shareChannel) => {
+    const payload = buildInviteSharePayload();
+    if (!payload) return;
+
+    if (mode === 'SMS') {
+      const phone = smsPhone.trim();
+      if (!phone) {
+        window.alert('Please enter the phone number to send the SMS invite.');
+        return;
+      }
+      const digits = phone.replace(/\D/g, '');
+      if (digits.length < 8) {
+        window.alert('Please enter a valid phone number (include country code if needed).');
+        return;
+      }
+      openExternalShareUrl(buildSmsShareUrl(phone, payload.text));
+      return;
+    }
+
+    const url =
+      mode === 'WhatsApp'
+        ? buildWhatsAppShareUrl(undefined, payload.text)
+        : buildTelegramSharePickerUrl(payload.registerUrl, payload.text);
+
+    openExternalShareUrl(url);
+  };
+
+  const inviteShareLink = useMemo(() => {
+    const selected = promocodeOptions.find((p) => String(p.id) === promocodeId);
+    const code = selected?.code || data?.promocode.code || '';
+    if (!code || typeof window === 'undefined') return '';
+    const inviter =
+      data?.connectionChart.currentUserUsername?.trim() ||
+      data?.registeredUsers[0]?.senderUsername?.trim() ||
+      '';
+    const params = new URLSearchParams({ promocode: code });
+    if (inviter) params.set('inviter', inviter);
+    if (currentLanguage) params.set('lang', currentLanguage);
+    return `${window.location.origin}/users/quickRegister?${params.toString()}`;
+  }, [promocodeOptions, promocodeId, data, currentLanguage]);
+
+  const copyInviteLink = async () => {
+    if (!inviteShareLink) {
+      window.alert('Please select a promocode to use for the invite.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(inviteShareLink);
+      setInviteLinkCopied(true);
+      window.setTimeout(() => setInviteLinkCopied(false), 2000);
+    } catch {
+      window.alert(`Copy this link manually:\n\n${inviteShareLink}`);
+    }
   };
 
   if (loading) {
@@ -159,6 +373,203 @@ export default function NotificationByPromocodeDashboardView() {
 
       {data.showSuggestTab && activeTab === 'suggest' && (
         <div style={{ padding: 20 }}>
+          <h1 style={{ fontSize: 28, color: '#7b0a26', margin: '0 0 16px', fontWeight: 700 }}>
+            Suggest Movesbook
+          </h1>
+          <p style={{ fontSize: 16, lineHeight: 1.55, margin: '0 0 20px', maxWidth: 820 }}>
+            {introText}
+          </p>
+
+          {data.childPromo.parentPromocodeId ? (
+            <div
+              style={{
+                marginBottom: 20,
+                padding: 14,
+                border: '1px solid #ccc',
+                background: '#faf7f2',
+                maxWidth: 900,
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Promocodes you can create</div>
+              <div>Allowed: {data.childPromo.limit ?? 'unlimited'}</div>
+              <div>Already generated: {data.childPromo.generatedCount}</div>
+              <div>Expiring date to create new promocodes: {data.childPromo.until || '—'}</div>
+              <div>
+                Versions enabled:{' '}
+                {data.childPromo.versionIds.length > 0
+                  ? data.childPromo.versionIds
+                      .map((id) => data.subscriptionsData[id] || String(id))
+                      .join(', ')
+                  : '—'}
+              </div>
+              <div>
+                Days available for registration after invite:{' '}
+                {data.childPromo.durationDays ?? '—'}
+              </div>
+
+              <div
+                className="invite-row"
+                style={{
+                  marginTop: 14,
+                  background: '#fff',
+                  alignItems: 'center',
+                }}
+              >
+                <button
+                  type="button"
+                  className={
+                    data.childPromo.currentGeneratedExpired && data.childPromo.allowed
+                      ? 'promo-regen-btn promo-regen-btn--ready'
+                      : 'promo-regen-btn promo-regen-btn--locked'
+                  }
+                  title={
+                    data.childPromo.currentGeneratedExpired
+                      ? data.childPromo.allowed
+                        ? 'Generate a new promocode'
+                        : data.childPromo.blockedReason || 'Cannot generate a new promocode'
+                      : 'Red until your current promocode expires, then becomes black to generate a new one'
+                  }
+                  disabled={!(data.childPromo.currentGeneratedExpired && data.childPromo.allowed)}
+                  onClick={createChildPromocode}
+                  aria-label="Generate new promocode"
+                >
+                  <RefreshCw size={22} aria-hidden />
+                </button>
+                <span>Promocode for you</span>
+                <input
+                  type="text"
+                  readOnly
+                  value={
+                    data.childPromo.currentGeneratedCode ||
+                    selectedPromocode?.code ||
+                    data.promocode.code ||
+                    '—'
+                  }
+                  style={{ width: 140, background: '#eee' }}
+                />
+                <span>is valid until</span>
+                <input
+                  type="text"
+                  readOnly
+                  value={
+                    data.childPromo.currentGeneratedValidTo ||
+                    selectedPromocode?.validTo ||
+                    data.promocode.validTo ||
+                    '—'
+                  }
+                  style={{ width: 110, background: '#eee' }}
+                />
+                <span>last invite</span>
+                <input
+                  type="text"
+                  readOnly
+                  value={data.lastEmailSentDate || '—'}
+                  style={{ width: 110, background: '#eee' }}
+                />
+              </div>
+
+              <div style={{ marginTop: 10, fontSize: 13, color: '#555' }}>
+                {data.childPromo.currentGeneratedExpired ? (
+                  data.childPromo.allowed ? (
+                    <span style={{ color: '#116611' }}>
+                      Current promocode is expired (or not created yet). The button is black — you can
+                      generate a new promocode.
+                    </span>
+                  ) : (
+                    <span style={{ color: '#7b0a26', fontWeight: 600 }}>
+                      {data.childPromo.blockedReason}
+                    </span>
+                  )
+                ) : (
+                  <span style={{ color: '#cc0000', fontWeight: 600 }}>
+                    Button is red and locked until your current promocode expires
+                    {data.childPromo.currentGeneratedValidTo
+                      ? ` (${data.childPromo.currentGeneratedValidTo})`
+                      : ''}
+                    . Then it turns black and you can generate a new one.
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {data.generatedPromocodes.length > 0 ? (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Promocodes generated</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {data.generatedPromocodes.map((p) => (
+                  <li key={p.id}>
+                    {p.code} — valid until {p.validTo || '—'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="invite-row" style={{ alignItems: 'flex-start' }}>
+            <span>Your message of intro</span>
+            <textarea
+              value={introMessage}
+              onChange={(e) => setIntroMessage(e.target.value)}
+              rows={3}
+              style={{ width: '50%', minWidth: 260, padding: 8 }}
+              placeholder="Type a short intro that will be added to the invitation"
+            />
+          </div>
+
+          <div className="invite-row" style={{ marginTop: 12, flexWrap: 'wrap' }}>
+            <span>Share also via</span>
+            {(['WhatsApp', 'Telegram', 'SMS'] as const).map((channel) => (
+              <button
+                key={channel}
+                type="button"
+                className="button-preview-promocode"
+                style={
+                  shareChannel === channel
+                    ? { background: '#7b0a26', color: '#fff', borderColor: '#7b0a26' }
+                    : undefined
+                }
+                onClick={() => {
+                  setShareChannel(channel);
+                  if (channel !== 'SMS') shareInvite(channel);
+                }}
+              >
+                {channel}
+              </button>
+            ))}
+          </div>
+
+          {shareChannel === 'SMS' ? (
+            <div className="invite-row" style={{ marginTop: 8 }}>
+              <span>Number of phone on which to send SMS</span>
+              <input
+                type="tel"
+                value={smsPhone}
+                onChange={(e) => setSmsPhone(e.target.value)}
+                placeholder="+39 333 1234567"
+                style={{ width: '30%', minWidth: 200 }}
+              />
+              <button type="button" className="button-black-promocode" onClick={() => shareInvite('SMS')}>
+                Send Invite
+              </button>
+            </div>
+          ) : null}
+
+          <div className="invite-row" style={{ marginTop: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span>Share the invite using this link</span>
+            <input
+              type="text"
+              readOnly
+              value={inviteShareLink}
+              placeholder="Select a promocode to generate the invite link"
+              style={{ width: '45%', minWidth: 260, background: '#f7f7f7' }}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <button type="button" className="button-black-promocode" onClick={() => void copyInviteLink()}>
+              {inviteLinkCopied ? 'Copied' : 'Copy link'}
+            </button>
+          </div>
+
           <div className="invite-row">
             <span>Mail to which you start the invite</span>
             <input
@@ -167,8 +578,11 @@ export default function NotificationByPromocodeDashboardView() {
               onChange={(e) => setReceiverEmail(e.target.value)}
               style={{ width: '30%', minWidth: 200 }}
             />
-            <button type="button" className="button-black-promocode" disabled={sending} onClick={() => void sendInvite()}>
+            <button type="button" className="button-black-promocode" onClick={sendInvite}>
               Send Invite
+            </button>
+            <button type="button" className="button-preview-promocode" onClick={openInvitePreview}>
+              Preview
             </button>
           </div>
 
