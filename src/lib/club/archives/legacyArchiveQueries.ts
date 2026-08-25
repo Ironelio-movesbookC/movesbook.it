@@ -10,6 +10,8 @@ export type ArchiveQueryParams = {
   orderBy?: 'recent' | 'old';
   /** Scope to a single member (e.g. "Member selected" vs "All members" toggle). */
   memberId?: string;
+  /** Scope to the single record selected in the archive we came from ("Record selected"). */
+  recordId?: string;
 };
 
 export type PaginatedArchive<T> = { items: T[]; total: number; page: number; pageSize: number };

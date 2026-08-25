@@ -1,4 +1,5 @@
 import type { Column } from '@/types/clubTable';
+import { archiveScopeQuery } from '@/lib/club/archives/archiveScope';
 import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
 import type { ProcedureTab } from '../types';
 
@@ -27,13 +28,14 @@ export function getServiceSaleTabs(
         ? `?ids=${encodeURIComponent(ids.join(','))}`
         : '';
 
-  const memberQuery = selectedMemberId ? `?memberId=${encodeURIComponent(selectedMemberId)}` : '';
-  // Exact-record scope (from the payment form) wins over member scope (from a Historical row click).
-  const sideQuery = builtQuery || memberQuery;
+  // Selected row → sibling archives open on that record, widenable to member or all members.
+  const selectionQuery = archiveScopeQuery(selectedRecordId, selectedMemberId);
+  // Exact-record scope (from the payment form) wins over the row selection.
+  const sideQuery = builtQuery || selectionQuery;
 
   return [
     { id: 'historical', label: 'Historical', href: `/clubs/archive_service_list${builtQuery}` },
-    { id: 'deadline', label: 'Archive of Deadlines', href: `/clubs/dead_line${memberQuery}` },
+    { id: 'deadline', label: 'Archive of Deadlines', href: `/clubs/dead_line${selectionQuery}` },
     { id: 'payments', label: 'Payments', href: `/clubs/service_payments${sideQuery}` },
     { id: 'receipts', label: 'Receipts', href: `/clubs/service_receipts${sideQuery}` },
   ];
@@ -96,6 +98,8 @@ export const serviceSalePaymentDetailColumns: Column[] = [
   { key: 'rest', header: 'Rest after', render: (v) => formatEuro(v) },
   { key: 'casual', header: 'Notes' },
   { key: 'operator', header: 'Operator' },
+  { key: 'edit', header: 'Edit' },
+  { key: 'delete', header: 'Delete' },
 ];
 
 export const serviceSaleReceiptColumns: Column[] = [

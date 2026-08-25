@@ -85,6 +85,10 @@
   padding-right: 0;
   --qr-label-w: 280px;
   --qr-control-w: 220px;
+  --qr-version-w: 260px;
+  --qr-plan-hint-w: 260px;
+  --qr-credit-comment-w: 560px;
+  --qr-credit-value-w: 72px;
   --qr-col-gap: 12px;
 }
 
@@ -124,6 +128,34 @@
   background-color: #fffdcd !important;
 }
 
+.quick-register-body .qr-autofill-trap {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes qr-detect-autofill {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.quick-register-body .qr-email-confirm-input:-webkit-autofill {
+  animation-name: qr-detect-autofill;
+  animation-duration: 0.01s;
+}
+
 .quick-register-body .password-highlight,
 .quick-register-body .input-highlight-promocode {
   background-color: #e2f5a6 !important;
@@ -157,10 +189,9 @@
   grid-template-columns:
     var(--qr-label-w)
     var(--qr-control-w)
-    minmax(100px, 1fr)
-    var(--qr-control-w)
-    minmax(100px, 1fr)
-    auto
+    var(--qr-plan-hint-w)
+    var(--qr-version-w)
+    var(--qr-plan-hint-w)
     auto;
   align-items: center;
   column-gap: var(--qr-col-gap);
@@ -184,9 +215,21 @@
   white-space: nowrap;
 }
 
+.quick-register-body .qr-cost-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .quick-register-body .qr-control {
   width: var(--qr-control-w);
   max-width: var(--qr-control-w);
+}
+
+.quick-register-body .qr-control-version {
+  width: var(--qr-version-w);
+  max-width: var(--qr-version-w);
 }
 
 .quick-register-body .qr-control select {
@@ -246,15 +289,23 @@
 }
 
 .quick-register-body .qr-promo-credit-row {
-  display: flex;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: minmax(0, var(--qr-credit-comment-w)) var(--qr-credit-value-w);
+  justify-content: start;
   align-items: center;
-  gap: 12px;
-  flex-wrap: nowrap;
+  column-gap: 14px;
+  row-gap: 6px;
+}
+
+.quick-register-body .qr-promo-credit-row .qr-input-numeric {
+  justify-self: start;
 }
 
 .quick-register-body .qr-promo-credit-row .qr-hint {
-  flex: 1 1 auto;
+  color: #610d1c;
+  font-size: 16px;
+  font-weight: bold;
+  line-height: 1.35;
   white-space: nowrap;
 }
 
@@ -291,8 +342,7 @@
 }
 
 .quick-register-body .qr-promo-section .promocode-feedback {
-  margin-left: 0;
-  margin-bottom: 8px;
+  margin: 0;
 }
 
 .quick-register-body .qr-promo-banner {
@@ -309,6 +359,13 @@
   align-items: center;
   gap: 12px;
   margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.quick-register-body .qr-promo-discount-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex-wrap: nowrap;
 }
 
@@ -380,16 +437,18 @@
   .quick-register-body .quickregi-left {
     --qr-label-w: 200px;
     --qr-control-w: 200px;
+    --qr-version-w: 220px;
+    --qr-plan-hint-w: 220px;
+    --qr-credit-comment-w: 520px;
   }
 
   .quick-register-body .qr-field-row-plan {
-    grid-template-columns: var(--qr-label-w) var(--qr-control-w) 1fr;
+    grid-template-columns: var(--qr-label-w) var(--qr-control-w) minmax(0, 1fr);
   }
 
   .quick-register-body .qr-field-row-plan .qr-control-version,
   .quick-register-body .qr-field-row-plan .qr-hint,
-  .quick-register-body .qr-field-row-plan .qr-label-inline,
-  .quick-register-body .qr-field-row-plan .qr-input-numeric {
+  .quick-register-body .qr-field-row-plan .qr-cost-control {
     grid-column: 2;
   }
 
@@ -575,9 +634,11 @@
   box-sizing: border-box;
 }
 
-.quick-register-body .button-black-promocode {
+.quick-register-body .button-black-promocode,
+.quick-register-body input.button-black-promocode {
   background: linear-gradient(to bottom, #444444 1%, #222222 100%);
-  color: #fff;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff;
   font-size: 16px;
   font-weight: bold;
   border-radius: 4px;
@@ -602,6 +663,29 @@
 
 .quick-register-body .registration-status-message.status-renewal-active {
   color: #0d47a1;
+}
+
+.quick-register-body .qr-registration-success {
+  margin: 24px auto 0;
+  max-width: 720px;
+  padding: 24px 28px;
+  border: 2px solid #2a6a1f;
+  background: #f4fff0;
+  text-align: center;
+}
+
+.quick-register-body .qr-registration-success p {
+  margin: 0 0 20px;
+  color: #2a6a1f;
+  font-size: 20px;
+  font-weight: bold;
+  line-height: 1.45;
+}
+
+.quick-register-body .qr-registration-success-link {
+  display: inline-block;
+  text-decoration: none;
+  color: #fff !important;
 }
 
 @media (min-width: 1200px) {

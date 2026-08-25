@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import './htmlpage.css';
 
@@ -6,7 +7,7 @@ export default function HtmlPageLayout({ children }: { children: React.ReactNode
     <div className="htmlpage-shell">
       <header className="htmlpage-header">
         <Link href="/" className="htmlpage-logo">
-          <img src="/sidelogo.png" alt="Movesbook" width={200} height={52} />
+          <Image src="/sidelogo.png" alt="Movesbook" width={200} height={52} unoptimized />
         </Link>
         <div className="htmlpage-header-actions">
           <Link href="/" className="htmlpage-btn">

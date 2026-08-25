@@ -25,6 +25,9 @@ export type NetworkSubscriptionPeriod = {
   username?: string;
   status?: string;
   archivedAt?: string;
+  paymentMethod?: string;
+  amountPaid?: string;
+  discountPercent?: string;
 };
 
 export type MembershipViewMode = 'all' | 'current' | 'last' | 'lastPerUser';
@@ -407,6 +410,9 @@ export function readNetworkSubscriptionHistory(
       username: typeof p.username === 'string' ? p.username : undefined,
       status: typeof p.status === 'string' ? p.status : undefined,
       archivedAt: typeof p.archivedAt === 'string' ? p.archivedAt : undefined,
+      paymentMethod: typeof p.paymentMethod === 'string' ? p.paymentMethod : undefined,
+      amountPaid: typeof p.amountPaid === 'string' ? p.amountPaid : undefined,
+      discountPercent: typeof p.discountPercent === 'string' ? p.discountPercent : undefined,
     }))
     .filter((p) => Boolean(p.dateStart));
   return dedupeSubscriptionPeriods(parsed);

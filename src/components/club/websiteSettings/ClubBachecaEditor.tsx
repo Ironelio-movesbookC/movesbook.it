@@ -94,6 +94,8 @@ export default function ClubBachecaEditor({
     setActivateDraft(initial.activated);
     setUpdatedOnDraft(initial.updatedOn ?? '');
     setContentDraft(initial.content);
+    // Only re-seed drafts when club/hydration changes; selectLabel handles tab switches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId, hydrated]);
 
   const selectLabel = (id: string) => {

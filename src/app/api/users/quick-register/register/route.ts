@@ -25,6 +25,8 @@ export async function POST(req: NextRequest) {
       invite_by_movesbook: Boolean(body.invite_by_movesbook ?? body.inviteByMovesbook),
       origin_email: body.origin_email != null ? String(body.origin_email) : undefined,
       disccount_hidden: body.disccount_hidden != null ? String(body.disccount_hidden) : undefined,
+      payment_method: body.payment_method != null ? String(body.payment_method) : 'virtual_card',
+      total_payment: body.total_payment != null ? String(body.total_payment) : undefined,
       origin: resolvePublicOrigin(req),
     };
 

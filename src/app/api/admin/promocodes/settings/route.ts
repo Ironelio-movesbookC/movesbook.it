@@ -40,6 +40,14 @@ function parseForm(body: Record<string, unknown>): PromocodeSettingFormData {
     languageId: body.languageId != null ? Number(body.languageId) : null,
     email: String(body.email ?? ''),
     recipient: String(body.recipient ?? ''),
+    allowChildPromocodes: Boolean(body.allowChildPromocodes),
+    childPromoLimit: String(body.childPromoLimit ?? ''),
+    childPromoUntil: String(body.childPromoUntil ?? ''),
+    childVersionIds: Array.isArray(body.childVersionIds)
+      ? body.childVersionIds.map((v) => Number(v)).filter((v) => Number.isFinite(v))
+      : [],
+    childDurationDays: String(body.childDurationDays ?? ''),
+    parentPromocodeId: body.parentPromocodeId != null ? Number(body.parentPromocodeId) : null,
   };
 }
 
@@ -56,6 +64,9 @@ export async function GET(request: NextRequest) {
   const versionIdRaw = url.searchParams.get('versionId');
   const versionId = versionIdRaw ? parseInt(versionIdRaw, 10) : undefined;
   const available = url.searchParams.get('available') as 'current' | 'expired' | null;
+  const creatorSourceRaw = url.searchParams.get('creatorSource');
+  const creatorSource =
+    creatorSourceRaw === 'movesbook' || creatorSourceRaw === 'other' ? creatorSourceRaw : undefined;
 
   try {
     const result = await listPromocodeSettings({
@@ -66,6 +77,7 @@ export async function GET(request: NextRequest) {
       usableBy,
       versionId: Number.isFinite(versionId) ? versionId : undefined,
       available: available === 'current' || available === 'expired' ? available : undefined,
+      creatorSource,
     });
     return NextResponse.json(result);
   } catch (e) {

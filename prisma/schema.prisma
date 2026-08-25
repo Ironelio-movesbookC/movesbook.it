@@ -779,7 +779,7 @@ model Language {
   isActive  Boolean  @default(true)
   isDefault Boolean  @default(false)
   /// Maps legacy language_values.id / audio_settings.language (1–12).
-  legacyLangId Int?  @unique
+  legacyLangId Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -789,6 +789,7 @@ model Language {
   systemOutcomes                          SystemOutcome[]
   outcomeCountries                        OutcomeCountry[]       @relation("CountryDefaultLanguage")
 
+  @@index([legacyLangId])
   @@map("languages_new")
 }
 
@@ -2513,7 +2514,7 @@ model FoodDatabaseSection {
   foods            FoodDatabaseItem[]
   recipes          FoodDatabaseRecipe[]
 
-  @@unique([sourceId, legacyId])
+  @@index([sourceId, legacyId])
   @@index([sourceId])
   @@map("food_database_sections")
 }
@@ -2550,7 +2551,7 @@ model FoodDatabaseItem {
   updatedAt        DateTime            @updatedAt
   section          FoodDatabaseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
-  @@unique([sourceId, legacyId])
+  @@index([sourceId, legacyId])
   @@index([sectionId])
   @@index([sourceId])
   @@index([name])
@@ -2592,7 +2593,7 @@ model FoodDatabaseRecipe {
   updatedAt        DateTime            @updatedAt
   section          FoodDatabaseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
-  @@unique([sourceId, legacyId])
+  @@index([sourceId, legacyId])
   @@index([sectionId])
   @@index([sourceId])
   @@index([name])
@@ -2828,8 +2829,9 @@ model ClubCustomOutcome {
   @@map("club_custom_outcomes")
 }
 
-// Legacy promocode tables (PHP movesbook-new compatibility)
-// Run: npm run db:push  OR  npx prisma migrate deploy
+// Legacy promocode tables (PHP movesbook-new compatibility).
+// Live deploy: npm run db:ensure-promocode-meta  — do NOT use prisma db push
+// to apply promocode columns (db push would try to reshape the whole live DB).
 // ---------------------------------------------------------------------------
 
 model PromocodeSetting {
@@ -2860,6 +2862,15 @@ model PromocodeSetting {
   createrId           String?   @map("creater_id") @db.VarChar(50)
   creatorId           Int?      @map("creator_id")
   languageId          String?   @map("language_id") @db.VarChar(10)
+  allowChildPromocodes     Int       @default(0) @map("allow_child_promocodes") @db.TinyInt
+  allowGeneratePromocodes  Int       @default(0) @map("allow_generate_promocodes") @db.TinyInt
+  childPromoLimit          Int?      @map("child_promo_limit")
+  childPromoUntil          DateTime? @map("child_promo_until") @db.Date
+  childVersionIds          String?   @map("child_version_ids") @db.VarChar(255)
+  childDurationDays        Int?      @map("child_duration_days")
+  childInviteDurationDays  Int?      @map("child_invite_duration_days")
+  maxChildPromocodes       Int?      @map("max_child_promocodes")
+  parentPromocodeId        Int?      @map("parent_promocode_id")
 
   @@index([code])
   @@index([deleteStatus])
@@ -2888,6 +2899,9 @@ model PromocodeApply {
   level                   String?   @db.VarChar(20)
   otherInfo               String?   @map("other_info") @db.VarChar(512)
   advPage                 String?   @map("adv_page") @db.VarChar(512)
+  inviteMode              String?   @map("invite_mode") @db.VarChar(32)
+  inviteIntro             String?   @map("invite_intro") @db.Text
+  inviteExpiresAt         DateTime? @map("invite_expires_at") @db.Date
 
   @@index([promocodeId])
   @@index([userId])
@@ -2901,7 +2915,13 @@ model SubscriptionSetting {
   shortName        String?  @map("short_name") @db.VarChar(64)
   roleId           Int?     @map("role_id")
   price            Decimal? @db.Decimal(10, 2)
+  credit           String?  @db.VarChar(32)
   credit1          String?  @db.VarChar(32)
+  credit2          String?  @db.VarChar(32)
+  daysDuration     Int?     @map("days_duration")
+  discount         String?  @db.VarChar(32)
+  membersNumber1   String?  @map("members_number1") @db.VarChar(32)
+  membersNumber2   String?  @map("members_number2") @db.VarChar(32)
   deleteStatus     Int?     @default(2) @map("delete_status")
 
   @@map("subscription_settings")

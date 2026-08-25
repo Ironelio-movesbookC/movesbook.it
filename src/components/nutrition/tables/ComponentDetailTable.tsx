@@ -1914,7 +1914,7 @@ export default function NutritionComponentDetailTable({
       
       return newSequences;
     });
-  }, [nutritionFood.nutritionComponents]);
+  }, [nutritionFood.nutritionComponents, nutritionFood.isCircuitBased]);
 
   // Setup drag sensors with reliable activation
   const sensors = useSensors(

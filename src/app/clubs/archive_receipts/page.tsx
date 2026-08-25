@@ -1,15 +1,25 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import ArchiveListToolbar from '@/components/procedures/ArchiveListToolbar';
+import { useArchiveListFilters } from '@/components/procedures/useArchiveListFilters';
 import TaxDocumentModal, {
   type TaxDocumentFormValues,
 } from '@/components/procedures/TaxDocumentModal';
+import {
+  DeleteRowButton,
+  EditRowButton,
+  usePasswordGate,
+} from '@/components/procedures/ArchiveRowActions';
+import ArchiveScopeRadios, { useArchiveScope } from '@/components/procedures/ArchiveScopeRadios';
 import type { ProcedureTab } from '@/components/procedures/types';
+import { archiveScopeQuery } from '@/lib/club/archives/archiveScope';
 import { fetchClubArchive } from '@/lib/club/archives/clubArchiveClient';
+import { createProcedureClient } from '@/lib/club/procedureClient';
+import type { ProcedureTypeCode } from '@/lib/procedures/types';
 import { clubApiFetch, formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
 import type { Column, Member } from '@/types/clubTable';
 
@@ -26,25 +36,44 @@ const columns: Column[] = [
   { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
   { key: 'casual', header: 'Annotations' },
   { key: 'operator', header: 'Operator' },
+  { key: 'edit', header: 'Edit', sortable: false },
+  { key: 'delete', header: 'Delete', sortable: false },
 ];
 
-const tabs: ProcedureTab[] = [
-  { id: 'deadlines', label: 'Archive of Deadlines', href: '/clubs/archive_deadlines' },
-  { id: 'payments', label: 'Archive of Payments', href: '/clubs/archive_payments' },
-  { id: 'receipts', label: 'Archive of Receipts', href: '/clubs/archive_receipts' },
-];
+function recordIdOf(row: Member): string | undefined {
+  return row.procedureRecordId ?? row.id;
+}
 
 function ArchiveReceiptsPageInner() {
-  const searchParams = useSearchParams();
-  const memberId = searchParams.get('memberId');
-
-  const [scope, setScope] = useState<'member' | 'all'>(memberId ? 'member' : 'all');
+  const scope = useArchiveScope();
+  const filters = useArchiveListFilters();
   const [data, setData] = useState<Member[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [total, setTotal] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [taxTarget, setTaxTarget] = useState<Member | null>(null);
+  const { request: requestPassword, modal: passwordModal } = usePasswordGate();
+
+  const reload = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  const performDelete = useCallback(
+    async (row: Member) => {
+      const code = row.procedureType as ProcedureTypeCode | undefined;
+      if (!code || !row.id) return;
+      try {
+        await createProcedureClient(code).deleteReceipt(row.id);
+        reload();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Delete failed');
+      }
+    },
+    [reload]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,21 +81,49 @@ function ArchiveReceiptsPageInner() {
     try {
       const res = await fetchClubArchive('receipts', {
         page,
-        pageSize: PAGE_SIZE,
-        memberId: scope === 'member' && memberId ? memberId : undefined,
+        pageSize,
+        ...scope.filters,
+        ...filters.applied,
       });
       setTotal(res.total);
-      setData(res.items);
+      setData(
+        res.items.map((row) => ({
+          ...row,
+          edit: <EditRowButton onClick={() => requestPassword(() => setTaxTarget(row))} />,
+          delete: <DeleteRowButton onClick={() => requestPassword(() => performDelete(row))} />,
+        }))
+      );
+      setSelectedIds(new Set());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
-  }, [page, scope, memberId]);
+  }, [page, pageSize, scope.filters, filters.applied, requestPassword, performDelete]);
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, refreshKey]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filters.applied, scope.filters]);
+
+  // Same as Deadlines: the selected row travels to sibling archives via recordId + memberId.
+  const selectedRow = useMemo(
+    () => (selectedId ? data.find((r) => r.id === selectedId) ?? null : null),
+    [data, selectedId]
+  );
+  const scopeQuery = archiveScopeQuery(
+    selectedRow ? recordIdOf(selectedRow) : scope.recordId,
+    selectedRow?.userId ?? selectedRow?.memberId ?? scope.memberId
+  );
+
+  const tabs: ProcedureTab[] = [
+    { id: 'deadlines', label: 'Archive of Deadlines', href: `/clubs/archive_deadlines${scopeQuery}` },
+    { id: 'payments', label: 'Archive of Payments', href: `/clubs/archive_payments${scopeQuery}` },
+    { id: 'receipts', label: 'Archive of Receipts', href: `/clubs/archive_receipts${scopeQuery}` },
+  ];
 
   const handleSaveTaxDocument = useCallback(
     async (values: TaxDocumentFormValues) => {
@@ -84,10 +141,28 @@ function ArchiveReceiptsPageInner() {
           }),
         }
       );
-      await load();
+      reload();
     },
-    [taxTarget, load]
+    [taxTarget, reload]
   );
+
+  function handleDeleteSelected() {
+    const rows = data.filter((r) => r.id && selectedIds.has(r.id));
+    if (rows.length === 0) return;
+    requestPassword(async () => {
+      try {
+        for (const row of rows) {
+          const code = row.procedureType as ProcedureTypeCode | undefined;
+          if (!code || !row.id) continue;
+          await createProcedureClient(code).deleteReceipt(row.id);
+        }
+        setSelectedIds(new Set());
+        reload();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Delete failed');
+      }
+    });
+  }
 
   return (
     <ProcedureArchiveShell
@@ -95,49 +170,69 @@ function ArchiveReceiptsPageInner() {
       activeTab="receipts"
       tabs={tabs}
       tabsTrailing={
-        memberId ? (
-          <div className="flex items-center gap-4 text-sm text-gray-700">
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="radio"
-                name="receiptsScope"
-                checked={scope === 'member'}
-                onChange={() => {
-                  setScope('member');
-                  setPage(1);
-                }}
-              />
-              Member selected
-            </label>
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="radio"
-                name="receiptsScope"
-                checked={scope === 'all'}
-                onChange={() => {
-                  setScope('all');
-                  setPage(1);
-                }}
-              />
-              All members
-            </label>
-          </div>
-        ) : undefined
+        <ArchiveScopeRadios state={scope} name="receiptsScope" onChange={() => setPage(1)} />
       }
       error={error}
-      footerHint="All typologies (Services, Products, Expenses, Member debts, …). Double-click a row to open the receipt."
-      pagination={
-        <ProcedurePagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
-      }
+      footerHint="All typologies (Services, Products, Expenses, Member debts, …). Select a row then open Deadlines/Payments to keep that record/member. Double-click a row to open the receipt. Check rows to delete selected. Edit and Delete ask for your password."
     >
+      <ArchiveListToolbar
+        title="Filter · Archive of Receipts"
+        values={filters.draft}
+        onChange={filters.onChange}
+        onApply={() => {
+          if (filters.apply()) setPage(1);
+        }}
+        onClear={() => {
+          filters.clear();
+          setPage(1);
+        }}
+        dateRangeError={filters.dateRangeError}
+        selectedCount={selectedIds.size}
+        onDeleteSelected={handleDeleteSelected}
+        pagination={
+          <ProcedurePagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => {
+              setPageSize(n);
+              setPage(1);
+            }}
+          />
+        }
+      />
       <ProcedureArchiveTable
         columns={columns}
         rows={data}
+        selectedId={selectedId}
         loading={loading}
+        selectable
+        selectOnlyOpenRest={false}
+        selectedIds={selectedIds}
+        onRowClick={(row) => row.id && setSelectedId(row.id)}
+        onToggleSelect={(row) => {
+          if (!row.id) return;
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(row.id!)) next.delete(row.id!);
+            else next.add(row.id!);
+            return next;
+          });
+        }}
+        onToggleSelectAll={(checked) => {
+          if (!checked) {
+            setSelectedIds(new Set());
+            return;
+          }
+          setSelectedIds(new Set(data.map((r) => r.id).filter(Boolean) as string[]));
+        }}
         onRowDoubleClick={(row) => {
-          if (row.id) setTaxTarget(row);
+          if (row.id) requestPassword(() => setTaxTarget(row));
         }}
       />
+
+      {passwordModal}
 
       {taxTarget && (
         <TaxDocumentModal

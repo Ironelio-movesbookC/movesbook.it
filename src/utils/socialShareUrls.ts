@@ -1,6 +1,15 @@
 /**
- * WhatsApp / Telegram / Facebook share URL builders.
+ * WhatsApp / Telegram / Facebook / SMS share URL builders.
  */
+
+/** sms: body for invite sharing (iOS/Android browsers). */
+export function buildSmsShareUrl(phone: string | undefined, text: string): string {
+  const params = new URLSearchParams();
+  params.set('body', truncateForShareUrl(text, 600));
+  const digits = phone?.replace(/\D/g, '') ?? '';
+  const query = params.toString();
+  return digits ? `sms:${digits}?${query}` : `sms:?${query}`;
+}
 
 const TELEGRAM_RESERVED_PATHS = new Set([
   'share',

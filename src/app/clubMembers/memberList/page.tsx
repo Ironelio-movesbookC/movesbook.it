@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { UserPlus } from 'lucide-react';
@@ -25,10 +26,13 @@ const columns: Column[] = [
     header: 'Image',
     render: (value) =>
       value ? (
-        <img
+        <Image
           src={String(value)}
           alt=""
           className="mx-auto h-10 w-10 rounded-full object-cover"
+          width={40}
+          height={40}
+          unoptimized
         />
       ) : (
         <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-xs text-gray-400">

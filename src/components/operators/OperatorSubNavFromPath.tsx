@@ -14,10 +14,10 @@ export function OperatorSubNavFromPath() {
   const pathname = usePathname();
   const [contextVersion, setContextVersion] = useState(0);
   const parsed = useMemo(() => parseOperatorSubNavFromPath(pathname), [pathname]);
-  const variant = useMemo(
-    () => resolveOperatorNavVariant(pathname),
-    [pathname, contextVersion],
-  );
+  const variant = useMemo(() => {
+    void contextVersion; // re-read session after operatorNavContextUpdated
+    return resolveOperatorNavVariant(pathname);
+  }, [pathname, contextVersion]);
 
   useEffect(() => {
     const onContextUpdate = () => setContextVersion((n) => n + 1);

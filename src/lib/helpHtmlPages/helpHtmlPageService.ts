@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { findExistingTable, getTableColumns } from '@/lib/outcomeSettingsDb';
 import { ensurePromocodeMetaTables } from '@/lib/promocodes/ensureMetaTables';
+import { ensurePromocodeInviteLocalizedContent } from '@/lib/promocodes/promocodeInviteLocale';
 import type {
   HelpHtmlPageLanguage,
   HelpHtmlPageNewsPost,
@@ -38,6 +39,19 @@ async function ensureContentColumn(table: string): Promise<void> {
   );
 }
 
+function toHelpHtmlPageRecord(
+  row: Record<string, unknown>,
+  fallbackTitle: string,
+  fallbackLangId: number
+): HelpHtmlPageRecord {
+  return {
+    id: Number(row.id),
+    pageTitle: String(row.page_title ?? fallbackTitle),
+    content: rowContent(row.content),
+    langId: Number(row.lang_id ?? fallbackLangId),
+  };
+}
+
 export async function getHelpHtmlPageByTitle(
   pageTitle: string,
   langId: number
@@ -52,42 +66,64 @@ export async function getHelpHtmlPageByTitle(
   const titleCol = pickColumn(columns, ['page_title', 'title']) ?? 'page_title';
   const langCol = pickColumn(columns, ['lang_id', 'language_id']) ?? 'lang_id';
   const contentCol = pickColumn(columns, ['content']) ?? 'content';
+  const uniqueCol = pickColumn(columns, ['uniqueid']);
 
+  const selectCols = `\`${idCol}\` AS id, \`${titleCol}\` AS page_title, \`${contentCol}\` AS content, \`${langCol}\` AS lang_id`;
+
+  // Exact title + language (same page_title for all locales).
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT \`${idCol}\` AS id, \`${titleCol}\` AS page_title, \`${contentCol}\` AS content, \`${langCol}\` AS lang_id
+    `SELECT ${selectCols}
      FROM \`${table}\`
      WHERE \`${titleCol}\` = ? AND \`${langCol}\` = ?
      LIMIT 1`,
     pageTitle,
     langId
   );
+  if (rows.length > 0) {
+    return toHelpHtmlPageRecord(rows[0], pageTitle, langId);
+  }
 
-  if (rows.length === 0) {
-    const fallbackRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-      `SELECT \`${idCol}\` AS id, \`${titleCol}\` AS page_title, \`${contentCol}\` AS content, \`${langCol}\` AS lang_id
+  // Locales may use different titles (e.g. OTD EN + DTU IT) bound by uniqueid.
+  if (uniqueCol) {
+    const baseRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+      `SELECT \`${uniqueCol}\` AS uniqueid
        FROM \`${table}\`
        WHERE \`${titleCol}\` = ?
-       ORDER BY \`${langCol}\` ASC
        LIMIT 1`,
       pageTitle
     );
-    if (fallbackRows.length === 0) return null;
-    const row = fallbackRows[0];
-    return {
-      id: Number(row.id),
-      pageTitle: String(row.page_title ?? pageTitle),
-      content: rowContent(row.content),
-      langId: Number(row.lang_id ?? langId),
-    };
+    const uniqueid =
+      baseRows[0]?.uniqueid != null && String(baseRows[0].uniqueid).trim()
+        ? String(baseRows[0].uniqueid).trim()
+        : '';
+
+    if (uniqueid) {
+      const byUnique = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+        `SELECT ${selectCols}
+         FROM \`${table}\`
+         WHERE \`${uniqueCol}\` = ? AND \`${langCol}\` = ?
+         ORDER BY \`${idCol}\` DESC
+         LIMIT 1`,
+        uniqueid,
+        langId
+      );
+      if (byUnique.length > 0) {
+        return toHelpHtmlPageRecord(byUnique[0], pageTitle, langId);
+      }
+    }
   }
 
-  const row = rows[0];
-  return {
-    id: Number(row.id),
-    pageTitle: String(row.page_title ?? pageTitle),
-    content: rowContent(row.content),
-    langId: Number(row.lang_id ?? langId),
-  };
+  // Fall back to any row with this title (usually the base language).
+  const fallbackRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+    `SELECT ${selectCols}
+     FROM \`${table}\`
+     WHERE \`${titleCol}\` = ?
+     ORDER BY \`${langCol}\` ASC
+     LIMIT 1`,
+    pageTitle
+  );
+  if (fallbackRows.length === 0) return null;
+  return toHelpHtmlPageRecord(fallbackRows[0], pageTitle, langId);
 }
 
 export async function loadHelpHtmlPageLanguages(): Promise<HelpHtmlPageLanguage[]> {
@@ -149,6 +185,8 @@ export async function loadHelpHtmlPageView(
   langId: number
 ): Promise<HelpHtmlPageViewModel> {
   const pageName = decodePageName(rawPageName);
+  // Ensure Italian OTD (and invite paragraph) exist before language-aware lookup.
+  await ensurePromocodeInviteLocalizedContent();
   const [page, newsPosts, languages] = await Promise.all([
     getHelpHtmlPageByTitle(pageName, langId),
     loadRelatedNewsPosts(),

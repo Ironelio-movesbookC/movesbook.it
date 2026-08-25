@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1263,7 +1264,7 @@ function LogoOption({
       </div>
       <div className={`mb-3 flex items-center justify-center overflow-hidden rounded border border-dashed border-gray-300 bg-gray-100 ${wide ? 'h-28' : 'h-24'}`}>
         {previewSrc ? (
-          <img src={previewSrc} alt="" className="h-full w-full object-cover" />
+          <Image src={previewSrc} alt="" className="h-full w-full object-cover" width={200} height={112} unoptimized />
         ) : (
           <FileText className="h-8 w-8 text-gray-400" />
         )}

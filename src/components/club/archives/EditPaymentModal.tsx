@@ -1,13 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
-import { updatePayment, fetchFormOptions, type ServiceSaleFormOptions } from '@/lib/club/serviceSaleClient';
+import { createProcedureClient } from '@/lib/club/procedureClient';
+import { toDateInputValue } from '@/lib/club/servicePurchasesClient';
+import { PROCEDURE_TYPE_CODES, type ProcedureTypeCode } from '@/lib/procedures/types';
 
-type EditServicePaymentModalProps = {
+type EditPaymentModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSaved: () => void;
+  procedureCode?: ProcedureTypeCode;
   payment: {
     id: string;
     paymentDate: string | null;
@@ -16,28 +19,33 @@ type EditServicePaymentModalProps = {
   };
 };
 
-export default function EditServicePaymentModal({
+export default function EditPaymentModal({
   isOpen,
   onClose,
   onSaved,
+  procedureCode = PROCEDURE_TYPE_CODES.SERVICE_SALE,
   payment,
-}: EditServicePaymentModalProps) {
+}: EditPaymentModalProps) {
+  const client = useMemo(() => createProcedureClient(procedureCode), [procedureCode]);
   const [paymentDate, setPaymentDate] = useState('');
   const [notes, setNotes] = useState('');
   const [operatorId, setOperatorId] = useState('');
-  const [options, setOptions] = useState<ServiceSaleFormOptions | null>(null);
+  const [operators, setOperators] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
-    setPaymentDate(payment.paymentDate ?? '');
+    setPaymentDate(toDateInputValue(payment.paymentDate));
     setNotes(payment.description ?? '');
     setOperatorId(payment.operatorId ?? '');
     setError(null);
     setSaving(false);
-    fetchFormOptions().then(setOptions).catch(() => {});
-  }, [isOpen, payment]);
+    client
+      .fetchFormOptions<{ operators?: { id: string; name: string }[] }>()
+      .then((options) => setOperators(options.operators ?? []))
+      .catch(() => {});
+  }, [isOpen, payment, client]);
 
   if (!isOpen) return null;
 
@@ -45,7 +53,7 @@ export default function EditServicePaymentModal({
     setSaving(true);
     setError(null);
     try {
-      await updatePayment(payment.id, {
+      await client.updatePayment(payment.id, {
         paymentDate: paymentDate || undefined,
         notes: notes || undefined,
         operatorId: operatorId || undefined,
@@ -115,7 +123,7 @@ export default function EditServicePaymentModal({
               className="w-full rounded border border-gray-400 bg-white px-3 py-2 text-sm disabled:opacity-60"
             >
               <option value="">Select operator</option>
-              {options?.operators.map((op) => (
+              {operators.map((op) => (
                 <option key={op.id} value={op.id}>{op.name}</option>
               ))}
             </select>

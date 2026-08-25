@@ -19,7 +19,12 @@ export default function PromocodeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [orderBy, setOrderBy] = useState('');
+  const [orderBy, setOrderBy] = useState('created_desc');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [senderUsername, setSenderUsername] = useState('');
+  const [secondaryUsername, setSecondaryUsername] = useState('');
+  const [recipientUsername, setRecipientUsername] = useState('');
 
   const load = useCallback(async () => {
     if (!Number.isFinite(id)) return;
@@ -35,6 +40,11 @@ export default function PromocodeDetailPage() {
           });
           if (search.trim()) p.set('search', search.trim());
           if (orderBy) p.set('orderBy', orderBy);
+          if (fromDate) p.set('fromDate', fromDate);
+          if (toDate) p.set('toDate', toDate);
+          if (senderUsername) p.set('senderUsername', senderUsername);
+          if (secondaryUsername) p.set('secondaryUsername', secondaryUsername);
+          if (recipientUsername) p.set('recipientUsername', recipientUsername);
           return p;
         })(),
       ]);
@@ -48,7 +58,7 @@ export default function PromocodeDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, page, search, orderBy]);
+  }, [id, page, search, orderBy, fromDate, toDate, senderUsername, secondaryUsername, recipientUsername]);
 
   useEffect(() => {
     if (ready) void load();
@@ -92,6 +102,24 @@ export default function PromocodeDetailPage() {
           <option value="created_desc">By date (newest first)</option>
           <option value="created_asc">By date (oldest first)</option>
         </select>
+        <label className="text-sm">
+          From
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="ml-2 px-2 py-2 border text-sm"
+          />
+        </label>
+        <label className="text-sm">
+          To
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="ml-2 px-2 py-2 border text-sm"
+          />
+        </label>
         <span className="text-sm font-semibold">Search user</span>
         <input
           value={search}
@@ -109,7 +137,22 @@ export default function PromocodeDetailPage() {
       {loading ? (
         <div className="py-12 text-center text-gray-500">Loading…</div>
       ) : (
-        <PromocodeAppliesTable rows={data?.items ?? []} variant="detail" />
+        <PromocodeAppliesTable
+          rows={data?.items ?? []}
+          variant="detail"
+          onSenderClick={(name) => {
+            setSenderUsername(name);
+            setPage(1);
+          }}
+          onSecondaryClick={(name) => {
+            setSecondaryUsername(name);
+            setPage(1);
+          }}
+          onRecipientClick={(name) => {
+            setRecipientUsername(name);
+            setPage(1);
+          }}
+        />
       )}
 
       <PromocodesPagination page={page} totalPages={totalPages} onPageChange={setPage} />

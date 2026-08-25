@@ -20,9 +20,13 @@ export type CreditsEarnedRow = {
   creditsTotal: number;
   used: number;
   available: number;
+  /** Who invited this user (earns sender_credit when they register). */
   primaryUsername: string;
-  secondaryUsernames: string[];
-  secondaryCount: number;
+  /**
+   * Who invited the primary (friend-of-friend) — earns secondary_sender_credit
+   * when this user registers.
+   */
+  secondaryUsername: string;
 };
 
 const ROLE_NAMES: Record<number, string> = {
@@ -132,19 +136,29 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
     const primaryApply =
       applyColumns.has('receiver_id') && applyColumns.has('sender_id')
         ? await prisma.$queryRawUnsafe<
-            { sender_id: number | null; sender_email: string | null }[]
+            {
+              sender_id: number | null;
+              sender_email: string | null;
+              secondary_sender_id: number | null;
+              secondary_sender_username: string | null;
+            }[]
           >(
-            `SELECT sender_id, sender_email FROM \`${appliesTable}\`
+            `SELECT sender_id, sender_email,
+                    ${applyColumns.has('secondary_sender_id') ? 'secondary_sender_id' : 'NULL AS secondary_sender_id'},
+                    ${applyColumns.has('secondary_sender_username') ? 'secondary_sender_username' : 'NULL AS secondary_sender_username'}
+             FROM \`${appliesTable}\`
              WHERE delete_status = 2 AND receiver_id = ?
              ORDER BY id DESC LIMIT 1`,
             uid
           )
         : [];
     let primaryUsername = '';
+    let secondaryUsername = '';
     const pa = primaryApply[0];
-    if (pa?.sender_id) {
-      const pu = await fetchLegacyUsersByIds([Number(pa.sender_id)]);
-      primaryUsername = pu.get(Number(pa.sender_id))?.username ?? '';
+    const primarySenderId = pa?.sender_id != null ? Number(pa.sender_id) : 0;
+    if (primarySenderId > 0) {
+      const pu = await fetchLegacyUsersByIds([primarySenderId]);
+      primaryUsername = pu.get(primarySenderId)?.username ?? '';
     } else if (pa?.sender_email) {
       const byEmail = await prisma.$queryRawUnsafe<{ username: string | null }[]>(
         `SELECT username FROM \`${usersTable}\` WHERE LOWER(email) = ? LIMIT 1`,
@@ -153,29 +167,45 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
       primaryUsername = byEmail[0]?.username ?? '';
     }
 
-    const secondaryApplies =
-      applyColumns.has('secondary_sender_id') && applyColumns.has('receiver_id')
-        ? await prisma.$queryRawUnsafe<
-            { receiver_id: number | null; receiver_email: string | null }[]
-          >(
-            `SELECT receiver_id, receiver_email FROM \`${appliesTable}\`
-             WHERE delete_status = 2 AND secondary_sender_id = ?`,
-            uid
-          )
-        : [];
-    const secondaryNamesMap = new Map<string, boolean>();
-    for (const sr of secondaryApplies) {
-      if (sr.receiver_id && Number(sr.receiver_id) > 0) {
-        const ru = await fetchLegacyUsersByIds([Number(sr.receiver_id)]);
-        const uname = ru.get(Number(sr.receiver_id))?.username;
-        if (uname) secondaryNamesMap.set(uname, true);
-      } else if (sr.receiver_email) {
-        secondaryNamesMap.set(sr.receiver_email.trim(), true);
+    // Secondary beneficiary = friend-of-friend who earns when this user registered.
+    const storedSecondaryId =
+      pa?.secondary_sender_id != null ? Number(pa.secondary_sender_id) : 0;
+    const storedSecondaryUsername =
+      pa?.secondary_sender_username != null ? String(pa.secondary_sender_username).trim() : '';
+    if (storedSecondaryId > 0) {
+      const su = await fetchLegacyUsersByIds([storedSecondaryId]);
+      secondaryUsername = su.get(storedSecondaryId)?.username ?? storedSecondaryUsername;
+    } else if (storedSecondaryUsername) {
+      secondaryUsername = storedSecondaryUsername;
+    } else if (primarySenderId > 0) {
+      // Chain resolve: who invited the primary inviter?
+      const primaryUpline = await prisma.$queryRawUnsafe<
+        {
+          sender_id: number | null;
+          sender_email: string | null;
+          secondary_sender_username: string | null;
+        }[]
+      >(
+        `SELECT sender_id, sender_email,
+                ${applyColumns.has('secondary_sender_username') ? 'secondary_sender_username' : 'NULL AS secondary_sender_username'}
+         FROM \`${appliesTable}\`
+         WHERE delete_status = 2 AND receiver_id = ?
+         ORDER BY id DESC LIMIT 1`,
+        primarySenderId
+      );
+      const up = primaryUpline[0];
+      const uplineId = up?.sender_id != null ? Number(up.sender_id) : 0;
+      if (uplineId > 0) {
+        const uu = await fetchLegacyUsersByIds([uplineId]);
+        secondaryUsername = uu.get(uplineId)?.username ?? '';
+      } else if (up?.sender_email) {
+        const byEmail = await prisma.$queryRawUnsafe<{ username: string | null }[]>(
+          `SELECT username FROM \`${usersTable}\` WHERE LOWER(email) = ? LIMIT 1`,
+          up.sender_email.trim().toLowerCase()
+        );
+        secondaryUsername = byEmail[0]?.username ?? '';
       }
     }
-    const secondaryUsernames = Array.from(secondaryNamesMap.keys()).sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: 'base' })
-    );
 
     const countryId = u.country_id != null ? Number(u.country_id) : null;
     const flagImg = await fetchFlagImageByCountryId(countryId);
@@ -211,8 +241,7 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
       used,
       available,
       primaryUsername,
-      secondaryUsernames,
-      secondaryCount: secondaryUsernames.length,
+      secondaryUsername,
     });
   }
 

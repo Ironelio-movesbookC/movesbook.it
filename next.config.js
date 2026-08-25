@@ -1,14 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  experimental: {
-    serverComponentsExternalPackages: ['xlsx'],
-  },
   typescript: {
+    // Merged main still has type errors outside promocode. Do not patch unrelated
+    // routes to ship this branch; typecheck those files on their own branches.
     ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
   },
   async redirects() {
     return [
@@ -41,12 +37,12 @@ const nextConfig = {
           '**/hiberfil.sys',
           '**/swapfile.sys',
           '**/$Recycle.Bin/**',
-          '**/System Volume Information/**',
-        ],
+          '**/System Volume Information/**'
+        ]
       };
     }
     return config;
-  },
-};
-
+  }
+}
+  
 module.exports = nextConfig;

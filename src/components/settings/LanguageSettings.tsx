@@ -410,22 +410,26 @@ export default function LanguageSettings() {
       allKeys,
       () => {
         loadStaticTranslations();
-      setShowNewKeyModal(false);
-      
-      // Check if any translation is long (> 100 chars) 
-        const hasLongText = Object.values(newKeyTranslations).some(val => val && val.length > LONG_TEXT_THRESHOLD);
-      
-        // Navigate to appropriate tab
-      if (isLongTextModal || hasLongText) {
-        setActiveTab('texts');
+        setShowNewKeyModal(false);
+
+        const hasLongText = Object.values(newKeyTranslations).some(
+          (val) => val && val.length > LONG_TEXT_THRESHOLD
+        );
+
+        if (isLongTextModal || hasLongText) {
+          setActiveTab('texts');
           setSelectedCategory(newKeyCategory as TranslationCategory);
-      } else {
-        setActiveTab('settings');
+        } else {
+          setActiveTab('settings');
           setSelectedCategory(newKeyCategory as TranslationCategory);
+        }
+
+        setIsLongTextModal(false);
+      },
+      {
+        isLongText: isLongTextModal,
+        allowUpdateExisting: isLongTextModal,
       }
-      
-      setIsLongTextModal(false);
-    }
     );
   };
 
@@ -473,7 +477,7 @@ export default function LanguageSettings() {
     const persistRes = await fetch('/api/admin/translations/update', {
       method: 'POST',
       headers: getJsonAuthHeaders(),
-      body: JSON.stringify({ key, translations: values, category }),
+      body: JSON.stringify({ key, translations: values, category, isLongText: true }),
     });
     if (!persistRes.ok) return false;
     setAllKeys((prev) =>

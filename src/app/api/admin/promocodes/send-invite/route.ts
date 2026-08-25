@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
   const otherInfo = sp.get('other_info')?.trim() ?? '';
   const advPage = sp.get('adv_page')?.trim() ?? '';
   const username = access.isAdmin ? sp.get('username')?.trim() ?? null : access.username;
+  const introMessage = sp.get('intro_message')?.trim() ?? '';
 
   if (!emailAddress || !promocode) {
     return NextResponse.json({ error: 'email_address and promocode are required' }, { status: 400 });
@@ -42,6 +43,12 @@ export async function GET(req: NextRequest) {
       senderLegacyUserId: access.legacyUserId,
       senderEmail: access.email,
     });
+    if (introMessage) {
+      preview.emailBodyHtml = `<p>${introMessage
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/\n/g, '<br/>')}</p>${preview.emailBodyHtml}`;
+    }
     return NextResponse.json(preview);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to load invite preview';
@@ -65,6 +72,8 @@ export async function POST(req: NextRequest) {
     languageId?: string;
     emailContent?: string;
     inviterUsername?: string;
+    introMessage?: string;
+    inviteMode?: string;
   };
 
   try {
@@ -88,6 +97,8 @@ export async function POST(req: NextRequest) {
       senderLegacyUserId: access.isAdmin ? null : access.legacyUserId,
       senderEmail: access.isAdmin ? null : access.email,
       senderName: access.isAdmin ? null : access.username ?? access.email,
+      introMessage: body.introMessage,
+      inviteMode: body.inviteMode || 'Mail',
       sendEmail: async ({ to, subject, html, replyTo }) => {
         await sendIonosEmail({
           to,

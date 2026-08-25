@@ -1,45 +1,112 @@
 'use client';
 
+export const ARCHIVE_PAGE_SIZE_OPTIONS = [5, 10, 25, 50] as const;
+
 type Props = {
   page: number;
   pageSize: number;
   total: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+  pageSizeOptions?: readonly number[];
 };
 
-export default function ProcedurePagination({ page, pageSize, total, onPageChange }: Props) {
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  if (pageCount <= 1) return null;
+function visiblePages(page: number, pageCount: number): (number | '…')[] {
+  if (pageCount <= 9) {
+    return Array.from({ length: pageCount }, (_, i) => i + 1);
+  }
+  const pages = new Set<number>();
+  pages.add(1);
+  pages.add(pageCount);
+  for (let i = page - 2; i <= page + 2; i++) {
+    if (i >= 1 && i <= pageCount) pages.add(i);
+  }
+  const sorted = Array.from(pages).sort((a, b) => a - b);
+  const out: (number | '…')[] = [];
+  let prev = 0;
+  for (const n of sorted) {
+    if (prev && n - prev > 1) out.push('…');
+    out.push(n);
+    prev = n;
+  }
+  return out;
+}
 
-  const from = (page - 1) * pageSize + 1;
-  const to = Math.min(page * pageSize, total);
+const navBtn =
+  'min-w-[2rem] rounded border px-2.5 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-40';
+const navSolid = `${navBtn} border-gray-600 bg-gray-700 text-white hover:bg-gray-800`;
+const navOutline = `${navBtn} border-gray-400 bg-white text-gray-700 hover:bg-gray-50`;
+const navActive = `${navBtn} border-gray-700 bg-gray-700 text-white`;
+
+/**
+ * Legacy-style page selector: page-size dropdown · prev · numbered pages · next.
+ */
+export default function ProcedurePagination({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  onPageSizeChange,
+  pageSizeOptions = ARCHIVE_PAGE_SIZE_OPTIONS,
+}: Props) {
+  const pageCount = Math.max(1, Math.ceil(Math.max(0, total) / Math.max(1, pageSize)) || 1);
+  const safePage = Math.min(Math.max(1, page), pageCount);
+  const pages = visiblePages(safePage, pageCount);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t border-gray-200">
-      <p className="text-sm text-gray-600">
-        Showing {from}–{to} of {total}
-      </p>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          disabled={page <= 1}
-          onClick={() => onPageChange(page - 1)}
-          className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50"
+    <div className="flex flex-wrap items-center gap-2">
+      {onPageSizeChange && (
+        <select
+          className="h-8 rounded border border-gray-400 bg-white px-1.5 text-[13px] text-gray-800"
+          value={pageSize}
+          onChange={(e) => {
+            onPageSizeChange(Number(e.target.value));
+          }}
+          aria-label="Rows per page"
         >
-          Prev
-        </button>
-        <span className="text-sm text-gray-600">
-          Page {page} of {pageCount}
-        </span>
-        <button
-          type="button"
-          disabled={page >= pageCount}
-          onClick={() => onPageChange(page + 1)}
-          className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50"
-        >
-          Next
-        </button>
-      </div>
+          {pageSizeOptions.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      )}
+
+      <button
+        type="button"
+        disabled={safePage <= 1}
+        onClick={() => onPageChange(safePage - 1)}
+        className={navSolid}
+      >
+        prev
+      </button>
+
+      {pages.map((p, idx) =>
+        p === '…' ? (
+          <span key={`e-${idx}`} className="px-1 text-sm text-gray-500">
+            …
+          </span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onPageChange(p)}
+            className={p === safePage ? navActive : navOutline}
+            aria-current={p === safePage ? 'page' : undefined}
+          >
+            {p}
+          </button>
+        )
+      )}
+
+      <button
+        type="button"
+        disabled={safePage >= pageCount}
+        onClick={() => onPageChange(safePage + 1)}
+        className={navSolid}
+      >
+        next
+      </button>
     </div>
   );
 }

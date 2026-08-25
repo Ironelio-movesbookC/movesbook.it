@@ -6,6 +6,8 @@ import { Pencil, Trash2 } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import ArchiveListToolbar from '@/components/procedures/ArchiveListToolbar';
+import { useArchiveListFilters } from '@/components/procedures/useArchiveListFilters';
 import DisplayAllArchivesCheckbox, {
   scopedArchiveQuery,
   useEffectiveScopedRecordIds,
@@ -23,7 +25,7 @@ import {
   type ServiceSalePurchase,
 } from '@/lib/club/serviceSaleClient';
 import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
-import EditServicePurchaseModal from '@/components/club/archives/EditServicePurchaseModal';
+import EditRecordModal from '@/components/club/archives/EditRecordModal';
 
 function mapPurchase(
   p: ServiceSalePurchase,
@@ -40,7 +42,7 @@ function mapPurchase(
     course: p.sectorName,
     service: p.serviceName,
     insertDate: p.recordDate ?? undefined,
-    expirationDate: p.expireDate ?? p.paydate ?? undefined,
+    expirationDate: p.expireDate ?? undefined,
     value: p.value,
     paid: p.pay,
     rest: p.rest,
@@ -82,18 +84,21 @@ function ArchiveServiceListInner() {
   const scopedIds = useScopedRecordIds();
   const effectiveIds = useEffectiveScopedRecordIds();
   const scopeQuery = scopedArchiveQuery(searchParams);
+  const filters = useArchiveListFilters();
 
   const [data, setData] = useState<Member[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(SERVICE_SALE_PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editTarget, setEditTarget] = useState<ServiceSalePurchase | null>(null);
   const [showDeletePasswordModal, setShowDeletePasswordModal] = useState(false);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteTargetIds, setDeleteTargetIds] = useState<string[]>([]);
 
   const selectedMemberId = useMemo(
     () => (selectedId ? data.find((r) => r.id === selectedId)?.userId ?? null : null),
@@ -106,17 +111,18 @@ function ArchiveServiceListInner() {
     try {
       const res = await fetchPurchases({
         page,
-        pageSize: SERVICE_SALE_PAGE_SIZE,
+        pageSize,
         recordIds: effectiveIds.length > 0 ? effectiveIds : undefined,
+        ...filters.applied,
       });
       setTotal(res.total);
       setData(
         res.items.map((p, i) =>
           mapPurchase(
             p,
-            (page - 1) * SERVICE_SALE_PAGE_SIZE + i,
+            (page - 1) * pageSize + i,
             (id) => {
-              setDeleteTargetId(id);
+              setDeleteTargetIds([id]);
               setShowDeletePasswordModal(true);
             },
             (purchase) => {
@@ -126,17 +132,21 @@ function ArchiveServiceListInner() {
           )
         )
       );
+      setSelectedIds(new Set());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
-  }, [page, effectiveIds]);
+  }, [page, pageSize, effectiveIds, filters.applied]);
 
   const performDelete = useCallback(
-    async (id: string) => {
+    async (ids: string[]) => {
       try {
-        await deletePurchase(id);
+        for (const id of ids) {
+          await deletePurchase(id);
+        }
+        setSelectedIds(new Set());
         load();
       } catch (e) {
         alert(e instanceof Error ? e.message : 'Delete failed');
@@ -149,9 +159,18 @@ function ArchiveServiceListInner() {
     load();
   }, [load]);
 
+  const effectiveIdsKey = effectiveIds.join(',');
+
   useEffect(() => {
     setPage(1);
-  }, [effectiveIds.join(',')]);
+  }, [effectiveIdsKey, filters.applied]);
+
+  function handleDeleteSelected() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setDeleteTargetIds(ids);
+    setShowDeletePasswordModal(true);
+  }
 
   return (
     <ProcedureArchiveShell
@@ -165,35 +184,64 @@ function ArchiveServiceListInner() {
         selectedMemberId
       )}
       tabsTrailing={<DisplayAllArchivesCheckbox archiveLabel="historicals" />}
-      headerAction={
-        <button
-          type="button"
-          onClick={() => router.push('/clubs/new_moment_cash')}
-          className="text-sm bg-white text-teal-800 px-3 py-1 rounded hover:bg-teal-50"
-        >
-          + New service
-        </button>
-      }
       error={error}
       footerHint={
         effectiveIds.length > 0
           ? `Showing ${effectiveIds.length} selected deadline record(s) only. Check “Display all historicals” for the full list.`
-          : 'Click to select · Double-click a row with Rest > 0 to open the payment form'
-      }
-      pagination={
-        <ProcedurePagination
-          page={page}
-          pageSize={SERVICE_SALE_PAGE_SIZE}
-          total={total}
-          onPageChange={setPage}
-        />
+          : 'Click to select · Double-click a row with Rest > 0 to open the payment form · Check rows to delete selected'
       }
     >
+      <ArchiveListToolbar
+        title="Filter · Archive of Services"
+        values={filters.draft}
+        onChange={filters.onChange}
+        onApply={() => {
+          if (filters.apply()) setPage(1);
+        }}
+        onClear={() => {
+          filters.clear();
+          setPage(1);
+        }}
+        dateRangeError={filters.dateRangeError}
+        selectedCount={selectedIds.size}
+        onDeleteSelected={handleDeleteSelected}
+        pagination={
+          <ProcedurePagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => {
+              setPageSize(n);
+              setPage(1);
+            }}
+          />
+        }
+      />
       <ProcedureArchiveTable
         columns={serviceSaleRecordColumns}
         rows={data}
         selectedId={selectedId}
         loading={loading}
+        selectable
+        selectOnlyOpenRest={false}
+        selectedIds={selectedIds}
+        onToggleSelect={(row) => {
+          if (!row.id) return;
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(row.id!)) next.delete(row.id!);
+            else next.add(row.id!);
+            return next;
+          });
+        }}
+        onToggleSelectAll={(checked) => {
+          if (!checked) {
+            setSelectedIds(new Set());
+            return;
+          }
+          setSelectedIds(new Set(data.map((r) => r.id).filter(Boolean) as string[]));
+        }}
         onRowClick={(row) => {
           setError('');
           if (row.id) setSelectedId(row.id);
@@ -225,14 +273,14 @@ function ArchiveServiceListInner() {
       />
 
       {editTarget && (
-        <EditServicePurchaseModal
+        <EditRecordModal
           isOpen={showEditModal}
           onClose={() => {
             setShowEditModal(false);
             setEditTarget(null);
           }}
           onSaved={() => load()}
-          purchase={{
+          record={{
             id: editTarget.id,
             recordDate: editTarget.recordDate,
             paydate: editTarget.paydate,
@@ -247,12 +295,12 @@ function ArchiveServiceListInner() {
         isOpen={showDeletePasswordModal}
         onClose={() => {
           setShowDeletePasswordModal(false);
-          setDeleteTargetId(null);
+          setDeleteTargetIds([]);
         }}
         onVerified={() => {
           setShowDeletePasswordModal(false);
-          if (deleteTargetId) performDelete(deleteTargetId);
-          setDeleteTargetId(null);
+          if (deleteTargetIds.length > 0) performDelete(deleteTargetIds);
+          setDeleteTargetIds([]);
         }}
       />
     </ProcedureArchiveShell>

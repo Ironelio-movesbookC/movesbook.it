@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import ProcedureArchiveTabs from './ProcedureArchiveTabs';
@@ -30,10 +31,13 @@ export default function ProcedureArchiveShell({
               <span className="text-lg font-bold text-[#d3f07b]">{member.name}</span>
               {memberImageUrl && (
                 <div className="h-8 w-8 overflow-hidden rounded-full border border-teal-700 bg-teal-900/50">
-                  <img
+                  <Image
                     src={memberImageUrl}
                     alt={member.name}
+                    width={32}
+                    height={32}
                     className="h-full w-full object-cover"
+                    unoptimized
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}

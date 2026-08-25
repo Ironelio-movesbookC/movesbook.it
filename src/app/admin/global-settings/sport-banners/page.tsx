@@ -1,4 +1,5 @@
 "use client";
+import Image from 'next/image';
 
 import Link from "next/link";
 import { useState } from "react";
@@ -232,10 +233,13 @@ export default function BannerToursPage() {
                 {/* Banner */}
 
                 <td className="border-r border-[#ccc] px-[9px] py-[7px] align-top">
-                  <img
+                  <Image
                     src={item.banner}
                     alt={item.sport}
                     className="h-[70px] w-[150px] object-cover"
+                    width={150}
+                    height={70}
+                    unoptimized
                   />
                 </td>
 

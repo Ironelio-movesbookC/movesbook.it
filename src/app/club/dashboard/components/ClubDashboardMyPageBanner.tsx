@@ -18,6 +18,8 @@ interface ClubDashboardMyPageBannerProps {
   onCoverCameraClick: () => void;
   /** Header strip — opens promocode invite flow (PHP: users/notification_by_promocode). */
   onSuggestMovesbookClick?: () => void;
+  /** When false, hides the Suggest Movesbook link in the bottom strip. */
+  showSuggestMovesbook?: boolean;
   /** When false, hides the right-hand SPONSORED column (e.g. My Club tab). */
   showSponsored?: boolean;
 }
@@ -30,6 +32,7 @@ export default function ClubDashboardMyPageBanner({
   coverBannerAlignment,
   onCoverCameraClick,
   onSuggestMovesbookClick,
+  showSuggestMovesbook = false,
   showSponsored = true,
 }: ClubDashboardMyPageBannerProps) {
   const { t } = useLanguage();
@@ -164,13 +167,15 @@ export default function ClubDashboardMyPageBanner({
               >
                 FAQ
               </button>
-              <button
-                type="button"
-                onClick={onSuggestMovesbookClick}
-                className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
-              >
-                Suggest Movesbook
-              </button>
+              {showSuggestMovesbook ? (
+                <button
+                  type="button"
+                  onClick={onSuggestMovesbookClick}
+                  className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                >
+                  Suggest Movesbook
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800 flex items-center gap-1.5"

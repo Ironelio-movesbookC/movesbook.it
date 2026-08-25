@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClubAuthContext, procedureService } from '@/lib/procedures';
+import { parseArchiveListFilters } from '@/lib/procedures/parseArchiveListFilters';
 import { isKnownProcedureType } from '@/lib/procedures/validators';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const recordIds = idsRaw
       ? idsRaw.split(',').map((s) => s.trim()).filter(Boolean)
       : undefined;
+    const filters = parseArchiveListFilters(request.nextUrl.searchParams);
 
     const result = await procedureService.listReceipts(auth.ctx, params.type, {
       page: Number(request.nextUrl.searchParams.get('page') ?? 1),
@@ -26,6 +28,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       recordId: request.nextUrl.searchParams.get('recordId') ?? undefined,
       memberId: request.nextUrl.searchParams.get('memberId') ?? undefined,
       recordIds,
+      ...filters,
     });
 
     return NextResponse.json(result);

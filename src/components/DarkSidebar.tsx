@@ -119,6 +119,7 @@ import {
   isGroupAccountUserType,
   isManagedEntityAdminUserType,
   isTeamAccountUserType,
+  showSuggestMovesbookForTab,
   userOwnsMovesbookWebsite,
 } from '@/utils/dashboardRouting';
 import {
@@ -293,7 +294,6 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: ShoppingCart, label: 'Shop/Selling of products', path: '/ArchiveSeles/product_sale_list' },
     { kind: 'icon', Icon: Users2, label: 'Archive of Memberships', path: '/clubs/memberships/archive' },
     { kind: 'icon', Icon: BookOpen, label: 'Archive of Course Subs', path: '/clubs/courses/archive' },
-    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '/clubs/new_moment_cash' },
     { kind: 'icon', Icon: FileText, label: 'Archive of Services', path: '/clubs/archive_service_list' },
     { kind: 'icon', Icon: Receipt, label: 'Member expenses', path: '/clubs/new_expense' },
     { kind: 'icon', Icon: FileStack, label: 'Archive of Expenses', path: '/clubs/archive_expense_list' },
@@ -472,6 +472,7 @@ export default function DarkSidebar({
 
   const currentTab = onTabChange ? activeTab : internalActiveTab;
   const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
+  const showSuggestMovesbook = showSuggestMovesbookForTab(userType, currentTab);
 
   const [communitiesOpen, setCommunitiesOpen] = useState(false);
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
@@ -1538,13 +1539,15 @@ export default function DarkSidebar({
             </div>
 
             <div className="py-3 bg-gray-850 border-t border-gray-700">
-              <button
-                type="button"
-                onClick={handleSuggestMovesbookClick}
-                className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
-              >
-                Suggest Movesbook to your friends
-              </button>
+              {showSuggestMovesbook ? (
+                <button
+                  type="button"
+                  onClick={handleSuggestMovesbookClick}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                >
+                  Suggest Movesbook to your friends
+                </button>
+              ) : null}
             </div>
           </div>
         )}
@@ -2694,13 +2697,15 @@ export default function DarkSidebar({
                   </div>
 
                   <div className="py-3 bg-gray-850 border-t border-gray-700">
-                    <button
-                      type="button"
-                      onClick={handleSuggestMovesbookClick}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
-                    >
-                      Suggest Movesbook to your friends
-                    </button>
+                    {showSuggestMovesbook ? (
+                      <button
+                        type="button"
+                        onClick={handleSuggestMovesbookClick}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                      >
+                        Suggest Movesbook to your friends
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -4814,6 +4819,18 @@ export default function DarkSidebar({
                       </div>
                     </button>
                   </>
+                )}
+
+                {showSuggestMovesbook && (
+                  <div className="py-3 px-3 bg-gray-850 border-t border-gray-700">
+                    <button
+                      type="button"
+                      onClick={handleSuggestMovesbookClick}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                    >
+                      Suggest Movesbook to your friends
+                    </button>
+                  </div>
                 )}
               </>
             )}

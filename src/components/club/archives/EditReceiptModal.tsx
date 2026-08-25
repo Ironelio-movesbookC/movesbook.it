@@ -1,14 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
-import { updateReceipt } from '@/lib/club/serviceSaleClient';
+import { createProcedureClient } from '@/lib/club/procedureClient';
+import { PROCEDURE_TYPE_CODES, type ProcedureTypeCode } from '@/lib/procedures/types';
 import { TAX_DOCUMENT_TYPE_OPTIONS } from '@/lib/procedures/taxDocumentDefaults';
 
-type EditServiceReceiptModalProps = {
+type EditReceiptModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSaved: () => void;
+  procedureCode?: ProcedureTypeCode;
   receipt: {
     id: string;
     documentType: string;
@@ -17,12 +19,14 @@ type EditServiceReceiptModalProps = {
   };
 };
 
-export default function EditServiceReceiptModal({
+export default function EditReceiptModal({
   isOpen,
   onClose,
   onSaved,
+  procedureCode = PROCEDURE_TYPE_CODES.SERVICE_SALE,
   receipt,
-}: EditServiceReceiptModalProps) {
+}: EditReceiptModalProps) {
+  const client = useMemo(() => createProcedureClient(procedureCode), [procedureCode]);
   const [documentType, setDocumentType] = useState('');
   const [documentNumber, setDocumentNumber] = useState('');
   const [annotations, setAnnotations] = useState('');
@@ -51,7 +55,7 @@ export default function EditServiceReceiptModal({
     setSaving(true);
     setError(null);
     try {
-      await updateReceipt(receipt.id, {
+      await client.updateReceipt(receipt.id, {
         documentType: documentType || undefined,
         documentNumber: documentNumber || undefined,
         annotations: annotations || undefined,

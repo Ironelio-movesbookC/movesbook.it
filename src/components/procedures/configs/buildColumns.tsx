@@ -45,18 +45,22 @@ export function buildProcedureColumns(def: ProcedureDefinition) {
     primaryCol,
     ...(secondaryCol ? [secondaryCol] : []),
     { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
+    { key: 'expirationDate', header: 'Expiration Date', render: (v) => formatDate(v) },
     { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
     { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
+    { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
     { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
     { key: 'casual', header: 'Notes' },
     { key: 'operator', header: 'Operator' },
-    { key: 'options', header: 'Delete' },
+    { key: 'edit', header: 'Edit', sortable: false },
+    { key: 'delete', header: 'Delete', sortable: false },
   ];
 
   const deadlineColumns: Column[] = [
     {
       key: 'image',
       header: 'Image',
+      sortable: false,
       render: (_v, row) => <MemberImageCell src={row.image} name={row.name} />,
     },
     { key: 'name', header: 'Full Name' },
@@ -71,8 +75,8 @@ export function buildProcedureColumns(def: ProcedureDefinition) {
     { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
     { key: 'casual', header: 'Description' },
     { key: 'operator', header: 'Operator' },
-    { key: 'edit', header: 'Edit' },
-    { key: 'delete', header: 'Delete' },
+    { key: 'edit', header: 'Edit', sortable: false },
+    { key: 'delete', header: 'Delete', sortable: false },
   ];
 
   const paymentColumns: Column[] = [
@@ -94,6 +98,8 @@ export function buildProcedureColumns(def: ProcedureDefinition) {
     { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
     { key: 'casual', header: 'Notes' },
     { key: 'operator', header: 'Operator' },
+    { key: 'edit', header: 'Edit', sortable: false },
+    { key: 'delete', header: 'Delete', sortable: false },
   ];
 
   const receiptColumns: Column[] = [
@@ -111,6 +117,8 @@ export function buildProcedureColumns(def: ProcedureDefinition) {
     },
     { key: 'casual', header: 'Annotations' },
     { key: 'operator', header: 'Operator' },
+    { key: 'edit', header: 'Edit', sortable: false },
+    { key: 'delete', header: 'Delete', sortable: false },
   ];
 
   return { recordColumns, deadlineColumns, paymentColumns, receiptColumns, primaryKey, secondaryKey };

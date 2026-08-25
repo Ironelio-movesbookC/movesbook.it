@@ -503,7 +503,7 @@ export default function PlanGymWeekFastPlanModal({
       });
       return { ...d, sectors };
     }));
-  }, [activeDayIdx, levelCat, exerciseListVisible, planSeriesVisible, planSeriesTableLocked]);
+  }, [activeDayIdx, levelCat, exerciseListVisible]);
 
   const changeExerciseCount = useCallback((secIdx: number, delta: number) => {
     if (planSeriesTableLocked) return;
@@ -706,7 +706,7 @@ export default function PlanGymWeekFastPlanModal({
       if (di !== activeDayIdx) return d;
       return { ...d, sectors: [...d.sectors, newSector] };
     }));
-  }, [activeDayIdx, levelCat, exerciseListVisible, planSeriesVisible, planSeriesTableLocked]);
+  }, [activeDayIdx, levelCat, exerciseListVisible]);
 
   const templateFromMuscleGroup = useCallback((mg: GymWeekMuscleGroup, totalSeries: number): PlanSector => {
     const reps        = 12;
@@ -781,7 +781,7 @@ export default function PlanGymWeekFastPlanModal({
       });
       return { ...d, sectors };
     }));
-  }, [activeDayIdx, levelCat, scalarsForDay, planSeriesVisible, exerciseListVisible]);
+  }, [activeDayIdx, levelCat, scalarsForDay, planSeriesVisible]);
 
   const applyAutoProcess = () => {
     setShowAutoWarn(false);
