@@ -95,6 +95,12 @@ export type ArticlePasted = OGPData & {
   clubAudienceMode?: OgpVisibilitySettings['clubAudienceMode'];
   /** Club admin: club ids this OGP article has been shared to. */
   sharedClubIds?: string[];
+  /** Club id this feed row was shared into (Club OGP / Global / other club). */
+  sharedClubId?: string | null;
+  /** Username (or name) of the club this OGP was shared into. */
+  sharedClubUsername?: string | null;
+  /** True when this row comes from another club (not the club being viewed). */
+  isFromOtherClub?: boolean;
   groupName?: string;
   memberCount?: number;
   memberIds?: string[];
@@ -133,6 +139,9 @@ export type OgpNewsGroupCard = {
   sharedClubIds?: string[];
   /** Club admin: promoted into this club's Club Global News feed. */
   inClubGlobalNews?: boolean;
+  sharedClubId?: string | null;
+  sharedClubUsername?: string | null;
+  isFromOtherClub?: boolean;
   previewTopic?: string;
   previewCreatorUsername?: string | null;
 };
@@ -236,6 +245,9 @@ function groupToFeedItem(g: OgpNewsGroupCard): ArticlePasted {
     clubAudienceMode: g.clubAudienceMode ?? null,
     sharedClubIds: g.sharedClubIds,
     inClubGlobalNews: g.inClubGlobalNews === true,
+    sharedClubId: g.sharedClubId ?? null,
+    sharedClubUsername: g.sharedClubUsername ?? null,
+    isFromOtherClub: g.isFromOtherClub === true,
   };
 }
 
@@ -391,6 +403,11 @@ interface NewsArticlesListProps {
   preferSingleNewsDefault?: boolean;
   /** Club member OGP News: checkbox reads "Show deleted by me" instead of "Show also deleted". */
   showDeletedByMeLabel?: boolean;
+  /**
+   * Club OGP News: checkbox to show/hide Club Global News shares and OGPs
+   * shared into the admin's other clubs (not the current one).
+   */
+  enableClubGlobalAndOtherClubsToggle?: boolean;
 }
 
 export default function NewsArticlesList({
@@ -441,6 +458,7 @@ export default function NewsArticlesList({
   hideOgpGroups = false,
   preferSingleNewsDefault = false,
   showDeletedByMeLabel = false,
+  enableClubGlobalAndOtherClubsToggle = false,
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
   const isMusic = apiBase === '/api/music';
@@ -534,6 +552,7 @@ export default function NewsArticlesList({
   const [excludeExpiredAndDeleted, setExcludeExpiredAndDeleted] = useState(false);
   const [showExpired, setShowExpired] = useState(false);
   const [showDeletedTemporarily, setShowDeletedTemporarily] = useState(false);
+  const [showClubGlobalAndOtherClubs, setShowClubGlobalAndOtherClubs] = useState(false);
   const [showOnlyLiked, setShowOnlyLiked] = useState(false);
   const [showSingleNews, setShowSingleNews] = useState(
     () => hideOgpGroups || preferSingleNewsDefault,
@@ -988,8 +1007,18 @@ export default function NewsArticlesList({
   ]);
 
   const filtered = useMemo(() => {
+    const isClubGlobalOrOtherClubShare = (a: ArticlePasted) =>
+      a.inClubGlobalNews === true || a.isFromOtherClub === true;
+
     const applyArticleFilters = (source: ArticlePasted[]) => {
       let list = source;
+      if (
+        enableClubGlobalAndOtherClubsToggle &&
+        !showClubGlobalAndOtherClubs &&
+        postedByFilter !== 'clubGlobalNews'
+      ) {
+        list = list.filter((a) => !isClubGlobalOrOtherClubShare(a));
+      }
       if (postedByFilter === 'me' && canFilterByMyOgNews) {
         list = list.filter(canEditAsCreator);
       } else if (postedByFilter === 'movesbook') {
@@ -1141,6 +1170,15 @@ export default function NewsArticlesList({
         groupSource = groupSource.filter((g) => g.topic.toLowerCase() === selectedSport.toLowerCase());
       }
       groups = groupSource.map(groupToFeedItem);
+      if (
+        enableClubGlobalAndOtherClubsToggle &&
+        !showClubGlobalAndOtherClubs &&
+        postedByFilter !== 'clubGlobalNews'
+      ) {
+        groups = groups.filter(
+          (a) => !(a.inClubGlobalNews === true || a.isFromOtherClub === true),
+        );
+      }
       if (postedByFilter === 'me' && canFilterByMyOgNews) {
         groups = groups.filter(canEditAsCreator);
       } else if (postedByFilter === 'clubGlobalNews') {
@@ -1222,6 +1260,8 @@ export default function NewsArticlesList({
     isAddingToGroup,
     viewSelectedOnly,
     selectedForGroupIds,
+    enableClubGlobalAndOtherClubsToggle,
+    showClubGlobalAndOtherClubs,
     viewingOgpGroup,
     activeTopic,
     topicNamesCreatedByNormalUsers,
@@ -2320,6 +2360,27 @@ export default function NewsArticlesList({
                 </span>
               </label>
             )}
+            {enableClubGlobalAndOtherClubsToggle && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showClubGlobalAndOtherClubs}
+                  onChange={(e) => {
+                    setShowClubGlobalAndOtherClubs(e.target.checked);
+                    setCurrentPage(1);
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                  aria-label="Show Club Global News and other clubs"
+                  title="Show OGPs shared in Club Global News and in your other clubs"
+                />
+                <span
+                  className="text-cyan-200 text-sm whitespace-nowrap font-medium"
+                  title="Show OGPs shared in Club Global News and in your other clubs"
+                >
+                  Club Global &amp; other clubs
+                </span>
+              </label>
+            )}
             {isSuperAdmin && isNewsOgp && !superAdminReadOnlyOgpActions && (
               <button
                 type="button"
@@ -2524,11 +2585,33 @@ export default function NewsArticlesList({
                           {translateTopic(a.topic ?? 'News')}
                         </span>
                       </span>
-                      {(a.isOgpGroup ? a.creatorUsername || a.creatorName : a.creatorUsername) && (
-                        <span className="ml-auto text-[11px] text-blue-600 whitespace-nowrap truncate max-w-[45%]" title={a.isOgpGroup ? (a.creatorUsername || a.creatorName || undefined) : (a.creatorUsername || undefined)}>
-                          by {a.isOgpGroup ? a.creatorUsername || a.creatorName : a.creatorUsername}
-                        </span>
-                      )}
+                      <span className="ml-auto flex items-center gap-1.5 min-w-0 max-w-[55%] justify-end">
+                        {(a.inClubGlobalNews === true || a.isFromOtherClub === true) &&
+                          a.sharedClubUsername && (
+                            <span
+                              className="text-[11px] text-teal-700 font-medium whitespace-nowrap truncate"
+                              title={
+                                a.isFromOtherClub
+                                  ? `Shared in club ${a.sharedClubUsername}`
+                                  : `Shared in Club Global News · ${a.sharedClubUsername}`
+                              }
+                            >
+                              {a.sharedClubUsername}
+                            </span>
+                          )}
+                        {(a.isOgpGroup ? a.creatorUsername || a.creatorName : a.creatorUsername) && (
+                          <span
+                            className="text-[11px] text-blue-600 whitespace-nowrap truncate"
+                            title={
+                              a.isOgpGroup
+                                ? (a.creatorUsername || a.creatorName || undefined)
+                                : (a.creatorUsername || undefined)
+                            }
+                          >
+                            by {a.isOgpGroup ? a.creatorUsername || a.creatorName : a.creatorUsername}
+                          </span>
+                        )}
+                      </span>
                     </div>
                     {a.isOgpGroup && (
                       <button

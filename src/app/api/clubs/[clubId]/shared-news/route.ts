@@ -8,6 +8,7 @@ import {
   parseJsonStringArray,
   type ClubSharedFeedItem,
 } from '@/lib/clubNewsShareAuth';
+import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,25 @@ async function getClubAccess(
     select: { id: true },
   });
   return { isClubAdmin: false, isClubMember: Boolean(membership) };
+}
+
+function clubUsernameFromDescription(description: string | null | undefined): string | null {
+  const username = parseClubDescriptionMeta(description).username?.trim();
+  return username || null;
+}
+
+async function loadClubUsernameMap(clubIds: string[]): Promise<Map<string, string | null>> {
+  const unique = [...new Set(clubIds.filter(Boolean))];
+  const map = new Map<string, string | null>();
+  if (unique.length === 0) return map;
+  const clubs = await prisma.club.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, name: true, description: true },
+  });
+  for (const c of clubs) {
+    map.set(c.id, clubUsernameFromDescription(c.description) || c.name || null);
+  }
+  return map;
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -68,8 +88,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     /** Full ArticlePasted-compatible payload for Club News → OGP News UI. */
     if (detail === 'full' && type === 'ogp') {
+      const includeOtherClubs =
+        access.isClubAdmin &&
+        request.nextUrl.searchParams.get('includeOtherClubs') === '1';
+
+      let clubIdsForShares = [clubId];
+      if (includeOtherClubs) {
+        const adminClubs = await prisma.club.findMany({
+          where: { adminId: decoded.userId },
+          select: { id: true },
+        });
+        clubIdsForShares = adminClubs.map((c) => c.id);
+        if (!clubIdsForShares.includes(clubId)) clubIdsForShares.push(clubId);
+      }
+
+      const clubUsernameById = await loadClubUsernameMap(clubIdsForShares);
+
       const ogpShares = await prisma.clubSharedOgpArticle.findMany({
-        where: { clubId },
+        where: { clubId: { in: clubIdsForShares } },
         orderBy: { createdAt: 'desc' },
         include: {
           ogpArticle: {
@@ -87,14 +123,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
         },
       });
 
-      const articles = ogpShares
-        .filter((row) => !row.ogpArticle.deletedAt)
-        .filter((row) => {
-          const a = row.ogpArticle;
-          return canViewerSeeClubSharedOgp({
+      const articlesById = new Map<string, Record<string, unknown>>();
+      for (const row of ogpShares) {
+        if (row.ogpArticle.deletedAt) continue;
+        const a = row.ogpArticle;
+        const shareClubId = row.clubId;
+        const isFromOtherClub = shareClubId !== clubId;
+        // Prefer current-club share when the same article appears in multiple clubs.
+        if (articlesById.has(a.id) && isFromOtherClub) continue;
+        if (
+          !canViewerSeeClubSharedOgp({
             audienceMode: row.audienceMode,
             isClubAdmin: access.isClubAdmin,
-            isClubMember: access.isClubMember,
+            isClubMember: isFromOtherClub ? false : access.isClubMember,
             viewer,
             visibility: {
               userTypes: parseJsonStringArray(a.visibilityUserTypes),
@@ -103,44 +144,95 @@ export async function GET(request: NextRequest, context: RouteContext) {
               sports: parseJsonStringArray(a.visibilitySports),
               expiresAt: a.expiresAt,
             },
-          });
-        })
-        .map((row) => {
-          const a = row.ogpArticle;
-          return {
-            id: a.id,
-            userId: a.userId,
-            creatorUsername: a.user?.username ?? null,
-            creatorCountry: a.user?.country ?? null,
-            createdByCurrentUser: a.userId === decoded.userId,
-            createdBySuperAdmin: a.user?.userType === 'ADMIN',
-            title: a.title,
-            image: a.image,
-            description: a.description,
-            url: a.url,
-            siteName: a.siteName,
-            type: a.type,
-            customDescription: a.customDescription,
-            topic: a.topic,
-            languageCode: a.languageCode ?? undefined,
-            savedAt: a.savedAt.toISOString(),
-            inGlobalNews: a.inGlobalNews === true,
-            inClubGlobalNews: row.inClubGlobalNews === true,
-            clubAudienceMode: row.audienceMode,
-            deletedAt: a.deletedAt?.toISOString() ?? null,
-            deletedByUserId: a.deletedByUserId,
-            visibilityUserTypes: parseJsonStringArray(a.visibilityUserTypes),
-            visibilityCountries: parseJsonStringArray(a.visibilityCountries),
-            visibilityLanguages: parseJsonStringArray(a.visibilityLanguages),
-            visibilitySports: parseJsonStringArray(a.visibilitySports),
-            expiresAt: a.expiresAt?.toISOString() ?? null,
-            sharedAt: row.createdAt.toISOString(),
-            sharedClubIds: [clubId],
-          };
+          })
+        ) {
+          // Other-club shares are admin-only overview; still allow club admin to see them.
+          if (!(includeOtherClubs && isFromOtherClub && access.isClubAdmin)) continue;
+        }
+
+        const existing = articlesById.get(a.id);
+        const sharedClubIds = Array.isArray(existing?.sharedClubIds)
+          ? [...(existing!.sharedClubIds as string[])]
+          : [];
+        if (!sharedClubIds.includes(shareClubId)) sharedClubIds.push(shareClubId);
+
+        // Keep current-club row fields when already present; only expand sharedClubIds.
+        if (existing && !isFromOtherClub) {
+          existing.sharedClubIds = sharedClubIds;
+          existing.inClubGlobalNews = row.inClubGlobalNews === true;
+          existing.clubAudienceMode = row.audienceMode;
+          existing.sharedClubId = shareClubId;
+          existing.sharedClubUsername = clubUsernameById.get(shareClubId) ?? null;
+          existing.isFromOtherClub = false;
+          continue;
+        }
+        if (existing && isFromOtherClub) {
+          existing.sharedClubIds = sharedClubIds;
+          continue;
+        }
+
+        articlesById.set(a.id, {
+          id: a.id,
+          userId: a.userId,
+          creatorUsername: a.user?.username ?? null,
+          creatorCountry: a.user?.country ?? null,
+          createdByCurrentUser: a.userId === decoded.userId,
+          createdBySuperAdmin: a.user?.userType === 'ADMIN',
+          title: a.title,
+          image: a.image,
+          description: a.description,
+          url: a.url,
+          siteName: a.siteName,
+          type: a.type,
+          customDescription: a.customDescription,
+          topic: a.topic,
+          languageCode: a.languageCode ?? undefined,
+          savedAt: a.savedAt.toISOString(),
+          inGlobalNews: a.inGlobalNews === true,
+          inClubGlobalNews: row.inClubGlobalNews === true,
+          clubAudienceMode: row.audienceMode,
+          deletedAt: a.deletedAt?.toISOString() ?? null,
+          deletedByUserId: a.deletedByUserId,
+          visibilityUserTypes: parseJsonStringArray(a.visibilityUserTypes),
+          visibilityCountries: parseJsonStringArray(a.visibilityCountries),
+          visibilityLanguages: parseJsonStringArray(a.visibilityLanguages),
+          visibilitySports: parseJsonStringArray(a.visibilitySports),
+          expiresAt: a.expiresAt?.toISOString() ?? null,
+          sharedAt: row.createdAt.toISOString(),
+          sharedClubIds,
+          sharedClubId: shareClubId,
+          sharedClubUsername: clubUsernameById.get(shareClubId) ?? null,
+          isFromOtherClub,
         });
+      }
+
+      // Ensure current-club username is present even when includeOtherClubs is off.
+      if (!includeOtherClubs) {
+        const currentUsername = clubUsernameById.get(clubId) ?? null;
+        for (const entry of articlesById.values()) {
+          if (!entry.sharedClubUsername) entry.sharedClubUsername = currentUsername;
+          if (!entry.sharedClubId) entry.sharedClubId = clubId;
+        }
+      }
+
+      // Second pass: attach all club ids this article is shared to (among admin clubs).
+      if (includeOtherClubs) {
+        for (const row of ogpShares) {
+          const entry = articlesById.get(row.ogpArticleId);
+          if (!entry) continue;
+          const ids = Array.isArray(entry.sharedClubIds)
+            ? (entry.sharedClubIds as string[])
+            : [];
+          if (!ids.includes(row.clubId)) {
+            entry.sharedClubIds = [...ids, row.clubId];
+          }
+        }
+      }
+
+      const articles = [...articlesById.values()];
 
       const ogpGroupShares = await prisma.clubSharedOgpGroup.findMany({
-        where: { clubId },
+        where: { clubId: { in: clubIdsForShares } },
         orderBy: { createdAt: 'desc' },
         include: {
           ogpNewsGroup: {
@@ -169,14 +261,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
         },
       });
 
-      const groups = ogpGroupShares
-        .filter((row) => !row.ogpNewsGroup.deletedAt)
-        .filter((row) => {
-          const g = row.ogpNewsGroup;
-          return canViewerSeeClubSharedOgp({
+      const groupsById = new Map<string, Record<string, unknown>>();
+      for (const row of ogpGroupShares) {
+        if (row.ogpNewsGroup.deletedAt) continue;
+        const g = row.ogpNewsGroup;
+        const shareClubId = row.clubId;
+        const isFromOtherClub = shareClubId !== clubId;
+        if (groupsById.has(g.id) && isFromOtherClub) continue;
+        if (
+          !canViewerSeeClubSharedOgp({
             audienceMode: row.audienceMode,
             isClubAdmin: access.isClubAdmin,
-            isClubMember: access.isClubMember,
+            isClubMember: isFromOtherClub ? false : access.isClubMember,
             viewer,
             visibility: {
               userTypes: parseJsonStringArray(g.visibilityUserTypes),
@@ -185,52 +281,92 @@ export async function GET(request: NextRequest, context: RouteContext) {
               sports: parseJsonStringArray(g.visibilitySports),
               expiresAt: g.expiresAt,
             },
-          });
-        })
-        .map((row) => {
-          const g = row.ogpNewsGroup;
-          const sortedItems = [...g.items].sort(
-            (a, b) => a.sortOrder - b.sortOrder || a.addedAt.getTime() - b.addedAt.getTime(),
-          );
-          const first = sortedItems[0]?.ogpArticle ?? null;
-          const creatorName =
-            (g.user?.name && g.user.name.trim()) || g.user?.username || null;
+          })
+        ) {
+          if (!(includeOtherClubs && isFromOtherClub && access.isClubAdmin)) continue;
+        }
 
-          return {
-            id: g.id,
-            userId: g.userId,
-            name: g.name,
-            topic: g.topic,
-            savedAt: g.savedAt.toISOString(),
-            memberCount: sortedItems.length,
-            memberIds: sortedItems.map((i) => i.ogpArticleId),
-            creatorUsername: g.user?.username ?? null,
-            creatorName,
-            creatorCountry: g.user?.country ?? null,
-            createdByCurrentUser: g.userId === decoded.userId,
-            customDescription: g.customDescription ?? first?.customDescription ?? null,
-            coverImage: g.coverImage ?? null,
-            deletedAt: g.deletedAt?.toISOString() ?? null,
-            visibilityUserTypes: parseJsonStringArray(g.visibilityUserTypes),
-            visibilityCountries: parseJsonStringArray(g.visibilityCountries),
-            visibilityLanguages: parseJsonStringArray(g.visibilityLanguages),
-            visibilitySports: parseJsonStringArray(g.visibilitySports),
-            expiresAt: g.expiresAt?.toISOString() ?? null,
-            audienceMode: row.audienceMode,
-            clubAudienceMode: row.audienceMode,
-            inClubGlobalNews: row.inClubGlobalNews === true,
-            title: first?.title ?? g.name,
-            image: g.coverImage ?? first?.image ?? null,
-            description: first?.description ?? null,
-            url: first?.url ?? '',
-            siteName: first?.siteName ?? null,
-            type: first?.type ?? null,
-            previewTopic: first?.topic ?? g.topic,
-            previewCreatorUsername: first?.user?.username ?? g.user?.username ?? null,
-            sharedAt: row.createdAt.toISOString(),
-            sharedClubIds: [clubId],
-          };
+        const existing = groupsById.get(g.id);
+        const sharedClubIds = Array.isArray(existing?.sharedClubIds)
+          ? [...(existing!.sharedClubIds as string[])]
+          : [];
+        if (!sharedClubIds.includes(shareClubId)) sharedClubIds.push(shareClubId);
+
+        if (existing && !isFromOtherClub) {
+          existing.sharedClubIds = sharedClubIds;
+          existing.inClubGlobalNews = row.inClubGlobalNews === true;
+          existing.clubAudienceMode = row.audienceMode;
+          existing.audienceMode = row.audienceMode;
+          existing.sharedClubId = shareClubId;
+          existing.sharedClubUsername = clubUsernameById.get(shareClubId) ?? null;
+          existing.isFromOtherClub = false;
+          continue;
+        }
+        if (existing && isFromOtherClub) {
+          existing.sharedClubIds = sharedClubIds;
+          continue;
+        }
+
+        const sortedItems = [...g.items].sort(
+          (a, b) => a.sortOrder - b.sortOrder || a.addedAt.getTime() - b.addedAt.getTime(),
+        );
+        const first = sortedItems[0]?.ogpArticle ?? null;
+        const creatorName =
+          (g.user?.name && g.user.name.trim()) || g.user?.username || null;
+
+        groupsById.set(g.id, {
+          id: g.id,
+          userId: g.userId,
+          name: g.name,
+          topic: g.topic,
+          savedAt: g.savedAt.toISOString(),
+          memberCount: sortedItems.length,
+          memberIds: sortedItems.map((i) => i.ogpArticleId),
+          creatorUsername: g.user?.username ?? null,
+          creatorName,
+          creatorCountry: g.user?.country ?? null,
+          createdByCurrentUser: g.userId === decoded.userId,
+          customDescription: g.customDescription ?? first?.customDescription ?? null,
+          coverImage: g.coverImage ?? null,
+          deletedAt: g.deletedAt?.toISOString() ?? null,
+          visibilityUserTypes: parseJsonStringArray(g.visibilityUserTypes),
+          visibilityCountries: parseJsonStringArray(g.visibilityCountries),
+          visibilityLanguages: parseJsonStringArray(g.visibilityLanguages),
+          visibilitySports: parseJsonStringArray(g.visibilitySports),
+          expiresAt: g.expiresAt?.toISOString() ?? null,
+          audienceMode: row.audienceMode,
+          clubAudienceMode: row.audienceMode,
+          inClubGlobalNews: row.inClubGlobalNews === true,
+          title: first?.title ?? g.name,
+          image: g.coverImage ?? first?.image ?? null,
+          description: first?.description ?? null,
+          url: first?.url ?? '',
+          siteName: first?.siteName ?? null,
+          type: first?.type ?? null,
+          previewTopic: first?.topic ?? g.topic,
+          previewCreatorUsername: first?.user?.username ?? g.user?.username ?? null,
+          sharedAt: row.createdAt.toISOString(),
+          sharedClubIds,
+          sharedClubId: shareClubId,
+          sharedClubUsername: clubUsernameById.get(shareClubId) ?? null,
+          isFromOtherClub,
         });
+      }
+
+      if (includeOtherClubs) {
+        for (const row of ogpGroupShares) {
+          const entry = groupsById.get(row.ogpNewsGroupId);
+          if (!entry) continue;
+          const ids = Array.isArray(entry.sharedClubIds)
+            ? (entry.sharedClubIds as string[])
+            : [];
+          if (!ids.includes(row.clubId)) {
+            entry.sharedClubIds = [...ids, row.clubId];
+          }
+        }
+      }
+
+      const groups = [...groupsById.values()];
 
       return NextResponse.json({ articles, groups, items: articles });
     }

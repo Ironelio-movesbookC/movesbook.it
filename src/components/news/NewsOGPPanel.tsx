@@ -97,7 +97,9 @@ export default function NewsOGPPanel({
     setClubSharedLoading(true);
     try {
       const res = await fetch(
-        `/api/clubs/${encodeURIComponent(clubId)}/shared-news?type=ogp&detail=full`,
+        `/api/clubs/${encodeURIComponent(clubId)}/shared-news?type=ogp&detail=full${
+          isClubAdmin ? '&includeOtherClubs=1' : ''
+        }`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) throw new Error('Failed to load shared OGP News');
@@ -125,6 +127,9 @@ export default function NewsOGPPanel({
         deletedAt: a.deletedAt,
         deletedByUserId: a.deletedByUserId,
         sharedClubIds: a.sharedClubIds ?? [clubId],
+        sharedClubId: a.sharedClubId ?? clubId,
+        sharedClubUsername: a.sharedClubUsername ?? null,
+        isFromOtherClub: a.isFromOtherClub === true,
         visibility: {
           userTypes: a.visibilityUserTypes ?? [],
           countries: a.visibilityCountries ?? [],
@@ -157,6 +162,9 @@ export default function NewsOGPPanel({
         clubAudienceMode: g.clubAudienceMode ?? g.audienceMode ?? 'me-and-club-members',
         inClubGlobalNews: g.inClubGlobalNews === true,
         sharedClubIds: g.sharedClubIds ?? [clubId],
+        sharedClubId: g.sharedClubId ?? clubId,
+        sharedClubUsername: g.sharedClubUsername ?? null,
+        isFromOtherClub: g.isFromOtherClub === true,
         visibility: {
           userTypes: g.visibilityUserTypes ?? [],
           countries: g.visibilityCountries ?? [],
@@ -187,7 +195,7 @@ export default function NewsOGPPanel({
     } finally {
       setClubSharedLoading(false);
     }
-  }, [sharedWithClubOnly, clubId]);
+  }, [sharedWithClubOnly, clubId, isClubAdmin]);
 
   useEffect(() => {
     if (!sharedWithClubOnly || !clubId) {
@@ -435,7 +443,6 @@ export default function NewsOGPPanel({
 
   const filterToClubShared = Boolean(sharedWithClubOnly && clubId);
   const clubSharedIdSet = new Set((clubSharedArticles ?? []).map((a) => a.id));
-  const clubSharedGroupIdSet = new Set((clubSharedGroups ?? []).map((g) => g.id));
   const visiblePasted = filterToClubShared
     ? (clubSharedArticles ?? []).map((a) => ({
         ...a,
@@ -446,67 +453,51 @@ export default function NewsOGPPanel({
   /**
    * Club OGP News feed = shared singles plus groups shared directly to the club.
    * Groups whose members are all individually shared still appear (legacy behavior).
+   * When includeOtherClubs is on, clubSharedGroups already contains other-club shares.
    */
-  const visibleGroups = ogpNewsGroups
-    .filter((g) => {
-      if (!filterToClubShared) return true;
-
-      if (clubSharedGroupIdSet.has(g.id)) {
-        if (isClubAdmin) return true;
-        const sharedGroup = clubSharedGroups?.find((sg) => sg.id === g.id);
-        return canViewerSeeClubSharedOgp({
-          audienceMode: sharedGroup?.clubAudienceMode ?? g.clubAudienceMode,
-          isClubAdmin: false,
-          isClubMember: true,
-          viewer: {
-            userType: user?.userType ?? '',
-            country: user?.country ?? null,
-            languageCode: 'en',
-            sports: [],
-          },
-          visibility: {
-            userTypes: g.visibility?.userTypes ?? [],
-            countries: g.visibility?.countries ?? [],
-            languages: g.visibility?.languages ?? [],
-            sports: g.visibility?.sports ?? [],
-            expiresAt: g.visibility?.expiresAt ?? null,
-          },
-        });
-      }
-
-      if ((g.memberIds?.length ?? 0) === 0) return false;
-      if (!(g.memberIds ?? []).every((id) => clubSharedIdSet.has(id))) return false;
-      if (isClubAdmin) return true;
-      return canViewerSeeClubSharedOgp({
-        audienceMode: g.clubAudienceMode,
-        isClubAdmin: false,
-        isClubMember: true,
-        viewer: {
-          userType: user?.userType ?? '',
-          country: user?.country ?? null,
-          languageCode: 'en',
-          sports: [],
-        },
-        visibility: {
-          userTypes: g.visibility?.userTypes ?? [],
-          countries: g.visibility?.countries ?? [],
-          languages: g.visibility?.languages ?? [],
-          sports: g.visibility?.sports ?? [],
-          expiresAt: g.visibility?.expiresAt ?? null,
-        },
-      });
-    })
-    .map((g) => {
-      const sharedGroup = clubSharedGroups?.find((sg) => sg.id === g.id);
-      return {
+  const visibleGroups = filterToClubShared
+    ? (() => {
+        const fromApi = (clubSharedGroups ?? []).map((g) => ({
+          ...g,
+          sharedClubIds: articleSharedClubIds[g.id] ?? g.sharedClubIds ?? [clubId!],
+        }));
+        const fromApiIds = new Set(fromApi.map((g) => g.id));
+        const legacy = ogpNewsGroups
+          .filter((g) => {
+            if (fromApiIds.has(g.id)) return false;
+            if ((g.memberIds?.length ?? 0) === 0) return false;
+            if (!(g.memberIds ?? []).every((id) => clubSharedIdSet.has(id))) return false;
+            if (isClubAdmin) return true;
+            return canViewerSeeClubSharedOgp({
+              audienceMode: g.clubAudienceMode,
+              isClubAdmin: false,
+              isClubMember: true,
+              viewer: {
+                userType: user?.userType ?? '',
+                country: user?.country ?? null,
+                languageCode: 'en',
+                sports: [],
+              },
+              visibility: {
+                userTypes: g.visibility?.userTypes ?? [],
+                countries: g.visibility?.countries ?? [],
+                languages: g.visibility?.languages ?? [],
+                sports: g.visibility?.sports ?? [],
+                expiresAt: g.visibility?.expiresAt ?? null,
+              },
+            });
+          })
+          .map((g) => ({
+            ...g,
+            sharedClubIds:
+              articleSharedClubIds[g.id] ?? g.sharedClubIds ?? (clubId ? [clubId] : undefined),
+          }));
+        return [...fromApi, ...legacy];
+      })()
+    : ogpNewsGroups.map((g) => ({
         ...g,
-        inClubGlobalNews: sharedGroup?.inClubGlobalNews ?? g.inClubGlobalNews,
-        sharedClubIds:
-          articleSharedClubIds[g.id] ??
-          g.sharedClubIds ??
-          (filterToClubShared && clubSharedGroupIdSet.has(g.id) && clubId ? [clubId] : undefined),
-      };
-    });
+        sharedClubIds: articleSharedClubIds[g.id] ?? g.sharedClubIds,
+      }));
 
   return (
     <div
@@ -651,6 +642,7 @@ export default function NewsOGPPanel({
           onArticleSharedClubIdsChange={handleArticleSharedClubIdsChange}
           onArticleClubAudienceModeChange={handleArticleClubAudienceModeChange}
           showDeletedByMeLabel={filterToClubShared && !isClubAdmin}
+          enableClubGlobalAndOtherClubsToggle={filterToClubShared}
         />
       </div>
     </div>
