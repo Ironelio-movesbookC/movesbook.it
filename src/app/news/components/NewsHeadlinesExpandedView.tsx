@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { ChevronLeft, ChevronRight, Clock, MessageCircle, ThumbsDown, ThumbsUp } from 'lucide-react';
 import type { ArticlePasted } from './NewsArticlesList';
 import { ogpDescriptionPlainText } from '@/components/shared/OgpRichDescription';
 import {
+  TOP_STORIES_AUTO_MS,
   TOP_STORIES_COUNT,
   estimateReadingMinutes,
   faviconUrl,
@@ -110,13 +111,78 @@ export default function NewsHeadlinesExpandedView({
   const topStories = ranked.slice(0, TOP_STORIES_COUNT);
   const rest = ranked.slice(TOP_STORIES_COUNT);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
 
-  const scrollByCard = useCallback((dir: -1 | 1) => {
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
+
+  useEffect(() => {
+    setActiveIndex((i) => (topStories.length === 0 ? 0 : Math.min(i, topStories.length - 1)));
+  }, [topStories.length]);
+
+  const scrollToIndex = useCallback(
+    (index: number, behavior: ScrollBehavior = 'smooth') => {
+      const el = scrollerRef.current;
+      if (!el || topStories.length === 0) return;
+      const cards = el.querySelectorAll<HTMLElement>('[data-top-story]');
+      const card = cards[index];
+      if (!card) return;
+      el.scrollTo({ left: card.offsetLeft - el.offsetLeft, behavior });
+    },
+    [topStories.length],
+  );
+
+  const scrollByCard = useCallback(
+    (dir: -1 | 1) => {
+      if (topStories.length === 0) return;
+      setActiveIndex((current) => {
+        const next =
+          dir === 1
+            ? current >= topStories.length - 1
+              ? 0
+              : current + 1
+            : current <= 0
+              ? topStories.length - 1
+              : current - 1;
+        scrollToIndex(next);
+        return next;
+      });
+    },
+    [scrollToIndex, topStories.length],
+  );
+
+  useEffect(() => {
+    if (topStories.length < 2) return;
+    const timer = window.setInterval(() => {
+      if (pausedRef.current) return;
+      setActiveIndex((current) => {
+        const next = current >= topStories.length - 1 ? 0 : current + 1;
+        scrollToIndex(next);
+        return next;
+      });
+    }, TOP_STORIES_AUTO_MS);
+    return () => window.clearInterval(timer);
+  }, [scrollToIndex, topStories.length]);
+
+  const handleScrollerScroll = useCallback(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    const card = el.querySelector<HTMLElement>('[data-top-story]');
-    const step = card ? card.offsetWidth + 16 : el.clientWidth * 0.7;
-    el.scrollBy({ left: dir * step, behavior: 'smooth' });
+    const cards = Array.from(el.querySelectorAll<HTMLElement>('[data-top-story]'));
+    if (cards.length === 0) return;
+    const scrollLeft = el.scrollLeft;
+    let nearest = 0;
+    let minDist = Number.POSITIVE_INFINITY;
+    cards.forEach((card, i) => {
+      const dist = Math.abs(card.offsetLeft - el.offsetLeft - scrollLeft);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = i;
+      }
+    });
+    setActiveIndex(nearest);
   }, []);
 
   return (
@@ -148,18 +214,31 @@ export default function NewsHeadlinesExpandedView({
       </div>
 
       {topStories.length > 0 && (
-        <div className="relative group/carousel">
+        <div
+          className="relative group/carousel pb-5"
+          onMouseEnter={() => setPaused(true)}
+          onMouseLeave={() => setPaused(false)}
+          onFocusCapture={() => setPaused(true)}
+          onBlurCapture={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              setPaused(false);
+            }
+          }}
+        >
           <div
             ref={scrollerRef}
+            onScroll={handleScrollerScroll}
             className="flex gap-4 overflow-x-auto pb-1 snap-x snap-mandatory scroll-smooth [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           >
-            {topStories.map((a) => {
+            {topStories.map((a, index) => {
               const title = a.title || a.url || 'Untitled';
               return (
                 <article
                   key={a.id}
                   data-top-story
-                  className="relative snap-start shrink-0 w-[min(22rem,78%)] sm:w-[min(24rem,46%)] h-52 sm:h-56 rounded-xl overflow-hidden cursor-pointer"
+                  className={`relative snap-start shrink-0 w-[min(22rem,78%)] sm:w-[min(24rem,46%)] h-52 sm:h-56 rounded-xl overflow-hidden cursor-pointer transition-[box-shadow,ring] duration-300 ${
+                    index === activeIndex ? 'ring-2 ring-cyan-500/80 shadow-lg' : 'ring-1 ring-black/10'
+                  }`}
                   onClick={() => onOpenArticle(a)}
                 >
                   {a.image ? (
@@ -193,7 +272,7 @@ export default function NewsHeadlinesExpandedView({
               );
             })}
           </div>
-          {topStories.length > 2 && (
+          {topStories.length > 1 && (
             <>
               <button
                 type="button"
@@ -211,6 +290,29 @@ export default function NewsHeadlinesExpandedView({
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
+              <div
+                className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5"
+                role="tablist"
+                aria-label="Top stories pages"
+              >
+                {topStories.map((story, i) => (
+                  <button
+                    key={story.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveIndex(i);
+                      scrollToIndex(i);
+                    }}
+                    className={`rounded-full transition-all ${
+                      i === activeIndex
+                        ? 'w-2 h-2 bg-gray-700 shadow-sm'
+                        : 'w-1.5 h-1.5 bg-gray-300 hover:bg-gray-500'
+                    }`}
+                    aria-label={`Top story ${i + 1}`}
+                    aria-current={i === activeIndex ? 'true' : undefined}
+                  />
+                ))}
+              </div>
             </>
           )}
         </div>

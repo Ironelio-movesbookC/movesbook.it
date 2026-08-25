@@ -387,6 +387,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
               originalAuthor: true,
               method: true,
               image: true,
+              briefDesc: true,
+              internetLink: true,
               category: { select: { categoryName: true } },
             },
           },
@@ -403,6 +405,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
           categoryName: row.news.category?.categoryName ?? null,
           method: row.news.method,
           image: row.news.image,
+          briefDesc: row.news.briefDesc,
+          internetLink: row.news.internetLink,
           sharedAt: row.createdAt.toISOString(),
           inClubGlobalNews: row.inClubGlobalNews === true,
         });
@@ -561,7 +565,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         : new Date(b.sharedAt).getTime() - new Date(a.sharedAt).getTime(),
     );
 
-    return NextResponse.json({ items });
+    return NextResponse.json({ items, isClubAdmin: access.isClubAdmin });
   } catch (error) {
     console.error('Fetch club shared news:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

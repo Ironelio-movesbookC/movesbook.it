@@ -72,6 +72,8 @@ export type ClubSharedFeedItem =
       categoryName: string | null;
       method: string | null;
       image: string | null;
+      briefDesc: string | null;
+      internetLink: string | null;
       sharedAt: string;
       inClubGlobalNews: boolean;
     }

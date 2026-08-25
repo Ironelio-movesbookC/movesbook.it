@@ -1,9 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { BookOpen, ExternalLink, Globe, Loader2, Newspaper, X } from 'lucide-react';
 import type { GlobalNewsFeedItem } from '@/lib/globalNewsAuth';
+import SharedNewsItemPreviewModal, {
+  previewPayloadFromFeedItem,
+  type SharedNewsPreviewPayload,
+} from '@/components/news/SharedNewsItemPreviewModal';
 
 type ClubMovesbookNewsPanelProps = {
   onClose?: () => void;
@@ -41,6 +44,7 @@ export default function ClubMovesbookNewsPanel({
   const [items, setItems] = useState<GlobalNewsFeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<SharedNewsPreviewPayload | null>(null);
 
   const loadItems = useCallback(async () => {
     const token = localStorage.getItem('token');
@@ -70,6 +74,10 @@ export default function ClubMovesbookNewsPanel({
   useEffect(() => {
     void loadItems();
   }, [loadItems]);
+
+  const openPreview = useCallback((item: GlobalNewsFeedItem) => {
+    setPreview(previewPayloadFromFeedItem(item));
+  }, []);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -113,100 +121,93 @@ export default function ClubMovesbookNewsPanel({
           <ul className="mx-auto max-w-5xl space-y-3">
             {items.map((item) => {
               const titleText = itemTitle(item);
-              const viewHref =
-                item.kind === 'news'
-                  ? `/news-by-movesbook/${item.id}`
-                  : item.url;
 
               return (
-                <li
-                  key={`${item.kind}-${item.id}`}
-                  className="flex gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
-                >
-                  <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
-                    {item.image ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={
-                          item.kind === 'news' &&
-                          item.image &&
-                          !item.image.startsWith('/') &&
-                          !item.image.startsWith('http')
-                            ? `/img/news/${item.image}`
-                            : item.image
-                        }
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-400">
-                        {item.kind === 'news' ? (
-                          <Newspaper className="h-8 w-8" />
-                        ) : (
-                          <Globe className="h-8 w-8" />
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${
-                          item.kind === 'news'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-teal-100 text-teal-800'
-                        }`}
-                      >
-                        {item.kind === 'news' ? 'News' : 'OGP News'}
-                      </span>
-                      <span className="text-xs text-gray-500">{formatDate(item.date)}</span>
-                    </div>
-
-                    <h3 className="line-clamp-2 text-base font-semibold text-gray-900">
-                      {titleText}
-                    </h3>
-
-                    <p className="mt-1 line-clamp-2 text-sm text-gray-600">
-                      {item.kind === 'news'
-                        ? [item.categoryName, item.method, item.author]
-                            .filter(Boolean)
-                            .join(' · ')
-                        : [
-                            item.topic,
-                            item.creatorUsername ? `by ${item.creatorUsername}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                    </p>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      {item.kind === 'ogp' ? (
-                        <a
-                          href={viewHref || '#'}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:text-teal-900"
-                        >
-                          Open link
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
+                <li key={`${item.kind}-${item.id}`}>
+                  <button
+                    type="button"
+                    onClick={() => openPreview(item)}
+                    className="flex w-full gap-4 rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md"
+                  >
+                    <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+                      {item.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={
+                            item.kind === 'news' &&
+                            item.image &&
+                            !item.image.startsWith('/') &&
+                            !item.image.startsWith('http')
+                              ? `/img/news/${item.image}`
+                              : item.image
+                          }
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
                       ) : (
-                        <Link
-                          href={viewHref}
-                          className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:text-teal-900"
-                        >
-                          View article
-                        </Link>
+                        <div className="flex h-full w-full items-center justify-center text-gray-400">
+                          {item.kind === 'news' ? (
+                            <Newspaper className="h-8 w-8" />
+                          ) : (
+                            <Globe className="h-8 w-8" />
+                          )}
+                        </div>
                       )}
                     </div>
-                  </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${
+                            item.kind === 'news'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-teal-100 text-teal-800'
+                          }`}
+                        >
+                          {item.kind === 'news' ? 'News' : 'OGP News'}
+                        </span>
+                        <span className="text-xs text-gray-500">{formatDate(item.date)}</span>
+                      </div>
+
+                      <h3 className="line-clamp-2 text-base font-semibold text-gray-900">
+                        {titleText}
+                      </h3>
+
+                      <p className="mt-1 line-clamp-2 text-sm text-gray-600">
+                        {item.kind === 'news'
+                          ? [item.categoryName, item.method, item.author]
+                              .filter(Boolean)
+                              .join(' · ')
+                          : [
+                              item.topic,
+                              item.creatorUsername ? `by ${item.creatorUsername}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                      </p>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700">
+                          {item.kind === 'ogp' ? (
+                            <>
+                              Open link
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </>
+                          ) : (
+                            'View article'
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
                 </li>
               );
             })}
           </ul>
         )}
       </div>
+
+      <SharedNewsItemPreviewModal item={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }
