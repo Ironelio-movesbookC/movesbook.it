@@ -949,44 +949,56 @@ export default function AdminChatExperience({
 
   const onChannelPhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') return;
-      const dataUrl = reader.result;
-      setChannelPhoto(dataUrl);
-      try {
-        localStorage.setItem(photoKey, dataUrl);
-      } catch {
-        /* ignore quota */
-      }
-      void (async () => {
-        try {
-          const res = await fetch('/api/chat/channel-settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({
-              photoDataUrl: dataUrl,
-              ...(clubId ? { clubId } : {}),
-            }),
-          });
-          if (!res.ok) return;
-          const data = await res.json();
-          if (typeof data.channelPhoto === 'string' && data.channelPhoto.trim()) {
-            setChannelPhoto(data.channelPhoto);
-            try {
-              localStorage.setItem(photoKey, data.channelPhoto);
-            } catch {
-              /* ignore */
-            }
-          }
-        } catch {
-          /* ignore */
-        }
-      })();
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Only image files are allowed.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image is too large (max 5MB).');
+      return;
+    }
+
+    void (async () => {
+      try {
+        // Same pattern as operator / athlete avatar: multipart file → server stores data URL.
+        const form = new FormData();
+        form.append('file', file);
+        if (clubId) form.append('clubId', clubId);
+
+        const res = await fetch('/api/chat/channel-settings', {
+          method: 'POST',
+          headers: { ...getAuthHeaders() },
+          body: form,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert(
+            typeof (data as { error?: string }).error === 'string'
+              ? (data as { error: string }).error
+              : 'Failed to upload channel photo'
+          );
+          return;
+        }
+        const photo =
+          typeof (data as { channelPhoto?: string }).channelPhoto === 'string'
+            ? (data as { channelPhoto: string }).channelPhoto.trim()
+            : '';
+        if (!photo) {
+          alert('Failed to upload channel photo');
+          return;
+        }
+        setChannelPhoto(photo);
+        try {
+          localStorage.setItem(photoKey, photo);
+        } catch {
+          /* ignore quota */
+        }
+      } catch {
+        alert('Failed to upload channel photo');
+      }
+    })();
   };
 
   const filteredSubscribers =

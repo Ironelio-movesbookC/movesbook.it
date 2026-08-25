@@ -35,7 +35,10 @@ import CreateClubModal, { type CreateClubFormPayload } from '@/components/club/C
 import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/ChangeBannerModal';
 import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
-import { ClubWorkspaceContext } from '@/contexts/ClubWorkspaceContext';
+import {
+  ClubWorkspaceContext,
+  type ClubMyPageNewsPanel,
+} from '@/contexts/ClubWorkspaceContext';
 import { clubProfilePayloadForApi } from '@/lib/club/clubProfilePayload';
 import { type CreatableCompaniesQuota } from '@/lib/club/creatableCompaniesQuota.shared';
 import {
@@ -103,6 +106,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const [showChatAudienceModal, setShowChatAudienceModal] = useState(false);
   const [chatAudience, setChatAudience] = useState<ChatAudience | null>(null);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [myPageNewsPanel, setMyPageNewsPanel] = useState<ClubMyPageNewsPanel>(null);
 
   const showMyClubTab = useCallback(() => {
     setMyClubTabVisible(true);
@@ -388,10 +392,12 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     if (tab === 'my-page') {
       clearEntityCompanyLoginSession();
       hideMyClubTab();
+      setMyPageNewsPanel(null);
     } else {
       setShowChatPanel(false);
       setChatAudience(null);
       setShowStaffFeedbacks(false);
+      setMyPageNewsPanel(null);
     }
     writeClubWorkspaceTab(tab);
     setActiveTab(tab);
@@ -404,6 +410,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
         setSelectedClubId(clubId);
         writeClubWorkspaceTab('my-entity');
         setActiveTab('my-entity');
+        setMyPageNewsPanel(null);
         showMyClubTab();
       };
 
@@ -427,6 +434,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     setActiveTab('my-page');
     setShowChatPanel(false);
     setChatAudience(null);
+    setMyPageNewsPanel(null);
     if (pathname !== '/club/dashboard') {
       router.push('/club/dashboard');
     }
@@ -443,6 +451,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
 
     writeClubWorkspaceTab('my-entity');
     setActiveTab('my-entity');
+    setMyPageNewsPanel(null);
     router.push(`/my-club?clubId=${encodeURIComponent(clubId)}`);
   }, [selectedClubId, formClubs, router]);
 
@@ -506,6 +515,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
         | 'identification-devices'
         | 'outcome-settings'
         | 'news'
+        | 'mb-news'
         | 'suggest-movesbook'
         | 'chat'
         | 'club-news'
@@ -521,6 +531,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
       }
       writeClubWorkspaceTab('my-entity');
       setActiveTab('my-entity');
+      setMyPageNewsPanel(null);
 
       if (panel === 'outcome-settings') {
         const qs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
@@ -528,10 +539,30 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const query = panel === 'news' ? 'open=news' : `panel=${panel}`;
+      const query =
+        panel === 'news'
+          ? 'open=news'
+          : panel === 'mb-news'
+            ? 'panel=mb-news'
+            : `panel=${panel}`;
       router.push(`/club/dashboard?${query}`);
     },
     [formClubs, hasFormClub, router, selectedClubId],
+  );
+
+  const openMyPageNewsPanel = useCallback(
+    (panel: Exclude<ClubMyPageNewsPanel, null>) => {
+      setShowStaffFeedbacks(false);
+      setShowChatPanel(false);
+      setChatAudience(null);
+      writeClubWorkspaceTab('my-page');
+      setActiveTab('my-page');
+      setMyPageNewsPanel(panel);
+      if (pathname !== '/club/dashboard') {
+        router.push('/club/dashboard');
+      }
+    },
+    [pathname, router],
   );
 
   if (loading || !user || !canAccessClubWorkspace(user.userType)) {
@@ -540,7 +571,12 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
 
   return (
     <ClubWorkspaceContext.Provider
-      value={{ activeTab: shellActiveTab, selectedClubId }}
+      value={{
+        activeTab: shellActiveTab,
+        selectedClubId,
+        myPageNewsPanel,
+        setMyPageNewsPanel,
+      }}
     >
     <div className="bg-gray-50 flex flex-col min-h-screen">
       <ModernNavbar />
@@ -606,11 +642,15 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onClubMovesbookNewsSectionClick={() => goToDashboardPanel('club-movesbook-news')}
                 onClubOgpNewsSectionClick={() => goToDashboardPanel('club-news-ogp')}
                 onClubGlobalNewsSectionClick={() => goToDashboardPanel('club-global-news')}
+                onMyPageMovesbookNewsClick={() => openMyPageNewsPanel('movesbook-news')}
+                onMyPageNewsClick={() => openMyPageNewsPanel('mb-news')}
+                onMyPageOgpNewsClick={() => openMyPageNewsPanel('ogp-news')}
                 onCreateClubClick={openCreateClubFlow}
                 creatableCompaniesQuota={creatableCompaniesQuota}
                 onMyFeedbacksStaffClick={() => {
                   setShowChatPanel(false);
                   setChatAudience(null);
+                  setMyPageNewsPanel(null);
                   setActiveTab('my-page');
                   setShowStaffFeedbacks(true);
                 }}

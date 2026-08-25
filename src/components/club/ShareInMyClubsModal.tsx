@@ -1,10 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Building2, Check, Loader2, X } from 'lucide-react';
 import { formatMyClubsSidebarLabel } from '@/lib/club/clubSidebarLabel';
 
-export type ShareInMyClubsKind = 'ogp' | 'news';
+export type ShareInMyClubsKind = 'ogp' | 'ogp-group' | 'news';
+
+/** Share into club OGP/News feed (default) vs Club Global News. */
+type ShareDestination = 'club-feed' | 'global';
+
+function destinationLabels(kind: ShareInMyClubsKind): { club: string; global: string } {
+  if (kind === 'news') return { club: 'News', global: 'Global News' };
+  return { club: 'OGP News', global: 'Global News' };
+}
 
 type MyClubOption = {
   id: string;
@@ -39,6 +48,8 @@ export default function ShareInMyClubsModal({
   const [clubs, setClubs] = useState<MyClubOption[]>([]);
   const [loadingClubs, setLoadingClubs] = useState(false);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
+  /** Per-club share destination; defaults to club OGP/News feed. */
+  const [clubDestinations, setClubDestinations] = useState<Record<string, ShareDestination>>({});
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -65,6 +76,7 @@ export default function ShareInMyClubsModal({
   useEffect(() => {
     if (!isOpen) return;
     setSelectedClubId(null);
+    setClubDestinations({});
     setPassword('');
     setError(null);
     setSubmitting(false);
@@ -72,12 +84,23 @@ export default function ShareInMyClubsModal({
     void loadClubs();
   }, [isOpen, loadClubs]);
 
+  const destLabels = destinationLabels(kind);
+
+  const getClubDestination = (clubId: string): ShareDestination =>
+    clubDestinations[clubId] ?? 'club-feed';
+
+  const setClubDestination = (clubId: string, destination: ShareDestination) => {
+    setClubDestinations((prev) => ({ ...prev, [clubId]: destination }));
+  };
+
   if (!isOpen) return null;
 
   const shareEndpoint =
-    kind === 'ogp'
-      ? `/api/clubs/shared-news/ogp/${itemId}`
-      : `/api/clubs/shared-news/news/${itemId}`;
+    kind === 'ogp-group'
+      ? `/api/clubs/shared-news/ogp-group/${itemId}`
+      : kind === 'ogp'
+        ? `/api/clubs/shared-news/ogp/${itemId}`
+        : `/api/clubs/shared-news/news/${itemId}`;
 
   const handleShare = async () => {
     if (!selectedClubId) {
@@ -105,7 +128,11 @@ export default function ShareInMyClubsModal({
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ clubId: selectedClubId, password: trimmed }),
+        body: JSON.stringify({
+          clubId: selectedClubId,
+          password: trimmed,
+          inClubGlobalNews: getClubDestination(selectedClubId) === 'global',
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
@@ -149,14 +176,18 @@ export default function ShareInMyClubsModal({
   const labelForClub = (club: MyClubOption) =>
     club.sidebarLabel || formatMyClubsSidebarLabel(club);
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/55 p-4"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="share-in-my-clubs-title"
+      onClick={onClose}
     >
-      <div className="relative w-full max-w-lg border border-gray-400 bg-[#f3f3f3] shadow-2xl">
+      <div
+        className="relative w-full max-w-xl max-h-[90vh] overflow-hidden border border-gray-400 bg-[#f3f3f3] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           onClick={onClose}
@@ -174,14 +205,20 @@ export default function ShareInMyClubsModal({
           Share in My Clubs
         </div>
 
-        <div className="space-y-4 p-5">
+        <div className="space-y-4 overflow-y-auto p-5 max-h-[calc(90vh-3rem)]">
           {itemTitle ? (
             <p className="text-sm text-gray-700">
               Share <span className="font-medium">&quot;{itemTitle}&quot;</span> into one of your clubs.
             </p>
           ) : (
             <p className="text-sm text-gray-700">
-              Select a club to share this {kind === 'ogp' ? 'OGP News' : 'News'} article.
+              Select a club to share this{' '}
+              {kind === 'ogp-group'
+                ? 'OGP News group'
+                : kind === 'ogp'
+                  ? 'OGP News'
+                  : 'News'}{' '}
+              {kind === 'ogp-group' ? '' : 'article'}.
             </p>
           )}
 
@@ -195,10 +232,11 @@ export default function ShareInMyClubsModal({
               You have no clubs yet. Create a club from the sidebar first.
             </p>
           ) : (
-            <div className="max-h-48 overflow-y-auto rounded border border-gray-300 bg-white">
+            <div className="max-h-56 overflow-y-auto rounded border border-gray-300 bg-white">
               {clubs.map((club) => {
                 const isShared = sharedClubIds.includes(club.id);
                 const isSelected = selectedClubId === club.id;
+                const destination = getClubDestination(club.id);
                 return (
                   <div
                     key={club.id}
@@ -216,23 +254,58 @@ export default function ShareInMyClubsModal({
                     >
                       <Building2 className="h-4 w-4 shrink-0 text-teal-700" />
                       <span className="truncate text-sm text-gray-900">{labelForClub(club)}</span>
-                      {isShared ? (
-                        <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-teal-700">
+                    </button>
+                    {isShared ? (
+                      <>
+                        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-teal-700">
                           <Check className="h-3.5 w-3.5" />
                           Shared
                         </span>
-                      ) : null}
-                    </button>
-                    {isShared ? (
-                      <button
-                        type="button"
-                        onClick={() => void handleUnshare(club.id)}
-                        disabled={removingClubId === club.id}
-                        className="shrink-0 text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
+                        <button
+                          type="button"
+                          onClick={() => void handleUnshare(club.id)}
+                          disabled={removingClubId === club.id}
+                          className="shrink-0 text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
+                        >
+                          {removingClubId === club.id ? 'Removing…' : 'Remove'}
+                        </button>
+                      </>
+                    ) : (
+                      <fieldset
+                        className="flex shrink-0 items-center gap-3 rounded border border-gray-300 bg-gray-50 px-2.5 py-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Share destination for ${labelForClub(club)}`}
                       >
-                        {removingClubId === club.id ? 'Removing…' : 'Remove'}
-                      </button>
-                    ) : null}
+                        <label className="inline-flex cursor-pointer items-center gap-1 text-xs text-gray-800">
+                          <input
+                            type="radio"
+                            name={`share-dest-${club.id}`}
+                            checked={destination === 'club-feed'}
+                            disabled={submitting}
+                            onChange={() => {
+                              setClubDestination(club.id, 'club-feed');
+                              setSelectedClubId(club.id);
+                            }}
+                            className="h-3.5 w-3.5 accent-[#6b1020]"
+                          />
+                          {destLabels.club}
+                        </label>
+                        <label className="inline-flex cursor-pointer items-center gap-1 text-xs text-gray-800">
+                          <input
+                            type="radio"
+                            name={`share-dest-${club.id}`}
+                            checked={destination === 'global'}
+                            disabled={submitting}
+                            onChange={() => {
+                              setClubDestination(club.id, 'global');
+                              setSelectedClubId(club.id);
+                            }}
+                            className="h-3.5 w-3.5 accent-[#6b1020]"
+                          />
+                          {destLabels.global}
+                        </label>
+                      </fieldset>
+                    )}
                   </div>
                 );
               })}
@@ -308,6 +381,7 @@ export default function ShareInMyClubsModal({
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

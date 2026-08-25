@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken, verifyPassword } from '@/lib/auth';
+import { verifyClubOwnership } from '@/lib/clubNewsShareAuth';
+import { isClubOgpAudienceMode } from '@/lib/clubOgpAudience';
 import * as serialize from 'php-serialize';
 
 export async function GET(request: NextRequest) {
@@ -165,6 +167,8 @@ export async function POST(request: NextRequest) {
       languageTitles,
       settings,
       relatedArticleIds,
+      shareToClubId,
+      audienceMode: audienceModeRaw,
     } = body;
 
     const username = writerUsername?.trim();
@@ -214,6 +218,26 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+
+    const clubIdToShare =
+      typeof shareToClubId === 'string' && shareToClubId.trim() ? shareToClubId.trim() : null;
+    if (clubIdToShare) {
+      const creator = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: { userType: true },
+      });
+      if (creator?.userType !== 'CLUB') {
+        return NextResponse.json({ error: 'Club admin only' }, { status: 403 });
+      }
+      const ownsClub = await verifyClubOwnership(decoded.userId, clubIdToShare);
+      if (!ownsClub) {
+        return NextResponse.json({ error: 'Club not found or access denied' }, { status: 403 });
+      }
+    }
+
+    const shareAudienceMode = isClubOgpAudienceMode(audienceModeRaw)
+      ? audienceModeRaw
+      : 'me-and-club-members';
 
     let actualLangValueId: string | null = null;
     if (langValueId) {
@@ -373,6 +397,21 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    let sharedClubIds: string[] = [];
+    if (clubIdToShare) {
+      await prisma.clubSharedNews.upsert({
+        where: { clubId_newsId: { clubId: clubIdToShare, newsId: news.id } },
+        create: {
+          clubId: clubIdToShare,
+          newsId: news.id,
+          sharedById: decoded.userId,
+          audienceMode: shareAudienceMode,
+        },
+        update: { sharedById: decoded.userId, audienceMode: shareAudienceMode },
+      });
+      sharedClubIds = [clubIdToShare];
+    }
+
     const createdNews = await prisma.news.findUnique({
       where: { id: news.id },
       include: {
@@ -410,7 +449,10 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(createdNews, { status: 201 });
+    return NextResponse.json(
+      { ...createdNews, sharedClubIds, clubAudienceMode: clubIdToShare ? shareAudienceMode : undefined },
+      { status: 201 },
+    );
   } catch (error: any) {
     console.error('Error creating news:', error);
     return NextResponse.json(

@@ -14,11 +14,27 @@ export async function GET(request: NextRequest) {
     const idsParam = request.nextUrl.searchParams.get('ids') ?? '';
     const ids = idsParam.split(',').map((s) => s.trim()).filter(Boolean);
 
-    if (!kind || (kind !== 'ogp' && kind !== 'news')) {
-      return NextResponse.json({ error: 'kind must be ogp or news' }, { status: 400 });
+    if (!kind || (kind !== 'ogp' && kind !== 'news' && kind !== 'ogp-group')) {
+      return NextResponse.json({ error: 'kind must be ogp, ogp-group, or news' }, { status: 400 });
     }
     if (ids.length === 0) {
       return NextResponse.json({ sharedByItem: {} });
+    }
+
+    if (kind === 'ogp-group') {
+      const rows = await prisma.clubSharedOgpGroup.findMany({
+        where: {
+          sharedById: auth.userId,
+          ogpNewsGroupId: { in: ids },
+        },
+        select: { ogpNewsGroupId: true, clubId: true },
+      });
+      const sharedByItem: Record<string, string[]> = {};
+      for (const row of rows) {
+        if (!sharedByItem[row.ogpNewsGroupId]) sharedByItem[row.ogpNewsGroupId] = [];
+        sharedByItem[row.ogpNewsGroupId].push(row.clubId);
+      }
+      return NextResponse.json({ sharedByItem });
     }
 
     if (kind === 'ogp') {

@@ -50,10 +50,13 @@ model User {
   telegramAccount          String?
   telegramChatId           String?   // Telegram chat id for sending/receiving via bot
   lastSeenAt               DateTime? // For chat online/offline status
-  image                    String?   // Profile/avatar image URL or path (users_new table)
-  profileBanner            String?   // Cover/banner image path (legacy single-user banner background)
+  /// Profile/avatar: public path, remote URL, or data URL (operator-style upload stores data:image/...).
+  image                    String?   @db.LongText
+  /// Cover/banner: public path, remote URL, or data URL (banner-upload stores data:image/...).
+  profileBanner            String?   @db.LongText
   profileBannerAlignment   String?   // "center" | "default" — object-position for cover (legacy)
-  profileBannerSequence    String?   @db.Text // JSON string[] of public image paths for rotating banner
+  /// JSON string[] of banner paths / data URLs for rotating cover
+  profileBannerSequence    String?   @db.LongText
   profileBannerVideo       String?   // Uploaded cover video path (public URL under /uploads/...)
   /// Personal YouTube URL (channel, @handle, or video) for "My channel on YouTube" on My Page.
   youtubeChannelUrl        String?   @db.Text
@@ -104,6 +107,7 @@ model User {
   procedureReceiptsAsMember    ProcedureReceipt[] @relation("ProcedureReceiptMember")
   procedureReceiptsAsOperator  ProcedureReceipt[] @relation("ProcedureReceiptOperator")
   clubSharedOgpArticles        ClubSharedOgpArticle[] @relation("ClubSharedOgpBy")
+  clubSharedOgpGroups          ClubSharedOgpGroup[]   @relation("ClubSharedOgpGroupBy")
   clubSharedNews               ClubSharedNews[]       @relation("ClubSharedNewsBy")
   clubStaffRoles               ClubStaff[]
 
@@ -258,6 +262,7 @@ model OgpNewsGroup {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   items                 OgpNewsGroupItem[]
   likes                 OgpNewsGroupLike[]
+  clubShares            ClubSharedOgpGroup[]
 
   @@unique([userId, name])
   @@index([userId])
@@ -1664,11 +1669,33 @@ model Club {
   customOutcomes     ClubCustomOutcome[]
   admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
   sharedOgpArticles  ClubSharedOgpArticle[]
+  sharedOgpGroups    ClubSharedOgpGroup[]
   sharedNews         ClubSharedNews[]
   staff              ClubStaff[]
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
   @@map("clubs_new")
+}
+
+/// OGP News group shared by a club admin into one of their clubs.
+model ClubSharedOgpGroup {
+  id               String       @id @default(cuid())
+  clubId           String
+  ogpNewsGroupId   String
+  sharedById       String
+  inClubGlobalNews Boolean      @default(false)
+  audienceMode     String       @default("me-and-club-members")
+  createdAt        DateTime     @default(now())
+  club             Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  ogpNewsGroup     OgpNewsGroup @relation(fields: [ogpNewsGroupId], references: [id], onDelete: Cascade)
+  sharedBy         User         @relation("ClubSharedOgpGroupBy", fields: [sharedById], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, ogpNewsGroupId])
+  @@index([clubId])
+  @@index([ogpNewsGroupId])
+  @@index([sharedById])
+  @@index([clubId, inClubGlobalNews])
+  @@map("club_shared_ogp_groups")
 }
 
 /// OGP News article shared by a club admin into one of their clubs.
@@ -1702,7 +1729,9 @@ model ClubSharedNews {
   sharedById       String
   /// Club admin: promoted into Club Global News merged feed for this club.
   inClubGlobalNews Boolean  @default(false)
-  createdAt        DateTime @default(now())
+  /// Club News audience: only-me | me-and-club-members | me-club-members-and-filters
+  audienceMode      String   @default("me-and-club-members")
+  createdAt         DateTime @default(now())
   club             Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
   news             News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
   sharedBy         User     @relation("ClubSharedNewsBy", fields: [sharedById], references: [id], onDelete: Cascade)

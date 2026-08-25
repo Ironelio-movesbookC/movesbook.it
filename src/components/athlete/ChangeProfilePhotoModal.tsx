@@ -91,6 +91,7 @@ export default function ChangeProfilePhotoModal({
 
     setUploading(true);
     try {
+      // Same flow as operator "Change photo": one POST → data URL saved on the user row.
       const formData = new FormData();
       formData.append('file', selectedFile);
       const uploadRes = await fetch('/api/user/profile/avatar-upload', {
@@ -103,29 +104,19 @@ export default function ChangeProfilePhotoModal({
         setError((uploadData as { error?: string }).error || t('change_profile_photo_error_upload'));
         return;
       }
-      const path = (uploadData as { path?: string }).path;
-      if (!path) {
+
+      const imageUrl =
+        String(
+          (uploadData as { imageUrl?: string; path?: string }).imageUrl ??
+            (uploadData as { path?: string }).path ??
+            '',
+        ) || null;
+      if (!imageUrl) {
         setError(t('change_profile_photo_error_upload'));
         return;
       }
 
-      const patchRes = await fetch('/api/user/profile', {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image: path }),
-      });
-
-      const patchData = await patchRes.json().catch(() => ({}));
-      if (!patchRes.ok) {
-        setError((patchData as { error?: string }).error || t('change_banner_error_save'));
-        return;
-      }
-
-      const user = (patchData as { user?: { image?: string | null } }).user;
-      onSaved({ image: user?.image ?? path });
+      onSaved({ image: imageUrl });
       resetLocal();
       handleClose();
     } catch {
@@ -183,7 +174,7 @@ export default function ChangeProfilePhotoModal({
           <input
             ref={inputRef}
             type="file"
-            accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+            accept="image/*"
             className="hidden"
             onChange={handleFileChange}
           />

@@ -16,7 +16,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const auth = await requireClubAdmin(request);
     if (auth instanceof NextResponse) return auth;
 
-    const { id: ogpArticleId } = await context.params;
+    const { id: ogpNewsGroupId } = await context.params;
     const body = (await request.json()) as {
       clubId?: string;
       password?: string;
@@ -43,19 +43,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Club not found or access denied' }, { status: 403 });
     }
 
-    const article = await prisma.ogpArticle.findFirst({
-      where: { id: ogpArticleId, deletedAt: null },
+    const group = await prisma.ogpNewsGroup.findFirst({
+      where: { id: ogpNewsGroupId, deletedAt: null },
       select: { id: true },
     });
-    if (!article) {
-      return NextResponse.json({ error: 'OGP article not found' }, { status: 404 });
+    if (!group) {
+      return NextResponse.json({ error: 'OGP News group not found' }, { status: 404 });
     }
 
-    const share = await prisma.clubSharedOgpArticle.upsert({
-      where: { clubId_ogpArticleId: { clubId, ogpArticleId } },
+    const share = await prisma.clubSharedOgpGroup.upsert({
+      where: { clubId_ogpNewsGroupId: { clubId, ogpNewsGroupId } },
       create: {
         clubId,
-        ogpArticleId,
+        ogpNewsGroupId,
         sharedById: auth.userId,
         ...(hasGlobalFlag ? { inClubGlobalNews: body.inClubGlobalNews } : {}),
       },
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       select: {
         id: true,
         clubId: true,
-        ogpArticleId: true,
+        ogpNewsGroupId: true,
         inClubGlobalNews: true,
         createdAt: true,
       },
@@ -75,12 +75,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({
       shareId: share.id,
       clubId: share.clubId,
-      ogpArticleId: share.ogpArticleId,
+      ogpNewsGroupId: share.ogpNewsGroupId,
       inClubGlobalNews: share.inClubGlobalNews,
       sharedAt: share.createdAt.toISOString(),
     });
   } catch (error) {
-    console.error('Share OGP to club:', error);
+    console.error('Share OGP group to club:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -90,7 +90,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     const auth = await requireClubAdmin(request);
     if (auth instanceof NextResponse) return auth;
 
-    const { id: ogpArticleId } = await context.params;
+    const { id: ogpNewsGroupId } = await context.params;
     const clubId = request.nextUrl.searchParams.get('clubId')?.trim();
     if (!clubId) {
       return NextResponse.json({ error: 'clubId query param is required' }, { status: 400 });
@@ -101,13 +101,13 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Club not found or access denied' }, { status: 403 });
     }
 
-    await prisma.clubSharedOgpArticle.deleteMany({
-      where: { clubId, ogpArticleId, sharedById: auth.userId },
+    await prisma.clubSharedOgpGroup.deleteMany({
+      where: { clubId, ogpNewsGroupId, sharedById: auth.userId },
     });
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error('Unshare OGP from club:', error);
+    console.error('Unshare OGP group from club:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -118,7 +118,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const auth = await requireClubAdmin(request);
     if (auth instanceof NextResponse) return auth;
 
-    const { id: ogpArticleId } = await context.params;
+    const { id: ogpNewsGroupId } = await context.params;
     const body = (await request.json().catch(() => ({}))) as {
       clubId?: string;
       inClubGlobalNews?: boolean;
@@ -143,27 +143,31 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Club not found or access denied' }, { status: 403 });
     }
 
-    const existing = await prisma.clubSharedOgpArticle.findUnique({
-      where: { clubId_ogpArticleId: { clubId, ogpArticleId } },
+    const group = await prisma.ogpNewsGroup.findFirst({
+      where: { id: ogpNewsGroupId, deletedAt: null },
       select: { id: true },
     });
-    if (!existing) {
-      return NextResponse.json(
-        { error: 'OGP article is not shared to this club' },
-        { status: 404 },
-      );
+    if (!group) {
+      return NextResponse.json({ error: 'OGP News group not found' }, { status: 404 });
     }
 
-    const updated = await prisma.clubSharedOgpArticle.update({
-      where: { clubId_ogpArticleId: { clubId, ogpArticleId } },
-      data: {
+    const updated = await prisma.clubSharedOgpGroup.upsert({
+      where: { clubId_ogpNewsGroupId: { clubId, ogpNewsGroupId } },
+      create: {
+        clubId,
+        ogpNewsGroupId,
+        sharedById: auth.userId,
+        ...(hasGlobalFlag ? { inClubGlobalNews: body.inClubGlobalNews } : {}),
+        ...(audienceMode ? { audienceMode } : {}),
+      },
+      update: {
         ...(hasGlobalFlag ? { inClubGlobalNews: body.inClubGlobalNews } : {}),
         ...(audienceMode ? { audienceMode } : {}),
       },
       select: {
         id: true,
         clubId: true,
-        ogpArticleId: true,
+        ogpNewsGroupId: true,
         inClubGlobalNews: true,
         audienceMode: true,
       },
@@ -171,7 +175,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json(updated);
   } catch (error) {
-    console.error('PATCH club shared OGP:', error);
+    console.error('PATCH club shared OGP group:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

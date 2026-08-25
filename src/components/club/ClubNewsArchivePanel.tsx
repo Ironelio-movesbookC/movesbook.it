@@ -1,13 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, X } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, Plus, X } from 'lucide-react';
 import NewsList from '@/components/news/NewsList';
 import GetSocialBlock from '@/components/news/GetSocialBlock';
 import NewsToolbox from '@/components/news/NewsToolbox';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 interface Category {
   id: string;
@@ -257,7 +257,7 @@ export default function ClubNewsArchivePanel({
     [],
   );
 
-  const isClubAdmin = user?.userType ? isClubAccountUserType(user.userType) : false;
+  const isClubAdmin = user?.userType === 'CLUB';
   const currentLanguageCode =
     languages.find((l) => l.id === selectedLanguage)?.code || 'en';
 
@@ -278,6 +278,22 @@ export default function ClubNewsArchivePanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
+        {isClubAdmin && (
+          <div className="mb-4 flex justify-end">
+            <Link
+              href={
+                clubId
+                  ? `/news-by-movesbook/add?clubId=${encodeURIComponent(clubId)}&from=club`
+                  : '/news-by-movesbook/add'
+              }
+              className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white transition-colors hover:bg-blue-700 sm:px-4 sm:text-base"
+            >
+              <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span>{t('news_add_article')}</span>
+            </Link>
+          </div>
+        )}
+
         <NewsToolbox
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
