@@ -1460,10 +1460,13 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
                       <div className="flex gap-3">
                         <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-zinc-200">
                           {item.image ? (
-                            <img
+                            <Image
                               src={item.image}
                               alt=""
                               className="h-full w-full object-cover"
+                              width={56}
+                              height={56}
+                              unoptimized
                             />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center text-[10px] font-medium uppercase leading-tight text-zinc-500">

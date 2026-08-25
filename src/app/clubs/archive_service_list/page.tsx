@@ -159,9 +159,11 @@ function ArchiveServiceListInner() {
     load();
   }, [load]);
 
+  const effectiveIdsKey = effectiveIds.join(',');
+
   useEffect(() => {
     setPage(1);
-  }, [effectiveIds.join(','), filters.applied]);
+  }, [effectiveIdsKey, filters.applied]);
 
   function handleDeleteSelected() {
     const ids = Array.from(selectedIds);

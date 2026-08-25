@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, FolderOpen, Info, Loader2 } from 'lucide-react';
@@ -183,9 +184,9 @@ export default function ClubIdentificationDevicesPanel({ clubId }: ClubIdentific
       </div>
 
       <div className="flex flex-wrap gap-3 border border-gray-200 bg-gray-50 p-3">
-        <img src="/img/kde-reader.jpg" alt="" className="h-16 w-auto rounded border border-gray-200 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-        <img src="/img/lettore-Rfid%202.jpg" alt="" className="h-16 w-auto rounded border border-gray-200 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-        <img src="/img/lettore-rfid.jpg" alt="" className="h-16 w-auto rounded border border-gray-200 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        <Image src="/img/kde-reader.jpg" alt="" width={64} height={64} className="h-16 w-auto rounded border border-gray-200 object-contain" unoptimized onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        <Image src="/img/lettore-Rfid%202.jpg" alt="" width={64} height={64} className="h-16 w-auto rounded border border-gray-200 object-contain" unoptimized onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        <Image src="/img/lettore-rfid.jpg" alt="" width={64} height={64} className="h-16 w-auto rounded border border-gray-200 object-contain" unoptimized onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
       </div>
 
       <div className="border border-blue-200 bg-blue-700 px-4 py-2 text-base font-semibold text-white">

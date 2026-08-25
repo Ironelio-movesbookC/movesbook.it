@@ -271,7 +271,7 @@ const matchDate = (() => {
     const selectedRows = data.filter(row => row.checked);
     const htmlTable = generateHTMLTable(selectedRows, columns);
     setSendData(htmlTable);
-  }, [data]);
+  }, [data, columns]);
 
   return (
     <div className="py-6">

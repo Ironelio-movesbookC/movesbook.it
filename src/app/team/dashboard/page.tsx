@@ -138,7 +138,7 @@ function TeamDashboardContent() {
     } else {
       setShowLeftSidebar(true);
     }
-  }, [showWorkoutSection]);
+  }, [showWorkoutSection, setShowLeftSidebar]);
 
   const activeTeam = selectedTeamId
     ? formCreatedTeams.find((team) => team.id === selectedTeamId) ?? null

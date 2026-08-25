@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
@@ -694,7 +695,7 @@ export default function NotificationByPromocodeDashboardView() {
                       />
                     </td>
                     <td>
-                      <img src={promocodeProfileImageUrl(row.senderImage)} alt="" style={{ height: 55 }} />
+                      <Image src={promocodeProfileImageUrl(row.senderImage)} alt="" style={{ height: 55 }} width={55} height={55} unoptimized />
                     </td>
                     <td>{row.senderUsername}<br />{row.countryCode}</td>
                     <td>{row.version}</td>

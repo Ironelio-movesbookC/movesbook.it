@@ -151,6 +151,7 @@ export default function ClubMemberArchivePage({
     } finally {
       setLoading(false);
     }
+    void refreshKey; // parent bump forces reload
   }, [appliedFilters, page, pageSize, selectedGroupId, viewMode, refreshKey]);
 
   useEffect(() => {

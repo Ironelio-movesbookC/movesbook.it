@@ -1,6 +1,7 @@
 'use client';
+import Image from 'next/image';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -172,7 +173,7 @@ export default function PromocodeAddForm({
   const isEdit = mode === 'edit';
   const router = useRouter();
   const { showAlert, dialogs } = usePromocodeDialogs();
-  const now = new Date();
+  const now = useMemo(() => new Date(), []);
   const [meta, setMeta] = useState<PromocodeMeta | null>(null);
   const [code, setCode] = useState('');
   const [enable, setEnable] = useState(false);
@@ -282,28 +283,7 @@ export default function PromocodeAddForm({
     setHydrated(true);
   }, [isEdit, initialSetting, initialSocialOptions, hydrated]);
 
-  useEffect(() => {
-    if (!isEdit || !hydrated || !helpHtmlPagesId || !meta || !initialSetting) return;
-    const page = meta.helpHtmlPages.find((p) => p.id === helpHtmlPagesId);
-    if (page?.title) {
-      void getLanguageList(page.title, initialSetting.languageId ?? undefined);
-    }
-  }, [isEdit, hydrated, helpHtmlPagesId, meta, initialSetting]);
-
-  const refreshCode = async () => {
-    try {
-      const nextCode = await fetchGeneratedPromocode();
-      setCode(nextCode);
-    } catch (err) {
-      console.error('refreshCode:', err);
-      showAlert(
-        err instanceof Error ? err.message : 'Could not generate a new promocode.',
-        'Notice'
-      );
-    }
-  };
-
-  const getLanguageList = async (pageTitle: string, preferredLanguageId?: number) => {
+  const getLanguageList = useCallback(async (pageTitle: string, preferredLanguageId?: number) => {
     const res = await promocodesFetch('/api/admin/promocodes/language-list', {
       method: 'POST',
       body: JSON.stringify({ html_doc_title: pageTitle }),
@@ -333,6 +313,27 @@ export default function PromocodeAddForm({
     setLanguageOptions(options.length > 0 ? options : mergePromocodeLanguageOptions([]));
     if (preferredLanguageId != null && Number.isFinite(preferredLanguageId)) {
       setLanguageId(preferredLanguageId);
+    }
+  }, [meta]);
+
+  useEffect(() => {
+    if (!isEdit || !hydrated || !helpHtmlPagesId || !meta || !initialSetting) return;
+    const page = meta.helpHtmlPages.find((p) => p.id === helpHtmlPagesId);
+    if (page?.title) {
+      void getLanguageList(page.title, initialSetting.languageId ?? undefined);
+    }
+  }, [isEdit, hydrated, helpHtmlPagesId, meta, initialSetting, getLanguageList]);
+
+  const refreshCode = async () => {
+    try {
+      const nextCode = await fetchGeneratedPromocode();
+      setCode(nextCode);
+    } catch (err) {
+      console.error('refreshCode:', err);
+      showAlert(
+        err instanceof Error ? err.message : 'Could not generate a new promocode.',
+        'Notice'
+      );
     }
   };
 
@@ -749,7 +750,7 @@ export default function PromocodeAddForm({
                             />
                           </td>
                           <td className="end-icon">
-                            <img src="/img/send-smgs.jpg" alt="" />
+                            <Image src="/img/send-smgs.jpg" alt="" width={32} height={32} unoptimized />
                           </td>
                         </tr>
                         <tr>

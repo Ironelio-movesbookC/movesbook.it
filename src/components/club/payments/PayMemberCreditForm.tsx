@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
@@ -157,10 +158,13 @@ export default function PayMemberCreditForm() {
           <div className="flex w-[120px] shrink-0 flex-col items-center">
             <div className="flex h-[72px] w-[72px] items-center justify-center overflow-hidden border border-gray-400 bg-white">
               {memberImageUrl ? (
-                <img
+                <Image
                   src={memberImageUrl}
                   alt={selectedMember?.name || 'Member'}
+                  width={72}
+                  height={72}
                   className="h-full w-full object-cover"
+                  unoptimized
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).style.display = 'none';
                     const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;

@@ -102,6 +102,7 @@ export default function ClubArchivePage({
     } finally {
       setLoading(false);
     }
+    void refreshKey; // parent bump forces reload
   }, [archiveType, filters.applied, direction, page, pageSize, onEditItem, onDeleteItem, refreshKey]);
 
   useEffect(() => {

@@ -224,6 +224,7 @@ export default function ClubNewsArchivePanel({
     } finally {
       setLoading(false);
     }
+    void fetchKey; // bump from Show forces refetch even when filters unchanged
   }, [
     sharedWithClubOnly,
     clubId,

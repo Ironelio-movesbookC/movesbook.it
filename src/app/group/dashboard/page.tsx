@@ -200,7 +200,7 @@ function GroupDashboardContent() {
     } else {
       setShowLeftSidebar(true);
     }
-  }, [showWorkoutSection]);
+  }, [showWorkoutSection, setShowLeftSidebar]);
 
   if (loading || !user) {
     return null;
