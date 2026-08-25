@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Image from 'next/image';
-import { ChevronLeft, ChevronRight, Clock, MessageCircle, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock } from 'lucide-react';
 import type { ArticlePasted } from './NewsArticlesList';
 import { ogpDescriptionPlainText } from '@/components/shared/OgpRichDescription';
 import {
@@ -18,12 +18,17 @@ import {
 interface NewsHeadlinesExpandedViewProps {
   articles: ArticlePasted[];
   getViewCount: (article: ArticlePasted) => number;
-  likesMap: Record<string, { count: number; likedByMe: boolean }>;
-  likeLoadingId: string | null;
-  onLike: (id: string) => void;
   onOpenArticle: (article: ArticlePasted) => void;
   displayPicture: boolean;
   onDisplayPictureChange: (next: boolean) => void;
+  /** Same OGP News icon buttons as grid cards (Like, Share, Pencil, Eye, …). */
+  renderActions: (article: ArticlePasted) => ReactNode;
+  /** When true for an article, show description under the title (Eye expand). */
+  isArticleExpanded?: (articleId: string) => boolean;
+  /** 1-based page for the list below Top Stories (toolbar pagination). */
+  page?: number;
+  /** Items per page for the list below Top Stories. */
+  pageSize?: number;
 }
 
 function SourceMark({ article, light = false }: { article: ArticlePasted; light?: boolean }) {
@@ -55,61 +60,30 @@ function SourceMark({ article, light = false }: { article: ArticlePasted; light?
   );
 }
 
-function EngagementRow({
-  article,
-  likesMap,
-  likeLoadingId,
-  onLike,
-  light = false,
-}: {
-  article: ArticlePasted;
-  likesMap: Record<string, { count: number; likedByMe: boolean }>;
-  likeLoadingId: string | null;
-  onLike: (id: string) => void;
-  light?: boolean;
-}) {
-  const liked = likesMap[article.id]?.likedByMe;
-  const count = likesMap[article.id]?.count ?? 0;
-  const icon = light ? 'text-white/90 hover:text-white' : 'text-gray-500 hover:text-gray-800';
-
-  return (
-    <div className="flex items-center gap-3">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onLike(article.id);
-        }}
-        disabled={!!likeLoadingId}
-        className={`inline-flex items-center gap-1 ${icon} disabled:opacity-50`}
-        aria-label={liked ? 'Unlike' : 'Like'}
-      >
-        <ThumbsUp className={`w-3.5 h-3.5 ${liked ? 'fill-current' : ''}`} />
-        {count > 0 ? <span className="text-[11px] tabular-nums">{count}</span> : null}
-      </button>
-      <span className={`${icon} opacity-70`} aria-hidden>
-        <ThumbsDown className="w-3.5 h-3.5" />
-      </span>
-      <span className={`${icon} opacity-70`} aria-hidden>
-        <MessageCircle className="w-3.5 h-3.5" />
-      </span>
-    </div>
-  );
-}
-
 export default function NewsHeadlinesExpandedView({
   articles,
   getViewCount,
-  likesMap,
-  likeLoadingId,
-  onLike,
   onOpenArticle,
   displayPicture,
   onDisplayPictureChange,
+  renderActions,
+  isArticleExpanded,
+  page = 1,
+  pageSize,
 }: NewsHeadlinesExpandedViewProps) {
   const ranked = useMemo(() => rankHeadlines(articles, getViewCount), [articles, getViewCount]);
   const topStories = ranked.slice(0, TOP_STORIES_COUNT);
   const rest = ranked.slice(TOP_STORIES_COUNT);
+  const effectivePageSize = Math.max(1, pageSize ?? (rest.length || 1));
+  const safePage = Math.min(
+    Math.max(1, page),
+    Math.max(1, Math.ceil(rest.length / effectivePageSize) || 1),
+  );
+  const pagedRest = useMemo(() => {
+    if (pageSize == null) return rest;
+    const start = (safePage - 1) * effectivePageSize;
+    return rest.slice(start, start + effectivePageSize);
+  }, [rest, pageSize, safePage, effectivePageSize]);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -236,37 +210,38 @@ export default function NewsHeadlinesExpandedView({
                 <article
                   key={a.id}
                   data-top-story
-                  className={`relative snap-start shrink-0 w-[min(22rem,78%)] sm:w-[min(24rem,46%)] h-52 sm:h-56 rounded-xl overflow-hidden cursor-pointer transition-[box-shadow,ring] duration-300 ${
+                  className={`relative snap-start shrink-0 w-[min(22rem,78%)] sm:w-[min(24rem,46%)] rounded-xl overflow-hidden cursor-pointer transition-[box-shadow,ring] duration-300 flex flex-col bg-white border border-gray-200 ${
                     index === activeIndex ? 'ring-2 ring-cyan-500/80 shadow-lg' : 'ring-1 ring-black/10'
                   }`}
-                  onClick={() => onOpenArticle(a)}
                 >
-                  {a.image ? (
-                    <Image
-                      src={a.image}
-                      alt=""
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 640px) 80vw, 24rem"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-900" />
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
-                  <div className="absolute inset-x-0 bottom-0 p-3 flex flex-col gap-1.5">
-                    <div className="flex items-center gap-1.5 text-[12px] text-white/90">
-                      <SourceMark article={a} light />
-                      <span className="truncate">{sourceName(a)}</span>
+                  <button
+                    type="button"
+                    className="relative h-40 sm:h-44 w-full text-left shrink-0"
+                    onClick={() => onOpenArticle(a)}
+                  >
+                    {a.image ? (
+                      <Image
+                        src={a.image}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 640px) 80vw, 24rem"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-900" />
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+                    <div className="absolute inset-x-0 bottom-0 p-3 flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-[12px] text-white/90">
+                        <SourceMark article={a} light />
+                        <span className="truncate">{sourceName(a)}</span>
+                      </div>
+                      <h3 className="text-[15px] font-bold text-white leading-snug line-clamp-3">{title}</h3>
                     </div>
-                    <h3 className="text-[15px] font-bold text-white leading-snug line-clamp-3">{title}</h3>
-                    <EngagementRow
-                      article={a}
-                      likesMap={likesMap}
-                      likeLoadingId={likeLoadingId}
-                      onLike={onLike}
-                      light
-                    />
+                  </button>
+                  <div className="px-2.5 py-2 bg-white border-t border-gray-100">
+                    {renderActions(a)}
                   </div>
                 </article>
               );
@@ -277,7 +252,7 @@ export default function NewsHeadlinesExpandedView({
               <button
                 type="button"
                 onClick={() => scrollByCard(-1)}
-                className="absolute left-1 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-md bg-white/90 border border-gray-200 text-gray-800 shadow-sm hover:bg-white opacity-0 group-hover/carousel:opacity-100 focus:opacity-100"
+                className="absolute left-1 top-[5.5rem] -translate-y-1/2 z-10 p-1.5 rounded-md bg-white/90 border border-gray-200 text-gray-800 shadow-sm hover:bg-white opacity-0 group-hover/carousel:opacity-100 focus:opacity-100"
                 aria-label="Previous top stories"
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -285,7 +260,7 @@ export default function NewsHeadlinesExpandedView({
               <button
                 type="button"
                 onClick={() => scrollByCard(1)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-md bg-white/90 border border-gray-200 text-gray-800 shadow-sm hover:bg-white opacity-0 group-hover/carousel:opacity-100 focus:opacity-100"
+                className="absolute right-1 top-[5.5rem] -translate-y-1/2 z-10 p-1.5 rounded-md bg-white/90 border border-gray-200 text-gray-800 shadow-sm hover:bg-white opacity-0 group-hover/carousel:opacity-100 focus:opacity-100"
                 aria-label="Next top stories"
               >
                 <ChevronRight className="w-5 h-5" />
@@ -319,45 +294,57 @@ export default function NewsHeadlinesExpandedView({
       )}
 
       <div className="flex flex-col gap-3">
-        {rest.map((a) => {
+        {pagedRest.map((a) => {
           const title = a.title || a.url || 'Untitled';
           const minutes = estimateReadingMinutes(
             ogpDescriptionPlainText(a.customDescription, a.description, ''),
             a.title,
           );
           const showThumb = displayPicture && !!a.image;
+          const expanded = isArticleExpanded?.(a.id) === true;
+          const description = ogpDescriptionPlainText(a.customDescription, a.description, '');
           return (
             <article
               key={a.id}
-              className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden cursor-pointer hover:border-gray-300 transition-colors"
-              onClick={() => onOpenArticle(a)}
+              className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden hover:border-gray-300 transition-colors"
             >
               <div className="flex gap-3 p-3 sm:p-4">
                 <div className="flex-1 min-w-0 flex flex-col">
-                  <div className="flex items-center gap-1.5 text-[12px] text-gray-500">
-                    <SourceMark article={a} />
-                    <span className="truncate">{sourceName(a)}</span>
-                    <span aria-hidden>·</span>
-                    <span className="shrink-0">{formatRelativeShort(a.savedAt)}</span>
-                  </div>
-                  <h3 className="mt-1.5 text-base sm:text-lg font-bold text-gray-900 leading-snug line-clamp-3">
-                    {title}
-                  </h3>
+                  <button
+                    type="button"
+                    className="w-full text-left"
+                    onClick={() => onOpenArticle(a)}
+                  >
+                    <div className="flex items-center gap-1.5 text-[12px] text-gray-500">
+                      <SourceMark article={a} />
+                      <span className="truncate">{sourceName(a)}</span>
+                      <span aria-hidden>·</span>
+                      <span className="shrink-0">{formatRelativeShort(a.savedAt)}</span>
+                    </div>
+                    <h3 className="mt-1.5 text-base sm:text-lg font-bold text-gray-900 leading-snug line-clamp-3">
+                      {title}
+                    </h3>
+                    {expanded && description ? (
+                      <p className="mt-2 text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                        {description}
+                      </p>
+                    ) : null}
+                  </button>
                   <div className="mt-auto pt-3 flex items-center justify-between gap-3 flex-wrap">
-                    <EngagementRow
-                      article={a}
-                      likesMap={likesMap}
-                      likeLoadingId={likeLoadingId}
-                      onLike={onLike}
-                    />
-                    <span className="inline-flex items-center gap-1 text-[12px] text-emerald-600">
+                    {renderActions(a)}
+                    <span className="inline-flex items-center gap-1 text-[12px] text-emerald-600 shrink-0">
                       <Clock className="w-3.5 h-3.5" />
                       {minutes} min read
                     </span>
                   </div>
                 </div>
                 {showThumb && (
-                  <div className="relative w-28 sm:w-40 h-20 sm:h-24 rounded-lg overflow-hidden shrink-0">
+                  <button
+                    type="button"
+                    className="relative w-28 sm:w-40 h-20 sm:h-24 rounded-lg overflow-hidden shrink-0 self-start"
+                    onClick={() => onOpenArticle(a)}
+                    aria-label={`Open ${title}`}
+                  >
                     <Image
                       src={a.image!}
                       alt=""
@@ -366,7 +353,7 @@ export default function NewsHeadlinesExpandedView({
                       sizes="160px"
                       unoptimized
                     />
-                  </div>
+                  </button>
                 )}
               </div>
             </article>

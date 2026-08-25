@@ -7,6 +7,7 @@ import SharedNewsItemPreviewModal, {
   previewPayloadFromFeedItem,
   type SharedNewsPreviewPayload,
 } from '@/components/news/SharedNewsItemPreviewModal';
+import NewsFeedMetaLine from '@/components/news/NewsFeedMetaLine';
 
 type ClubMovesbookNewsPanelProps = {
   onClose?: () => void;
@@ -173,18 +174,12 @@ export default function ClubMovesbookNewsPanel({
                         {titleText}
                       </h3>
 
-                      <p className="mt-1 line-clamp-2 text-sm text-gray-600">
-                        {item.kind === 'news'
-                          ? [item.categoryName, item.method, item.author]
-                              .filter(Boolean)
-                              .join(' · ')
-                          : [
-                              item.topic,
-                              item.creatorUsername ? `by ${item.creatorUsername}` : null,
-                            ]
-                              .filter(Boolean)
-                              .join(' · ')}
-                      </p>
+                      <NewsFeedMetaLine
+                        kind={item.kind}
+                        sector={item.kind === 'news' ? item.categoryName : item.topic}
+                        mode={item.kind === 'news' ? item.method : null}
+                        postedBy={item.kind === 'news' ? item.author : item.creatorUsername}
+                      />
 
                       <div className="mt-3 flex flex-wrap items-center gap-3">
                         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700">
