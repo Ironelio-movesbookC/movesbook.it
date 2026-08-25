@@ -50,10 +50,13 @@ model User {
   telegramAccount          String?
   telegramChatId           String?   // Telegram chat id for sending/receiving via bot
   lastSeenAt               DateTime? // For chat online/offline status
-  image                    String?   // Profile/avatar image URL or path (users_new table)
-  profileBanner            String?   // Cover/banner image path (legacy single-user banner background)
+  /// Profile/avatar: public path, remote URL, or data URL (operator-style upload stores data:image/...).
+  image                    String?   @db.LongText
+  /// Cover/banner: public path, remote URL, or data URL (banner-upload stores data:image/...).
+  profileBanner            String?   @db.LongText
   profileBannerAlignment   String?   // "center" | "default" — object-position for cover (legacy)
-  profileBannerSequence    String?   @db.Text // JSON string[] of public image paths for rotating banner
+  /// JSON string[] of banner paths / data URLs for rotating cover
+  profileBannerSequence    String?   @db.LongText
   profileBannerVideo       String?   // Uploaded cover video path (public URL under /uploads/...)
   /// Personal YouTube URL (channel, @handle, or video) for "My channel on YouTube" on My Page.
   youtubeChannelUrl        String?   @db.Text
