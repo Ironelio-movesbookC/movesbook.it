@@ -11,6 +11,7 @@
         "start": "next start -p 3000",
         "lint": "next lint",
         "db:push": "prisma db push",
+        "db:fix-food-legacy-ids": "npx tsx scripts/fix-food-database-legacy-ids.ts",
         "db:migrate": "prisma migrate deploy",
         "db:studio": "prisma studio",
         "db:seed": "prisma db seed",
