@@ -12,10 +12,10 @@ import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLeg
 import StandardPageBanners, { profileToBannerProfile } from '@/components/layout/StandardPageBanners';
 import { useLanguage } from '@/contexts/LanguageContext';
 import ProfileSportsMultiSelect from '@/components/profile/ProfileSportsMultiSelect';
-import { formatSportLabel } from '@/lib/profileSports';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubAdminInfoForm from '@/components/profile/ClubAdminInfoForm';
+import MemberSelfProfilePanel from '@/components/profile/MemberSelfProfilePanel';
 
 interface UserProfileData {
   id: string;
@@ -99,18 +99,8 @@ function formatProfileDisplayDate(value: string | null | undefined): string {
   return d.toLocaleDateString();
 }
 
-function formatProfileField(value: string | null | undefined): string {
-  const trimmed = value?.trim();
-  return trimmed || '—';
-}
-
 function formatUserTypeLabel(userType: string): string {
   return userType.replace(/_/g, ' ');
-}
-
-function languageLabel(code: string): string {
-  const match = SUPPORTED_LANGUAGES.find((l) => l.code === code);
-  return match ? `${match.name} (${code.toUpperCase()})` : code.toUpperCase();
 }
 
 export default function UserProfile({
@@ -200,6 +190,11 @@ export default function UserProfile({
     const syncHash = () => {
       const hash = readProfileHash();
       setProfileHash(hash);
+      if (!hash) return;
+      if (profile && !isClubAccountUserType(profile.userType) && hash === 'member-profile') {
+        scrollToHash('member-info');
+        return;
+      }
       scrollToHash(window.location.hash);
     };
     syncHash();
@@ -331,25 +326,6 @@ export default function UserProfile({
   const editProfileMode = profileHash === 'member-profile';
   const avatarSrc = resolvePublicImageUrl(avatarOverride ?? profile.image);
   const dashboardHref = getDashboardPathForUserType(profile.userType);
-  const mainSportsLine =
-    form.mainSports.length > 0 ? form.mainSports.map((s) => formatSportLabel(s)).join(', ') : '—';
-
-  const memberInfoFields: { label: string; value: string }[] = [
-    { label: 'Display name', value: formatProfileField(displayName) },
-    { label: 'First name', value: formatProfileField(form.firstName) },
-    { label: 'Surname', value: formatProfileField(form.surname) },
-    { label: 'Username', value: `@${profile.username}` },
-    { label: 'Email', value: formatProfileField(profile.email) },
-    { label: 'Account type', value: formatUserTypeLabel(profile.userType) },
-    { label: 'Country', value: formatProfileField(form.country) },
-    { label: 'Gender', value: formatProfileField(form.gender) },
-    { label: 'Birthdate', value: formatProfileDisplayDate(form.birthdate) },
-    { label: 'Preferred language', value: languageLabel(form.preferredLanguage) },
-    { label: 'Telegram account', value: formatProfileField(form.telegramAccount) },
-    { label: 'YouTube channel', value: formatProfileField(form.youtubeChannelUrl) },
-    { label: 'Main sports', value: mainSportsLine },
-    { label: 'Member since', value: formatProfileDisplayDate(profile.createdAt) },
-  ];
 
   const bannerProfile =
     bannerOverride ??
@@ -447,14 +423,6 @@ export default function UserProfile({
             <a href={`#${infoSectionId}`} className="text-gray-600 hover:text-gray-900 font-medium">
               {infoSectionTitle}
             </a>
-            {!isClubAdmin ? (
-              <>
-                <span className="text-gray-300">|</span>
-                <a href="#member-profile" className="text-gray-600 hover:text-gray-900">
-                  User Profile
-                </a>
-              </>
-            ) : null}
           </div>
         )}
         {/* Header */}
@@ -494,27 +462,26 @@ export default function UserProfile({
         {(!embedded || isEmbeddedAdminProfile) && (
         <section
           id={infoSectionId}
-          className={`scroll-mt-24 mb-6 ${isClubAdmin ? '' : 'bg-white rounded-lg shadow-lg p-6'}`}
+          className={`scroll-mt-24 mb-6 ${
+            isClubAdmin ? '' : 'bg-white rounded-lg shadow-lg p-4 md:p-6'
+          }`}
         >
           {isClubAdmin ? (
             <ClubAdminInfoForm profileYoutubeUrl={profile.youtubeChannelUrl} />
           ) : (
-            <>
-              <h2 className="text-xl font-bold text-gray-800 mb-4">{infoSectionTitle}</h2>
-              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                {memberInfoFields.map(({ label, value }) => (
-                  <div key={label}>
-                    <dt className="text-gray-500 font-medium">{label}</dt>
-                    <dd className="text-gray-900 mt-0.5 break-words">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </>
+            <MemberSelfProfilePanel
+              userId={profile.id}
+              clubs={(profile.clubMemberships || []).map((m) => ({
+                id: m.club.id,
+                name: m.club.name,
+              }))}
+            />
           )}
         </section>
         )}
 
-        {/* User Profile — editable */}
+        {/* Legacy editable block — club admins only (members use Member info tabs above). */}
+        {isClubAdmin ? (
         <section
           id="member-profile"
           className={`scroll-mt-24 bg-white rounded-lg shadow-lg p-6 mb-6 ${
@@ -757,9 +724,10 @@ export default function UserProfile({
             </div>
           </form>
         </section>
+        ) : null}
 
         {/* Statistics */}
-        {!embedded && !editProfileMode && (
+        {!embedded && (!isClubAdmin || !editProfileMode) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow-lg p-6 text-center">
             <Trophy className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
@@ -779,7 +747,7 @@ export default function UserProfile({
         </div>
         )}
 
-        {!embedded && !editProfileMode && profile.clubMemberships && profile.clubMemberships.length > 0 && (
+        {!embedded && (!isClubAdmin || !editProfileMode) && profile.clubMemberships && profile.clubMemberships.length > 0 && (
           <div className="bg-white rounded-lg shadow-lg p-6 mt-6">
             <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
               <Users className="w-5 h-5" />
@@ -801,7 +769,7 @@ export default function UserProfile({
           </div>
         )}
 
-        {!embedded && !editProfileMode && profile.coaches && profile.coaches.length > 0 && (
+        {!embedded && (!isClubAdmin || !editProfileMode) && profile.coaches && profile.coaches.length > 0 && (
           <div className="bg-white rounded-lg shadow-lg p-6 mt-6">
             <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
               <Award className="w-5 h-5" />
@@ -824,7 +792,7 @@ export default function UserProfile({
           </div>
         )}
 
-        {!embedded && !editProfileMode && profile.athletes && profile.athletes.length > 0 && (
+        {!embedded && (!isClubAdmin || !editProfileMode) && profile.athletes && profile.athletes.length > 0 && (
           <div className="bg-white rounded-lg shadow-lg p-6 mt-6">
             <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
               <Users className="w-5 h-5" />

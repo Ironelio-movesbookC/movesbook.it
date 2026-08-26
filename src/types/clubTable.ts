@@ -13,8 +13,11 @@ export type Member = {
   // member list
   surname?: string;
   name?: string;
+  username?: string;
+  email?: string;
   gender?: string;
   dateOfBirth?: Date | string;
+  dateOfBirthDisplay?: string;
   memberType?: string;
   Localcity?: string;
   localCity?: string;
@@ -24,6 +27,8 @@ export type Member = {
   insertDateDisplay?: string;
   expirationDate?: Date | string;
   membershipEndDate?: Date | string;
+  /** ClubMember join-table id (for remove from club). */
+  clubMemberId?: string;
 
   // membership
   image?: string;

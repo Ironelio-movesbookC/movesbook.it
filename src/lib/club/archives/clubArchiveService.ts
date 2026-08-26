@@ -56,6 +56,7 @@ export async function listClubMembersArchive(
           surname: true,
           name: true,
           username: true,
+          email: true,
           image: true,
           gender: true,
           birthdate: true,
@@ -79,26 +80,33 @@ export async function listClubMembersArchive(
         const parts = text(row.member.name).split(/\s+/).filter(Boolean);
         return parts.length > 1 ? parts.slice(1).join(' ') : '';
       })();
+    const memberType = text(row.membershipType) || 'Standard';
 
     return {
       id: row.member.id,
       memberId: row.member.id,
+      clubMemberId: row.id,
       number: i + 1,
       name: firstName,
       surname: surname || '-',
+      username: text(row.member.username) || '-',
+      email: text(row.member.email) || '',
       fullName: formatName(row.member.firstName, row.member.surname, row.member.name),
       image: row.member.image,
       gender: text(row.member.gender) || '-',
-      dateOfBirth: formatArchiveDate(row.member.birthdate),
-      memberType: text(row.membershipType) || 'Standard',
+      dateOfBirth: row.member.birthdate
+        ? row.member.birthdate.toISOString().slice(0, 10)
+        : '',
+      dateOfBirthDisplay: formatArchiveDate(row.member.birthdate),
+      memberType,
+      typology: memberType,
       localCity: text(row.member.country) || '-',
       Localcity: text(row.member.country) || '-',
       phone: '-',
-      /** ISO for From/To filters; UI formats for display. */
       insertDate: row.joinedAt.toISOString().slice(0, 10),
       insertDateDisplay: formatArchiveDate(row.joinedAt),
       operator: titleCaseRole(row.role),
-      typology: titleCaseRole(row.role),
+      casual: 'No',
     };
   });
 
