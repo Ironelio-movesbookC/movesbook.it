@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import type { OgpSponsor } from '@/lib/news/ogpSponsors';
-import { openSponsorLink } from '@/lib/news/ogpSponsors';
+import { openSponsorLink, sponsorColsForSize } from '@/lib/news/ogpSponsors';
 
 interface OgpSponsoredCardProps {
   sponsors: OgpSponsor[];
@@ -41,12 +41,15 @@ export default function OgpSponsoredCard({ sponsors, delayMs }: OgpSponsoredCard
   if (!current) return null;
 
   const title = current.hoverTitle || 'Sponsored';
-  const isDouble = current.size === 'double';
+  const cols = sponsorColsForSize(current.size);
+  const isWide = cols > 1;
+  const colSpanClass =
+    cols === 4 ? 'col-span-4' : cols === 3 ? 'col-span-3' : cols === 2 ? 'col-span-2' : '';
 
   return (
     <article
       className={`relative border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm flex flex-col min-w-0 h-full min-h-0 group ${
-        isDouble ? 'col-span-2' : 'p-3'
+        isWide ? colSpanClass : 'p-3'
       }`}
       aria-label="Sponsored news"
       title={title}
@@ -62,7 +65,7 @@ export default function OgpSponsoredCard({ sponsors, delayMs }: OgpSponsoredCard
       >
         <span
           className={`relative block w-full overflow-hidden rounded ${
-            isDouble ? 'h-full min-h-[17rem]' : 'h-28 mb-2'
+            isWide ? 'h-full min-h-[17rem]' : 'h-28 mb-2'
           }`}
         >
           {current.image ? (
@@ -72,9 +75,11 @@ export default function OgpSponsoredCard({ sponsors, delayMs }: OgpSponsoredCard
               fill
               className="object-cover"
               sizes={
-                isDouble
-                  ? '(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw'
-                  : '(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 16vw'
+                cols >= 3
+                  ? '(max-width: 640px) 100vw, (max-width: 1024px) 75vw, 66vw'
+                  : cols === 2
+                    ? '(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw'
+                    : '(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 16vw'
               }
               unoptimized
             />
