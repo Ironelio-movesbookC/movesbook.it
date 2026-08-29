@@ -1350,6 +1350,7 @@ export default function NewsArticlesList({
     !viewingOgpGroup &&
     !isAddingToGroup &&
     !viewingHeadlines &&
+    sponsorSettings?.enabled !== false &&
     (sponsorSettings?.sponsors.length ?? 0) > 0;
 
   const getHeadlineViewCount = useCallback(

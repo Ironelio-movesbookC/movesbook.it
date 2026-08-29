@@ -310,6 +310,8 @@ model OgpNewsSponsorSettings {
   intervalRows Int              @default(12)
   /// Rotation delay in milliseconds when more than one sponsor is configured.
   delayMs      Int              @default(5000)
+  /// When false, all sponsored cards are hidden from the news feed.
+  enabled      Boolean          @default(true)
   updatedAt    DateTime         @updatedAt
   sponsors     OgpNewsSponsor[]
 
