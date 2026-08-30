@@ -1,9 +1,9 @@
 'use client';
 
-import Image from 'next/image';
 import { Camera, Home, Menu, Settings, ChevronRight } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { DEFAULT_HERO_BANNER_URL } from '@/lib/profileBannerSequence';
+import SafeCoverImage from '@/components/media/SafeCoverImage';
 
 interface ClubDashboardMyPageBannerProps {
   clubName: string;
@@ -18,6 +18,8 @@ interface ClubDashboardMyPageBannerProps {
   onCoverCameraClick: () => void;
   /** Header strip — opens promocode invite flow (PHP: users/notification_by_promocode). */
   onSuggestMovesbookClick?: () => void;
+  /** When false, hides the Suggest Movesbook link in the bottom strip. */
+  showSuggestMovesbook?: boolean;
   /** When false, hides the right-hand SPONSORED column (e.g. My Club tab). */
   showSponsored?: boolean;
 }
@@ -30,6 +32,7 @@ export default function ClubDashboardMyPageBanner({
   coverBannerAlignment,
   onCoverCameraClick,
   onSuggestMovesbookClick,
+  showSuggestMovesbook = false,
   showSponsored = true,
 }: ClubDashboardMyPageBannerProps) {
   const { t } = useLanguage();
@@ -39,25 +42,20 @@ export default function ClubDashboardMyPageBanner({
   const alignCenter = coverBannerAlignment === 'center';
   const coverObjectClass = alignCenter ? 'object-cover object-center' : 'object-cover object-top';
   const stripBgPos = alignCenter ? 'center center' : 'center top';
-  const imgUnoptimized = src.startsWith('http') || src.startsWith('data:');
+  const stripSrc = src.startsWith('/uploads/') ? DEFAULT_HERO_BANNER_URL : src;
 
   return (
     <div className="mb-6 flex-shrink-0 px-0">
-      {/* Cover + SPONSORED — layout/positions from club dashboard; colors/sizes match AthleteLegacyBanner */}
       <div className="flex w-full flex-col lg:flex-row shadow-lg overflow-hidden bg-black min-h-[220px] max-h-[280px]">
         <div className="relative flex-1 min-h-[200px] lg:min-h-[220px] min-w-0">
-          <Image
+          <SafeCoverImage
             src={src}
-            alt=""
             fill
             className={`${coverObjectClass} opacity-90`}
-            sizes="(max-width: 1024px) 100vw, 75vw"
             priority
-            unoptimized={imgUnoptimized}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/20 to-transparent pointer-events-none" />
 
-          {/* Cover camera — same behavior as athlete AthleteLegacyBanner */}
           <div
             className="absolute top-0 left-0 right-0 h-12 flex items-start justify-start p-2 z-10"
             style={{
@@ -75,17 +73,14 @@ export default function ClubDashboardMyPageBanner({
             </button>
           </div>
 
-          {/* Thumbnail + club label (left) · action buttons (right) — positions unchanged */}
           <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-3 p-3 z-10">
             <div className="flex items-end gap-2 min-w-0">
               <div className="w-[72px] h-[54px] shrink-0 border-2 border-white shadow-lg overflow-hidden bg-gray-200">
-                <Image
+                <SafeCoverImage
                   src={src}
-                  alt=""
                   width={72}
                   height={54}
                   className={`w-full h-full opacity-90 ${alignCenter ? 'object-cover object-center' : 'object-cover object-top'}`}
-                  unoptimized={imgUnoptimized}
                 />
               </div>
               <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
@@ -132,13 +127,11 @@ export default function ClubDashboardMyPageBanner({
                   className="flex gap-2 bg-white/80 p-2 rounded border border-gray-200/80"
                 >
                   <div className="w-12 h-12 flex-shrink-0 bg-gray-300 overflow-hidden relative">
-                    <Image
+                    <SafeCoverImage
                       src={src}
-                      alt=""
                       width={48}
                       height={48}
                       className="object-cover w-full h-full opacity-80"
-                      unoptimized={imgUnoptimized}
                     />
                   </div>
                   <div className="min-w-0 text-xs leading-snug">
@@ -156,13 +149,12 @@ export default function ClubDashboardMyPageBanner({
         )}
       </div>
 
-      {/* Bottom strip — same shell + typography as athlete dashboard personal strip (52px, gray-800, overlay) */}
       <div className="flex-shrink-0">
         <div className="bg-gray-800 overflow-hidden shadow-lg relative h-[52px]">
           <div
             className="absolute inset-0 bg-cover opacity-20"
             style={{
-              backgroundImage: `url(${src})`,
+              backgroundImage: `url(${stripSrc})`,
               backgroundSize: 'cover',
               backgroundPosition: stripBgPos,
             }}
@@ -175,13 +167,15 @@ export default function ClubDashboardMyPageBanner({
               >
                 FAQ
               </button>
-              <button
-                type="button"
-                onClick={onSuggestMovesbookClick}
-                className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
-              >
-                Suggest Movesbook
-              </button>
+              {showSuggestMovesbook ? (
+                <button
+                  type="button"
+                  onClick={onSuggestMovesbookClick}
+                  className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                >
+                  Suggest Movesbook
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800 flex items-center gap-1.5"

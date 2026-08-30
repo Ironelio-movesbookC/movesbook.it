@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import type { Column, Member } from '@/types/clubTable';
 
 export const archiveImageColumn: Column = {
@@ -6,7 +7,7 @@ export const archiveImageColumn: Column = {
   sortable: false,
   render: (value) =>
     value ? (
-      <img src={String(value)} alt="" className="w-10 h-10 rounded-full mx-auto object-cover" />
+      <Image src={String(value)} alt="" className="w-10 h-10 rounded-full mx-auto object-cover" width={40} height={40} unoptimized />
     ) : (
       <span className="text-gray-400">-</span>
     ),

@@ -1,8 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import type { PromocodeSettingRow } from '@/lib/promocodes/types';
-import { usePromocodeDialogs } from './usePromocodeDialogs';
+import type { PromocodeInviteEntry, PromocodeSettingRow } from '@/lib/promocodes/types';
+import PromocodeInviteEmailsModal from './PromocodeInviteEmailsModal';
 import PromocodeAssetImage from './PromocodeAssetImage';
 import {
   PROMOCODE_NO_FLAG_IMAGE,
@@ -30,7 +31,8 @@ export default function PromocodeSettingsTable({
   onRowDoubleClick?: (id: number) => void;
   showSelectAll?: boolean;
 }) {
-  const { showAlert, dialogs } = usePromocodeDialogs();
+  const [inviteEmailsOpen, setInviteEmailsOpen] = useState(false);
+  const [inviteEmailEntries, setInviteEmailEntries] = useState<PromocodeInviteEntry[]>([]);
   const today = new Date().toISOString().slice(0, 10);
   const allSelected = rows.length > 0 && rows.every((r) => selectedIds.includes(r.id));
 
@@ -58,7 +60,9 @@ export default function PromocodeSettingsTable({
             <th className="p-2">Creator</th>
             <th className="p-2">Version</th>
             <th className="p-2">Usage</th>
-            <th className="p-2">Users</th>
+            <th className="p-2">Invites sent</th>
+            <th className="p-2">Last invite</th>
+            <th className="p-2">Last registration</th>
             <th className="p-2">Exp name</th>
             <th className="p-2">Created</th>
             <th className="p-2">Status</th>
@@ -69,7 +73,7 @@ export default function PromocodeSettingsTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={13} className="p-6 text-center text-gray-500">
+              <td colSpan={15} className="p-6 text-center text-gray-500">
                 No promocodes found.
               </td>
             </tr>
@@ -131,17 +135,27 @@ export default function PromocodeSettingsTable({
                   <button
                     type="button"
                     className="text-blue-700 underline"
-                    title={row.inviteEmails.join(', ')}
-                    onClick={() =>
-                      showAlert(
-                        row.inviteEmails.length > 0 ? row.inviteEmails.join('\n') : 'No invites',
-                        'Invite emails'
-                      )
-                    }
+                    title={(row.inviteEntries ?? []).map((entry) => entry.email).join(', ')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const entries =
+                        row.inviteEntries ??
+                        (row.inviteEmails ?? []).map((email) => ({
+                          email,
+                          username: null,
+                          registered: false,
+                          registrationDate: null,
+                          subscriptionName: null,
+                        }));
+                      setInviteEmailEntries(entries);
+                      setInviteEmailsOpen(true);
+                    }}
                   >
                     {row.inviteCount}
                   </button>
                 </td>
+                <td className="p-2">{row.lastInviteDate?.slice(0, 10) ?? ''}</td>
+                <td className="p-2">{row.lastRegistrationDate?.slice(0, 10) ?? ''}</td>
                 <td className="p-2">{row.recipient}</td>
                 <td className="p-2">{created}</td>
                 <td className="p-2">{status}</td>
@@ -160,7 +174,11 @@ export default function PromocodeSettingsTable({
           })}
         </tbody>
       </table>
-      {dialogs}
+      <PromocodeInviteEmailsModal
+        open={inviteEmailsOpen}
+        entries={inviteEmailEntries}
+        onClose={() => setInviteEmailsOpen(false)}
+      />
     </div>
   );
 }

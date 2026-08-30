@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, Globe, Home, Settings, User } from 'lucide-react';
@@ -357,7 +358,7 @@ function ClubWebsiteSettingsSidebarPanel({
           <div className="shrink-0">
             <div className="h-14 w-14 overflow-hidden border border-zinc-400 bg-zinc-700">
               {logoImageUrl ? (
-                <img src={logoImageUrl} alt="" className="h-full w-full object-cover" />
+                <Image src={logoImageUrl} alt="" className="h-full w-full object-cover" width={56} height={56} unoptimized />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-400">
                   —

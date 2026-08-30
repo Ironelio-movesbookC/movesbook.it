@@ -12,6 +12,10 @@ import {
   IDENTIFICATION_DEVICES_INFO_DEFAULT_EN,
   IDENTIFICATION_DEVICES_INFO_TRANSLATION_KEY,
 } from './identificationDevicesInfoLongText';
+import {
+  SUGGEST_MOVESBOOK_INTRO_EN,
+  SUGGEST_MOVESBOOK_INTRO_KEY,
+} from './suggestMovesbookLongText';
 
 export type KnownLongTextEntry = {
   key: string;
@@ -41,6 +45,13 @@ export const KNOWN_LONG_TEXT_ENTRIES: KnownLongTextEntry[] = [
     descriptionEn: 'Club access settings — identification devices help panel.',
     values: { en: IDENTIFICATION_DEVICES_INFO_DEFAULT_EN },
   },
+  {
+    key: SUGGEST_MOVESBOOK_INTRO_KEY,
+    category: 'social',
+    descriptionEn:
+      'Suggest Movesbook — intro explaining advantages of inviting friends (login prompt + Suggest Movesbook page).',
+    values: { en: SUGGEST_MOVESBOOK_INTRO_EN },
+  },
 ];
 
 export const KNOWN_LONG_TEXT_KEY_SET = new Set(
@@ -59,6 +70,7 @@ export function mergeKnownLongTexts(keys: TranslationKey[]): TranslationKey[] {
         category: (existing.category || known.category) as TranslationCategory,
         descriptionEn: existing.descriptionEn || known.descriptionEn,
         values: { ...known.values, ...existing.values },
+        isLongText: true,
       });
     } else {
       byKey.set(known.key, {
@@ -66,6 +78,7 @@ export function mergeKnownLongTexts(keys: TranslationKey[]): TranslationKey[] {
         category: known.category,
         descriptionEn: known.descriptionEn,
         values: { ...known.values },
+        isLongText: true,
       });
     }
   }

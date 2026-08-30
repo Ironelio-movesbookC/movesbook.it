@@ -57,15 +57,15 @@ export default function WaysToGetStartedSection({
     };
   }, []);
 
-  const versions = useMemo(
-    () => getRegistrationVersions(userType),
-    [userType, settingsRevision],
-  );
+  const versions = useMemo(() => {
+    void settingsRevision; // re-read when subscription settings update events fire
+    return getRegistrationVersions(userType);
+  }, [userType, settingsRevision]);
   const selectedVersion = versions.find((v) => v.id === selectedVersionId);
-  const selectedEditData = useMemo(
-    () => (selectedVersionId ? getSubscriptionEditData(selectedVersionId, false) : null),
-    [selectedVersionId, settingsRevision],
-  );
+  const selectedEditData = useMemo(() => {
+    void settingsRevision; // re-read when subscription settings update events fire
+    return selectedVersionId ? getSubscriptionEditData(selectedVersionId, false) : null;
+  }, [selectedVersionId, settingsRevision]);
 
   useEffect(() => {
     syncSubscriptionEditDataFromStorage();

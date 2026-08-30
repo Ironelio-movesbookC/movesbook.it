@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { findExistingTable, getTableColumns } from '@/lib/outcomeSettingsDb';
+import { countryCodeFromName } from '@/lib/admin/countryFlag';
 import { formatPromocodeDisplayDate } from './formatPromocodeDate';
 import type { LegacyUserSnippet } from './types';
 
@@ -18,6 +19,7 @@ const LEGACY_USER_COLUMN_DEFS: [string, string][] = [
   ['subscription_setting_id', 'INT NULL'],
   ['subscription_start_date', 'DATE NULL'],
   ['subscription_end_date', 'VARCHAR(100) NULL'],
+  ['credits', 'DECIMAL(10,2) NOT NULL DEFAULT 0'],
   ['delete_status', "ENUM('Y','N') NOT NULL DEFAULT 'N'"],
   ['created', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'],
   ['modified', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'],
@@ -59,6 +61,7 @@ async function createLegacyUsersTable(tableName: string): Promise<void> {
       subscription_setting_id INT NULL,
       subscription_start_date DATE NULL,
       subscription_end_date VARCHAR(100) NULL,
+      credits DECIMAL(10,2) NOT NULL DEFAULT 0,
       delete_status ENUM('Y','N') NOT NULL DEFAULT 'N',
       created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       modified DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -321,6 +324,23 @@ export async function fetchLegacyUsersByIds(ids: number[]): Promise<Map<number, 
   return map;
 }
 
+export async function fetchLegacyUserByUsername(username: string): Promise<LegacyUserSnippet | null> {
+  await ensureLegacyPromocodeUserTables();
+
+  const usersTable = await getLegacyUsersTable();
+  if (!usersTable || !username.trim()) return null;
+
+  const selectClause = await legacyUserSelectClause(usersTable);
+  const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+    `SELECT ${selectClause}
+     FROM \`${usersTable}\`
+     WHERE LOWER(username) = ? AND delete_status = 'N'
+     LIMIT 1`,
+    username.trim().toLowerCase()
+  ).catch(() => [] as Record<string, unknown>[]);
+  return mapLegacyUser(rows[0]);
+}
+
 export async function fetchLegacyUserByEmail(email: string): Promise<LegacyUserSnippet | null> {
   await ensureLegacyPromocodeUserTables();
 
@@ -351,6 +371,75 @@ export async function findLegacyUsersByKeyword(keyword: string): Promise<number[
     like,
     like,
     like
+  );
+  return rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
+}
+
+/** PHP promoList search matches username/firstname only (not email). */
+export async function findLegacyUsersByUsernameOrFirstname(keyword: string): Promise<number[]> {
+  await ensureLegacyPromocodeUserTables();
+
+  const usersTable = await getLegacyUsersTable();
+  if (!usersTable || !keyword.trim()) return [];
+
+  const columns = await getTableColumns(usersTable);
+  const orParts: string[] = [];
+  const params: unknown[] = [];
+  const like = `%${keyword.trim()}%`;
+
+  if (columns.has('username')) {
+    orParts.push('username LIKE ?');
+    params.push(like);
+  }
+  if (columns.has('firstname')) {
+    orParts.push('firstname LIKE ?');
+    params.push(like);
+  }
+  if (orParts.length === 0) return [];
+
+  const rows = await prisma.$queryRawUnsafe<{ id: number | bigint }[]>(
+    `SELECT id FROM \`${usersTable}\`
+     WHERE (${orParts.join(' OR ')})
+     LIMIT 500`,
+    ...params
+  );
+  return rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
+}
+
+/** PHP promoList: restrict user search to ids that appear on promocode applies. */
+export async function filterLegacyUsersByUsernameOrFirstname(
+  userIds: number[],
+  keyword: string
+): Promise<number[]> {
+  const ids = Array.from(new Set(userIds.filter((id) => Number.isFinite(id) && id > 0)));
+  if (ids.length === 0 || !keyword.trim()) return [];
+
+  await ensureLegacyPromocodeUserTables();
+  const usersTable = await getLegacyUsersTable();
+  if (!usersTable) return [];
+
+  const columns = await getTableColumns(usersTable);
+  const orParts: string[] = [];
+  const params: unknown[] = [...ids];
+  const like = `%${keyword.trim()}%`;
+  const idPlaceholders = ids.map(() => '?').join(',');
+
+  if (columns.has('username')) {
+    orParts.push('username LIKE ?');
+    params.push(like);
+  }
+  if (columns.has('firstname')) {
+    orParts.push('firstname LIKE ?');
+    params.push(like);
+  }
+  if (orParts.length === 0) return [];
+
+  const rows = await prisma.$queryRawUnsafe<{ id: number | bigint }[]>(
+    `SELECT id FROM \`${usersTable}\`
+     WHERE id IN (${idPlaceholders})
+       AND (${orParts.join(' OR ')})
+     LIMIT 500`,
+    ...params
   );
   return rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
 }
@@ -410,11 +499,16 @@ export async function fetchCountryCodeById(countryId: number | null): Promise<st
   const countriesTable = await getCountriesTable();
   if (!countriesTable) return null;
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT code FROM \`${countriesTable}\` WHERE id = ? LIMIT 1`,
+    `SELECT code, name FROM \`${countriesTable}\` WHERE id = ? LIMIT 1`,
     countryId
   );
-  const code = rows[0]?.code;
-  return code != null ? String(code) : null;
+  const code = rows[0]?.code != null ? String(rows[0].code).trim() : '';
+  if (code) return code;
+
+  // Legacy rows created without an ISO code: derive it from the country name.
+  const name = rows[0]?.name != null ? String(rows[0].name).trim() : '';
+  const derived = name ? countryCodeFromName(name) : '';
+  return derived || null;
 }
 
 export async function getSettingsColumns(): Promise<Set<string>> {

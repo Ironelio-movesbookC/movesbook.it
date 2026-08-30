@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import {
+  isRegisteredLongTextKey,
+  listRegisteredLongTextKeys,
+  registerLongTextKey,
+} from '@/lib/languages/longTextKeysRegistry';
+import { KNOWN_LONG_TEXT_KEY_SET } from '@/constants/knownLongTextRegistry';
+import { LONG_TEXT_THRESHOLD } from '@/constants/language.constants';
 
 
 export async function GET(request: NextRequest) {
@@ -14,12 +21,14 @@ export async function GET(request: NextRequest) {
     // Group translations by key
     const translationsMap: Record<string, any> = {};
     const categoriesSet = new Set<string>();
+    const registeredLongTextKeys = new Set(listRegisteredLongTextKeys());
 
     for (const trans of dbTranslations) {
       if (!translationsMap[trans.key]) {
         translationsMap[trans.key] = {
           key: trans.key,
           category: trans.category || 'general',
+          descriptionEn: `Translation for ${trans.key}`,
           isDeleted: trans.isDeleted || false,
           values: {},
         };
@@ -39,7 +48,21 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const translations = Object.values(translationsMap);
+    const translations = Object.values(translationsMap).map((trans: any) => {
+      const hasLongValue = Object.values(trans.values as Record<string, string>).some(
+        (val) => typeof val === 'string' && val.length > LONG_TEXT_THRESHOLD
+      );
+      const isLongText =
+        Boolean(trans.isLongText) ||
+        registeredLongTextKeys.has(trans.key) ||
+        KNOWN_LONG_TEXT_KEY_SET.has(trans.key) ||
+        hasLongValue ||
+        isRegisteredLongTextKey(trans.key);
+      return {
+        ...trans,
+        isLongText,
+      };
+    });
     const categories = Array.from(categoriesSet).sort();
 
     console.log(`✅ Returning ${translations.length} translation keys in ${categories.length} categories`);
@@ -48,6 +71,7 @@ export async function GET(request: NextRequest) {
       success: true,
       translations,
       categories,
+      longTextKeys: listRegisteredLongTextKeys(),
     });
   } catch (error) {
     console.error('Error fetching translations:', error);

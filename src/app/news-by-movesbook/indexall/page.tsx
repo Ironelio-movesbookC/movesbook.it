@@ -14,6 +14,7 @@ interface NewsItem {
   id: string;
   title: string | null;
   section: string | null;
+  image: string | null;
   documentType: string | null;
   date: string;
   langValueId: string | null;
@@ -59,6 +60,15 @@ const getFlagFileName = (code: string): string => {
   return flagMap[code] || 'en.png';
 };
 
+function resolveNewsLogoSrc(image: string | null | undefined): string | null {
+  if (!image?.trim()) return null;
+  const value = image.trim();
+  if (value.startsWith('/') || value.startsWith('http')) return value;
+  return `/img/news/${value}`;
+}
+
+const SHOW_LOGO_STORAGE_KEY = 'newsArchiveShowLogo';
+
 export default function NewsIndexAllPage() {
   const router = useRouter();
   const { t } = useLanguage();
@@ -78,6 +88,7 @@ export default function NewsIndexAllPage() {
   const [sections, setSections] = useState<string[]>([]);
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const langDropdownRef = useRef<HTMLDivElement>(null);
+  const [showLogo, setShowLogo] = useState(false);
 
   const getDocumentTypeLabel = (value: string | null): string => {
     if (!value) return '-';
@@ -116,6 +127,25 @@ export default function NewsIndexAllPage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(SHOW_LOGO_STORAGE_KEY) === 'true') {
+        setShowLogo(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleShowLogoChange = (checked: boolean) => {
+    setShowLogo(checked);
+    try {
+      localStorage.setItem(SHOW_LOGO_STORAGE_KEY, checked ? 'true' : 'false');
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     const checkAdminAuth = () => {
@@ -272,13 +302,24 @@ export default function NewsIndexAllPage() {
       <div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-4 sm:mb-6">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('news_archive')}</h1>
-          <Link
-            href="/news-by-movesbook/add"
-            className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base w-full sm:w-auto"
-          >
-            <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span>{t('news_add_article')}</span>
-          </Link>
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={showLogo}
+                onChange={(e) => handleShowLogoChange(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>{t('news_display_picture')}</span>
+            </label>
+            <Link
+              href="/news-by-movesbook/add"
+              className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base w-full sm:w-auto"
+            >
+              <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span>{t('news_add_article')}</span>
+            </Link>
+          </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
@@ -480,13 +521,37 @@ export default function NewsIndexAllPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredNews.map((item) => (
+                  filteredNews.map((item) => {
+                    const logoSrc = showLogo ? resolveNewsLogoSrc(item.image) : null;
+                    return (
                     <tr
                       key={item.id}
                       className="hover:bg-gray-50 transition-colors cursor-pointer"
                       onDoubleClick={() => router.push(`/news-by-movesbook/${item.id}`)}
                     >
-                      <td className="px-6 py-4 text-sm text-gray-900">{item.section || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {showLogo ? (
+                          <div className="flex flex-col gap-1.5">
+                            {logoSrc ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={logoSrc}
+                                alt=""
+                                className="h-12 w-16 rounded border border-gray-200 object-cover bg-gray-50"
+                              />
+                            ) : (
+                              <div className="flex h-12 w-16 items-center justify-center rounded border border-dashed border-gray-200 bg-gray-50 text-[10px] text-gray-400">
+                                No image
+                              </div>
+                            )}
+                            {item.section ? (
+                              <span className="text-xs text-gray-600">{item.section}</span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          item.section || '-'
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-900">{item.title || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{item.category?.categoryName || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{getDocumentTypeLabel(item.documentType)}</td>
@@ -519,8 +584,8 @@ export default function NewsIndexAllPage() {
                               disabled={globalNewsLoadingId === item.id}
                               className={`transition-colors disabled:opacity-50 ${
                                 item.inGlobalNews
-                                  ? 'text-teal-700 hover:text-teal-900'
-                                  : 'text-gray-500 hover:text-teal-700'
+                                  ? 'text-teal-950 hover:text-black'
+                                  : 'text-gray-500 hover:text-teal-800'
                               }`}
                               title={
                                 item.inGlobalNews
@@ -531,7 +596,10 @@ export default function NewsIndexAllPage() {
                                 item.inGlobalNews ? 'Remove from Global News' : 'Share in Global News'
                               }
                             >
-                              <Globe className="w-4 h-4" />
+                              <Globe
+                                className={`w-4 h-4 ${item.inGlobalNews ? 'fill-teal-950/25' : ''}`}
+                                strokeWidth={item.inGlobalNews ? 2.5 : 2}
+                              />
                             </button>
                           )}
                           <button
@@ -544,7 +612,8 @@ export default function NewsIndexAllPage() {
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>

@@ -9,7 +9,16 @@ export const SPONSOR_DELAY_MS_MIN = 1000;
 export const SPONSOR_DELAY_MS_MAX = 60_000;
 export const SPONSOR_DELAY_MS_DEFAULT = 5000;
 
-export type OgpSponsorSize = 'single' | 'double';
+export type OgpSponsorSize = 'single' | 'double' | 'triple' | 'quadruple';
+export type OgpSponsorColSpan = 1 | 2 | 3 | 4;
+
+const SPONSOR_SIZE_COLS: Record<OgpSponsorSize, OgpSponsorColSpan> = {
+  single: 1,
+  double: 2,
+  triple: 3,
+  quadruple: 4,
+};
+
 export type OgpSponsorLinkTarget = 'tab' | 'window';
 
 export type OgpSponsor = {
@@ -26,6 +35,7 @@ export type OgpSponsorSettings = {
   startRow: number;
   intervalRows: number;
   delayMs: number;
+  enabled: boolean;
   sponsors: OgpSponsor[];
 };
 
@@ -61,19 +71,25 @@ export function clampDelayMs(value: unknown): number {
 }
 
 export function isSponsorSize(value: unknown): value is OgpSponsorSize {
-  return value === 'single' || value === 'double';
+  return value === 'single' || value === 'double' || value === 'triple' || value === 'quadruple';
 }
 
 export function isSponsorLinkTarget(value: unknown): value is OgpSponsorLinkTarget {
   return value === 'tab' || value === 'window';
 }
 
-export function sponsorColsForSize(size: OgpSponsorSize): 1 | 2 {
-  return size === 'double' ? 2 : 1;
+export function sponsorColsForSize(size: OgpSponsorSize): OgpSponsorColSpan {
+  return SPONSOR_SIZE_COLS[size] ?? 1;
 }
 
-export function maxSponsorCols(sponsors: Pick<OgpSponsor, 'size'>[]): 1 | 2 {
-  return sponsors.some((s) => s.size === 'double') ? 2 : 1;
+export function maxSponsorCols(sponsors: Pick<OgpSponsor, 'size'>[]): OgpSponsorColSpan {
+  return sponsors.reduce<OgpSponsorColSpan>(
+    (max, s) => {
+      const cols = sponsorColsForSize(s.size);
+      return cols > max ? cols : max;
+    },
+    1,
+  );
 }
 
 export function isHttpUrl(value: string): boolean {
@@ -165,11 +181,11 @@ export function paginateWithSponsors<T>(
   colsPerRow: number,
   startRow: number,
   intervalRows: number,
-  sponsorCols: 1 | 2,
+  sponsorCols: OgpSponsorColSpan,
 ): SponsoredPageCell<T>[][] {
   const R = Math.max(1, rowsPerPage);
   const C = Math.max(1, colsPerRow);
-  const span = sponsorCols === 2 ? 2 : 1;
+  const span = Math.min(C, Math.max(1, sponsorCols));
 
   if (items.length === 0) {
     const locals = sponsorLocalRowsOnPage(1, startRow, intervalRows, R);

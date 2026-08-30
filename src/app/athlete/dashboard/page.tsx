@@ -98,7 +98,7 @@ import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
 import AthleteMyClubRightSidebar from '@/components/dashboard/AthleteMyClubRightSidebar';
 import MemberRegistrationInfoPanel from '@/components/member/MemberRegistrationInfoPanel';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import { isClubAccountUserType, showSuggestMovesbookForTab } from '@/utils/dashboardRouting';
 import {
   getEntityDirectAccessLock,
   getEntityDirectAccessProfilePath,
@@ -139,6 +139,8 @@ function AthleteDashboardContent() {
     | 'personal-settings'
     | 'chat'
     | 'news'
+    | 'movesbook-news'
+    | 'mb-news'
     | 'posts'
     | 'music'
     | 'music-editor'
@@ -283,6 +285,19 @@ function AthleteDashboardContent() {
     setClubAddSongsOgpExpanded(false);
     setClubMainPanel(panel);
   }, []);
+
+  const openMyPageNewsSection = useCallback(
+    (section: 'movesbook-news' | 'mb-news' | 'news') => {
+      setActiveTab('my-page');
+      setClubChatOpen(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('default');
+      setNewsExpanded(false);
+      setActiveSection(section);
+    },
+    []
+  );
 
   // Load entities the athlete belongs to
   useEffect(() => {
@@ -736,12 +751,15 @@ function AthleteDashboardContent() {
                   >
                     FAQ
                   </button>
-                  <button
-                    type="button"
-                    className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
-                  >
-                    Suggest Movesbook
-                  </button>
+                  {showSuggestMovesbookForTab(user?.userType ?? 'ATHLETE', activeTab) ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push('/users/notification_by_promocode')}
+                      className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                    >
+                      Suggest Movesbook
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
@@ -912,6 +930,7 @@ function AthleteDashboardContent() {
                   setActiveSection('music-editor');
                   setMusicExpanded(false);
                 }}
+                onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
                 onClubMusicPanelClick={() => {
                   // Same as navbar "Music Panel" → My Music panel
                   setActiveTab('my-page');
@@ -926,6 +945,9 @@ function AthleteDashboardContent() {
                 onClubNewsSectionClick={() => openClubNewsPanel('club-news')}
                 onClubOgpNewsSectionClick={() => openClubNewsPanel('club-news-ogp')}
                 onClubGlobalNewsSectionClick={() => openClubNewsPanel('club-global-news')}
+                onMyPageMovesbookNewsClick={() => openMyPageNewsSection('movesbook-news')}
+                onMyPageNewsClick={() => openMyPageNewsSection('mb-news')}
+                onMyPageOgpNewsClick={() => openMyPageNewsSection('news')}
               />
             </div>
           )}
@@ -959,9 +981,26 @@ function AthleteDashboardContent() {
                     />
                   </div>
                 )}
+                {activeSection === 'movesbook-news' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <ClubMovesbookNewsPanel
+                      title="Movesbook News"
+                      onClose={() => setActiveSection('overview')}
+                    />
+                  </div>
+                )}
+                {activeSection === 'mb-news' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <ClubNewsArchivePanel
+                      title="News"
+                      onClose={() => setActiveSection('overview')}
+                    />
+                  </div>
+                )}
                 {activeSection === 'news' && (
                   <div className="flex-1 flex flex-col min-h-0">
                     <NewsOGPPanel
+                      title="OGP News"
                       onClose={() => {
                         setActiveSection('overview');
                         setNewsExpanded(false);
@@ -1091,12 +1130,12 @@ function AthleteDashboardContent() {
                     <ClubSharedNewsPanel
                       clubId={(selectedClubId ?? myClubs[0]?.id)!}
                       type="all"
-                      title="Club Global News"
+                      title="Club News & OGP News"
                     />
                   ) : (
                     <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
                       <p className="py-12 text-center text-sm text-gray-600">
-                        Select a club in the sidebar to view Club Global News.
+                        Select a club in the sidebar to view Club News & OGP News.
                       </p>
                     </div>
                   )}

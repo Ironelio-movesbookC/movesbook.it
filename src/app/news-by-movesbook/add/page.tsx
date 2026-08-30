@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, Save, Upload, X, CheckCircle, AlertCircle, Settings, Link as LinkIcon } from 'lucide-react';
@@ -10,13 +10,18 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { SPORTS_LIST } from '@/constants/moveframe.constants';
 import { DOCUMENT_TYPES, PRIORITY_OPTIONS, DISPLAY_MODE_OPTIONS } from '@/lib/news/mappings';
 import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
+import {
+  CLUB_AUDIENCE_OPTIONS,
+  type ClubOgpAudienceMode,
+} from '@/lib/clubOgpAudience';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), {
   ssr: false,
 });
 
-export default function AddNewsPage() {
+function AddNewsPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t } = useLanguage();
   const { user, loading } = useAuth();
   const [saving, setSaving] = useState(false);
@@ -87,6 +92,7 @@ export default function AddNewsPage() {
       roles: [] as string[],
       languages: [] as string[],
       countries: [] as string[],
+      clubAudienceMode: 'me-and-club-members' as ClubOgpAudienceMode,
       functions: {
         commentOption: false,
         likeButton: false,
@@ -101,6 +107,12 @@ export default function AddNewsPage() {
       },
     },
   });
+
+  const isClubAdmin = user?.userType === 'CLUB';
+  const shareToClubId = searchParams.get('clubId');
+  const fromClub = searchParams.get('from') === 'club';
+  const filtersEnabled =
+    !isClubAdmin || formData.settings.clubAudienceMode === 'me-club-members-and-filters';
 
   useEffect(() => {
     if (loading) return;
@@ -577,10 +589,10 @@ export default function AddNewsPage() {
         settings: {
           duration: formData.settings.duration || null,
           reshare: formData.settings.reshare ? 'Y' : 'N',
-          sports: formData.settings.sports,
-          roles: formData.settings.roles,
-          languages: formData.settings.languages,
-          countries: formData.settings.countries,
+          sports: filtersEnabled ? formData.settings.sports : [],
+          roles: filtersEnabled ? formData.settings.roles : [],
+          languages: filtersEnabled ? formData.settings.languages : [],
+          countries: filtersEnabled ? formData.settings.countries : [],
           functions: {
             commentOption: formData.settings.functions.commentOption ? 'Y' : 'N',
             likeButton: formData.settings.functions.likeButton ? 'Y' : 'N',
@@ -594,6 +606,12 @@ export default function AddNewsPage() {
             printOption: formData.settings.functions.printOption ? 'Y' : 'N',
           },
         },
+        ...(isClubAdmin && shareToClubId
+          ? {
+              shareToClubId,
+              audienceMode: formData.settings.clubAudienceMode,
+            }
+          : {}),
       };
 
       const res = await fetch('/api/news', {
@@ -613,7 +631,7 @@ export default function AddNewsPage() {
       await res.json();
 
       alert('News article created successfully!');
-      router.push('/news-by-movesbook/indexall');
+      router.push(fromClub ? '/club/dashboard' : '/news-by-movesbook/indexall');
     } catch (error) {
       console.error('Error creating news:', error);
       alert(error instanceof Error ? error.message : 'Failed to create news article');
@@ -1630,6 +1648,36 @@ export default function AddNewsPage() {
 
                 <div className="bg-yellow-50 p-4 rounded-lg">
                   <h3 className="font-semibold text-gray-900 mb-4">Who can see it?</h3>
+
+                  {isClubAdmin && (
+                    <fieldset className="mb-4 space-y-2.5">
+                      <legend className="sr-only">Who can see this article in the club</legend>
+                      {CLUB_AUDIENCE_OPTIONS.map((opt) => (
+                        <label
+                          key={opt.value}
+                          className="flex items-start gap-2.5 cursor-pointer select-none"
+                        >
+                          <input
+                            type="radio"
+                            name="club-audience-mode"
+                            value={opt.value}
+                            checked={formData.settings.clubAudienceMode === opt.value}
+                            onChange={() =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                settings: {
+                                  ...prev.settings,
+                                  clubAudienceMode: opt.value,
+                                },
+                              }))
+                            }
+                            className="mt-0.5 h-4 w-4 shrink-0 border-gray-400 text-cyan-600 focus:ring-cyan-500"
+                          />
+                          <span className="text-sm text-gray-900 leading-snug">{opt.label}</span>
+                        </label>
+                      ))}
+                    </fieldset>
+                  )}
                   
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1646,7 +1694,12 @@ export default function AddNewsPage() {
                     />
                   </div>
 
-                  <div className="space-y-4">
+                  <div
+                    className={`space-y-4 ${
+                      filtersEnabled ? '' : 'pointer-events-none select-none opacity-50'
+                    }`}
+                    aria-disabled={!filtersEnabled}
+                  >
                     <div>
                       <label className="flex items-center gap-2 mb-2">
                         <input
@@ -2038,7 +2091,7 @@ export default function AddNewsPage() {
 
           <div className="flex items-center justify-end gap-4 pt-4 border-t border-gray-200">
             <Link
-              href="/news-by-movesbook/indexall"
+              href={fromClub ? '/club/dashboard' : '/news-by-movesbook/indexall'}
               className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
             >
               Cancel
@@ -2055,5 +2108,13 @@ export default function AddNewsPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function AddNewsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 bg-gray-50 min-h-full flex items-center justify-center"><div className="text-gray-600">Loading...</div></div>}>
+      <AddNewsPageContent />
+    </Suspense>
   );
 }

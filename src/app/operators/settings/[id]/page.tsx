@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -508,7 +509,7 @@ export default function OperatorSettingsPage() {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={staff.imageUrl} alt={staff.username} className="w-full h-full object-cover" />
                 ) : (
-                  <img src={staff.imageUrl} alt={staff.username} className="w-full h-full object-cover" />
+                  <Image src={staff.imageUrl} alt={staff.username} className="w-full h-full object-cover" width={64} height={64} unoptimized />
                 )
               ) : (
                 <User className="w-7 h-7 text-gray-500" />

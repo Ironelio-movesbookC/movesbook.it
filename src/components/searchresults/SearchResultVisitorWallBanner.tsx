@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { Camera } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -22,6 +21,36 @@ type SearchResultVisitorWallBannerProps = {
 
 const DEFAULT_BANNER = '/images/banner.jpg';
 
+function CoverImage({
+  src,
+  className,
+  priority,
+}: {
+  src: string;
+  className: string;
+  priority?: boolean;
+}) {
+  const [current, setCurrent] = useState(src);
+
+  useEffect(() => {
+    setCurrent(src);
+  }, [src]);
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={current}
+      alt=""
+      className={`absolute inset-0 h-full w-full ${className}`}
+      onError={() => {
+        if (current !== DEFAULT_BANNER) setCurrent(DEFAULT_BANNER);
+      }}
+      loading={priority ? 'eager' : 'lazy'}
+      decoding="async"
+    />
+  );
+}
+
 function SequenceCoverImages({
   sequencePaths,
   coverObjectClass,
@@ -41,18 +70,14 @@ function SequenceCoverImages({
   return (
     <div className="absolute inset-0">
       {resolved.map((src, i) => (
-        <Image
-          key={`${src}-${i}`}
-          src={src}
-          alt=""
-          fill
-          className={`absolute inset-0 ${coverObjectClass} transition-opacity duration-[900ms] ${
+        <div
+          key={`${src.slice(0, 64)}-${i}`}
+          className={`absolute inset-0 transition-opacity duration-[900ms] ${
             i === idx ? 'opacity-90 z-[1]' : 'opacity-0 z-0 pointer-events-none'
           }`}
-          sizes="(max-width: 640px) 100vw, 75vw"
-          priority={i === 0}
-          unoptimized={src.startsWith('data:')}
-        />
+        >
+          <CoverImage src={src} className={coverObjectClass} priority={i === 0} />
+        </div>
       ))}
     </div>
   );
@@ -81,7 +106,11 @@ export function SearchResultVisitorWallBanner({
   const coverObjectClass = alignCenter ? 'object-cover object-center' : 'object-cover object-top';
 
   const avatarSrc = resolvePublicImageUrl(profile?.image);
-  const sponsorThumb = bannerSrc;
+  const [sponsorThumb, setSponsorThumb] = useState(bannerSrc);
+
+  useEffect(() => {
+    setSponsorThumb(bannerSrc);
+  }, [bannerSrc]);
 
   return (
     <div className="flex w-full flex-col sm:flex-row shadow-lg overflow-hidden bg-black min-h-[220px] max-h-[280px]">
@@ -99,20 +128,16 @@ export function SearchResultVisitorWallBanner({
           />
         ) : useSequence ? (
           <SequenceCoverImages
-            key={sequencePaths.join('|')}
+            key={sequencePaths.map((p) => p.slice(0, 48)).join('|')}
             sequencePaths={sequencePaths}
             coverObjectClass={coverObjectClass}
           />
         ) : (
-          <Image
-            key={bannerSrc}
+          <CoverImage
+            key={bannerSrc.startsWith('data:') ? 'banner-data' : bannerSrc}
             src={bannerSrc}
-            alt=""
-            fill
             className={`${coverObjectClass} opacity-90`}
-            sizes="(max-width: 640px) 100vw, 75vw"
             priority
-            unoptimized={bannerSrc.startsWith('data:')}
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/20 to-transparent pointer-events-none" />
@@ -137,7 +162,12 @@ export function SearchResultVisitorWallBanner({
               <div className="w-24 h-24 sm:w-28 sm:h-28 border-4 border-white shadow-lg overflow-hidden bg-gray-200">
                 {avatarSrc ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img key={avatarSrc} src={avatarSrc} alt="" className="w-full h-full object-cover" />
+                  <img
+                    key={avatarSrc.startsWith('data:') ? 'avatar-data' : avatarSrc}
+                    src={avatarSrc}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-gray-300 text-gray-600 text-sm font-medium">
                     ?
@@ -169,13 +199,14 @@ export function SearchResultVisitorWallBanner({
               className="flex gap-2 bg-white/80 p-2 rounded border border-gray-200/80"
             >
               <div className="w-12 h-12 flex-shrink-0 bg-gray-300 overflow-hidden relative">
-                <Image
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
                   src={sponsorThumb}
                   alt=""
-                  width={48}
-                  height={48}
                   className="object-cover w-full h-full opacity-80"
-                  unoptimized={sponsorThumb.startsWith('data:')}
+                  onError={() => {
+                    if (sponsorThumb !== DEFAULT_BANNER) setSponsorThumb(DEFAULT_BANNER);
+                  }}
                 />
               </div>
               <div className="min-w-0 text-xs leading-snug">

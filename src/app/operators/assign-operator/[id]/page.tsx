@@ -71,7 +71,7 @@ export default function AssignOperatorPage() {
     } finally {
       setLoading(false);
     }
-  }, [coAdminId]);
+  }, [coAdminId, canManageStaff]);
 
   useEffect(() => {
     persistOperatorNavContext('CO_ADMIN');

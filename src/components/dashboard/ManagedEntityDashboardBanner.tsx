@@ -1,9 +1,9 @@
 'use client';
 
-import Image from 'next/image';
 import { Camera, Home } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { DEFAULT_HERO_BANNER_URL } from '@/lib/profileBannerSequence';
+import SafeCoverImage from '@/components/media/SafeCoverImage';
 import {
   getManagedEntityDashboardLabels,
   type ManagedEntityDashboardKind,
@@ -44,20 +44,17 @@ export default function ManagedEntityDashboardBanner({
   const alignCenter = coverBannerAlignment === 'center';
   const coverObjectClass = alignCenter ? 'object-cover object-center' : 'object-cover object-top';
   const stripBgPos = alignCenter ? 'center center' : 'center top';
-  const imgUnoptimized = src.startsWith('http') || src.startsWith('data:');
+  const stripSrc = src.startsWith('/uploads/') ? DEFAULT_HERO_BANNER_URL : src;
 
   return (
     <div className="mb-6 flex-shrink-0 px-0">
       <div className="flex w-full flex-col lg:flex-row shadow-lg overflow-hidden bg-black min-h-[220px] max-h-[280px]">
         <div className="relative flex-1 min-h-[200px] lg:min-h-[220px] min-w-0">
-          <Image
+          <SafeCoverImage
             src={src}
-            alt=""
             fill
             className={`${coverObjectClass} opacity-90`}
-            sizes="(max-width: 1024px) 100vw, 75vw"
             priority
-            unoptimized={imgUnoptimized}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/20 to-transparent pointer-events-none" />
 
@@ -81,13 +78,11 @@ export default function ManagedEntityDashboardBanner({
           <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-3 p-3 z-10">
             <div className="flex items-end gap-2 min-w-0">
               <div className="w-[72px] h-[54px] shrink-0 border-2 border-white shadow-lg overflow-hidden bg-gray-200">
-                <Image
+                <SafeCoverImage
                   src={src}
-                  alt=""
                   width={72}
                   height={54}
                   className={`w-full h-full opacity-90 ${alignCenter ? 'object-cover object-center' : 'object-cover object-top'}`}
-                  unoptimized={imgUnoptimized}
                 />
               </div>
               <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
@@ -134,13 +129,11 @@ export default function ManagedEntityDashboardBanner({
                   className="flex gap-2 bg-white/80 p-2 rounded border border-gray-200/80"
                 >
                   <div className="w-12 h-12 flex-shrink-0 bg-gray-300 overflow-hidden relative">
-                    <Image
+                    <SafeCoverImage
                       src={src}
-                      alt=""
                       width={48}
                       height={48}
                       className="object-cover w-full h-full opacity-80"
-                      unoptimized={imgUnoptimized}
                     />
                   </div>
                   <div className="min-w-0 text-xs leading-snug">
@@ -163,7 +156,7 @@ export default function ManagedEntityDashboardBanner({
           <div
             className="absolute inset-0 bg-cover opacity-20"
             style={{
-              backgroundImage: `url(${src})`,
+              backgroundImage: `url(${stripSrc})`,
               backgroundSize: 'cover',
               backgroundPosition: stripBgPos,
             }}

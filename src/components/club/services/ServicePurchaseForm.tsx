@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -337,10 +338,13 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
                   ))}
                 </select>
                 {selectedService?.imageUrl && (
-                  <img
+                  <Image
                     src={selectedService.imageUrl}
                     alt=""
                     className="h-10 w-14 flex-shrink-0 rounded border border-gray-200 bg-gray-50 object-cover"
+                    width={56}
+                    height={40}
+                    unoptimized
                   />
                 )}
               </div>

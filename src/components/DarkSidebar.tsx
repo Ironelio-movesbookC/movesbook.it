@@ -119,6 +119,7 @@ import {
   isGroupAccountUserType,
   isManagedEntityAdminUserType,
   isTeamAccountUserType,
+  showSuggestMovesbookForTab,
   userOwnsMovesbookWebsite,
 } from '@/utils/dashboardRouting';
 import {
@@ -382,6 +383,12 @@ interface DarkSidebarProps {
   onClubOgpNewsSectionClick?: () => void;
   /** My Club → Club News → Club Global News (all shared) */
   onClubGlobalNewsSectionClick?: () => void;
+  /** My Page → News → Movesbook News (superadmin Global News, read-only) */
+  onMyPageMovesbookNewsClick?: () => void;
+  /** My Page → News → News (same as top-nav MB News / news-by-movesbook) */
+  onMyPageNewsClick?: () => void;
+  /** My Page → News → OGP News (same as top-nav News / ?open=news) */
+  onMyPageOgpNewsClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
@@ -434,6 +441,9 @@ export default function DarkSidebar({
   onClubMovesbookNewsSectionClick,
   onClubOgpNewsSectionClick,
   onClubGlobalNewsSectionClick,
+  onMyPageMovesbookNewsClick,
+  onMyPageNewsClick,
+  onMyPageOgpNewsClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
@@ -462,6 +472,7 @@ export default function DarkSidebar({
 
   const currentTab = onTabChange ? activeTab : internalActiveTab;
   const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
+  const showSuggestMovesbook = showSuggestMovesbookForTab(userType, currentTab);
 
   const [communitiesOpen, setCommunitiesOpen] = useState(false);
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
@@ -733,6 +744,7 @@ export default function DarkSidebar({
   const [clubUserGuidesOpen, setClubUserGuidesOpen] = useState(false);
   const [clubPostsOpen, setClubPostsOpen] = useState(false);
   const [clubNewsOpen, setClubNewsOpen] = useState(false);
+  const [myPageNewsOpen, setMyPageNewsOpen] = useState(false);
   const [musicForClubOpen, setMusicForClubOpen] = useState(false);
   const [clubInternetLinksOpen, setClubInternetLinksOpen] = useState(false);
   const [clubInternetMyClubsOpen, setClubInternetMyClubsOpen] = useState(true);
@@ -1527,13 +1539,15 @@ export default function DarkSidebar({
             </div>
 
             <div className="py-3 bg-gray-850 border-t border-gray-700">
-              <button
-                type="button"
-                onClick={handleSuggestMovesbookClick}
-                className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
-              >
-                Suggest Movesbook to your friends
-              </button>
+              {showSuggestMovesbook ? (
+                <button
+                  type="button"
+                  onClick={handleSuggestMovesbookClick}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                >
+                  Suggest Movesbook to your friends
+                </button>
+              ) : null}
             </div>
           </div>
         )}
@@ -2381,13 +2395,52 @@ export default function DarkSidebar({
               <ChevronDown className="w-4 h-4 opacity-80" />
             </button>
 
-            <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
-              <div className="flex items-center gap-3">
-                <Newspaper className="w-5 h-5" />
-                <span>{t('sidebar_news')}</span>
-              </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+            <div className="w-full border-b border-teal-700">
+              <button
+                type="button"
+                onClick={() => setMyPageNewsOpen((v) => !v)}
+                aria-expanded={myPageNewsOpen}
+                className="flex w-full items-center justify-between bg-teal-800 py-3 px-4 text-white transition-colors hover:bg-teal-700"
+              >
+                <div className="flex items-center gap-3">
+                  <Newspaper className="h-5 w-5 shrink-0" />
+                  <span>{t('sidebar_my_news')}</span>
+                </div>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 opacity-80 transition-transform duration-200 ${
+                    myPageNewsOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {myPageNewsOpen && (
+                <div className="bg-[#4a4a4a] text-white">
+                  <button
+                    type="button"
+                    onClick={() => onMyPageMovesbookNewsClick?.()}
+                    className="mb-1.5 flex w-full items-center gap-2.5 border-b-2 border-gray-400/70 px-4 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                  >
+                    <BookOpen className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                    <span className="min-w-0 leading-snug">Movesbook News</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMyPageNewsClick?.()}
+                    className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-4 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                  >
+                    <Newspaper className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                    <span className="min-w-0 leading-snug">News</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMyPageOgpNewsClick?.()}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                  >
+                    <Link2 className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                    <span className="min-w-0 leading-snug">OGP News</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
               <div className="flex items-center gap-3">
@@ -2644,13 +2697,15 @@ export default function DarkSidebar({
                   </div>
 
                   <div className="py-3 bg-gray-850 border-t border-gray-700">
-                    <button
-                      type="button"
-                      onClick={handleSuggestMovesbookClick}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
-                    >
-                      Suggest Movesbook to your friends
-                    </button>
+                    {showSuggestMovesbook ? (
+                      <button
+                        type="button"
+                        onClick={handleSuggestMovesbookClick}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                      >
+                        Suggest Movesbook to your friends
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -3020,7 +3075,7 @@ export default function DarkSidebar({
                         <button
                           type="button"
                           onClick={() => onClubMovesbookNewsSectionClick?.()}
-                          className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                          className="mb-1.5 flex w-full items-center gap-2.5 border-b-2 border-gray-400/70 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                         >
                           <BookOpen className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
                           <span className="min-w-0 leading-snug">Movesbook News</span>
@@ -3047,7 +3102,7 @@ export default function DarkSidebar({
                           className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                         >
                           <Globe className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                          <span className="min-w-0 leading-snug">Club Global News</span>
+                          <span className="min-w-0 leading-snug">Club News &amp; OGP News</span>
                         </button>
                       </div>
                     )}
@@ -4764,6 +4819,18 @@ export default function DarkSidebar({
                       </div>
                     </button>
                   </>
+                )}
+
+                {showSuggestMovesbook && (
+                  <div className="py-3 px-3 bg-gray-850 border-t border-gray-700">
+                    <button
+                      type="button"
+                      onClick={handleSuggestMovesbookClick}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                    >
+                      Suggest Movesbook to your friends
+                    </button>
+                  </div>
                 )}
               </>
             )}

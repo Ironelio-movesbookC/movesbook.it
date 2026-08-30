@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import type { CSSProperties } from 'react';
 import { promocodeFlagCdnFallback } from '@/components/promocodes/promocodeImageUrls';
 
@@ -27,11 +28,14 @@ export default function PromocodeAssetImage({
   }
 
   return (
-    <img
+    <Image
       src={src}
       alt={alt}
+      width={24}
+      height={16}
       className={className}
       style={style}
+      unoptimized
       onError={(e) => {
         const img = e.currentTarget;
         if (img.dataset.fallbackApplied === '2') return;

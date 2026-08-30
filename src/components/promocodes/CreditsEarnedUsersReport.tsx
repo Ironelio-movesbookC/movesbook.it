@@ -18,8 +18,6 @@ export default function CreditsEarnedUsersReport() {
   const [searchUsername, setSearchUsername] = useState('');
   const [loading, setLoading] = useState(true);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
-  const [secondaryModalOpen, setSecondaryModalOpen] = useState(false);
-  const [secondaryUsers, setSecondaryUsers] = useState<string[]>([]);
 
   const load = useCallback(async (search = searchUsername) => {
     setLoading(true);
@@ -44,11 +42,6 @@ export default function CreditsEarnedUsersReport() {
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     void load(searchUsername);
-  };
-
-  const openSecondaryList = (users: string[]) => {
-    setSecondaryUsers(users);
-    setSecondaryModalOpen(true);
   };
 
   if (!ready) return null;
@@ -90,8 +83,8 @@ export default function CreditsEarnedUsersReport() {
                   <th>Credits</th>
                   <th>Used</th>
                   <th>Available</th>
-                  <th>Primary username (1)</th>
-                  <th>Secondary username</th>
+                  <th>Primary beneficiary</th>
+                  <th>Secondary beneficiary</th>
                 </tr>
               </thead>
               <tbody>
@@ -122,24 +115,8 @@ export default function CreditsEarnedUsersReport() {
                       <td>{formatCredits(row.creditsTotal)}</td>
                       <td>{formatCredits(row.used)}</td>
                       <td>{formatCredits(row.available)}</td>
-                      <td>{row.primaryUsername}</td>
-                      <td>
-                        {row.secondaryCount > 0 ? (
-                          <a
-                            href="#"
-                            className="secondary-link js-open-secondary"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              openSecondaryList(row.secondaryUsernames);
-                            }}
-                          >
-                            {row.secondaryCount}
-                          </a>
-                        ) : (
-                          '0'
-                        )}
-                      </td>
+                      <td>{row.primaryUsername || '—'}</td>
+                      <td>{row.secondaryUsername || '—'}</td>
                     </tr>
                   ))
                 )}
@@ -148,35 +125,6 @@ export default function CreditsEarnedUsersReport() {
           )}
         </div>
       </div>
-
-      {secondaryModalOpen && (
-        <div className="fixed-center" id="secondaryUsersModal">
-          <div className="fixed-center-pop">
-            <div style={{ textAlign: 'right' }}>
-              <a
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setSecondaryModalOpen(false);
-                }}
-                style={{ fontSize: 20, textDecoration: 'none' }}
-              >
-                &times;
-              </a>
-            </div>
-            <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Secondary usernames</div>
-            {secondaryUsers.length === 0 ? (
-              <p>No secondary users.</p>
-            ) : (
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {secondaryUsers.map((name) => (
-                  <li key={name}>{name}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

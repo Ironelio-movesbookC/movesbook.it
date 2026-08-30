@@ -138,7 +138,7 @@ function TeamDashboardContent() {
     } else {
       setShowLeftSidebar(true);
     }
-  }, [showWorkoutSection]);
+  }, [showWorkoutSection, setShowLeftSidebar]);
 
   const activeTeam = selectedTeamId
     ? formCreatedTeams.find((team) => team.id === selectedTeamId) ?? null
@@ -225,6 +225,7 @@ function TeamDashboardContent() {
                   }
                 }}
                 onCreateTeamClick={entityCreation.openCreateFlow}
+                onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
                 onMyFeedbacksStaffClick={() => {
                   setActiveTab('my-page');
                   setShowStaffFeedbacks(true);

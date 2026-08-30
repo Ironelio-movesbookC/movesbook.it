@@ -1,9 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ExternalLink, Globe, Loader2, Newspaper, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ExternalLink, Globe, Loader2, Newspaper, Search, X } from 'lucide-react';
 import type { ClubSharedFeedItem } from '@/lib/clubNewsShareAuth';
+import SharedNewsItemPreviewModal, {
+  previewPayloadFromFeedItem,
+  type SharedNewsPreviewPayload,
+} from '@/components/news/SharedNewsItemPreviewModal';
+import NewsFeedMetaLine from '@/components/news/NewsFeedMetaLine';
 
 type ClubSharedNewsPanelProps = {
   clubId: string;
@@ -11,6 +15,15 @@ type ClubSharedNewsPanelProps = {
   title?: string;
   onClose?: () => void;
 };
+
+type GlobalKindFilter = 'all' | 'news' | 'ogp' | 'ogp-group';
+
+const KIND_FILTER_OPTIONS: { value: GlobalKindFilter; label: string }[] = [
+  { value: 'all', label: 'All types' },
+  { value: 'news', label: 'News' },
+  { value: 'ogp', label: 'OGP News' },
+  { value: 'ogp-group', label: 'OGP Group' },
+];
 
 function formatDate(iso: string) {
   try {
@@ -26,10 +39,28 @@ function formatDate(iso: string) {
 
 function itemTitle(item: ClubSharedFeedItem) {
   if (item.title?.trim()) return item.title.trim();
-  if (item.kind === 'ogp') {
+  if (item.kind === 'ogp' || item.kind === 'ogp-group') {
     return item.customDescription?.trim() || item.description?.trim() || item.url;
   }
   return 'Untitled';
+}
+
+function itemSearchText(item: ClubSharedFeedItem): string {
+  const parts: string[] = [itemTitle(item)];
+  if (item.kind === 'news') {
+    parts.push(item.author ?? '', item.categoryName ?? '', item.method ?? '');
+  } else if (item.kind === 'ogp') {
+    parts.push(item.topic, item.creatorUsername ?? '', item.description ?? '', item.customDescription ?? '');
+  } else {
+    parts.push(
+      item.topic,
+      item.creatorUsername ?? '',
+      item.description ?? '',
+      item.customDescription ?? '',
+      String(item.memberCount ?? ''),
+    );
+  }
+  return parts.filter(Boolean).join(' ').toLowerCase();
 }
 
 /**
@@ -43,11 +74,31 @@ export default function ClubSharedNewsPanel({
   onClose,
 }: ClubSharedNewsPanelProps) {
   const [items, setItems] = useState<ClubSharedFeedItem[]>([]);
+  const [isClubAdmin, setIsClubAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [removingKey, setRemovingKey] = useState<string | null>(null);
+  const [kindFilter, setKindFilter] = useState<GlobalKindFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [preview, setPreview] = useState<SharedNewsPreviewPayload | null>(null);
 
   const isGlobalFeed = type === 'all';
+
+  const openPreview = useCallback((item: ClubSharedFeedItem) => {
+    setPreview(previewPayloadFromFeedItem(item));
+  }, []);
+
+  const filteredItems = useMemo(() => {
+    let result = items;
+    if (kindFilter !== 'all') {
+      result = result.filter((item) => item.kind === kindFilter);
+    }
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      result = result.filter((item) => itemSearchText(item).includes(q));
+    }
+    return result;
+  }, [items, kindFilter, searchQuery]);
 
   const loadItems = useCallback(async () => {
     const token = localStorage.getItem('token');
@@ -60,10 +111,12 @@ export default function ClubSharedNewsPanel({
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) throw new Error('Failed to load shared news');
-      const data = (await res.json()) as { items?: ClubSharedFeedItem[] };
+      const data = (await res.json()) as { items?: ClubSharedFeedItem[]; isClubAdmin?: boolean };
       setItems(data.items ?? []);
+      setIsClubAdmin(data.isClubAdmin === true);
     } catch {
       setError('Could not load shared news for this club.');
+      setIsClubAdmin(false);
     } finally {
       setLoading(false);
     }
@@ -83,7 +136,9 @@ export default function ClubSharedNewsPanel({
         const path =
           item.kind === 'news'
             ? `/api/clubs/shared-news/news/${encodeURIComponent(item.id)}`
-            : `/api/clubs/shared-news/ogp/${encodeURIComponent(item.id)}`;
+            : item.kind === 'ogp-group'
+              ? `/api/clubs/shared-news/ogp-group/${encodeURIComponent(item.id)}`
+              : `/api/clubs/shared-news/ogp/${encodeURIComponent(item.id)}`;
         const res = await fetch(path, {
           method: 'PATCH',
           headers: {
@@ -109,29 +164,63 @@ export default function ClubSharedNewsPanel({
       ? 'OGP News'
       : type === 'news'
         ? 'News'
-        : 'Club Global News');
+        : 'Club News & OGP News');
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-center gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3">
-        <Globe className="h-5 w-5 shrink-0 text-teal-700" />
-        <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-semibold text-gray-900">{panelTitle}</h2>
-          {isGlobalFeed ? (
-            <p className="text-sm text-gray-500">
-              News and OGP News shared here, sorted by date
-            </p>
+      <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+        <div className="flex flex-wrap items-start gap-3">
+          <Globe className="mt-0.5 h-5 w-5 shrink-0 text-teal-700" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold text-gray-900">{panelTitle}</h2>
+            {isGlobalFeed ? (
+              <p className="text-sm text-gray-500">
+                News, OGP News, and OGP News groups shared here, sorted by date
+              </p>
+            ) : null}
+          </div>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
           ) : null}
         </div>
-        {onClose ? (
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700"
-            aria-label="Close"
-          >
-            <X className="h-5 w-5" />
-          </button>
+
+        {isGlobalFeed ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 sm:justify-end">
+            <label className="flex min-w-[10rem] flex-1 items-center gap-2 sm:max-w-[11rem] sm:flex-none">
+              <span className="sr-only">Filter by type</span>
+              <select
+                value={kindFilter}
+                onChange={(e) => setKindFilter(e.target.value as GlobalKindFilter)}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                aria-label="Filter by type"
+              >
+                {KIND_FILTER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="relative min-w-[12rem] flex-1 sm:max-w-xs sm:flex-none">
+              <span className="sr-only">Search news</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search news…"
+                className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                aria-label="Search news"
+              />
+            </label>
+          </div>
         ) : null}
       </div>
 
@@ -157,20 +246,33 @@ export default function ClubSharedNewsPanel({
                 : 'Use "Share in My Clubs" on OGP News or News articles to add items here.'}
             </p>
           </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center">
+            <Globe className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+            <p className="font-medium text-gray-600">No matching items</p>
+            <p className="mt-1 text-sm text-gray-500">
+              Try a different type filter or search term.
+            </p>
+          </div>
         ) : isGlobalFeed ? (
           <ul className="mx-auto max-w-5xl space-y-3">
-            {items.map((item) => {
+            {filteredItems.map((item) => {
               const titleText = itemTitle(item);
-              const viewHref =
-                item.kind === 'news'
-                  ? `/news-by-movesbook/${item.id}`
-                  : item.url;
               const rowKey = `${item.kind}-${item.id}`;
 
               return (
                 <li
                   key={rowKey}
-                  className="flex gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                  className="flex cursor-pointer gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                  onClick={() => openPreview(item)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openPreview(item);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                 >
                   <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
                     {item.image ? (
@@ -201,10 +303,16 @@ export default function ClubSharedNewsPanel({
                         className={`rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${
                           item.kind === 'news'
                             ? 'bg-blue-100 text-blue-800'
-                            : 'bg-teal-100 text-teal-800'
+                            : item.kind === 'ogp-group'
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-teal-100 text-teal-800'
                         }`}
                       >
-                        {item.kind === 'news' ? 'News' : 'OGP News'}
+                        {item.kind === 'news'
+                          ? 'News'
+                          : item.kind === 'ogp-group'
+                            ? 'OGP Group'
+                            : 'OGP News'}
                       </span>
                       <span className="text-xs text-gray-500">{formatDate(item.date)}</span>
                     </div>
@@ -213,46 +321,43 @@ export default function ClubSharedNewsPanel({
                       {titleText}
                     </h3>
 
-                    <p className="mt-1 line-clamp-2 text-sm text-gray-600">
-                      {item.kind === 'news'
-                        ? [item.categoryName, item.method, item.author]
-                            .filter(Boolean)
-                            .join(' · ')
-                        : [
-                            item.topic,
-                            item.creatorUsername ? `by ${item.creatorUsername}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                    </p>
+                    <NewsFeedMetaLine
+                      kind={item.kind}
+                      sector={
+                        item.kind === 'news' ? item.categoryName : item.topic
+                      }
+                      mode={item.kind === 'news' ? item.method : null}
+                      postedBy={
+                        item.kind === 'news' ? item.author : item.creatorUsername
+                      }
+                    />
 
                     <div className="mt-3 flex flex-wrap items-center gap-3">
-                      {item.kind === 'ogp' ? (
-                        <a
-                          href={viewHref}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:text-teal-900"
+                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700">
+                        {item.kind === 'ogp' ? (
+                          <>
+                            Open link
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </>
+                        ) : item.kind === 'ogp-group' ? (
+                          'View group'
+                        ) : (
+                          'View article'
+                        )}
+                      </span>
+                      {isClubAdmin ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleRemoveFromGlobal(item);
+                          }}
+                          disabled={removingKey === rowKey}
+                          className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
                         >
-                          Open link
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      ) : (
-                        <Link
-                          href={viewHref}
-                          className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:text-teal-900"
-                        >
-                          View article
-                        </Link>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => void handleRemoveFromGlobal(item)}
-                        disabled={removingKey === rowKey}
-                        className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
-                      >
-                        Remove from Club Global News
-                      </button>
+                          Remove from Club Global News
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </li>
@@ -263,9 +368,11 @@ export default function ClubSharedNewsPanel({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {items.map((item) =>
               item.kind === 'ogp' ? (
-                <article
+                <button
                   key={item.shareId}
-                  className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
+                  type="button"
+                  onClick={() => openPreview(item)}
+                  className="overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition-shadow hover:shadow-md"
                 >
                   {item.image ? (
                     <div className="relative h-40 w-full bg-gray-100">
@@ -290,21 +397,18 @@ export default function ClubSharedNewsPanel({
                     <p className="text-xs text-gray-500">
                       Shared {new Date(item.sharedAt).toLocaleDateString()}
                     </p>
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
-                    >
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600">
                       Open link
                       <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
+                    </span>
                   </div>
-                </article>
-              ) : (
-                <article
+                </button>
+              ) : item.kind === 'news' ? (
+                <button
                   key={item.shareId}
-                  className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
+                  type="button"
+                  onClick={() => openPreview(item)}
+                  className="overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition-shadow hover:shadow-md"
                 >
                   {item.image ? (
                     <div className="relative h-40 w-full bg-gray-100">
@@ -337,20 +441,19 @@ export default function ClubSharedNewsPanel({
                       {item.author ? `${item.author} · ` : ''}
                       Shared {new Date(item.sharedAt).toLocaleDateString()}
                     </p>
-                    <Link
-                      href={`/news-by-movesbook/${item.id}`}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
-                    >
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600">
                       Read article
                       <ExternalLink className="h-3.5 w-3.5" />
-                    </Link>
+                    </span>
                   </div>
-                </article>
-              ),
+                </button>
+              ) : null,
             )}
           </div>
         )}
       </div>
+
+      <SharedNewsItemPreviewModal item={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }

@@ -76,16 +76,41 @@ function recipientLabel(row: import('@/lib/promocodes/types').PromocodeApplyRow)
   return promocodeRecipientLabel(row);
 }
 
+function clickableName(
+  label: string,
+  onClick?: (name: string) => void
+) {
+  if (!label || !onClick) return label;
+  return (
+    <button
+      type="button"
+      className="text-blue-800 underline"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(label);
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function PromocodeAppliesTable({
   rows,
   variant = 'index',
   selectedId,
   onSelect,
+  onSenderClick,
+  onSecondaryClick,
+  onRecipientClick,
 }: {
   rows: import('@/lib/promocodes/types').PromocodeApplyRow[];
   variant?: 'index' | 'promoAll' | 'detail';
   selectedId?: number | null;
   onSelect?: (id: number) => void;
+  onSenderClick?: (username: string) => void;
+  onSecondaryClick?: (username: string) => void;
+  onRecipientClick?: (username: string) => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -98,6 +123,7 @@ export function PromocodeAppliesTable({
               <>
                 <th className="p-2">Date</th>
                 <th className="p-2">Promocode</th>
+                <th className="p-2">Mode invite</th>
                 <th className="p-2">Sender</th>
                 <th className="p-2">%</th>
                 <th className="p-2">Also Credits to</th>
@@ -108,7 +134,6 @@ export function PromocodeAppliesTable({
                 <th className="p-2">Version</th>
                 <th className="p-2">Data Start</th>
                 <th className="p-2">Data end</th>
-                <th className="p-2">Invites n.</th>
               </>
             )}
             {variant === 'detail' && (
@@ -176,9 +201,10 @@ export function PromocodeAppliesTable({
                   <>
                     <td className="p-2">{date}</td>
                     <td className="p-2 text-[#7b0a26]">{row.promocodeCode}</td>
-                    <td className="p-2 text-center">{sender}</td>
+                    <td className="p-2 text-center">{row.inviteMode || 'Mail'}</td>
+                    <td className="p-2 text-center">{clickableName(sender, onSenderClick)}</td>
                     <td className="p-2 text-center">{row.senderCredit ?? '00'}</td>
-                    <td className="p-2 text-center">{secondary}</td>
+                    <td className="p-2 text-center">{clickableName(secondary, onSecondaryClick)}</td>
                     <td className="p-2 text-center">{row.secondarySenderCredit ?? '00'}</td>
                     <td className="p-2 text-center">
                       <PromocodeAssetImage
@@ -188,20 +214,21 @@ export function PromocodeAppliesTable({
                         className="w-12 h-7 object-cover mx-auto"
                       />
                     </td>
-                    <td className={`p-2 ${recipient.className}`}>{recipient.text}</td>
+                    <td className={`p-2 ${recipient.className}`}>
+                      {clickableName(recipient.text, onRecipientClick)}
+                    </td>
                     <td className="p-2 text-center">{row.receiverCredit ?? '00'}</td>
                     <td className="p-2 text-center">{row.receiverVersion}</td>
                     <td className="p-2 text-center">{dataStart}</td>
                     <td className="p-2 text-center">{dataEnd}</td>
-                    <td className="p-2 text-center">1</td>
                   </>
                 )}
                 {variant === 'detail' && (
                   <>
                     <td className="p-2">{date}</td>
-                    <td className="p-2 text-center">{sender}</td>
+                    <td className="p-2 text-center">{clickableName(sender, onSenderClick)}</td>
                     <td className="p-2 text-center">{row.senderCredit}</td>
-                    <td className="p-2 text-center">{secondary}</td>
+                    <td className="p-2 text-center">{clickableName(secondary, onSecondaryClick)}</td>
                     <td className="p-2 text-center">{row.secondarySenderCredit}</td>
                     <td className="p-2 text-center">
                       <PromocodeAssetImage
@@ -211,7 +238,9 @@ export function PromocodeAppliesTable({
                         className="w-12 h-7 object-cover mx-auto"
                       />
                     </td>
-                    <td className={`p-2 ${recipient.className}`}>{recipient.text}</td>
+                    <td className={`p-2 ${recipient.className}`}>
+                      {clickableName(recipient.text, onRecipientClick)}
+                    </td>
                     <td className="p-2 text-center">{row.receiverCredit}</td>
                     <td className="p-2 text-center">{row.receiverVersion}</td>
                     <td className="p-2 text-center">{dataStart}</td>
@@ -228,13 +257,15 @@ export function PromocodeAppliesTable({
                         className="w-12 h-7 object-cover mx-auto"
                       />
                     </td>
-                    <td className={`p-2 ${recipient.className}`}>{recipient.text}</td>
+                    <td className={`p-2 ${recipient.className}`}>
+                      {clickableName(recipient.text, onRecipientClick)}
+                    </td>
                     <td className="p-2 text-center">{row.receiverVersion}</td>
                     <td className="p-2 text-center">{dataStart}</td>
                     <td className="p-2 text-center">{dataEnd}</td>
                     <td className="p-2 text-[#7b0a26]">{row.promocodeCode}</td>
-                    <td className="p-2 text-center">{sender}</td>
-                    <td className="p-2 text-center">{secondary}</td>
+                    <td className="p-2 text-center">{clickableName(sender, onSenderClick)}</td>
+                    <td className="p-2 text-center">{clickableName(secondary, onSecondaryClick)}</td>
                     <td className="p-2 text-center">{date}</td>
                     <td className="p-2 text-center">{status}</td>
                     <td className="p-2 text-center">{row.receiverCredit ?? '00'}</td>

@@ -200,7 +200,7 @@ function GroupDashboardContent() {
     } else {
       setShowLeftSidebar(true);
     }
-  }, [showWorkoutSection]);
+  }, [showWorkoutSection, setShowLeftSidebar]);
 
   if (loading || !user) {
     return null;
@@ -293,6 +293,7 @@ function GroupDashboardContent() {
                   }
                 }}
                 onCreateGroupClick={entityCreation.openCreateFlow}
+                onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
                 onMyFeedbacksStaffClick={() => {
                   setActiveTab('my-page');
                   setShowStaffFeedbacks(true);

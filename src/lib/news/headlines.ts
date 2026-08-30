@@ -5,6 +5,8 @@ export const HEADLINES_COMPACT_PAGES = 3;
 export const HEADLINES_COMPACT_LIMIT = HEADLINES_PER_PAGE * HEADLINES_COMPACT_PAGES;
 /** Expanded “Top Stories” carousel size. */
 export const TOP_STORIES_COUNT = 7;
+/** Auto-advance interval for Top Stories carousel (ms). */
+export const TOP_STORIES_AUTO_MS = 2200;
 
 export function sourceName(article: {
   siteName?: string | null;

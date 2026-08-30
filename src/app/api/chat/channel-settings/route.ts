@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile } from 'fs/promises';
-import { join } from 'path';
+import sharp from 'sharp';
 import { verifyToken } from '@/lib/auth';
 import {
-  channelPhotoPublicPath,
   clearOldChannelPhotos,
-  ensureChatUploadDir,
   readChannelSettings,
   writeChannelSettings,
 } from '@/lib/chat/channelSettings';
@@ -14,8 +11,10 @@ import { resolveClubChannelAuth } from '@/lib/chat/clubChannelAuth';
 export const dynamic = 'force-dynamic';
 
 const MAX_BYTES = 5 * 1024 * 1024;
-const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
 const MAX_CHANNEL_NAME_LEN = 64;
+/** Channel avatar is small in UI — keep data URL under MySQL/JSON-friendly size. */
+const PHOTO_MAX_EDGE = 512;
+const PHOTO_JPEG_QUALITY = 82;
 
 function authorize(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -50,8 +49,7 @@ function parseDataUrl(dataUrl: string): { mime: string; buffer: Buffer } | null 
   const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUrl.trim());
   if (!match) return null;
   const mime = match[1].toLowerCase();
-  const ext = extFromMime(mime);
-  if (!ext) return null;
+  if (!extFromMime(mime)) return null;
   try {
     const buffer = Buffer.from(match[2], 'base64');
     if (!buffer.length || buffer.length > MAX_BYTES) return null;
@@ -59,6 +57,18 @@ function parseDataUrl(dataUrl: string): { mime: string; buffer: Buffer } | null 
   } catch {
     return null;
   }
+}
+
+async function toChannelPhotoDataUrl(input: Buffer): Promise<string> {
+  const jpeg = await sharp(input)
+    .rotate()
+    .resize(PHOTO_MAX_EDGE, PHOTO_MAX_EDGE, {
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: PHOTO_JPEG_QUALITY, mozjpeg: true })
+    .toBuffer();
+  return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
 }
 
 async function assertCanWriteSettings(
@@ -111,6 +121,9 @@ export async function GET(request: NextRequest) {
  *  - JSON `{ channelName, clubId? }` — rename only
  *  - JSON `{ photoDataUrl, channelName?, clubId? }` — photo (+ optional rename)
  *  - multipart `file` (+ optional `clubId`, `channelName`) — photo upload
+ *
+ * Photos are stored as compressed data URLs in channel-settings.json
+ * (same approach as operator/avatar photos — no separate image file under public/).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -121,7 +134,6 @@ export async function POST(request: NextRequest) {
 
     const contentType = request.headers.get('content-type') || '';
     let buffer: Buffer | null = null;
-    let ext = 'jpg';
     let clubId: string | null = null;
     let channelNamePatch: string | null = null;
 
@@ -130,17 +142,16 @@ export async function POST(request: NextRequest) {
       clubId = parseClubId(formData.get('clubId'));
       channelNamePatch = normalizeChannelName(formData.get('channelName'));
       const file = formData.get('file');
-      if (!(file instanceof Blob)) {
+      if (!(file instanceof File) && !(file instanceof Blob)) {
         return NextResponse.json({ error: 'No file provided' }, { status: 400 });
       }
       if (file.size > MAX_BYTES) {
-        return NextResponse.json({ error: 'File size exceeds 5MB limit' }, { status: 400 });
+        return NextResponse.json({ error: 'File size exceeds 5MB limit' }, { status: 413 });
       }
-      const mimeExt = extFromMime(file.type);
-      if (!mimeExt) {
-        return NextResponse.json({ error: 'Invalid file type. Only images are allowed' }, { status: 400 });
+      const mime = 'type' in file && typeof file.type === 'string' ? file.type : '';
+      if (!mime.startsWith('image/')) {
+        return NextResponse.json({ error: 'Only image files are allowed' }, { status: 400 });
       }
-      ext = mimeExt;
       buffer = Buffer.from(await file.arrayBuffer());
     } else {
       let body: Record<string, unknown> = {};
@@ -161,11 +172,6 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-        const mimeExt = extFromMime(parsed.mime);
-        if (!mimeExt || !ALLOWED_EXT.has(mimeExt === 'jpeg' ? 'jpg' : mimeExt)) {
-          return NextResponse.json({ error: 'Invalid file type. Only images are allowed' }, { status: 400 });
-        }
-        ext = mimeExt === 'jpeg' ? 'jpg' : mimeExt;
         buffer = parsed.buffer;
       } else if (!channelNamePatch) {
         return NextResponse.json(
@@ -194,15 +200,19 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const dir = await ensureChatUploadDir(clubId);
-    const fileName = `channel-photo-${Date.now()}.${ext}`;
-    await writeFile(join(dir, fileName), buffer);
-    await clearOldChannelPhotos(fileName, clubId);
+    let photoDataUrl: string;
+    try {
+      photoDataUrl = await toChannelPhotoDataUrl(buffer);
+    } catch {
+      return NextResponse.json({ error: 'Invalid or unsupported image file' }, { status: 400 });
+    }
 
-    const photoUrl = channelPhotoPublicPath(fileName, clubId);
+    // Drop legacy on-disk channel-photo-* files; photo now lives in settings JSON.
+    await clearOldChannelPhotos(undefined, clubId);
+
     const settings = await writeChannelSettings(
       {
-        photoUrl,
+        photoUrl: photoDataUrl,
         ...(channelNamePatch ? { channelName: channelNamePatch } : {}),
       },
       clubId

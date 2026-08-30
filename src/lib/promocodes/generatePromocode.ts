@@ -7,9 +7,23 @@ export function generatePromocode(): string {
   return BigInt(`0x${sha1Hex}`).toString(36).slice(0, 9);
 }
 
-/** Fetch a new promocode from the API (public endpoint, no auth required). */
+/** Fetch a new promocode from the API (public endpoint; send token when available). */
 export async function fetchGeneratedPromocode(): Promise<string> {
-  const res = await fetch('/api/admin/promocodes/change-code', { method: 'POST' });
+  const headers: HeadersInit = {};
+  if (typeof window !== 'undefined') {
+    try {
+      const { getAdminBearerToken } = await import('@/lib/admin/clientAdminAuth');
+      const token = getAdminBearerToken() || localStorage.getItem('token')?.trim();
+      if (token) headers.Authorization = `Bearer ${token}`;
+    } catch {
+      /* ignore — endpoint is also public */
+    }
+  }
+
+  const res = await fetch('/api/admin/promocodes/change-code', {
+    method: 'POST',
+    headers,
+  });
   const raw = (await res.text()).trim();
   if (!res.ok) {
     throw new Error(raw || `Failed to generate promocode (${res.status})`);

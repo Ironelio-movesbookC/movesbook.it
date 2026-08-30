@@ -223,6 +223,12 @@
   background: rgba(0, 0, 0, 0.4);
 }
 
+.promo-send-message-backdrop {
+  align-items: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+}
+
 .promo-invite-modal {
   width: min(46%, 560px);
   border: 2px solid #000;
@@ -259,6 +265,221 @@
 .promo-invite-modal-body {
   margin: 20px;
   padding: 20px;
+}
+
+.promo-send-message-modal {
+  width: min(92vw, 720px);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.promo-send-message-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  margin: 0;
+  padding: 16px 20px;
+}
+
+.promo-send-message-recipient {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.promo-send-message-editor {
+  border: 1px solid #717171;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.promo-send-message-error {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #b91c1c;
+}
+
+.promo-send-message-footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid #d1d5db;
+  background: #f9fafb;
+}
+
+.promo-invite-modal .btn-gray,
+.promo-invite-modal .btn-red {
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 24px;
+  padding: 6px 16px;
+  cursor: pointer;
+  color: #fff;
+  border: none;
+}
+
+.promo-invite-modal .btn-gray {
+  background: linear-gradient(to bottom, #666 0%, #333 100%);
+  border: 1px solid #333;
+}
+
+.promo-invite-modal .btn-gray:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.promo-invite-modal .btn-red {
+  background: linear-gradient(to bottom, #fb7272 0%, #e03734 100%);
+  border: 1px solid #9c0606;
+}
+
+.promo-invite-emails-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 100px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.promo-invite-emails-modal {
+  width: min(92vw, 720px);
+  border: 2px solid #000;
+  background: #fff;
+}
+
+.promo-invite-emails-header {
+  background: #7b0a26;
+  padding: 10px 16px;
+  text-align: center;
+  font-size: 20px;
+  color: #fff;
+  font-weight: bold;
+}
+
+.promo-invite-emails-body {
+  padding: 20px 24px;
+  min-height: 120px;
+}
+
+.promo-invite-emails-body--scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.promo-invite-emails-body--scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.promo-invite-emails-body--scroll::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 6px;
+}
+
+.promo-invite-emails-body--scroll::-webkit-scrollbar-track {
+  background: #e5e7eb;
+}
+
+.promo-invite-emails-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 16px 0;
+  flex-wrap: wrap;
+}
+
+.promo-invite-emails-pager-label {
+  font-size: 14px;
+  color: #333;
+}
+
+.promo-invite-emails-pager-label select {
+  margin: 0 4px;
+  padding: 2px 6px;
+  border: 1px solid #999;
+  font-size: 14px;
+}
+
+.promo-invite-emails-pager-btn {
+  padding: 4px 12px;
+  border: 1px solid #777;
+  background: #f3f4f6;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.promo-invite-emails-pager-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.promo-invite-emails-empty {
+  margin: 0;
+  color: #555;
+}
+
+.promo-invite-emails-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, auto);
+  align-items: center;
+  column-gap: 24px;
+  padding: 8px 0;
+}
+
+.promo-invite-emails-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.promo-invite-emails-username {
+  color: #0047cc;
+  font-size: 16px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.promo-invite-emails-address {
+  color: #cc0000;
+  font-size: 16px;
+  word-break: break-word;
+}
+
+.promo-invite-emails-registration {
+  color: #cc0000;
+  font-size: 16px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.promo-invite-emails-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px 20px;
+}
+
+.promo-invite-emails-footer .btn-gray {
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 24px;
+  padding: 6px 20px;
+  cursor: pointer;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff;
+  border: none;
+  background: linear-gradient(to bottom, #666 0%, #333 100%);
+  border: 1px solid #333;
 }
 
 .promo-invite-label {

@@ -216,7 +216,7 @@ function CoachDashboardContent() {
     } else {
       setShowLeftSidebar(true);
     }
-  }, [showWorkoutSection]);
+  }, [showWorkoutSection, setShowLeftSidebar]);
 
   if (loading || !user) {
     return null;
@@ -304,6 +304,7 @@ function CoachDashboardContent() {
                   setActiveTab('my-entity');
                 }}
                 onCreateGroupTrainedClick={entityCreation.openCreateFlow}
+                onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
                 onMyFeedbacksStaffClick={() => {
                   setActiveTab('my-page');
                   setShowStaffFeedbacks(true);

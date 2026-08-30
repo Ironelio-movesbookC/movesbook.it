@@ -613,6 +613,8 @@ export default function AdminRegisteredUsersList({
     setPage(1);
     setSelected(new Set());
     setFilterOpen(false);
+    // Reset filters only on segment change; membershipTab changes are handled above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segment]);
 
   const allOnPageSelected =
