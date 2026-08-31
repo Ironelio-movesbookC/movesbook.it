@@ -110,6 +110,13 @@ export async function POST(
     return NextResponse.json({ error: 'kind must be staff or coach' }, { status: 400 });
   }
 
+function parseDateOnly(value: unknown): Date | null {
+  const raw = String(value ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const d = new Date(`${raw}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
   const note = await createMemberNote({
     clubMemberId: access.membership.id,
     kind,
@@ -119,8 +126,8 @@ export async function POST(
     visibleToMember: Boolean(body.visibleToMember),
     commentsEnabled: Boolean(body.commentsEnabled),
     imageUrls,
-    enableFrom: body.enableFrom ? new Date(body.enableFrom) : null,
-    enableTo: body.enableTo ? new Date(body.enableTo) : null,
+    enableFrom: parseDateOnly(body.enableFrom),
+    enableTo: parseDateOnly(body.enableTo),
     showAtLogin: Boolean(body.showAtLogin),
     showAtLogout: Boolean(body.showAtLogout),
   });

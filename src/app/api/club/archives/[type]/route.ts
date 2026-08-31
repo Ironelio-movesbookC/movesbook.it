@@ -9,6 +9,7 @@ import {
   listClubAffiliationsArchive,
   listClubMembersArchive,
   listClubOperatorsArchive,
+  listClubParentsArchive,
   listClubSubscriptionsArchive,
   listEventsArchive,
   listInsertCredits,
@@ -53,6 +54,9 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     switch (params.type) {
       case 'members':
         result = await listClubMembersArchive(auth.ctx, archiveParams);
+        break;
+      case 'parents':
+        result = await listClubParentsArchive(auth.ctx, archiveParams);
         break;
       case 'operators':
         result = await listClubOperatorsArchive(auth.ctx, archiveParams);

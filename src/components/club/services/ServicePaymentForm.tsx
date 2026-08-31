@@ -15,11 +15,12 @@ import {
   updateInstallment,
   type InstallmentRow,
 } from '@/lib/club/archives/clubArchiveClient';
-import { PAY_MODE_OPTIONS } from '@/lib/procedures/payModes';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import { formatEuro } from '@/lib/club/servicePurchasesClient';
 import type { ServiceSaleFormOptions, ServiceSalePayment, ServiceSalePurchase } from '@/lib/club/serviceSaleClient';
 import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
+import PaymentModeSelect from '@/components/club/PaymentModeSelect';
+import { useClubDefaultPaymentMethods } from '@/hooks/useClubDefaultPaymentMethods';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 
 export type PaymentDistribution = {
@@ -215,6 +216,7 @@ export default function ServicePaymentForm({
   const [amountPaid, setAmountPaid] = useState('0');
   const amountPaidTouchedRef = useRef(false);
   const [payMode, setPayMode] = useState('cash');
+  const defaultPaymentMethods = useClubDefaultPaymentMethods();
   const [taxDoc, setTaxDoc] = useState(!disableReceipt);
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [operatorId, setOperatorId] = useState(options.currentOperatorId ?? options.operators[0]?.id ?? '');
@@ -1036,19 +1038,13 @@ export default function ServicePaymentForm({
                 onChange={(e) => handleAmountPaidChange(e.target.value)}
                 onBlur={(e) => handleAmountPaidChange(e.target.value)}
               />
-              <select
+              <PaymentModeSelect
                 id="servicePaymentPayMode"
                 className={`h-10 min-w-0 ${procedureInputClass}`}
                 value={payMode}
-                onChange={(e) => setPayMode(e.target.value)}
-              >
-                <option value="">select</option>
-                {PAY_MODE_OPTIONS.filter((m) => m.value !== 'voucher').map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setPayMode}
+                defaultPaymentMethods={defaultPaymentMethods}
+              />
               {!disableReceipt ? (
                 <div className="flex h-10 min-w-0 items-center gap-2">
                   <input

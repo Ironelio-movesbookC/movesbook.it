@@ -11,7 +11,8 @@ import ProcedureFormSection, {
   procedureReadonlyInputClass,
 } from '@/components/procedures/ProcedureFormLayout';
 import TaxDocumentModal, { type TaxDocumentFormValues } from '@/components/procedures/TaxDocumentModal';
-import { PAY_MODE_OPTIONS } from '@/lib/procedures/payModes';
+import PaymentModeSelect from '@/components/club/PaymentModeSelect';
+import { useClubDefaultPaymentMethods } from '@/hooks/useClubDefaultPaymentMethods';
 import {
   createPurchase,
   fetchFormOptions,
@@ -88,6 +89,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
   const [paydate, setPaydate] = useState(todayDate);
   const [causal, setCausal] = useState('');
   const [payMode, setPayMode] = useState('cash');
+  const defaultPaymentMethods = useClubDefaultPaymentMethods();
   const [taxDoc, setTaxDoc] = useState(true);
   const [taxDocument, setTaxDocument] = useState<TaxDocumentFormValues | null>(null);
   const [discountEnabled, setDiscountEnabled] = useState(true);
@@ -393,15 +395,13 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
         <ProcedureFormSection title="Type of payment">
           <ProcedureFormGrid>
             <ProcedureFormCell label="Payment method">
-              <select
+              <PaymentModeSelect
                 className={procedureInputClass}
                 value={payMode}
-                onChange={(e) => setPayMode(e.target.value)}
-              >
-                {PAY_MODE_OPTIONS.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
+                onChange={setPayMode}
+                defaultPaymentMethods={defaultPaymentMethods}
+                allowEmpty={false}
+              />
             </ProcedureFormCell>
             <ProcedureFormCell label="Tax document">
               <div className="flex items-center gap-3 mt-1">

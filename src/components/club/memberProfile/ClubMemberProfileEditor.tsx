@@ -2,18 +2,53 @@
 
 import { useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { calcAge, isMemberUnderage, normalizeContacts } from '@/lib/club/memberProfileDefaults';
 import {
+  BookOpen,
+  Compass,
+  Crosshair,
+  Dumbbell,
+  Fish,
+  Flower2,
+  Footprints,
+  Globe,
+  MessageCircle,
+  MoreHorizontal,
+  Mountain,
+  Music,
+  Palette,
+  Plane,
+  Radio,
+  TreePine,
+  Tv,
+  UtensilsCrossed,
+  Waves,
+  type LucideIcon,
+} from 'lucide-react';
+import {
+  calcAge,
+  isMemberUnderage,
+  normalizeContacts,
+  FREE_TIME_ACTIVITY_OPTIONS,
+} from '@/lib/club/memberProfileDefaults';
+import {
+  ATHLETE_STATUS_OPTIONS,
+  INSURANCE_COMPANY_OPTIONS,
   KINSHIP_OPTIONS,
   MAIN_SPORTS,
   PARENTS_TAB_LABEL,
   THEME_OPTIONS,
   type MemberProfileBundle,
 } from '@/lib/club/memberProfileTypes';
+import { PAYMENT_TYPE_OPTIONS } from '@/lib/procedures/payModes';
+import MemberOwnerScheduleSections, {
+  ForeignerAndIbanFields,
+  MedicalCertExtraFields,
+} from '@/components/club/memberProfile/MemberOwnerScheduleSections';
 import {
   CheckRow,
   Field,
   Row2,
+  Row3,
   SectionCard,
   TextArea,
   TextInput,
@@ -29,6 +64,7 @@ import { getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesC
 import { renewMembershipDates } from '@/lib/club/memberMembershipDates';
 
 const CKEditor = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
+const MovesbookEditor = dynamic(() => import('@/components/club/Editor'), { ssr: false });
 
 export type ProfileTabId =
   | 'owner-profile'
@@ -65,6 +101,11 @@ export default function ClubMemberProfileEditor({
   const [message, setMessage] = useState('');
   const [noteDraft, setNoteDraft] = useState({ title: '', body: '' });
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [payForSelectId, setPayForSelectId] = useState('');
+  const [otherChildrenSelectId, setOtherChildrenSelectId] = useState<{
+    parent1: string;
+    parent2: string;
+  }>({ parent1: '', parent2: '' });
 
   const readOnlyOwner = mode === 'view' || !data.viewer.canEditOwner;
   const readOnlyMemberTabs =
@@ -122,6 +163,7 @@ export default function ClubMemberProfileEditor({
       contacts: MemberProfileBundle['contacts'];
       activities: MemberProfileBundle['activities'];
       referencesHtml: string;
+      referencesLevel: string;
       club: MemberProfileBundle['club'];
     }>,
   ): Promise<boolean> => {
@@ -134,6 +176,7 @@ export default function ClubMemberProfileEditor({
       if (section === 'activities') body.activities = override?.activities ?? data.activities;
       if (section === 'references') {
         body.referencesHtml = override?.referencesHtml ?? data.referencesHtml;
+        body.referencesLevel = override?.referencesLevel ?? data.referencesLevel;
       }
       if (section === 'club') body.club = override?.club ?? clubRef.current;
 
@@ -164,7 +207,7 @@ export default function ClubMemberProfileEditor({
     }
   };
 
-  const uploadOwnerFile = async (kind: 'image' | 'pdf' | 'photo', file: File) => {
+  const uploadOwnerFile = async (kind: 'image' | 'pdf' | 'photo' | 'ecg', file: File) => {
     setSaving(true);
     setMessage('');
     try {
@@ -203,7 +246,11 @@ export default function ClubMemberProfileEditor({
           : {
               medical: {
                 ...data.owner.medical,
-                ...(kind === 'image' ? { imageUrl: path } : { pdfUrl: path }),
+                ...(kind === 'image'
+                  ? { imageUrl: path }
+                  : kind === 'ecg'
+                    ? { ecgUrl: path }
+                    : { pdfUrl: path }),
               },
             }),
       };
@@ -541,16 +588,16 @@ export default function ClubMemberProfileEditor({
           </p>
         </SectionCard>
 
-        <SectionCard title="Address & contacts">
+        <SectionCard title="Residence data">
           <Row2>
             {(
               [
+                ['address', 'Address'],
+                ['city', 'Location'],
+                ['zipCode', 'ZIP'],
+                ['province', 'Province'],
                 ['country', 'Country'],
                 ['region', 'Region'],
-                ['province', 'Province'],
-                ['city', 'City of residence'],
-                ['zipCode', 'ZIP code'],
-                ['address', 'Address'],
                 ['geoCoordinates', 'Geographical coordinates'],
                 ['alternativeMail', 'Alternative mail'],
                 ['whatsappGroupName', 'Whatsapp group name'],
@@ -571,11 +618,14 @@ export default function ClubMemberProfileEditor({
               </Field>
             ))}
           </Row2>
+          <p className="mb-2 text-xs text-gray-500">
+            Citizenship is under Administrative data. Phone 1 / Phone 2 below.
+          </p>
           {(
             [
-              ['phone', 'Phone', 'phoneWhatsapp', 'phoneTelegram'],
-              ['mobile1', 'Mobile 1', 'mobile1Whatsapp', 'mobile1Telegram'],
-              ['mobile2', 'Mobile 2', 'mobile2Whatsapp', 'mobile2Telegram'],
+              ['phone', 'Phone (landline)', 'phoneWhatsapp', 'phoneTelegram'],
+              ['mobile1', 'Phone 1', 'mobile1Whatsapp', 'mobile1Telegram'],
+              ['mobile2', 'Phone 2', 'mobile2Whatsapp', 'mobile2Telegram'],
             ] as const
           ).map(([numKey, label, waKey, tgKey]) => (
             <div key={numKey} className="rounded border border-gray-200 p-2">
@@ -656,7 +706,19 @@ export default function ClubMemberProfileEditor({
             <Field label="Age (auto)">
               <TextInput disabled value={o.personal.age ?? ''} />
             </Field>
-            <Field label="Location of birth">
+            <Field label="Birthday country">
+              <TextInput
+                disabled={readOnlyOwner}
+                value={o.personal.countryOfBirth}
+                onChange={(e) =>
+                  patchOwner((p) => ({
+                    ...p,
+                    personal: { ...p.personal, countryOfBirth: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Birthday location">
               <TextInput
                 disabled={readOnlyOwner}
                 value={o.personal.locationOfBirth}
@@ -704,7 +766,7 @@ export default function ClubMemberProfileEditor({
                 }
               />
             </Field>
-            <Field label="Since date">
+            <Field label="Since date / User entry date">
               <TextInput
                 disabled={readOnlyOwner}
                 type="date"
@@ -786,6 +848,11 @@ export default function ClubMemberProfileEditor({
               </Field>
             ))}
           </Row2>
+          <ForeignerAndIbanFields
+            owner={o}
+            readOnly={readOnlyOwner}
+            onChange={(next) => patchOwner(() => next)}
+          />
         </SectionCard>
 
         <SectionCard title="Medical Info">
@@ -802,7 +869,7 @@ export default function ClubMemberProfileEditor({
                 }
               />
             </Field>
-            <Field label="Medical examination">
+            <Field label="Medical certificate info">
               <TextSelect
                 disabled={readOnlyOwner}
                 value={o.medical.medicalExamination}
@@ -819,7 +886,7 @@ export default function ClubMemberProfileEditor({
                 <option value="Not required">Not required</option>
               </TextSelect>
             </Field>
-            <Field label="Release date">
+            <Field label="Medical certificate date">
               <TextInput
                 type="date"
                 disabled={readOnlyOwner}
@@ -832,7 +899,7 @@ export default function ClubMemberProfileEditor({
                 }
               />
             </Field>
-            <Field label="Expiration date">
+            <Field label="Medical certificate expiring date">
               <TextInput
                 type="date"
                 disabled={readOnlyOwner}
@@ -902,19 +969,11 @@ export default function ClubMemberProfileEditor({
               patchOwner((p) => ({ ...p, medical: { ...p.medical, alert30gg: v } }))
             }
           />
-          <Field label="Allergies and intolerances">
-            <TextArea
-              disabled={readOnlyOwner}
-              rows={3}
-              value={o.medical.allergies}
-              onChange={(e) =>
-                patchOwner((p) => ({
-                  ...p,
-                  medical: { ...p.medical, allergies: e.target.value },
-                }))
-              }
-            />
-          </Field>
+          <MedicalCertExtraFields
+            owner={o}
+            readOnly={readOnlyOwner}
+            onChange={(next) => patchOwner(() => next)}
+          />
           <Row2>
             <Field label="Medical image">
               <TextInput
@@ -985,7 +1044,62 @@ export default function ClubMemberProfileEditor({
               ) : null}
             </Field>
           </Row2>
+          <Field label="ECG">
+            <TextInput
+              disabled={readOnlyOwner}
+              value={o.medical.ecgUrl || ''}
+              onChange={(e) =>
+                patchOwner((p) => ({
+                  ...p,
+                  medical: { ...p.medical, ecgUrl: e.target.value },
+                }))
+              }
+            />
+            {!readOnlyOwner ? (
+              <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-sm text-red-700 underline">
+                Upload image
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void uploadOwnerFile('ecg', f);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+            ) : null}
+            {o.medical.ecgUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={o.medical.ecgUrl} alt="ECG" className="mt-2 max-h-40 rounded border" />
+            ) : null}
+          </Field>
         </SectionCard>
+
+        <MemberOwnerScheduleSections
+          owner={o}
+          readOnly={readOnlyOwner}
+          onChange={(next) => patchOwner(() => next)}
+          onUploadDocument={async ({ docKey, side, file }) => {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result || ''));
+              reader.onerror = () => reject(new Error('Failed to read file'));
+              reader.readAsDataURL(file);
+            });
+            patchOwner((p) => ({
+              ...p,
+              documents: {
+                ...p.documents,
+                [docKey]: {
+                  ...p.documents[docKey],
+                  [side === 'front' ? 'frontUrl' : 'backUrl']: dataUrl,
+                },
+              },
+            }));
+          }}
+        />
 
         <SectionCard title="Other references">
           <Row2>
@@ -1236,6 +1350,42 @@ export default function ClubMemberProfileEditor({
   if (activeTab === 'activities') {
     const a = data.activities;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const selectedActivities = Array.isArray(a.freeTimeActivities) ? a.freeTimeActivities : [];
+
+    const FREE_TIME_ICON_MAP: Record<string, LucideIcon> = {
+      Music,
+      Tv,
+      Radio,
+      Flower2,
+      BookOpen,
+      Footprints,
+      Palette,
+      Fish,
+      Crosshair,
+      Compass,
+      Plane,
+      UtensilsCrossed,
+      MessageCircle,
+      Globe,
+      Dumbbell,
+      Mountain,
+      Waves,
+      TreePine,
+      MoreHorizontal,
+    };
+
+    const toggleFreeTimeActivity = (label: string, checked: boolean) => {
+      onChange({
+        ...data,
+        activities: {
+          ...a,
+          freeTimeActivities: checked
+            ? [...selectedActivities.filter((x) => x !== label), label]
+            : selectedActivities.filter((x) => x !== label),
+        },
+      });
+    };
+
     return (
       <div>
         <SectionCard title="My Activities" tone="blue">
@@ -1262,18 +1412,36 @@ export default function ClubMemberProfileEditor({
               ))}
             </div>
           </Field>
-          <Field label="Preferred time">
-            <TextInput
-              disabled={readOnlyMemberTabs}
-              value={a.preferredTime}
-              onChange={(e) =>
-                onChange({
-                  ...data,
-                  activities: { ...a, preferredTime: e.target.value },
-                })
-              }
-            />
+
+          <Field label="Activities in the free time">
+            <p className="mb-2 text-xs text-gray-500">
+              Tick the activities you enjoy in your free time. You can select more than one.
+            </p>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {FREE_TIME_ACTIVITY_OPTIONS.map((opt) => {
+                const Icon = FREE_TIME_ICON_MAP[opt.icon] || MoreHorizontal;
+                return (
+                  <label
+                    key={opt.id}
+                    className={`inline-flex items-center gap-2 text-sm text-gray-800 ${
+                      readOnlyMemberTabs ? 'opacity-70' : 'cursor-pointer'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      disabled={readOnlyMemberTabs}
+                      checked={selectedActivities.includes(opt.label)}
+                      onChange={(e) => toggleFreeTimeActivity(opt.label, e.target.checked)}
+                    />
+                    <Icon className="h-4 w-4 shrink-0 text-gray-700" aria-hidden />
+                    <span>{opt.label}</span>
+                  </label>
+                );
+              })}
+            </div>
           </Field>
+
           <Field label="Notes">
             <TextArea
               disabled={readOnlyMemberTabs}
@@ -1297,21 +1465,47 @@ export default function ClubMemberProfileEditor({
     return (
       <div>
         <SectionCard title="References" tone="blue">
+          <div className="mb-2 border border-[#c9bd7a] bg-[#efe7b3] px-4 py-2 text-sm font-semibold text-gray-900">
+            References
+          </div>
           {readOnlyMemberTabs ? (
             <div
-              className="prose max-w-none text-sm"
+              className="prose max-w-none rounded border border-gray-300 bg-white p-3 text-sm"
               dangerouslySetInnerHTML={{
                 __html: data.referencesHtml || '<p class="text-gray-500">No references.</p>',
               }}
             />
           ) : (
-            <CKEditor
-              value={data.referencesHtml}
-              onChange={(html) => onChange({ ...data, referencesHtml: html })}
-              placeholder="Write references…"
-              minHeightPx={280}
-            />
+            <div className="border border-gray-300 bg-white p-3">
+              <MovesbookEditor
+                value={data.referencesHtml}
+                onChange={(html) => onChange({ ...data, referencesHtml: html })}
+                placeholder="Write references…"
+              />
+              <div className="mt-3 grid max-w-md grid-cols-[160px_1fr] items-center gap-2 text-sm">
+                <label className="text-gray-800">References level</label>
+                <select
+                  value={data.referencesLevel || '1'}
+                  onChange={(e) =>
+                    onChange({ ...data, referencesLevel: e.target.value })
+                  }
+                  className="w-24 rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
+                >
+                  {['1', '2', '3', '4', '5', '6'].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           )}
+          {readOnlyMemberTabs ? (
+            <div className="mt-3 grid max-w-md grid-cols-[160px_1fr] items-center gap-2 text-sm">
+              <span className="text-gray-800">References level</span>
+              <span className="font-medium">{data.referencesLevel || '1'}</span>
+            </div>
+          ) : null}
         </SectionCard>
         <SaveBar
           canSave={!readOnlyMemberTabs}
@@ -1332,6 +1526,22 @@ export default function ClubMemberProfileEditor({
   };
 
   if (activeTab === 'pay-for') {
+    const payForOptions = data.clubMembersForPayFor.filter(
+      (m) => !club.payForMemberIds.includes(m.id),
+    );
+    const payForSelected = club.payForMemberIds
+      .map((id) => data.clubMembersForPayFor.find((m) => m.id === id))
+      .filter((m): m is { id: string; label: string } => Boolean(m));
+
+    const addPayForMember = () => {
+      if (!payForSelectId || club.payForMemberIds.includes(payForSelectId)) return;
+      setClub({
+        ...club,
+        payForMemberIds: [...club.payForMemberIds, payForSelectId],
+      });
+      setPayForSelectId('');
+    };
+
     return (
       <div>
         {data.viewer.isClubAdmin ? (
@@ -1347,35 +1557,93 @@ export default function ClubMemberProfileEditor({
                 })
               }
             />
+            <p className="mt-2 text-xs text-gray-500">
+              When enabled, this member can open Pay for… on their profile and see who they pay
+              for in this club. Editing the list remains an admin action.
+            </p>
           </SectionCard>
         ) : null}
-        <SectionCard title="Pay for others (managed by the Admin of the club selected)">
-          <p className="mb-2 text-sm text-gray-600">
-            Here you can select other members to add to the list of members paid by the current
-            member.
+        <SectionCard
+          title="Pay for others (managed by the Admin of the club selected)"
+          titleClassName="text-lg"
+        >
+          <p className="mb-3 text-sm text-gray-600">
+            Use this list when the current member pays membership fees or purchases for other
+            people in the club (for example children or family). Select a member from the archive,
+            click <span className="font-semibold">ADD</span>, then Save. The club admin manages
+            who appears here and can allow the member to read this section.
           </p>
-          <div className="space-y-2">
-            {data.clubMembersForPayFor.length === 0 ? (
-              <p className="text-sm text-gray-500">No other members in this club.</p>
+
+          {!readOnlyClub ? (
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1">
+                <Field label="Member">
+                  <TextSelect
+                    value={payForSelectId}
+                    disabled={payForOptions.length === 0}
+                    onChange={(e) => setPayForSelectId(e.target.value)}
+                  >
+                    <option value="">
+                      {payForOptions.length === 0
+                        ? 'No more members available'
+                        : 'Select member…'}
+                    </option>
+                    {payForOptions.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </TextSelect>
+                </Field>
+              </div>
+              <button
+                type="button"
+                disabled={!payForSelectId || saving}
+                onClick={addPayForMember}
+                className="rounded bg-red-700 px-5 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50"
+              >
+                ADD
+              </button>
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded border border-gray-300 bg-white">
+            <div className="border-b border-gray-300 bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-800">
+              Members managed (paid) by this member
+            </div>
+            {payForSelected.length === 0 ? (
+              <p className="px-3 py-4 text-sm text-gray-500">No members selected yet.</p>
             ) : (
-              data.clubMembersForPayFor.map((m) => (
-                <CheckRow
-                  key={m.id}
-                  label={m.label}
-                  disabled={readOnlyClub}
-                  checked={club.payForMemberIds.includes(m.id)}
-                  onChange={(v) =>
-                    setClub({
-                      ...club,
-                      payForMemberIds: v
-                        ? [...club.payForMemberIds, m.id]
-                        : club.payForMemberIds.filter((id) => id !== m.id),
-                    })
-                  }
-                />
-              ))
+              <ul className="divide-y divide-gray-200">
+                {payForSelected.map((m) => (
+                  <li
+                    key={m.id}
+                    className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                  >
+                    <span className="text-gray-900">{m.label}</span>
+                    {!readOnlyClub ? (
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-red-700 hover:underline"
+                        onClick={() =>
+                          setClub({
+                            ...club,
+                            payForMemberIds: club.payForMemberIds.filter((id) => id !== m.id),
+                          })
+                        }
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
+
+          {data.clubMembersForPayFor.length === 0 ? (
+            <p className="mt-3 text-sm text-gray-500">No other members in this club.</p>
+          ) : null}
         </SectionCard>
         <SaveBar canSave={!readOnlyClub} onSave={() => void saveSection('club')} />
       </div>
@@ -1384,6 +1652,7 @@ export default function ClubMemberProfileEditor({
 
   if (activeTab === 'other-details') {
     const od = club.otherDetails;
+    const customQuestions = data.customQuestions || [];
     return (
       <div>
         {data.viewer.isClubAdmin ? (
@@ -1401,6 +1670,72 @@ export default function ClubMemberProfileEditor({
             />
           </SectionCard>
         ) : null}
+
+        <SectionCard title="Athlete status">
+          <div className="flex flex-wrap gap-4">
+            {ATHLETE_STATUS_OPTIONS.map((status) => (
+              <label key={status} className="inline-flex items-center gap-2 text-sm text-gray-800">
+                <input
+                  type="radio"
+                  name="athleteStatus"
+                  disabled={readOnlyClub}
+                  checked={od.athleteStatus === status}
+                  onChange={() =>
+                    setClub((c) => ({
+                      ...c,
+                      otherDetails: { ...c.otherDetails, athleteStatus: status },
+                      settings: {
+                        ...c.settings,
+                        football: { ...c.settings.football, athleteStatus: status },
+                      },
+                    }))
+                  }
+                  className="border-gray-400"
+                />
+                {status}
+              </label>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Duplicate existing user data">
+          <Field label="Do you want to duplicate the data of an existing user?">
+            <TextSelect
+              disabled={readOnlyClub}
+              value={od.duplicateFromUserId}
+              onChange={(e) =>
+                setClub((c) => ({
+                  ...c,
+                  otherDetails: { ...c.otherDetails, duplicateFromUserId: e.target.value },
+                }))
+              }
+            >
+              <option value="">— Select user —</option>
+              {data.clubMembersForPayFor.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </TextSelect>
+          </Field>
+        </SectionCard>
+
+        <SectionCard title="Group trained">
+          <Field label="Connect member to a group trained">
+            <TextSelect
+              disabled={readOnlyClub}
+              value={od.groupTrainedId}
+              onChange={(e) =>
+                setClub((c) => ({
+                  ...c,
+                  otherDetails: { ...c.otherDetails, groupTrainedId: e.target.value },
+                }))
+              }
+            >
+              <option value="">—</option>
+            </TextSelect>
+          </Field>
+        </SectionCard>
 
         <SectionCard title="Last Membership to the Club">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm text-blue-800">
@@ -1462,6 +1797,51 @@ export default function ClubMemberProfileEditor({
             Last membership can also be loaded from the Archive of Memberships. Editing these
             dates may update membership archive data. Renew updates these dates.
           </p>
+          <Row2>
+            <Field label="Membership Registration to">
+              <TextInput
+                disabled={readOnlyClub}
+                value={od.membershipRegistrationTo}
+                onChange={(e) =>
+                  setClub((c) => ({
+                    ...c,
+                    otherDetails: {
+                      ...c.otherDetails,
+                      membershipRegistrationTo: e.target.value,
+                    },
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Membership Registration number">
+              <TextInput
+                disabled={readOnlyClub}
+                value={od.membershipRegistrationNumber}
+                onChange={(e) =>
+                  setClub((c) => ({
+                    ...c,
+                    otherDetails: {
+                      ...c.otherDetails,
+                      membershipRegistrationNumber: e.target.value,
+                    },
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Expiring date">
+              <TextInput
+                type="date"
+                disabled={readOnlyClub}
+                value={od.membershipTo}
+                onChange={(e) =>
+                  setClub((c) => ({
+                    ...c,
+                    otherDetails: { ...c.otherDetails, membershipTo: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+          </Row2>
         </SectionCard>
 
         <SectionCard title="Privacy">
@@ -1606,7 +1986,7 @@ export default function ClubMemberProfileEditor({
                   className="min-w-[12rem] max-w-sm flex-1"
                 >
                   <option value="">Select</option>
-                  {(data.vendorCoachOptions || []).map((opt) => (
+                  {(data.coachOptions || []).map((opt) => (
                     <option key={opt.id} value={opt.id}>
                       {opt.label}
                     </option>
@@ -1617,44 +1997,7 @@ export default function ClubMemberProfileEditor({
             </div>
           </div>
 
-          <Row2>
-            <Field label="Insurance Company">
-              <TextInput
-                disabled={readOnlyClub}
-                value={od.insuranceCompany}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    otherDetails: { ...c.otherDetails, insuranceCompany: e.target.value },
-                  }))
-                }
-              />
-            </Field>
-            <Field label="Insurance deadline">
-              <TextInput
-                type="date"
-                disabled={readOnlyClub}
-                value={od.insuranceDeadline}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    otherDetails: { ...c.otherDetails, insuranceDeadline: e.target.value },
-                  }))
-                }
-              />
-            </Field>
-            <Field label="Type of Badge Federation">
-              <TextInput
-                disabled={readOnlyClub}
-                value={od.badgeFederationType}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    otherDetails: { ...c.otherDetails, badgeFederationType: e.target.value },
-                  }))
-                }
-              />
-            </Field>
+          <div className="mt-2">
             <Field label="Sport Season (year)">
               <TextInput
                 disabled={readOnlyClub}
@@ -1667,56 +2010,184 @@ export default function ClubMemberProfileEditor({
                 }
               />
             </Field>
-          </Row2>
-          {od.badges.map((b, idx) => (
-            <Row2 key={idx}>
-              <Field label={`Badges Federation ${idx + 1}`}>
+          </div>
+
+          <div className="mt-2">
+            <CheckRow
+              label="Supplementary insurance required"
+              disabled={readOnlyClub}
+              checked={od.supplementaryInsuranceRequired}
+              onChange={(v) =>
+                setClub((c) => ({
+                  ...c,
+                  otherDetails: { ...c.otherDetails, supplementaryInsuranceRequired: v },
+                }))
+              }
+            />
+            <Row3>
+              <Field label="Insurance Company">
+                <TextSelect
+                  disabled={readOnlyClub}
+                  value={od.insuranceCompany}
+                  onChange={(e) =>
+                    setClub((c) => ({
+                      ...c,
+                      otherDetails: { ...c.otherDetails, insuranceCompany: e.target.value },
+                    }))
+                  }
+                >
+                  <option value="">—</option>
+                  {INSURANCE_COMPANY_OPTIONS.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                  {od.insuranceCompany &&
+                  !(INSURANCE_COMPANY_OPTIONS as readonly string[]).includes(od.insuranceCompany) ? (
+                    <option value={od.insuranceCompany}>{od.insuranceCompany}</option>
+                  ) : null}
+                </TextSelect>
+              </Field>
+              <Field label="Insurance number">
                 <TextInput
                   disabled={readOnlyClub}
-                  value={b.name}
-                  onChange={(e) => {
-                    const badges = od.badges.map((x, i) =>
-                      i === idx ? { ...x, name: e.target.value } : x,
-                    );
-                    setClub((c) => ({ ...c, otherDetails: { ...c.otherDetails, badges } }));
-                  }}
+                  value={od.insuranceNumber}
+                  onChange={(e) =>
+                    setClub((c) => ({
+                      ...c,
+                      otherDetails: { ...c.otherDetails, insuranceNumber: e.target.value },
+                    }))
+                  }
                 />
               </Field>
-              <Field label="Deadline">
+              <Field label="Expiring date">
                 <TextInput
                   type="date"
                   disabled={readOnlyClub}
-                  value={b.deadline}
-                  onChange={(e) => {
-                    const badges = od.badges.map((x, i) =>
-                      i === idx ? { ...x, deadline: e.target.value } : x,
-                    );
-                    setClub((c) => ({ ...c, otherDetails: { ...c.otherDetails, badges } }));
-                  }}
+                  value={od.insuranceDeadline}
+                  onChange={(e) =>
+                    setClub((c) => ({
+                      ...c,
+                      otherDetails: { ...c.otherDetails, insuranceDeadline: e.target.value },
+                    }))
+                  }
                 />
               </Field>
-            </Row2>
+            </Row3>
+          </div>
+
+          <div className="mt-3">
+            <Field label="Payment method preferred (multicheck)">
+              <div className="flex flex-wrap gap-3">
+                {PAYMENT_TYPE_OPTIONS.map((m) => (
+                  <CheckRow
+                    key={m.value}
+                    label={m.label}
+                    disabled={readOnlyClub}
+                    checked={od.preferredPaymentMethods.includes(m.value)}
+                    onChange={(v) =>
+                      setClub((c) => ({
+                        ...c,
+                        otherDetails: {
+                          ...c.otherDetails,
+                          preferredPaymentMethods: v
+                            ? [...c.otherDetails.preferredPaymentMethods, m.value]
+                            : c.otherDetails.preferredPaymentMethods.filter((x) => x !== m.value),
+                        },
+                      }))
+                    }
+                  />
+                ))}
+              </div>
+            </Field>
+          </div>
+
+          {od.badges.map((b, idx) => (
+            <div key={idx} className="mt-2">
+              <Row3>
+                <Field label={`Badge Federation ${idx + 1} name`}>
+                  <TextInput
+                    disabled={readOnlyClub}
+                    value={b.name}
+                    onChange={(e) => {
+                      const badges = od.badges.map((x, i) =>
+                        i === idx ? { ...x, name: e.target.value } : x,
+                      );
+                      setClub((c) => ({ ...c, otherDetails: { ...c.otherDetails, badges } }));
+                    }}
+                  />
+                </Field>
+                <Field label={`Badge number ${idx + 1}`}>
+                  <TextInput
+                    disabled={readOnlyClub}
+                    value={b.number}
+                    onChange={(e) => {
+                      const badges = od.badges.map((x, i) =>
+                        i === idx ? { ...x, number: e.target.value } : x,
+                      );
+                      setClub((c) => ({ ...c, otherDetails: { ...c.otherDetails, badges } }));
+                    }}
+                  />
+                </Field>
+                <Field label="Expiring date">
+                  <TextInput
+                    type="date"
+                    disabled={readOnlyClub}
+                    value={b.deadline}
+                    onChange={(e) => {
+                      const badges = od.badges.map((x, i) =>
+                        i === idx ? { ...x, deadline: e.target.value } : x,
+                      );
+                      setClub((c) => ({ ...c, otherDetails: { ...c.otherDetails, badges } }));
+                    }}
+                  />
+                </Field>
+              </Row3>
+            </div>
           ))}
         </SectionCard>
 
         {!underage ? (
           <SectionCard title="Signatures (overage member)">
-            <CheckRow
-              label="Acceptance of the rules of the club/team"
-              disabled={readOnlyMemberSignature}
-              checked={od.acceptanceRules}
-              onChange={(v) =>
-                setClub((c) => ({ ...c, otherDetails: { ...c.otherDetails, acceptanceRules: v } }))
-              }
-            />
-            <CheckRow
-              label="I have read Privacy policy"
-              disabled={readOnlyMemberSignature}
-              checked={od.privacyPolicyRead}
-              onChange={(v) =>
-                setClub((c) => ({ ...c, otherDetails: { ...c.otherDetails, privacyPolicyRead: v } }))
-              }
-            />
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <CheckRow
+                label="Acceptance of the rules of the club/team"
+                disabled={readOnlyMemberSignature}
+                checked={od.acceptanceRules}
+                onChange={(v) =>
+                  setClub((c) => ({ ...c, otherDetails: { ...c.otherDetails, acceptanceRules: v } }))
+                }
+              />
+              <a
+                href={`/club/legal-documents/rules?clubId=${encodeURIComponent(data.clubId)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-semibold text-red-700 underline hover:text-red-900"
+              >
+                Rules
+              </a>
+            </div>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <CheckRow
+                label="I have read Privacy policy"
+                disabled={readOnlyMemberSignature}
+                checked={od.privacyPolicyRead}
+                onChange={(v) =>
+                  setClub((c) => ({
+                    ...c,
+                    otherDetails: { ...c.otherDetails, privacyPolicyRead: v },
+                  }))
+                }
+              />
+              <a
+                href={`/club/legal-documents/privacy-policy?clubId=${encodeURIComponent(data.clubId)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-semibold text-red-700 underline hover:text-red-900"
+              >
+                Private policy
+              </a>
+            </div>
             <Field label="Signature">
               <SignaturePad
                 ref={signaturePadRef}
@@ -1824,6 +2295,178 @@ export default function ClubMemberProfileEditor({
           />
         </SectionCard>
 
+        <SectionCard title="Affiliation and consent">
+          <Row2>
+            <Field label="Date of initial affiliation">
+              <TextInput
+                type="date"
+                disabled={readOnlyClub}
+                value={od.initialAffiliationDate}
+                onChange={(e) =>
+                  setClub((c) => ({
+                    ...c,
+                    otherDetails: {
+                      ...c.otherDetails,
+                      initialAffiliationDate: e.target.value,
+                    },
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Consent date">
+              <TextInput
+                type="date"
+                disabled={readOnlyClub}
+                value={od.consentDate}
+                onChange={(e) =>
+                  setClub((c) => ({
+                    ...c,
+                    otherDetails: { ...c.otherDetails, consentDate: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+          </Row2>
+          <CheckRow
+            label="Photo/video processing approval"
+            disabled={readOnlyClub}
+            checked={od.photoVideoApproval}
+            onChange={(v) =>
+              setClub((c) => ({
+                ...c,
+                otherDetails: { ...c.otherDetails, photoVideoApproval: v },
+              }))
+            }
+          />
+        </SectionCard>
+
+        <SectionCard title="Answers to personalized questions">
+          {customQuestions.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              No customized questions yet.{' '}
+              {data.viewer.isClubAdmin ? (
+                <a
+                  href={`/club/settings/customized-fields?clubId=${encodeURIComponent(data.clubId)}`}
+                  className="text-red-700 underline"
+                >
+                  Manage customized fields
+                </a>
+              ) : null}
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {customQuestions.map((q) => {
+                const answer = od.customQuestionAnswers[q.id];
+                const listOpts = q.listOptions
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                return (
+                  <div key={q.id} className="rounded border border-gray-200 p-3">
+                    <div className="mb-2 text-sm font-semibold text-gray-900">
+                      {q.question}
+                      {q.mandatory ? <span className="text-red-600"> *</span> : null}
+                    </div>
+                    {q.answerType === 'free' ? (
+                      <TextArea
+                        disabled={readOnlyClub}
+                        rows={2}
+                        value={typeof answer === 'string' ? answer : ''}
+                        onChange={(e) =>
+                          setClub((c) => ({
+                            ...c,
+                            otherDetails: {
+                              ...c.otherDetails,
+                              customQuestionAnswers: {
+                                ...c.otherDetails.customQuestionAnswers,
+                                [q.id]: e.target.value,
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    ) : null}
+                    {q.answerType === 'checkbox' ? (
+                      <CheckRow
+                        label="Yes"
+                        disabled={readOnlyClub}
+                        checked={Boolean(answer)}
+                        onChange={(v) =>
+                          setClub((c) => ({
+                            ...c,
+                            otherDetails: {
+                              ...c.otherDetails,
+                              customQuestionAnswers: {
+                                ...c.otherDetails.customQuestionAnswers,
+                                [q.id]: v,
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    ) : null}
+                    {q.answerType === 'yes_no' ? (
+                      <div className="flex flex-wrap gap-4">
+                        {['Yes', 'No'].map((opt) => (
+                          <label
+                            key={opt}
+                            className="inline-flex items-center gap-2 text-sm text-gray-800"
+                          >
+                            <input
+                              type="radio"
+                              name={`cq-${q.id}`}
+                              disabled={readOnlyClub}
+                              checked={answer === opt}
+                              onChange={() =>
+                                setClub((c) => ({
+                                  ...c,
+                                  otherDetails: {
+                                    ...c.otherDetails,
+                                    customQuestionAnswers: {
+                                      ...c.otherDetails.customQuestionAnswers,
+                                      [q.id]: opt,
+                                    },
+                                  },
+                                }))
+                              }
+                            />
+                            {opt}
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+                    {q.answerType === 'list' ? (
+                      <TextSelect
+                        disabled={readOnlyClub}
+                        value={typeof answer === 'string' ? answer : ''}
+                        onChange={(e) =>
+                          setClub((c) => ({
+                            ...c,
+                            otherDetails: {
+                              ...c.otherDetails,
+                              customQuestionAnswers: {
+                                ...c.otherDetails.customQuestionAnswers,
+                                [q.id]: e.target.value,
+                              },
+                            },
+                          }))
+                        }
+                      >
+                        <option value="">—</option>
+                        {listOpts.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </TextSelect>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+
         <SaveBar canSave={canSaveClubSection} onSave={() => saveClubSection('otherDetails')} />
       </div>
     );
@@ -1836,220 +2479,316 @@ export default function ClubMemberProfileEditor({
 
     const renderOtherChildrenPicker = (key: 'parent1' | 'parent2') => {
       const p = pr[key];
+      const available = data.clubMembersForPayFor.filter(
+        (m) => !p.otherChildrenMemberIds.includes(m.id),
+      );
+      const selected = p.otherChildrenMemberIds
+        .map((id) => data.clubMembersForPayFor.find((m) => m.id === id))
+        .filter((m): m is { id: string; label: string } => Boolean(m));
+      const selectId = otherChildrenSelectId[key];
+
+      const addOtherChild = () => {
+        if (!selectId || p.otherChildrenMemberIds.includes(selectId)) return;
+        setClub((c) => ({
+          ...c,
+          parents: {
+            ...c.parents,
+            [key]: {
+              ...c.parents[key],
+              otherChildrenMemberIds: [...c.parents[key].otherChildrenMemberIds, selectId],
+            },
+          },
+        }));
+        setOtherChildrenSelectId((s) => ({ ...s, [key]: '' }));
+      };
+
       return (
         <Field label="Other children at the sports facility">
           <p className="mb-2 text-xs text-gray-500">
-            Tag the names of other members; once saved, this parent&apos;s data will be copied
-            into the profile of each tagged member.
+            Add names of other members from the Archive of Members. Once saved, this parent&apos;s
+            data will be copied into the profile of each tagged member.
           </p>
-          <div className="space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
-            {data.clubMembersForPayFor.length === 0 ? (
-              <p className="text-sm text-gray-500">No other members in this club.</p>
-            ) : (
-              data.clubMembersForPayFor.map((m) => (
-                <CheckRow
-                  key={m.id}
-                  label={m.label}
-                  disabled={readOnlyClub}
-                  checked={p.otherChildrenMemberIds.includes(m.id)}
-                  onChange={(v) =>
-                    setClub((c) => ({
-                      ...c,
-                      parents: {
-                        ...c.parents,
-                        [key]: {
-                          ...c.parents[key],
-                          otherChildrenMemberIds: v
-                            ? [...c.parents[key].otherChildrenMemberIds, m.id]
-                            : c.parents[key].otherChildrenMemberIds.filter((id) => id !== m.id),
-                        },
-                      },
-                    }))
+
+          {!readOnlyClub ? (
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1">
+                <TextSelect
+                  value={selectId}
+                  disabled={available.length === 0}
+                  onChange={(e) =>
+                    setOtherChildrenSelectId((s) => ({ ...s, [key]: e.target.value }))
                   }
-                />
-              ))
+                >
+                  <option value="">
+                    {available.length === 0
+                      ? 'No more members available'
+                      : 'Select member from archive…'}
+                  </option>
+                  {available.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </TextSelect>
+              </div>
+              <button
+                type="button"
+                disabled={!selectId || saving}
+                onClick={addOtherChild}
+                className="rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50"
+                aria-label="Add other child"
+              >
+                +
+              </button>
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded border border-gray-300 bg-white">
+            <div className="border-b border-gray-300 bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-800">
+              Other children tagged
+            </div>
+            {selected.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-gray-500">No other members added yet.</p>
+            ) : (
+              <ul className="divide-y divide-gray-200">
+                {selected.map((m) => (
+                  <li
+                    key={m.id}
+                    className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                  >
+                    <span className="text-gray-900">{m.label}</span>
+                    {!readOnlyClub ? (
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-red-700 hover:underline"
+                        onClick={() =>
+                          setClub((c) => ({
+                            ...c,
+                            parents: {
+                              ...c.parents,
+                              [key]: {
+                                ...c.parents[key],
+                                otherChildrenMemberIds: c.parents[key].otherChildrenMemberIds.filter(
+                                  (id) => id !== m.id,
+                                ),
+                              },
+                            },
+                          }))
+                        }
+                      >
+                        REMOVE
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
+
+          {data.clubMembersForPayFor.length === 0 ? (
+            <p className="mt-2 text-sm text-gray-500">No other members in the archive of this club.</p>
+          ) : null}
         </Field>
       );
     };
 
     const renderParent = (key: 'parent1' | 'parent2', title: string) => {
       const p = pr[key];
+      const catalog = data.clubParentsCatalog || [];
+      const applyCatalogParent = (catalogKey: string) => {
+        if (!catalogKey) {
+          setClub((c) => ({
+            ...c,
+            parents: {
+              ...c.parents,
+              [key]: { ...c.parents[key], linkedParentKey: '' },
+            },
+          }));
+          return;
+        }
+        const entry = catalog.find((x) => x.key === catalogKey);
+        if (!entry) return;
+        const d = entry.data;
+        setClub((c) => ({
+          ...c,
+          parents: {
+            ...c.parents,
+            [key]: {
+              ...c.parents[key],
+              ...d,
+              linkedParentKey: catalogKey,
+              otherChildrenMemberIds: c.parents[key].otherChildrenMemberIds,
+            },
+          },
+        }));
+      };
+      const patchParent = (patch: Partial<typeof p>) =>
+        setClub((c) => ({
+          ...c,
+          parents: {
+            ...c.parents,
+            [key]: { ...c.parents[key], ...patch },
+          },
+        }));
       return (
         <SectionCard title={title}>
+          <Field label="Search parent / tutor">
+            <TextSelect
+              disabled={readOnlyClub}
+              value={p.linkedParentKey || ''}
+              onChange={(e) => applyCatalogParent(e.target.value)}
+            >
+              <option value="">— Select from members' parents/tutors —</option>
+              {catalog
+                .filter((entry) => entry.sourceMemberId !== data.memberId)
+                .map((entry) => (
+                  <option key={entry.key} value={entry.key}>
+                    {entry.label}
+                  </option>
+                ))}
+            </TextSelect>
+          </Field>
+          <p className="mb-3 text-xs text-gray-500">
+            Selecting a parent/tutor fills the fields below and links this profile to that
+            record.
+          </p>
           <Row2>
-            <Field label="Name">
-              <TextInput
-                disabled={readOnlyClub}
-                value={p.name}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], name: e.target.value },
-                    },
-                  }))
-                }
-              />
-            </Field>
             <Field label="Surname">
               <TextInput
                 disabled={readOnlyClub}
                 value={p.surname}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], surname: e.target.value },
-                    },
-                  }))
-                }
+                onChange={(e) => patchParent({ surname: e.target.value })}
               />
             </Field>
-            <Field label="Fiscal code">
+            <Field label="Name">
               <TextInput
                 disabled={readOnlyClub}
-                value={p.fiscalCode}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], fiscalCode: e.target.value },
-                    },
-                  }))
-                }
+                value={p.name}
+                onChange={(e) => patchParent({ name: e.target.value })}
               />
             </Field>
-            <Field label="Degree of kinship">
-              <TextSelect
-                disabled={readOnlyClub}
-                value={p.kinship}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], kinship: e.target.value },
-                    },
-                  }))
-                }
-              >
-                <option value="">—</option>
-                {KINSHIP_OPTIONS.map((k) => (
-                  <option key={k} value={k}>
-                    {k}
-                  </option>
-                ))}
-              </TextSelect>
-            </Field>
-            <Field label="Birth date">
+            <Field label="Birthdate">
               <TextInput
                 type="date"
                 disabled={readOnlyClub}
                 value={p.birthDate}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], birthDate: e.target.value },
-                    },
-                  }))
-                }
+                onChange={(e) => patchParent({ birthDate: e.target.value })}
+              />
+            </Field>
+          </Row2>
+          <Row2>
+            <Field label="Country">
+              <TextInput
+                disabled={readOnlyClub}
+                value={p.country}
+                onChange={(e) => patchParent({ country: e.target.value })}
               />
             </Field>
             <Field label="Location">
               <TextInput
                 disabled={readOnlyClub}
                 value={p.location}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], location: e.target.value },
-                    },
-                  }))
-                }
+                onChange={(e) => patchParent({ location: e.target.value })}
               />
             </Field>
-            <Field label="Phone contact 1">
+            <Field label="Province">
               <TextInput
                 disabled={readOnlyClub}
-                value={p.phone1}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], phone1: e.target.value },
-                    },
-                  }))
-                }
+                value={p.province}
+                onChange={(e) => patchParent({ province: e.target.value })}
               />
             </Field>
-            <Field label="Phone contact 2">
-              <TextInput
-                disabled={readOnlyClub}
-                value={p.phone2}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], phone2: e.target.value },
-                    },
-                  }))
-                }
-              />
-            </Field>
-            <Field label="Main email">
+          </Row2>
+          <Field label="Fiscal code">
+            <TextInput
+              disabled={readOnlyClub}
+              value={p.fiscalCode}
+              onChange={(e) => patchParent({ fiscalCode: e.target.value })}
+            />
+          </Field>
+          <CheckRow
+            label="Identification code for foreigners"
+            disabled={readOnlyClub}
+            checked={p.foreignerIdCode}
+            onChange={(v) => patchParent({ foreignerIdCode: v })}
+          />
+          <CheckRow
+            label="The holder of this tax code will receive the invoice"
+            disabled={readOnlyClub}
+            checked={p.invoiceHolder}
+            onChange={(v) => patchParent({ invoiceHolder: v })}
+          />
+          <Field label="Degree of kinship">
+            <TextSelect
+              disabled={readOnlyClub}
+              value={p.kinship}
+              onChange={(e) => patchParent({ kinship: e.target.value })}
+            >
+              <option value="">Select</option>
+              {KINSHIP_OPTIONS.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </TextSelect>
+          </Field>
+          <Row2>
+            <Field label="Mail">
               <TextInput
                 disabled={readOnlyClub}
                 value={p.mainEmail}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], mainEmail: e.target.value },
-                    },
-                  }))
-                }
+                onChange={(e) => patchParent({ mainEmail: e.target.value })}
+              />
+            </Field>
+            <Field label="Phone">
+              <TextInput
+                disabled={readOnlyClub}
+                value={p.phone1}
+                onChange={(e) => patchParent({ phone1: e.target.value })}
+              />
+            </Field>
+            <Field label="Alternative phone">
+              <TextInput
+                disabled={readOnlyClub}
+                value={p.phone2}
+                onChange={(e) => patchParent({ phone2: e.target.value })}
               />
             </Field>
             <Field label="Alternative mail">
               <TextInput
                 disabled={readOnlyClub}
                 value={p.alternativeMail}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], alternativeMail: e.target.value },
-                    },
-                  }))
-                }
+                onChange={(e) => patchParent({ alternativeMail: e.target.value })}
               />
             </Field>
-            <Field label="Residential address">
+          </Row2>
+          <Row2>
+            <Field label="Residence address">
               <TextInput
                 disabled={readOnlyClub}
                 value={p.residentialAddress}
-                onChange={(e) =>
-                  setClub((c) => ({
-                    ...c,
-                    parents: {
-                      ...c.parents,
-                      [key]: { ...c.parents[key], residentialAddress: e.target.value },
-                    },
-                  }))
-                }
+                onChange={(e) => patchParent({ residentialAddress: e.target.value })}
+              />
+            </Field>
+            <Field label="Location">
+              <TextInput
+                disabled={readOnlyClub}
+                value={p.residenceLocation}
+                onChange={(e) => patchParent({ residenceLocation: e.target.value })}
+              />
+            </Field>
+            <Field label="ZIP">
+              <TextInput
+                disabled={readOnlyClub}
+                value={p.residenceZip}
+                onChange={(e) => patchParent({ residenceZip: e.target.value })}
+              />
+            </Field>
+            <Field label="Province">
+              <TextInput
+                disabled={readOnlyClub}
+                value={p.residenceProvince}
+                onChange={(e) => patchParent({ residenceProvince: e.target.value })}
               />
             </Field>
           </Row2>
@@ -2191,22 +2930,42 @@ export default function ClubMemberProfileEditor({
         </SectionCard>
 
         <SectionCard title="Signatures">
-          <CheckRow
-            label="Acceptance of the rules of the club/team"
-            disabled={readOnlyClub}
-            checked={pr.acceptanceRules}
-            onChange={(v) =>
-              setClub((c) => ({ ...c, parents: { ...c.parents, acceptanceRules: v } }))
-            }
-          />
-          <CheckRow
-            label="I have readed 'Privacy policy'"
-            disabled={readOnlyClub}
-            checked={pr.privacyPolicyRead}
-            onChange={(v) =>
-              setClub((c) => ({ ...c, parents: { ...c.parents, privacyPolicyRead: v } }))
-            }
-          />
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <CheckRow
+              label="Acceptance of the rules of the club/team"
+              disabled={readOnlyClub}
+              checked={pr.acceptanceRules}
+              onChange={(v) =>
+                setClub((c) => ({ ...c, parents: { ...c.parents, acceptanceRules: v } }))
+              }
+            />
+            <a
+              href={`/club/legal-documents/rules?clubId=${encodeURIComponent(data.clubId)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-semibold text-red-700 underline hover:text-red-900"
+            >
+              Rules
+            </a>
+          </div>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <CheckRow
+              label="I have readed 'Privacy policy'"
+              disabled={readOnlyClub}
+              checked={pr.privacyPolicyRead}
+              onChange={(v) =>
+                setClub((c) => ({ ...c, parents: { ...c.parents, privacyPolicyRead: v } }))
+              }
+            />
+            <a
+              href={`/club/legal-documents/privacy-policy?clubId=${encodeURIComponent(data.clubId)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-semibold text-red-700 underline hover:text-red-900"
+            >
+              Private policy
+            </a>
+          </div>
           <Field label="Signature">
             <SignaturePad
               ref={signaturePadRef}
@@ -2227,10 +2986,13 @@ export default function ClubMemberProfileEditor({
   if (activeTab === 'settings') {
     return (
       <MemberProfileSettingsTab
+        clubId={data.clubId}
+        entitySportDefault={data.entitySportDefault || 'Football'}
         club={club}
         setClub={setClub}
         readOnlyClub={readOnlyClub}
         showVisibility={data.viewer.isClubAdmin}
+        canEditPaymentDefaults={data.viewer.isClubAdmin}
         saving={saving}
         message={message}
         onSave={() => void saveSection('club')}

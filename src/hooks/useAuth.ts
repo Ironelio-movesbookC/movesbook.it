@@ -1,7 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 import { clearClubWorkspaceSessionOnLogout } from '@/lib/club/clearClubWorkspaceSession';
+import {
+  MEMBER_NOTE_LOGIN_EVENT,
+  MEMBER_NOTE_LOGIN_FLAG,
+  MEMBER_NOTE_LOGOUT_DONE_EVENT,
+  MEMBER_NOTE_LOGOUT_EVENT,
+} from '@/components/club/memberProfile/MemberNotePopupHost';
 
 export interface AuthUser {
   id: string;
@@ -19,8 +25,9 @@ export function useAuth() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<string | null>(null);
   const router = useRouter();
+  const logoutInFlight = useRef(false);
 
-  const logout = useCallback(() => {
+  const finishLogout = useCallback(() => {
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('token');
       if (token) {
@@ -34,8 +41,33 @@ export function useAuth() {
       clearClubWorkspaceSessionOnLogout();
     }
     setUser(null);
+    logoutInFlight.current = false;
     router.push('/');
   }, [router]);
+
+  const logout = useCallback(() => {
+    if (typeof window === 'undefined') {
+      finishLogout();
+      return;
+    }
+    if (logoutInFlight.current) return;
+    logoutInFlight.current = true;
+
+    const onDone = () => {
+      window.removeEventListener(MEMBER_NOTE_LOGOUT_DONE_EVENT, onDone);
+      finishLogout();
+    };
+    window.addEventListener(MEMBER_NOTE_LOGOUT_DONE_EVENT, onDone);
+    window.dispatchEvent(new Event(MEMBER_NOTE_LOGOUT_EVENT));
+
+    // Fallback if host does not respond (e.g. no docs / fetch hang).
+    window.setTimeout(() => {
+      if (logoutInFlight.current) {
+        window.removeEventListener(MEMBER_NOTE_LOGOUT_DONE_EVENT, onDone);
+        finishLogout();
+      }
+    }, 8000);
+  }, [finishLogout]);
 
   const checkAuth = useCallback(async () => {
     try {
@@ -49,11 +81,11 @@ export function useAuth() {
       }
     } catch (error) {
       console.error('Auth check error:', error);
-      logout();
+      finishLogout();
     } finally {
       setLoading(false);
     }
-  }, [logout]);
+  }, [finishLogout]);
 
   useEffect(() => {
     checkAuth();
@@ -65,6 +97,8 @@ export function useAuth() {
       clearClubWorkspaceSessionOnLogout();
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
+      sessionStorage.setItem(MEMBER_NOTE_LOGIN_FLAG, 'login');
+      window.dispatchEvent(new Event(MEMBER_NOTE_LOGIN_EVENT));
     }
     setUser(userData);
     setShowLoginModal(false);

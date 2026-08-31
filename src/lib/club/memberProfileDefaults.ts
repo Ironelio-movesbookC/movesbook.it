@@ -11,16 +11,24 @@ function emptyParent(): ParentData {
     name: '',
     surname: '',
     fiscalCode: '',
+    foreignerIdCode: false,
+    invoiceHolder: false,
     kinship: '',
     birthDate: '',
+    country: '',
     location: '',
+    province: '',
     phone1: '',
     phone2: '',
     mainEmail: '',
     alternativeMail: '',
     residentialAddress: '',
+    residenceLocation: '',
+    residenceZip: '',
+    residenceProvince: '',
     whatsappGroup: false,
     telegramGroup: false,
+    linkedParentKey: '',
     otherChildrenMemberIds: [],
   };
 }
@@ -47,7 +55,10 @@ function normalizeParentData(partial?: Partial<ParentData> & { otherChildrenTags
   return {
     ...base,
     ...partial,
+    foreignerIdCode: Boolean(partial.foreignerIdCode ?? base.foreignerIdCode),
+    invoiceHolder: Boolean(partial.invoiceHolder ?? base.invoiceHolder),
     otherChildrenMemberIds: ids,
+    linkedParentKey: String(partial.linkedParentKey ?? base.linkedParentKey ?? ''),
   };
 }
 
@@ -90,6 +101,7 @@ export function emptyOwnerProfile(partial?: Partial<OwnerProfileData>): OwnerPro
       gender: '',
       dateOfBirth: '',
       age: null,
+      countryOfBirth: '',
       locationOfBirth: '',
       provinceOfBirth: '',
       nameDay: '',
@@ -100,9 +112,18 @@ export function emptyOwnerProfile(partial?: Partial<OwnerProfileData>): OwnerPro
     },
     administrative: {
       fiscalCode: '',
+      foreignerIdCode: false,
       documentId: '',
       citizenship: '',
       carDrivingLicense: '',
+      iban: '',
+    },
+    documents: {
+      idCard: emptyPersonalDocument(),
+      drivingLicence: emptyPersonalDocument(),
+      healthInsuranceCard: emptyPersonalDocument(),
+      passport: emptyPersonalDocument(),
+      residencePermit: emptyPersonalDocument(),
     },
     medical: {
       bloodGroup: '',
@@ -115,8 +136,21 @@ export function emptyOwnerProfile(partial?: Partial<OwnerProfileData>): OwnerPro
       emergencyContactPhone: '',
       emergencyContactName: '',
       allergies: '',
+      intolerances: '',
+      blsdExpiry: '',
+      firstAidExpiry: '',
       imageUrl: '',
       pdfUrl: '',
+      ecgUrl: '',
+    },
+    bodyMeasurements: {
+      height: '',
+      heightUnit: 'cm',
+      weight: '',
+      weightUnit: 'kg',
+      jerseySize: '',
+      shortsSize: '',
+      shoeSize: '',
     },
     otherReferences: {
       language: 'en',
@@ -127,6 +161,10 @@ export function emptyOwnerProfile(partial?: Partial<OwnerProfileData>): OwnerPro
     },
     ...partial,
   };
+}
+
+function emptyPersonalDocument(): import('@/lib/club/memberProfileTypes').PersonalDocumentData {
+  return { number: '', expiry: '', frontUrl: '', backUrl: '' };
 }
 
 const EMPTY_CONTACT_LINK = { url: '', showInPublicInfo: false };
@@ -230,6 +268,84 @@ export function emptyActivities(): ActivitiesData {
     notes: '',
     preferredDays: [],
     preferredTime: '',
+    freeTimeActivities: [],
+  };
+}
+
+/** Fixed free-time activities shown as check buttons (with icons in the UI). */
+export const FREE_TIME_ACTIVITY_OPTIONS = [
+  { id: 'Music', label: 'Music', icon: 'Music' },
+  { id: 'Tv', label: 'Tv', icon: 'Tv' },
+  { id: 'Radio', label: 'Radio', icon: 'Radio' },
+  { id: 'Gardening', label: 'Gardening', icon: 'Flower2' },
+  { id: 'Reading', label: 'Reading', icon: 'BookOpen' },
+  { id: 'Walking', label: 'Walking', icon: 'Footprints' },
+  { id: 'Painting', label: 'Painting', icon: 'Palette' },
+  { id: 'Fishing', label: 'Fishing', icon: 'Fish' },
+  { id: 'Hunting', label: 'Hunting', icon: 'Crosshair' },
+  { id: 'Orientering', label: 'Orientering', icon: 'Compass' },
+  { id: 'Travels', label: 'Travels', icon: 'Plane' },
+  { id: 'Kitchen', label: 'Kitchen', icon: 'UtensilsCrossed' },
+  { id: 'Chat', label: 'Chat', icon: 'MessageCircle' },
+  { id: 'Internet', label: 'Internet', icon: 'Globe' },
+  { id: 'Sport', label: 'Sport', icon: 'Dumbbell' },
+  { id: 'Mountain', label: 'Mountain', icon: 'Mountain' },
+  { id: 'Sea', label: 'Sea', icon: 'Waves' },
+  { id: 'Countryside', label: 'Countryside', icon: 'TreePine' },
+  { id: 'Other activities', label: 'Other activities', icon: 'MoreHorizontal' },
+] as const;
+
+const FREE_TIME_LABEL_BY_LOWER = new Map(
+  FREE_TIME_ACTIVITY_OPTIONS.map((o) => [o.label.toLowerCase(), o.label]),
+);
+
+function resolveFreeTimeLabel(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  return FREE_TIME_LABEL_BY_LOWER.get(trimmed.toLowerCase()) ?? null;
+}
+
+export function normalizeActivities(raw: Partial<ActivitiesData> | null | undefined): ActivitiesData {
+  const base = emptyActivities();
+  if (!raw || typeof raw !== 'object') return base;
+
+  const preferredDays = Array.isArray(raw.preferredDays)
+    ? raw.preferredDays.map((d) => String(d)).filter(Boolean)
+    : [];
+
+  const selected = new Set<string>();
+  if (Array.isArray(raw.freeTimeActivities)) {
+    for (const item of raw.freeTimeActivities) {
+      if (typeof item === 'string') {
+        const label = resolveFreeTimeLabel(item);
+        if (label) selected.add(label);
+        continue;
+      }
+      if (item && typeof item === 'object') {
+        const name = String((item as { name?: unknown }).name || '').trim();
+        const label = resolveFreeTimeLabel(name);
+        if (label) selected.add(label);
+        else if (name) selected.add('Other activities');
+      }
+    }
+  }
+
+  const preferredTime = typeof raw.preferredTime === 'string' ? raw.preferredTime : '';
+  if (selected.size === 0 && preferredTime.trim()) {
+    for (const part of preferredTime.split(/[,;|/]+/)) {
+      const label = resolveFreeTimeLabel(part);
+      if (label) selected.add(label);
+      else if (part.trim()) selected.add('Other activities');
+    }
+  }
+
+  return {
+    notes: typeof raw.notes === 'string' ? raw.notes : '',
+    preferredDays,
+    preferredTime,
+    freeTimeActivities: FREE_TIME_ACTIVITY_OPTIONS.map((o) => o.label).filter((l) =>
+      selected.has(l),
+    ),
   };
 }
 
@@ -249,6 +365,8 @@ export function emptyClubScoped(): ClubMemberScopedData {
     otherDetails: {
       membershipFrom: '',
       membershipTo: '',
+      membershipRegistrationTo: '',
+      membershipRegistrationNumber: '',
       privacyDataTreatments: false,
       privacyThirdParty: false,
       userUnderage: false,
@@ -258,11 +376,17 @@ export function emptyClubScoped(): ClubMemberScopedData {
       enableCommission: false,
       coachEnabled: false,
       coachName: '',
+      athleteStatus: 'Member',
+      duplicateFromUserId: '',
+      groupTrainedId: '',
       insuranceCompany: '',
+      insuranceNumber: '',
       insuranceDeadline: '',
+      supplementaryInsuranceRequired: false,
+      preferredPaymentMethods: [],
       badges: [
-        { name: '', deadline: '' },
-        { name: '', deadline: '' },
+        { name: '', number: '', deadline: '' },
+        { name: '', number: '', deadline: '' },
       ],
       badgeFederationType: '',
       sportSeason: String(new Date().getFullYear()),
@@ -275,6 +399,10 @@ export function emptyClubScoped(): ClubMemberScopedData {
       newsPostCategories: [],
       genericAutoMessages: false,
       specificAlertMessages: false,
+      initialAffiliationDate: '',
+      photoVideoApproval: false,
+      consentDate: '',
+      customQuestionAnswers: {},
     },
     parents: {
       parent1: emptyParent(),
@@ -288,6 +416,8 @@ export function emptyClubScoped(): ClubMemberScopedData {
     settings: {
       clubGymEnabled: true,
       teamFootballEnabled: false,
+      memberSettingKind: 'club',
+      teamSport: 'Football',
       sportMode: 'CLUB-GYM',
       memberTypeId: '',
       discounts: {
@@ -304,6 +434,7 @@ export function emptyClubScoped(): ClubMemberScopedData {
       sharingDefault: 'Coaches & team friends',
       followUpNotifications: 'No notifications',
       informationUpdates: false,
+      accessFunctionsEnabled: true,
       accessControl: {
         activeBlockAccess: 'analyzes_all',
         freeAccessDate: '',
@@ -325,15 +456,14 @@ export function emptyClubScoped(): ClubMemberScopedData {
       },
       football: {
         annualMembershipFee: '',
-        firstPaymentDate: '',
-        secondPaymentDate: '',
-        thirdPaymentDate: '',
+        firstPayment: { amount: '', date: '', status: '' },
+        secondPayment: { amount: '', date: '', status: '' },
+        thirdPayment: { amount: '', date: '', status: '' },
         paymentMethod: '',
-        paymentStatus: '',
         receiptIssued: false,
         imageRelease: false,
         travelAuthorization: false,
-        athleteStatus: 'Active',
+        athleteStatus: 'Member',
         sportsPlayed: [],
         teamNames: '',
         previousClub: '',
@@ -342,8 +472,17 @@ export function emptyClubScoped(): ClubMemberScopedData {
         category: '',
         sportsSeason: String(new Date().getFullYear()),
         position: '',
+        specialty: '',
         footHand: '',
         jerseyNumber: '',
+        shoesNumber: '',
+        jerseySize: '',
+        shortsSize: '',
+        shoeSize: '',
+        weight: '',
+        height: '',
+        reactionTime: '',
+        verticalJump: '',
         coach: '',
         startDateWithTeam: '',
       },
@@ -399,11 +538,23 @@ export function mergeClubScoped(partial?: Partial<ClubMemberScopedData> | null):
       ...(partial.otherDetails || {}),
       badges:
         Array.isArray(partial.otherDetails?.badges) && partial.otherDetails!.badges.length
-          ? partial.otherDetails!.badges
+          ? partial.otherDetails!.badges.map((b) => ({
+              name: b?.name ?? '',
+              number: (b as { number?: string })?.number ?? '',
+              deadline: b?.deadline ?? '',
+            }))
           : base.otherDetails.badges,
       vendors: Array.isArray(partial.otherDetails?.vendors)
         ? partial.otherDetails!.vendors
         : base.otherDetails.vendors,
+      preferredPaymentMethods: Array.isArray(partial.otherDetails?.preferredPaymentMethods)
+        ? partial.otherDetails!.preferredPaymentMethods.map(String)
+        : base.otherDetails.preferredPaymentMethods,
+      customQuestionAnswers:
+        partial.otherDetails?.customQuestionAnswers &&
+        typeof partial.otherDetails.customQuestionAnswers === 'object'
+          ? partial.otherDetails.customQuestionAnswers
+          : base.otherDetails.customQuestionAnswers,
       newsReadCategories: parseCategoryIds(
         partial.otherDetails?.newsReadCategories ?? base.otherDetails.newsReadCategories,
       ),
@@ -429,20 +580,53 @@ export function mergeClubScoped(partial?: Partial<ClubMemberScopedData> | null):
       ...base.settings,
       ...(partial.settings || {}),
       clubGymEnabled:
-        partial.settings?.clubGymEnabled ??
-        (partial.settings?.sportMode !== 'TEAM-FOOTBALL'),
+        partial.settings?.memberSettingKind === 'club'
+          ? true
+          : partial.settings?.memberSettingKind === 'team'
+            ? false
+            : (partial.settings?.clubGymEnabled ??
+              (partial.settings?.sportMode !== 'TEAM-FOOTBALL')),
       teamFootballEnabled:
-        partial.settings?.teamFootballEnabled ??
-        partial.settings?.sportMode === 'TEAM-FOOTBALL',
-      sportMode:
-        partial.settings?.sportMode ??
+        partial.settings?.memberSettingKind === 'team'
+          ? true
+          : partial.settings?.memberSettingKind === 'club'
+            ? false
+            : (partial.settings?.teamFootballEnabled ??
+              partial.settings?.sportMode === 'TEAM-FOOTBALL'),
+      memberSettingKind:
+        partial.settings?.memberSettingKind ??
         (partial.settings?.teamFootballEnabled && !partial.settings?.clubGymEnabled
+          ? 'team'
+          : partial.settings?.sportMode === 'TEAM-FOOTBALL'
+            ? 'team'
+            : 'club'),
+      teamSport: String(
+        partial.settings?.teamSport ||
+          base.settings.teamSport ||
+          'Football',
+      ),
+      sportMode:
+        (partial.settings?.memberSettingKind ??
+          (partial.settings?.teamFootballEnabled && !partial.settings?.clubGymEnabled
+            ? 'team'
+            : partial.settings?.sportMode === 'TEAM-FOOTBALL'
+              ? 'team'
+              : 'club')) === 'team'
           ? 'TEAM-FOOTBALL'
-          : 'CLUB-GYM'),
+          : 'CLUB-GYM',
+      accessFunctionsEnabled:
+        partial.settings?.accessFunctionsEnabled ??
+        ((partial.settings?.memberSettingKind ??
+          (partial.settings?.teamFootballEnabled && !partial.settings?.clubGymEnabled
+            ? 'team'
+            : partial.settings?.sportMode === 'TEAM-FOOTBALL'
+              ? 'team'
+              : 'club')) === 'club'),
       memberTypeId:
         partial.settings?.memberTypeId ??
-        (partial.settings?.memberType && /^\d+$/.test(String(partial.settings.memberType))
-          ? String(partial.settings.memberType)
+        ((partial.settings as { memberType?: string } | undefined)?.memberType &&
+        /^\d+$/.test(String((partial.settings as { memberType?: string }).memberType))
+          ? String((partial.settings as { memberType?: string }).memberType)
           : base.settings.memberTypeId),
       discounts: {
         ...base.settings.discounts,
@@ -456,13 +640,40 @@ export function mergeClubScoped(partial?: Partial<ClubMemberScopedData> | null):
         ...base.settings.secondaryScreen,
         ...(partial.settings?.secondaryScreen || {}),
       },
-      football: {
-        ...base.settings.football,
-        ...(partial.settings?.football || {}),
-        sportsPlayed: Array.isArray(partial.settings?.football?.sportsPlayed)
-          ? partial.settings!.football!.sportsPlayed
-          : base.settings.football.sportsPlayed,
-      },
+      football: (() => {
+        const incoming = (partial.settings?.football || {}) as Record<string, unknown>;
+        const merged = {
+          ...base.settings.football,
+          ...(partial.settings?.football || {}),
+        };
+        const migrateInstallment = (
+          key: 'firstPayment' | 'secondPayment' | 'thirdPayment',
+          legacyDateKey: string,
+        ) => {
+          const current = merged[key];
+          if (current && typeof current === 'object') {
+            return {
+              amount: String((current as { amount?: string }).amount ?? ''),
+              date: String((current as { date?: string }).date ?? ''),
+              status: String((current as { status?: string }).status ?? ''),
+            };
+          }
+          return {
+            amount: '',
+            date: String(incoming[legacyDateKey] ?? ''),
+            status: String(incoming.paymentStatus ?? ''),
+          };
+        };
+        return {
+          ...merged,
+          firstPayment: migrateInstallment('firstPayment', 'firstPaymentDate'),
+          secondPayment: migrateInstallment('secondPayment', 'secondPaymentDate'),
+          thirdPayment: migrateInstallment('thirdPayment', 'thirdPaymentDate'),
+          sportsPlayed: Array.isArray(partial.settings?.football?.sportsPlayed)
+            ? partial.settings!.football!.sportsPlayed
+            : base.settings.football.sportsPlayed,
+        };
+      })(),
     },
     staffMessage: {
       ...base.staffMessage,

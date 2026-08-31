@@ -12,6 +12,7 @@ export type ArchiveListResult = {
 
 export type ArchiveType =
   | 'members'
+  | 'parents'
   | 'operators'
   | 'affiliations'
   | 'subscriptions'

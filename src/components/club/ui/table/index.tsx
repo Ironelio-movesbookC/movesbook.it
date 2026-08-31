@@ -122,6 +122,8 @@ export default function MembersMovesBookTable({
   const [operator, setOperator] = useState('all');
   const [typology, setTypology] = useState('all');
   const [casual, setCasual] = useState('all');
+  const [sportFilter, setSportFilter] = useState('all');
+  const [groupFilter, setGroupFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<SortConfig>(null);
   const [page, setPage] = useState(1);
@@ -153,6 +155,28 @@ export default function MembersMovesBookTable({
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
+  const sportOptions = useMemo(() => {
+    const values = Array.from(
+      new Set(
+        data
+          .map((row) => String(row.sport ?? '').trim())
+          .filter((v) => v && v !== '-'),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+    return [{ label: 'All', value: 'all' }, ...values.map((v) => ({ label: v, value: v }))];
+  }, [data]);
+
+  const groupOptions = useMemo(() => {
+    const values = Array.from(
+      new Set(
+        data
+          .map((row) => String(row.groupTrained ?? '').trim())
+          .filter((v) => v && v !== '-'),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+    return [{ label: 'All', value: 'all' }, ...values.map((v) => ({ label: v, value: v }))];
+  }, [data]);
+
   const filteredData = useMemo(() => {
     const search = searchTerm.toLowerCase().trim();
     return data.filter((row) => {
@@ -169,6 +193,8 @@ export default function MembersMovesBookTable({
           row.localCity,
           row.phone,
           row.operator,
+          row.sport,
+          row.groupTrained,
         ].some((v) => String(v ?? '').toLowerCase().includes(search));
 
       const age = getAge(row.dateOfBirth);
@@ -195,6 +221,14 @@ export default function MembersMovesBookTable({
         casual === 'all' ||
         String(row.casual ?? 'No').toLowerCase() === casual.toLowerCase();
 
+      const matchSport =
+        sportFilter === 'all' ||
+        String(row.sport ?? '').toLowerCase() === sportFilter.toLowerCase();
+
+      const matchGroup =
+        groupFilter === 'all' ||
+        String(row.groupTrained ?? '').toLowerCase() === groupFilter.toLowerCase();
+
       let matchDate = true;
       if (dateRange.startDate && dateRange.endDate && row.insertDate) {
         const insertDate = new Date(row.insertDate);
@@ -206,10 +240,27 @@ export default function MembersMovesBookTable({
       }
 
       return (
-        matchSearch && matchAge && matchOperator && matchTypology && matchCasual && matchDate
+        matchSearch &&
+        matchAge &&
+        matchOperator &&
+        matchTypology &&
+        matchCasual &&
+        matchSport &&
+        matchGroup &&
+        matchDate
       );
     });
-  }, [data, searchTerm, ageRange, operator, typology, casual, dateRange]);
+  }, [
+    data,
+    searchTerm,
+    ageRange,
+    operator,
+    typology,
+    casual,
+    sportFilter,
+    groupFilter,
+    dateRange,
+  ]);
 
   const sortedData = useMemo(() => {
     if (!sortConfig) return filteredData;
@@ -359,6 +410,24 @@ export default function MembersMovesBookTable({
             options={CASUAL_OPTIONS}
             onChange={(v) => {
               setCasual(v);
+              setPage(1);
+            }}
+          />
+          <FilterSelect
+            label="Sport"
+            value={sportFilter}
+            options={sportOptions}
+            onChange={(v) => {
+              setSportFilter(v);
+              setPage(1);
+            }}
+          />
+          <FilterSelect
+            label="Group of training"
+            value={groupFilter}
+            options={groupOptions}
+            onChange={(v) => {
+              setGroupFilter(v);
               setPage(1);
             }}
           />

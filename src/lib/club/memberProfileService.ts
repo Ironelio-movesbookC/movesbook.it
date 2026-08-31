@@ -8,11 +8,17 @@ import {
   emptyContacts,
   emptyOwnerProfile,
   mergeClubScoped,
+  normalizeActivities,
   normalizeContacts,
   safeJsonParse,
 } from '@/lib/club/memberProfileDefaults';
 import { getLatestMembershipDates } from '@/lib/club/memberMembershipArchive';
-import { fetchClubOperatorOptions } from '@/lib/procedures/clubOperators';
+import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
+import { normalizeEntitySport } from '@/lib/sport/entitySportOptions';
+import {
+  fetchClubCoachOptions,
+  fetchClubOperatorOptions,
+} from '@/lib/procedures/clubOperators';
 import {
   normalizeSupportImageUrls,
   parseSupportImageUrlsJson,
@@ -161,6 +167,7 @@ type ExtrasRow = {
   contactsJson: string;
   activitiesJson: string;
   referencesHtml: string | null;
+  referencesLevel?: string | null;
 };
 
 type ProfileRow = {
@@ -192,6 +199,7 @@ type NoteRow = {
 };
 
 async function getExtras(userId: string): Promise<ExtrasRow | null> {
+  await ensureReferencesLevelColumn();
   const rows = await prisma.$queryRawUnsafe<ExtrasRow[]>(
     `SELECT * FROM user_profile_extras WHERE userId = ? LIMIT 1`,
     userId,
@@ -216,6 +224,24 @@ async function getNotes(clubMemberId: string): Promise<NoteRow[]> {
 }
 
 let noteImageColumnReady = false;
+let referencesLevelColumnReady = false;
+
+async function ensureReferencesLevelColumn() {
+  if (referencesLevelColumnReady) return;
+  const rows = await prisma.$queryRawUnsafe<{ COLUMN_NAME: string }[]>(
+    `SELECT COLUMN_NAME
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'user_profile_extras'`,
+  );
+  const columns = new Set(rows.map((row) => row.COLUMN_NAME));
+  if (!columns.has('referencesLevel')) {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE user_profile_extras ADD COLUMN referencesLevel VARCHAR(8) NULL DEFAULT '1'`,
+    );
+  }
+  referencesLevelColumnReady = true;
+}
 
 async function ensureNoteImageColumn() {
   if (noteImageColumnReady) return;
@@ -241,7 +267,7 @@ export async function loadMemberProfileBundle(opts: {
 }): Promise<MemberProfileBundle | { error: string; status: number }> {
   const club = await prisma.club.findUnique({
     where: { id: opts.clubId },
-    select: { id: true, name: true, adminId: true },
+    select: { id: true, name: true, adminId: true, description: true },
   });
   if (!club) return { error: 'Club not found', status: 404 };
 
@@ -282,18 +308,21 @@ export async function loadMemberProfileBundle(opts: {
   const contactsRaw = safeJsonParse(extras?.contactsJson, emptyContacts());
   const activitiesRaw = safeJsonParse(extras?.activitiesJson, emptyActivities());
   const contacts: ContactsData = normalizeContacts(contactsRaw);
-  const activities: ActivitiesData = {
-    ...emptyActivities(),
-    ...activitiesRaw,
-    preferredDays: Array.isArray(activitiesRaw.preferredDays)
-      ? activitiesRaw.preferredDays
-      : [],
-  };
+  const activities: ActivitiesData = normalizeActivities(activitiesRaw);
   const clubScoped = mergeClubScoped(
     clubProfile?.profileJson
       ? (safeJsonParse(clubProfile.profileJson, {}) as Partial<ClubMemberScopedData>)
       : null,
   );
+
+  const entitySportDefault = normalizeEntitySport(
+    parseClubDescriptionMeta(club.description).category,
+  );
+  if (!clubScoped.settings.teamSport?.trim()) {
+    clubScoped.settings.teamSport = entitySportDefault;
+  } else {
+    clubScoped.settings.teamSport = normalizeEntitySport(clubScoped.settings.teamSport);
+  }
 
   const birthIso = clubMember.member.birthdate
     ? clubMember.member.birthdate.toISOString().slice(0, 10)
@@ -337,12 +366,41 @@ export async function loadMemberProfileBundle(opts: {
       ...emptyOwnerProfile().administrative,
       ...ownerStored.administrative,
     },
+    documents: {
+      ...emptyOwnerProfile().documents,
+      ...(ownerStored.documents || {}),
+      idCard: {
+        ...emptyOwnerProfile().documents.idCard,
+        ...(ownerStored.documents?.idCard || {}),
+      },
+      drivingLicence: {
+        ...emptyOwnerProfile().documents.drivingLicence,
+        ...(ownerStored.documents?.drivingLicence || {}),
+      },
+      healthInsuranceCard: {
+        ...emptyOwnerProfile().documents.healthInsuranceCard,
+        ...(ownerStored.documents?.healthInsuranceCard || {}),
+      },
+      passport: {
+        ...emptyOwnerProfile().documents.passport,
+        ...(ownerStored.documents?.passport || {}),
+      },
+      residencePermit: {
+        ...emptyOwnerProfile().documents.residencePermit,
+        ...(ownerStored.documents?.residencePermit || {}),
+      },
+    },
     medical: {
       ...emptyOwnerProfile().medical,
       ...ownerStored.medical,
       // Owner (shared) medical files are source of truth; club columns are a mirror.
       imageUrl: ownerStored.medical?.imageUrl || clubProfile?.medicalImageUrl || '',
       pdfUrl: ownerStored.medical?.pdfUrl || clubProfile?.medicalPdfUrl || '',
+      ecgUrl: ownerStored.medical?.ecgUrl || '',
+    },
+    bodyMeasurements: {
+      ...emptyOwnerProfile().bodyMeasurements,
+      ...(ownerStored.bodyMeasurements || {}),
     },
     otherReferences: {
       ...emptyOwnerProfile().otherReferences,
@@ -408,7 +466,10 @@ export async function loadMemberProfileBundle(opts: {
 
   const visibility = clubScoped.visibility;
 
-  const operatorOptions = await fetchClubOperatorOptions(opts.clubId);
+  const [operatorOptions, coachStaffOptions] = await Promise.all([
+    fetchClubOperatorOptions(opts.clubId),
+    fetchClubCoachOptions(opts.clubId),
+  ]);
   const vendorCoachOptionsMap = new Map<string, string>();
   for (const op of operatorOptions) {
     vendorCoachOptionsMap.set(op.id, op.name);
@@ -420,28 +481,96 @@ export async function loadMemberProfileBundle(opts: {
       m.member.username;
     if (label) vendorCoachOptionsMap.set(m.memberId, label);
   }
-  // Keep currently saved vendor/coach values visible even if not in club list.
+  // Keep currently saved vendor values visible even if not in club list.
   for (const id of clubScoped.otherDetails.vendors) {
     if (id && !vendorCoachOptionsMap.has(id)) {
       vendorCoachOptionsMap.set(id, id);
     }
   }
-  if (
-    clubScoped.otherDetails.coachName &&
-    !vendorCoachOptionsMap.has(clubScoped.otherDetails.coachName)
-  ) {
-    vendorCoachOptionsMap.set(
-      clubScoped.otherDetails.coachName,
-      clubScoped.otherDetails.coachName,
-    );
-  }
   const vendorCoachOptions = Array.from(vendorCoachOptionsMap.entries())
     .map(([id, label]) => ({ id, label }))
     .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
 
+  const coachOptionsMap = new Map<string, string>();
+  for (const op of coachStaffOptions) {
+    coachOptionsMap.set(op.id, op.name);
+  }
+  // Keep currently saved coach visible even if no longer Instructor/PT.
+  if (
+    clubScoped.otherDetails.coachName &&
+    !coachOptionsMap.has(clubScoped.otherDetails.coachName)
+  ) {
+    const fromVendors = vendorCoachOptionsMap.get(clubScoped.otherDetails.coachName);
+    coachOptionsMap.set(
+      clubScoped.otherDetails.coachName,
+      fromVendors || clubScoped.otherDetails.coachName,
+    );
+  }
+  const coachOptions = Array.from(coachOptionsMap.entries())
+    .map(([id, label]) => ({ id, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+
+  const clubParentsCatalog: import('@/lib/club/memberProfileTypes').ClubParentCatalogEntry[] = [];
+  const memberProfiles = await prisma.clubMemberProfile.findMany({
+    where: { clubMemberId: { in: allMembers.map((m) => m.id) } },
+    select: { clubMemberId: true, profileJson: true },
+  });
+  const memberByClubMemberId = new Map(allMembers.map((m) => [m.id, m]));
+  for (const profile of memberProfiles) {
+    const cm = memberByClubMemberId.get(profile.clubMemberId);
+    if (!cm) continue;
+    const scoped = safeJsonParse(profile.profileJson, {}) as Partial<ClubMemberScopedData>;
+    const sourceMemberLabel =
+      formatName(cm.member.firstName, cm.member.surname, cm.member.name) ||
+      cm.member.username;
+    for (const slot of ['parent1', 'parent2'] as const) {
+      const raw = scoped.parents?.[slot];
+      if (!raw) continue;
+      const data = emptyClubScoped().parents[slot];
+      const merged = { ...data, ...raw } as typeof data;
+      const hasIdentity =
+        Boolean(merged.surname?.trim()) ||
+        Boolean(merged.name?.trim()) ||
+        Boolean(merged.fiscalCode?.trim()) ||
+        Boolean(merged.mainEmail?.trim());
+      if (!hasIdentity) continue;
+      const key = `${cm.memberId}:${slot}`;
+      clubParentsCatalog.push({
+        key,
+        label: `${[merged.surname, merged.name].filter(Boolean).join(' ')} (${sourceMemberLabel} · ${slot})`,
+        sourceMemberId: cm.memberId,
+        sourceMemberLabel,
+        slot,
+        data: merged,
+      });
+    }
+  }
+  clubParentsCatalog.sort((a, b) =>
+    a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }),
+  );
+
+  const clubMeta = parseClubDescriptionMeta(club.description);
+  const customQuestions = Array.isArray(clubMeta.customQuestions)
+    ? clubMeta.customQuestions.map((q, i) => ({
+        id: String(q?.id || `cq-${i}`),
+        question: String(q?.question || '').trim(),
+        answerType:
+          q?.answerType === 'checkbox' ||
+          q?.answerType === 'yes_no' ||
+          q?.answerType === 'list' ||
+          q?.answerType === 'free'
+            ? q.answerType
+            : ('free' as const),
+        visibleInRegistration: Boolean(q?.visibleInRegistration),
+        mandatory: Boolean(q?.mandatory),
+        listOptions: String(q?.listOptions || ''),
+      })).filter((q) => q.question)
+    : [];
+
   return {
     clubId: club.id,
     clubName: club.name,
+    entitySportDefault,
     clubMemberId: clubMember.id,
     memberId: clubMember.memberId,
     role: clubMember.role,
@@ -470,6 +599,7 @@ export async function loadMemberProfileBundle(opts: {
     contacts,
     activities,
     referencesHtml: extras?.referencesHtml || '',
+    referencesLevel: String(extras?.referencesLevel || '1').trim() || '1',
     club: clubScoped,
     clubMembersForPayFor: allMembers
       .filter((m) => m.memberId !== opts.memberUserId)
@@ -480,6 +610,9 @@ export async function loadMemberProfileBundle(opts: {
           m.member.username,
       })),
     vendorCoachOptions,
+    coachOptions,
+    clubParentsCatalog,
+    customQuestions,
     staffNotes: (isClubAdmin || visibility.messagesStaff ? staffRoots : []).map((n) => ({
       id: n.id,
       title: n.title,
@@ -500,6 +633,10 @@ export async function loadMemberProfileBundle(opts: {
         visibleToMember: Boolean(n.visibleToMember),
         commentsEnabled: Boolean(n.commentsEnabled),
         imageUrls: parseSupportImageUrlsJson(n.imageUrlsJson),
+        enableFrom: n.enableFrom ? new Date(n.enableFrom).toISOString().slice(0, 10) : '',
+        enableTo: n.enableTo ? new Date(n.enableTo).toISOString().slice(0, 10) : '',
+        showAtLogin: Boolean(n.showAtLogin),
+        showAtLogout: Boolean(n.showAtLogout),
         replies: repliesOf(n.id),
       })),
   };
@@ -513,24 +650,28 @@ async function upsertExtras(opts: {
   contactsJson: string;
   activitiesJson: string;
   referencesHtml: string | null;
+  referencesLevel?: string | null;
 }) {
+  await ensureReferencesLevelColumn();
   const existing = await getExtras(opts.userId);
   const now = new Date();
+  const level = String(opts.referencesLevel ?? '1').trim() || '1';
   if (existing) {
     await prisma.$executeRawUnsafe(
-      `UPDATE user_profile_extras SET disallowClubAdmins=?, qrCodeUrl=?, ownerJson=?, contactsJson=?, activitiesJson=?, referencesHtml=?, updatedAt=? WHERE userId=?`,
+      `UPDATE user_profile_extras SET disallowClubAdmins=?, qrCodeUrl=?, ownerJson=?, contactsJson=?, activitiesJson=?, referencesHtml=?, referencesLevel=?, updatedAt=? WHERE userId=?`,
       opts.disallowClubAdmins,
       opts.qrCodeUrl,
       opts.ownerJson,
       opts.contactsJson,
       opts.activitiesJson,
       opts.referencesHtml,
+      level,
       now,
       opts.userId,
     );
   } else {
     await prisma.$executeRawUnsafe(
-      `INSERT INTO user_profile_extras (id, userId, disallowClubAdmins, qrCodeUrl, ownerJson, contactsJson, activitiesJson, referencesHtml, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO user_profile_extras (id, userId, disallowClubAdmins, qrCodeUrl, ownerJson, contactsJson, activitiesJson, referencesHtml, referencesLevel, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       cuid(),
       opts.userId,
       opts.disallowClubAdmins,
@@ -539,6 +680,7 @@ async function upsertExtras(opts: {
       opts.contactsJson,
       opts.activitiesJson,
       opts.referencesHtml,
+      level,
       now,
       now,
     );
@@ -554,6 +696,7 @@ export async function saveMemberProfileBundle(opts: {
     contacts?: ContactsData;
     activities?: ActivitiesData;
     referencesHtml?: string;
+    referencesLevel?: string;
     club?: ClubMemberScopedData;
   };
 }): Promise<{ ok: true } | { error: string; status: number }> {
@@ -626,6 +769,7 @@ export async function saveMemberProfileBundle(opts: {
       contactsJson: JSON.stringify(loaded.contacts),
       activitiesJson: JSON.stringify(loaded.activities),
       referencesHtml: loaded.referencesHtml || null,
+      referencesLevel: loaded.referencesLevel || '1',
     });
 
     const medicalImage = owner.medical.imageUrl || null;
@@ -660,7 +804,8 @@ export async function saveMemberProfileBundle(opts: {
   if (
     (opts.payload.contacts ||
       opts.payload.activities ||
-      typeof opts.payload.referencesHtml === 'string') &&
+      typeof opts.payload.referencesHtml === 'string' ||
+      typeof opts.payload.referencesLevel === 'string') &&
     loaded.viewer.canEditContactsActivitiesReferences
   ) {
     const contacts = normalizeContacts(opts.payload.contacts ?? loaded.contacts);
@@ -669,6 +814,10 @@ export async function saveMemberProfileBundle(opts: {
       typeof opts.payload.referencesHtml === 'string'
         ? opts.payload.referencesHtml
         : loaded.referencesHtml;
+    const referencesLevel =
+      typeof opts.payload.referencesLevel === 'string'
+        ? opts.payload.referencesLevel
+        : loaded.referencesLevel;
 
     await upsertExtras({
       userId: opts.memberUserId,
@@ -678,6 +827,7 @@ export async function saveMemberProfileBundle(opts: {
       contactsJson: JSON.stringify(contacts),
       activitiesJson: JSON.stringify(activities),
       referencesHtml: referencesHtml || null,
+      referencesLevel,
     });
   }
 
@@ -760,13 +910,7 @@ export async function loadSelfMemberProfileBundle(opts: {
   const ownerStored = safeJsonParse(extras?.ownerJson, emptyOwnerProfile());
   const contacts = normalizeContacts(safeJsonParse(extras?.contactsJson, emptyContacts()));
   const activitiesRaw = safeJsonParse(extras?.activitiesJson, emptyActivities());
-  const activities: ActivitiesData = {
-    ...emptyActivities(),
-    ...activitiesRaw,
-    preferredDays: Array.isArray(activitiesRaw.preferredDays)
-      ? activitiesRaw.preferredDays
-      : [],
-  };
+  const activities: ActivitiesData = normalizeActivities(activitiesRaw);
 
   const birthIso = user.birthdate ? user.birthdate.toISOString().slice(0, 10) : ownerStored.personal.dateOfBirth || '';
   const age = calcAge(birthIso);
@@ -807,9 +951,37 @@ export async function loadSelfMemberProfileBundle(opts: {
       ...emptyOwnerProfile().administrative,
       ...ownerStored.administrative,
     },
+    documents: {
+      ...emptyOwnerProfile().documents,
+      ...(ownerStored.documents || {}),
+      idCard: {
+        ...emptyOwnerProfile().documents.idCard,
+        ...(ownerStored.documents?.idCard || {}),
+      },
+      drivingLicence: {
+        ...emptyOwnerProfile().documents.drivingLicence,
+        ...(ownerStored.documents?.drivingLicence || {}),
+      },
+      healthInsuranceCard: {
+        ...emptyOwnerProfile().documents.healthInsuranceCard,
+        ...(ownerStored.documents?.healthInsuranceCard || {}),
+      },
+      passport: {
+        ...emptyOwnerProfile().documents.passport,
+        ...(ownerStored.documents?.passport || {}),
+      },
+      residencePermit: {
+        ...emptyOwnerProfile().documents.residencePermit,
+        ...(ownerStored.documents?.residencePermit || {}),
+      },
+    },
     medical: {
       ...emptyOwnerProfile().medical,
       ...ownerStored.medical,
+    },
+    bodyMeasurements: {
+      ...emptyOwnerProfile().bodyMeasurements,
+      ...(ownerStored.bodyMeasurements || {}),
     },
     otherReferences: {
       ...emptyOwnerProfile().otherReferences,
@@ -820,6 +992,7 @@ export async function loadSelfMemberProfileBundle(opts: {
   return {
     clubId: '',
     clubName: '',
+    entitySportDefault: 'Football',
     clubMemberId: '',
     memberId: user.id,
     role: null,
@@ -848,9 +1021,13 @@ export async function loadSelfMemberProfileBundle(opts: {
     contacts: normalizeContacts(contacts),
     activities,
     referencesHtml: extras?.referencesHtml || '',
+    referencesLevel: String(extras?.referencesLevel || '1').trim() || '1',
     club: emptyClubScoped(),
     clubMembersForPayFor: [],
     vendorCoachOptions: [],
+    coachOptions: [],
+    clubParentsCatalog: [],
+    customQuestions: [],
     staffNotes: [],
     coachNotes: [],
   };
@@ -863,6 +1040,7 @@ export async function saveSelfMemberProfileBundle(opts: {
     contacts?: ContactsData;
     activities?: ActivitiesData;
     referencesHtml?: string;
+    referencesLevel?: string;
   };
 }): Promise<{ ok: true } | { error: string; status: number }> {
   const loaded = await loadSelfMemberProfileBundle({ userId: opts.userId });
@@ -916,13 +1094,15 @@ export async function saveSelfMemberProfileBundle(opts: {
       contactsJson: JSON.stringify(loaded.contacts),
       activitiesJson: JSON.stringify(loaded.activities),
       referencesHtml: loaded.referencesHtml || null,
+      referencesLevel: loaded.referencesLevel || '1',
     });
   }
 
   if (
     opts.payload.contacts ||
     opts.payload.activities ||
-    typeof opts.payload.referencesHtml === 'string'
+    typeof opts.payload.referencesHtml === 'string' ||
+    typeof opts.payload.referencesLevel === 'string'
   ) {
     const contacts = normalizeContacts(opts.payload.contacts ?? loaded.contacts);
     const activities = opts.payload.activities ?? loaded.activities;
@@ -930,6 +1110,10 @@ export async function saveSelfMemberProfileBundle(opts: {
       typeof opts.payload.referencesHtml === 'string'
         ? opts.payload.referencesHtml
         : loaded.referencesHtml;
+    const referencesLevel =
+      typeof opts.payload.referencesLevel === 'string'
+        ? opts.payload.referencesLevel
+        : loaded.referencesLevel;
 
     await upsertExtras({
       userId: opts.userId,
@@ -939,6 +1123,7 @@ export async function saveSelfMemberProfileBundle(opts: {
       contactsJson: JSON.stringify(contacts),
       activitiesJson: JSON.stringify(activities),
       referencesHtml: referencesHtml || null,
+      referencesLevel,
     });
   }
 

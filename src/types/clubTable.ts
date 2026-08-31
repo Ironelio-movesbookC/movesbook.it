@@ -34,6 +34,11 @@ export type Member = {
   image?: string;
   typology?: string;
   course?: string;
+  /** Primary sport from member profile (for Athletes filter). */
+  sport?: string;
+  /** Group of training id/label from Other details. */
+  groupTrained?: string;
+  groupTrainedId?: string;
   dateStart?: Date | string;
   dateEnd?: Date | string;
   membershipEnd?: Date | string;
@@ -43,12 +48,10 @@ export type Member = {
   paid?: number;
 
   // subscription
-  localCity?: string;
   installment?: number;
   contract?: string;
   vendor?: string;
-  area?: string
-
+  area?: string;
   // deadline
   debt?: number;
   rest?: number;

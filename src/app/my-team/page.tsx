@@ -1,11 +1,16 @@
 'use client';
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Users, UserPlus, X, Loader2 } from 'lucide-react';
+import { Users, UserPlus, X, Loader2, Pencil } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  getClubMyPageDisplayName,
+  isClubCreatedFromForm,
+} from '@/lib/club/clubSidebarLabel';
 
 interface TeamMember {
   id: string;
@@ -134,6 +139,12 @@ function MyTeamContent() {
     }
   };
 
+  const canEditProfile = Boolean(team && isClubCreatedFromForm(team));
+  const editProfileHref = teamId
+    ? `/my-team/edit?teamId=${encodeURIComponent(teamId)}`
+    : '/my-team/edit';
+  const teamDisplayName = team ? getClubMyPageDisplayName(team) : 'Loading...';
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex flex-col">
       <ModernNavbar />
@@ -150,8 +161,17 @@ function MyTeamContent() {
                 <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
                   <Users className="w-10 h-10 text-white" />
                 </div>
-                <h2 className="text-2xl font-bold text-gray-900">{team?.name || 'Loading...'}</h2>
-                <p className="text-gray-600 text-sm mt-2">{team?.description || team?.sport || 'Team'}</p>
+                <h2 className="text-2xl font-bold text-gray-900">{teamDisplayName}</h2>
+                <p className="text-gray-600 text-sm mt-2">{team?.sport || 'Team'}</p>
+                {canEditProfile ? (
+                  <Link
+                    href={editProfileHref}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Edit team profile
+                  </Link>
+                ) : null}
               </div>
 
               <div className="mt-8 p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-200">

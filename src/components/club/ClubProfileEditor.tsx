@@ -23,16 +23,13 @@ import {
   type ManagedEntityKind,
 } from '@/lib/entity/entityProfileLabels';
 import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
+import {
+  DEFAULT_ENTITY_SPORT,
+  ENTITY_SPORT_OPTIONS,
+} from '@/lib/sport/entitySportOptions';
 
-export const CLUB_CATEGORY_OPTIONS = [
-  'Gym',
-  'Fitness',
-  'Swimming',
-  'Football',
-  'Basketball',
-  'Tennis',
-  'Other',
-] as const;
+/** @deprecated Use ENTITY_SPORT_OPTIONS from @/lib/sport/entitySportOptions */
+export const CLUB_CATEGORY_OPTIONS = ENTITY_SPORT_OPTIONS;
 
 export type { ClubProfileFormPayload };
 
@@ -62,14 +59,17 @@ export default function ClubProfileEditor({
   const labels = getEntityProfileLabels(entityKind);
   const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(null);
   const [clubUsername, setClubUsername] = useState('');
-  const [clubCategory, setClubCategory] = useState('Gym');
+  const [clubSports, setClubSports] = useState<string[]>([DEFAULT_ENTITY_SPORT]);
   const [clubCountry, setClubCountry] = useState('Italy');
   const [clubRegion, setClubRegion] = useState('');
+  const [clubProvince, setClubProvince] = useState('');
   const [clubLocation, setClubLocation] = useState('');
   const [clubZip, setClubZip] = useState('');
   const [clubAddress, setClubAddress] = useState('');
   const [clubGeo, setClubGeo] = useState('');
   const [clubMail, setClubMail] = useState('');
+  const [clubPhone, setClubPhone] = useState('');
+  const [clubWebsite, setClubWebsite] = useState('');
   const [clubMyPassword, setClubMyPassword] = useState('');
   const [clubNewPassword, setClubNewPassword] = useState('');
   const [clubRepeatPassword, setClubRepeatPassword] = useState('');
@@ -81,6 +81,38 @@ export default function ClubProfileEditor({
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const showClubReferences = entityKind === 'club';
+
+  const profileFieldRows = useMemo(
+    () =>
+      [
+        [labels.usernameLabel, clubUsername, setClubUsername, false],
+        ['Country', clubCountry, setClubCountry, true],
+        ['Region', clubRegion, setClubRegion, true],
+        ['Province', clubProvince, setClubProvince, false],
+        ['Location', clubLocation, setClubLocation, false],
+        ['ZIP', clubZip, setClubZip, false],
+        ['Address', clubAddress, setClubAddress, false],
+        ['Geographic coordinate', clubGeo, setClubGeo, false],
+        [labels.mailLabel, clubMail, setClubMail, false],
+        ['Phone', clubPhone, setClubPhone, false],
+        ['Website', clubWebsite, setClubWebsite, false],
+      ] as [string, string, (v: string) => void, boolean][],
+    [
+      labels.usernameLabel,
+      labels.mailLabel,
+      clubUsername,
+      clubCountry,
+      clubRegion,
+      clubProvince,
+      clubLocation,
+      clubZip,
+      clubAddress,
+      clubGeo,
+      clubMail,
+      clubPhone,
+      clubWebsite,
+    ],
+  );
 
   const clubRegionOptions = useMemo(() => {
     const country = clubCountry.trim();
@@ -96,14 +128,17 @@ export default function ClubProfileEditor({
     if (mode === 'create') {
       setClubLogoUrl(null);
       setClubUsername('');
-      setClubCategory('Gym');
+      setClubSports([DEFAULT_ENTITY_SPORT]);
       setClubCountry('Italy');
       setClubRegion('');
+      setClubProvince('');
       setClubLocation('');
       setClubZip('');
       setClubAddress('');
       setClubGeo('');
       setClubMail('');
+      setClubPhone('');
+      setClubWebsite('');
       setClubMyPassword('');
       setClubNewPassword('');
       setClubRepeatPassword('');
@@ -120,14 +155,18 @@ export default function ClubProfileEditor({
     if (mode === 'edit' && initialClub) {
       const payload = clubToFormPayload(initialClub);
       setClubUsername(payload.username);
-      setClubCategory(payload.category || 'Gym');
+      setClubSports(payload.sports.length ? payload.sports : [DEFAULT_ENTITY_SPORT]);
       setClubCountry(payload.country || 'Italy');
       setClubRegion(payload.region);
+      setClubProvince(payload.province);
       setClubLocation(payload.location);
       setClubZip(payload.zipCode);
       setClubAddress(payload.address);
       setClubGeo(payload.geo);
       setClubMail(payload.mail);
+      setClubPhone(payload.phone);
+      setClubWebsite(payload.website);
+      setClubLogoUrl(payload.logoUrl || null);
       setClubDirectAccess(payload.directAccess);
       setClubOfficialName(payload.officialName);
       setClubDirectRegCode(payload.directRegistrationCode);
@@ -143,7 +182,9 @@ export default function ClubProfileEditor({
   const handleLogoPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setClubLogoUrl(URL.createObjectURL(file));
+    const reader = new FileReader();
+    reader.onload = () => setClubLogoUrl(String(reader.result || ''));
+    reader.readAsDataURL(file);
   };
 
   const handleSave = async () => {
@@ -173,16 +214,22 @@ export default function ClubProfileEditor({
     }
     setError(null);
     try {
+      const sports = clubSports.length ? clubSports : [DEFAULT_ENTITY_SPORT];
       await onSave({
         username: clubUsername.trim(),
-        category: clubCategory,
+        category: sports[0],
+        sports,
         country: clubCountry,
         region: clubRegion,
+        province: clubProvince.trim(),
         location: clubLocation.trim(),
         zipCode: clubZip.trim(),
         address: clubAddress.trim(),
         geo: clubGeo.trim(),
         mail: clubMail.trim(),
+        phone: clubPhone.trim(),
+        website: clubWebsite.trim(),
+        logoUrl: clubLogoUrl || '',
         directAccess: clubDirectAccess.trim(),
         officialName: clubOfficialName.trim() || clubUsername.trim(),
         directRegistrationCode: clubDirectRegCode.trim(),
@@ -241,34 +288,36 @@ export default function ClubProfileEditor({
           </div>
 
           <div className="flex-1 space-y-2 text-sm">
-            {(
-              [
-                [labels.usernameLabel, clubUsername, setClubUsername, false],
-                [labels.categoryLabel, clubCategory, setClubCategory, true],
-                ['Country', clubCountry, setClubCountry, true],
-                ['Region', clubRegion, setClubRegion, true],
-                ['Location', clubLocation, setClubLocation, false],
-                ['Zip Code', clubZip, setClubZip, false],
-                ['Address', clubAddress, setClubAddress, false],
-                ['Geographic coordinate', clubGeo, setClubGeo, false],
-                [labels.mailLabel, clubMail, setClubMail, false],
-              ] as [string, string, (v: string) => void, boolean][]
-            ).map(([label, value, setter, isSelect]) => (
+            <div className="grid grid-cols-[160px_1fr] items-start gap-2">
+              <label className="pt-1 text-gray-800">Sports</label>
+              <div className="flex max-w-xl flex-wrap gap-x-4 gap-y-2 rounded border border-gray-400 bg-gray-100 px-2 py-2">
+                {ENTITY_SPORT_OPTIONS.map((sport) => {
+                  const checked = clubSports.includes(sport);
+                  return (
+                    <label key={sport} className="inline-flex items-center gap-1.5 text-sm text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setClubSports((prev) => {
+                            if (prev.includes(sport)) {
+                              const next = prev.filter((s) => s !== sport);
+                              return next.length ? next : [DEFAULT_ENTITY_SPORT];
+                            }
+                            return [...prev, sport];
+                          })
+                        }
+                      />
+                      {sport}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            {profileFieldRows.map(([label, value, setter, isSelect]) => (
               <div key={String(label)} className="grid grid-cols-[160px_1fr] items-center gap-2">
                 <label className="text-gray-800">{label}</label>
-                {isSelect && label === labels.categoryLabel ? (
-                  <select
-                    value={String(value)}
-                    onChange={(e) => setter(e.target.value)}
-                    className="w-full max-w-md rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
-                  >
-                    {CLUB_CATEGORY_OPTIONS.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                ) : isSelect && label === 'Country' ? (
+                {isSelect && label === 'Country' ? (
                   <select
                     value={String(value)}
                     onChange={(e) => {

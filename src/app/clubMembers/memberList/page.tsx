@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation';
 import { CalendarClock, Pencil, Trash2, UserPlus, User } from 'lucide-react';
 import AddMemberModal from '@/components/AddMemberModal';
 import MembersTable from '@/components/club/ui/table';
+import MemberArchiveTopNav, {
+  type MemberArchiveSection,
+} from '@/components/club/memberArchive/MemberArchiveTopNav';
+import ArchiveEntityProfilePanel from '@/components/club/memberArchive/ArchiveEntityProfilePanel';
+import AthletesParentsArchive from '@/components/club/memberArchive/AthletesParentsArchive';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import MemberStats from '@/app/clubMembers/memberList/components/status';
 import { useClubWorkspace } from '@/contexts/ClubWorkspaceContext';
@@ -75,6 +80,7 @@ export default function MemberListPage() {
   const [clubName, setClubName] = useState('');
   const [membersPurchased, setMembersPurchased] = useState(DEFAULT_MEMBERS_PURCHASED);
   const [subscriptionExpirationLabel, setSubscriptionExpirationLabel] = useState('');
+  const [archiveSection, setArchiveSection] = useState<MemberArchiveSection>('athletes');
 
   const clubId = useMemo(() => {
     if (contextClubId) return contextClubId;
@@ -376,63 +382,86 @@ export default function MemberListPage() {
     <div className="px-2 pb-4 sm:px-4">
       {addError ? <p className="mb-2 text-sm text-red-600">{addError}</p> : null}
 
-      <MemberStats
-        currentMembers={currentMembers}
-        membersPurchased={membersPurchased}
-        membersAdded={membersAdded}
-        availableSlots={availableSlots}
-        subscriptionExpirationLabel={subscriptionExpirationLabel}
-        onPurchaseMembers={() => {
-          window.alert(
-            'Purchase members will open the club accounts purchase flow (coming soon).',
-          );
-        }}
-        onStatusAccounts={() => {
-          window.alert(
-            'Status accounts will open Account Status for member seats (coming soon).',
-          );
-        }}
-      />
+      <MemberArchiveTopNav active={archiveSection} onChange={setArchiveSection} />
 
-      <ProcedureArchiveShell
-        title="Archive — Members"
-        activeTab=""
-        tabs={[]}
-        error={error || undefined}
-        footerHint="Live data from club members in the database."
-        headerAction={
-          <button
-            type="button"
-            onClick={() => {
-              setAddError('');
-              setShowAddMemberModal(true);
+      {archiveSection === 'athletes' ? (
+        <div className="space-y-4">
+          <ArchiveEntityProfilePanel clubId={clubId} />
+
+          <MemberStats
+            currentMembers={currentMembers}
+            membersPurchased={membersPurchased}
+            membersAdded={membersAdded}
+            availableSlots={availableSlots}
+            subscriptionExpirationLabel={subscriptionExpirationLabel}
+            onPurchaseMembers={() => {
+              window.alert(
+                'Purchase members will open the club accounts purchase flow (coming soon).',
+              );
             }}
-            className="inline-flex items-center gap-1.5 rounded bg-white px-3 py-1.5 text-sm font-semibold text-teal-800 hover:bg-teal-50"
+            onStatusAccounts={() => {
+              window.alert(
+                'Status accounts will open Account Status for member seats (coming soon).',
+              );
+            }}
+          />
+
+          <ProcedureArchiveShell
+            title="Archive — Members"
+            activeTab=""
+            tabs={[]}
+            error={error || undefined}
+            footerHint="Live data from club members in the database."
+            headerAction={
+              <button
+                type="button"
+                onClick={() => {
+                  setAddError('');
+                  setShowAddMemberModal(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded bg-white px-3 py-1.5 text-sm font-semibold text-teal-800 hover:bg-teal-50"
+              >
+                <UserPlus className="h-4 w-4" />
+                Add a member
+              </button>
+            }
           >
-            <UserPlus className="h-4 w-4" />
-            Add a member
-          </button>
-        }
-      >
-        {loading ? (
-          <div className="p-6 text-sm text-gray-500">Loading members…</div>
-        ) : !error && rows.length === 0 ? (
-          <div className="space-y-2 p-6 text-sm text-gray-600">
-            <p className="font-medium text-gray-800">
-              No members in {clubName || 'this club'} yet.
-            </p>
-            <p>
-              Use <strong>Add a member</strong>, or switch club under{' '}
-              <strong>My Page → My clubs</strong> if you added the member to a different club
-              (e.g. test-club vs Magix).
-            </p>
-          </div>
-        ) : (
-          <div className="px-2 pb-4">
-            <MembersTable columns={columns} tableData={rows} />
-          </div>
-        )}
-      </ProcedureArchiveShell>
+            {loading ? (
+              <div className="p-6 text-sm text-gray-500">Loading members…</div>
+            ) : !error && rows.length === 0 ? (
+              <div className="space-y-2 p-6 text-sm text-gray-600">
+                <p className="font-medium text-gray-800">
+                  No members in {clubName || 'this club'} yet.
+                </p>
+                <p>
+                  Use <strong>Add a member</strong>, or switch club under{' '}
+                  <strong>My Page → My clubs</strong> if you added the member to a different club
+                  (e.g. test-club vs Magix).
+                </p>
+              </div>
+            ) : (
+              <div className="px-2 pb-4">
+                <MembersTable columns={columns} tableData={rows} />
+              </div>
+            )}
+          </ProcedureArchiveShell>
+        </div>
+      ) : archiveSection === 'parents' && clubId ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <AthletesParentsArchive clubId={clubId} />
+        </div>
+      ) : (
+        <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
+          <h2 className="mb-2 text-lg font-bold text-gray-900">
+            {archiveSection === 'staff' ? 'Staff' : 'Settings'}
+          </h2>
+          <p>
+            {archiveSection === 'staff'
+              ? 'Staff archive for this club/team will appear here.'
+              : 'Archive settings for this club/team will appear here.'}
+          </p>
+        </div>
+      )}
 
       <AddMemberModal
         isOpen={showAddMemberModal}

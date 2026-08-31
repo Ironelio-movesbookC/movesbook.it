@@ -60,6 +60,10 @@ export default function CoachNotesPanel({
   const [composerObject, setComposerObject] = useState('');
   const [composerBody, setComposerBody] = useState('');
   const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
+  const [composerEnableFrom, setComposerEnableFrom] = useState('');
+  const [composerEnableTo, setComposerEnableTo] = useState('');
+  const [composerShowAtLogin, setComposerShowAtLogin] = useState(false);
+  const [composerShowAtLogout, setComposerShowAtLogout] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [posting, setPosting] = useState(false);
 
@@ -175,6 +179,10 @@ export default function CoachNotesPanel({
             visibleToMember: club.visibility.notesCoach,
             commentsEnabled: club.visibility.notesCoachComments,
             imageUrls: composerImages.map((img) => img.url),
+            enableFrom: composerEnableFrom || null,
+            enableTo: composerEnableTo || null,
+            showAtLogin: composerShowAtLogin,
+            showAtLogout: composerShowAtLogout,
           }),
         },
       );
@@ -183,6 +191,10 @@ export default function CoachNotesPanel({
       setComposerObject('');
       setComposerBody('');
       setComposerImages([]);
+      setComposerEnableFrom('');
+      setComposerEnableTo('');
+      setComposerShowAtLogin(false);
+      setComposerShowAtLogout(false);
       setMessage('Reflection posted.');
       onReload();
     } catch (e: unknown) {
@@ -231,6 +243,13 @@ export default function CoachNotesPanel({
     <div>
       {isAdmin ? (
         <SectionCard title="Coach notes visibility" tone="purple">
+          <p className="mb-3 text-xs text-slate-600">
+            Admin/Coach posts reflections here from{' '}
+            <span className="font-medium">
+              Club management → Administration → Archives → Archive of Members
+            </span>
+            : open the member profile, then this tab.
+          </p>
           <CheckRow
             label="Coach reflections visible to the member"
             checked={club.visibility.notesCoach}
@@ -362,6 +381,20 @@ export default function CoachNotesPanel({
                             <span className="font-medium text-slate-700">{item.authorLabel}</span> —{' '}
                             {new Date(item.createdAt).toLocaleString()}
                           </div>
+                          {item.showAtLogin || item.showAtLogout || item.enableFrom || item.enableTo ? (
+                            <div className="mt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 px-1.5 py-0.5 inline-block">
+                              Popup:{' '}
+                              {[
+                                item.showAtLogin ? 'Login' : null,
+                                item.showAtLogout ? 'Logout' : null,
+                              ]
+                                .filter(Boolean)
+                                .join(' / ') || '—'}
+                              {item.enableFrom || item.enableTo
+                                ? ` · ${item.enableFrom || '…'} → ${item.enableTo || '…'}`
+                                : ''}
+                            </div>
+                          ) : null}
                           <div className="mt-1 text-[11px] text-[#c43c54] font-medium">Reply</div>
                         </div>
                       </button>
@@ -515,6 +548,53 @@ export default function CoachNotesPanel({
               placeholder="Type here your reflection for this athlete…"
               className={`${fieldClass} mb-3`}
             />
+
+            <div className="mb-3 rounded border border-slate-300 bg-white p-3">
+              <p className="mb-2 text-xs font-semibold text-slate-800">
+                Popup display (login / logout)
+              </p>
+              <p className="mb-2 text-[11px] text-slate-600">
+                Document is shown in a popup at login and/or logout within this date range.
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 mb-2">
+                <label className="block text-xs">
+                  <span className="mb-1 block font-medium">From</span>
+                  <input
+                    type="date"
+                    value={composerEnableFrom}
+                    onChange={(e) => setComposerEnableFrom(e.target.value)}
+                    className={fieldClass}
+                  />
+                </label>
+                <label className="block text-xs">
+                  <span className="mb-1 block font-medium">Until to</span>
+                  <input
+                    type="date"
+                    value={composerEnableTo}
+                    onChange={(e) => setComposerEnableTo(e.target.value)}
+                    className={fieldClass}
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-4 text-xs text-slate-800">
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={composerShowAtLogin}
+                    onChange={(e) => setComposerShowAtLogin(e.target.checked)}
+                  />
+                  Show at Login
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={composerShowAtLogout}
+                    onChange={(e) => setComposerShowAtLogout(e.target.checked)}
+                  />
+                  Show at Logout
+                </label>
+              </div>
+            </div>
 
             <div className="mb-4">
               <div className="flex flex-wrap items-center gap-2 mb-2">

@@ -16,20 +16,46 @@ type TabMeta = { id: ProfileTabId; label: string; clubScoped: boolean };
 
 const SHARED_TABS: TabMeta[] = [
   { id: 'owner-profile', label: 'Owner profile', clubScoped: false },
-  { id: 'contacts', label: 'User contacts', clubScoped: false },
+  { id: 'contacts', label: 'Contacts', clubScoped: false },
   { id: 'activities', label: 'My Activities', clubScoped: false },
   { id: 'references', label: 'References', clubScoped: false },
 ];
 
 const CLUB_TABS: TabMeta[] = [
   { id: 'pay-for', label: 'Pay for…', clubScoped: true },
-  { id: 'other-details', label: "Other member's details", clubScoped: true },
+  { id: 'other-details', label: 'Other data', clubScoped: true },
   { id: 'parents', label: PARENTS_TAB_LABEL, clubScoped: true },
   { id: 'settings', label: 'Settings', clubScoped: true },
-  { id: 'messages-staff', label: 'Messages from the Staff', clubScoped: true },
-  { id: 'notes-coach', label: 'Notes of the Coach', clubScoped: true },
-  { id: 'presences', label: 'Graphs of the presences', clubScoped: true },
+  { id: 'messages-staff', label: 'Messages', clubScoped: true },
+  { id: 'notes-coach', label: 'Notes', clubScoped: true },
+  { id: 'presences', label: 'Presences', clubScoped: true },
 ];
+
+/** Short “what this section does” copy shown to members. */
+const TAB_FUNCTION_HELP: Partial<Record<ProfileTabId, string>> = {
+  'owner-profile':
+    'Your personal identity data (login, address, personal and medical info). Shared across every club.',
+  contacts:
+    'Your public contact details and social links. Managed by you; shared across every club.',
+  activities:
+    'Preferred days and free-time activities (Music, Sport, Travels, …). Managed by you; shared across every club.',
+  references:
+    'Your references text and level. Managed by you; shared across every club.',
+  'pay-for':
+    'Lists other club members whose fees or purchases you pay for (family members, children, etc.). Managed by the club admin for this club.',
+  'other-details':
+    'Club membership dates, privacy, tutors/coach, insurance and federation badges for this club. Managed by the club admin.',
+  parents:
+    'Parent / tutor contacts for underage members in this club. Managed by the club admin; visible only when the member is under 18.',
+  settings:
+    'How this club shows your profile (theme, sharing, follow-up). Managed by the club admin.',
+  'messages-staff':
+    'Messages from club staff about your membership. Visible when the admin enables this label for you.',
+  'notes-coach':
+    'Notes written by coaches for you (login/logout notices, training comments). Visible when enabled by the club admin.',
+  presences:
+    'Graphs and history of your attendances / accesses at this club. Visible when enabled by the club admin.',
+};
 
 function tabVisibleForMember(tab: TabMeta, data: MemberProfileBundle | null): boolean {
   if (!tab.clubScoped) return true;
@@ -61,13 +87,29 @@ function tabVisibleForMember(tab: TabMeta, data: MemberProfileBundle | null): bo
   }
 }
 
-function clubTabBlockedMessage(
+function clubTabBlockedContent(
   tab: TabMeta | undefined,
   data: MemberProfileBundle,
   clubName: string,
-): string {
+): { title: string; whatItDoes: string; whyBlocked: string } {
   const label = tab?.label || 'This section';
-  return `${label}: the club admin of ${clubName || 'this club'} has not enabled this section for you. Try another club with Change club, or ask the admin to enable reading of this label.`;
+  const whatItDoes =
+    (tab && TAB_FUNCTION_HELP[tab.id]) ||
+    'This club section stores data linked to your membership.';
+
+  const dob = data.owner.personal.dateOfBirth || data.user.birthdate || '';
+  let whyBlocked = `The club admin of ${clubName || 'this club'} has not enabled reading of this label for you. Use Change club to try another club, or ask the admin to enable it.`;
+
+  if (tab?.id === 'parents' && !isMemberUnderage(dob)) {
+    whyBlocked =
+      'Parents is available only for underage members (under 18). Update the date of birth on Owner profile if needed, or ask the club admin.';
+  }
+
+  return {
+    title: label,
+    whatItDoes,
+    whyBlocked,
+  };
 }
 
 type Props = {
@@ -198,8 +240,9 @@ export default function MemberSelfProfilePanel({ userId, clubs }: Props) {
     <div>
       <h2 className="text-xl font-bold text-gray-800 mb-1">Member info</h2>
       <p className="mb-4 text-sm text-gray-600">
-        Grey labels are shared across all your clubs. Blue labels load data from the club you
-        select (same list as My clubs).
+        Grey labels are shared across all your clubs (you edit them). Blue labels load data from
+        the club you select (same list as My clubs) and are managed by that club&apos;s admin —
+        they may enable or hide each label for you.
       </p>
 
       {clubs.length === 0 ? (
@@ -209,15 +252,20 @@ export default function MemberSelfProfilePanel({ userId, clubs }: Props) {
         </p>
       ) : null}
 
-      <div className="mb-0 flex flex-wrap gap-1 border-b border-gray-300">
+      <nav
+        className="mb-0 grid w-full gap-px border-b border-gray-300"
+        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+        aria-label="Member profile sections"
+      >
         {tabs.map((tab) => {
           const active = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               type="button"
+              title={tab.label}
               onClick={() => openTab(tab)}
-              className={`rounded-t px-3 py-2 text-sm font-medium ${
+              className={`min-w-0 truncate rounded-t px-1 py-2 text-center text-[11px] font-medium leading-tight sm:px-1.5 sm:text-xs md:text-sm ${
                 active
                   ? 'bg-gray-900 text-white'
                   : tab.clubScoped
@@ -229,19 +277,26 @@ export default function MemberSelfProfilePanel({ userId, clubs }: Props) {
             </button>
           );
         })}
-      </div>
+      </nav>
 
       <div className="rounded-b-lg border border-t-0 border-gray-300 bg-white p-4 md:p-5">
         <div
-          className={`mb-3 flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm font-semibold text-white ${
-            activeMeta?.clubScoped ? 'bg-sky-700' : 'bg-[#2f6fb5]'
-          }`}
+          className={`mb-3 flex flex-wrap items-center justify-between gap-2 px-3 py-2 font-semibold text-white ${
+            activeMeta?.id === 'pay-for' ? 'text-lg' : 'text-sm'
+          } ${activeMeta?.clubScoped ? 'bg-sky-700' : 'bg-[#2f6fb5]'}`}
         >
           <span>
             {activeMeta?.label}
             {activeMeta?.clubScoped
               ? selectedClubName
-                ? ` · ${selectedClubName}`
+                ? (
+                    <>
+                      {' · '}
+                      <span className={activeMeta?.id === 'pay-for' ? 'text-xl' : 'text-base'}>
+                        {selectedClubName}
+                      </span>
+                    </>
+                  )
                 : ' · select a club'
               : ' · shared profile'}
           </span>
@@ -259,6 +314,13 @@ export default function MemberSelfProfilePanel({ userId, clubs }: Props) {
           ) : null}
         </div>
 
+        {activeMeta && TAB_FUNCTION_HELP[activeMeta.id] && !loading && !clubTabBlocked ? (
+          <p className="mb-3 rounded border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+            <span className="font-semibold">What you can do here: </span>
+            {TAB_FUNCTION_HELP[activeMeta.id]}
+          </p>
+        ) : null}
+
         {loading ? (
           <div className="flex items-center gap-2 text-gray-600">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -269,8 +331,22 @@ export default function MemberSelfProfilePanel({ userId, clubs }: Props) {
             {error}
           </div>
         ) : clubTabBlocked ? (
-          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
-            {clubTabBlockedMessage(activeMeta, data!, selectedClubName)}
+          <div className="space-y-2 rounded border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+            {(() => {
+              const blocked = clubTabBlockedContent(activeMeta, data!, selectedClubName);
+              return (
+                <>
+                  <p>
+                    <span className="font-semibold">What {blocked.title} is for: </span>
+                    {blocked.whatItDoes}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Why it is not available: </span>
+                    {blocked.whyBlocked}
+                  </p>
+                </>
+              );
+            })()}
           </div>
         ) : data ? (
           <ClubMemberProfileEditor

@@ -58,8 +58,8 @@ export async function POST(request: NextRequest) {
   if (!file || file.size <= 0) {
     return NextResponse.json({ error: 'No file provided' }, { status: 400 });
   }
-  if (kind !== 'image' && kind !== 'pdf' && kind !== 'photo') {
-    return NextResponse.json({ error: 'kind must be image, pdf, or photo' }, { status: 400 });
+  if (kind !== 'image' && kind !== 'pdf' && kind !== 'photo' && kind !== 'ecg') {
+    return NextResponse.json({ error: 'kind must be image, pdf, photo, or ecg' }, { status: 400 });
   }
 
   const maxSize = kind === 'pdf' ? 15 * 1024 * 1024 : 5 * 1024 * 1024;

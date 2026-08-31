@@ -6,10 +6,12 @@ export function SectionCard({
   title,
   children,
   tone = 'slate',
+  titleClassName,
 }: {
   title: string;
   children: ReactNode;
   tone?: 'slate' | 'red' | 'blue' | 'purple';
+  titleClassName?: string;
 }) {
   const bar =
     tone === 'red'
@@ -21,7 +23,11 @@ export function SectionCard({
           : 'bg-gray-700';
   return (
     <section className="mb-4 overflow-hidden rounded border border-gray-300 bg-white">
-      <div className={`${bar} px-3 py-2 text-sm font-semibold text-white`}>{title}</div>
+      <div
+        className={`${bar} px-3 py-2 font-semibold text-white ${titleClassName || 'text-sm'}`}
+      >
+        {title}
+      </div>
       <div className="space-y-3 p-3 md:p-4">{children}</div>
     </section>
   );
@@ -31,14 +37,18 @@ export function Field({
   label,
   children,
   hint,
+  labelClassName,
 }: {
   label: string;
   children: ReactNode;
   hint?: string;
+  labelClassName?: string;
 }) {
   return (
     <label className="block text-sm">
-      <span className="mb-1 block font-semibold text-gray-800">{label}</span>
+      <span className={`mb-1 block font-semibold text-gray-800 ${labelClassName || ''}`}>
+        {label}
+      </span>
       {children}
       {hint ? <span className="mt-1 block text-xs text-gray-500">{hint}</span> : null}
     </label>
@@ -99,4 +109,14 @@ export function CheckRow({
 
 export function Row2({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-1 gap-3 md:grid-cols-2">{children}</div>;
+}
+
+export function Row3({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-1 gap-3 md:grid-cols-3">{children}</div>;
+}
+
+export function Row4({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">{children}</div>
+  );
 }

@@ -1777,6 +1777,7 @@ model UserProfileExtras {
   contactsJson       String   @db.LongText
   activitiesJson     String   @db.LongText
   referencesHtml     String?  @db.LongText
+  referencesLevel    String?  @default("1")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

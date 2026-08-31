@@ -4,6 +4,7 @@ import { procedureService } from '@/lib/procedures';
 import { getProcedureTypology } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import type { ClubAuthContext } from '@/lib/procedures/types';
+import { fetchClubStaffOperators } from '@/lib/procedures/clubOperators';
 import {
   type ArchiveQueryParams,
   applyFilters,
@@ -64,9 +65,31 @@ export async function listClubMembersArchive(
           createdAt: true,
         },
       },
+      profile: { select: { profileJson: true } },
     },
     orderBy: { joinedAt: 'desc' },
   });
+
+  const memberIds = rows.map((r) => r.memberId);
+  const extrasRows =
+    memberIds.length > 0
+      ? await prisma.userProfileExtras.findMany({
+          where: { userId: { in: memberIds } },
+          select: { userId: true, ownerJson: true },
+        })
+      : [];
+  const ownerSportByUser = new Map<string, string>();
+  for (const ex of extrasRows) {
+    try {
+      const owner = JSON.parse(ex.ownerJson || '{}') as {
+        personal?: { mainSport?: string };
+      };
+      const sport = text(owner.personal?.mainSport);
+      if (sport) ownerSportByUser.set(ex.userId, sport);
+    } catch {
+      /* ignore */
+    }
+  }
 
   const items = rows.map((row, i) => {
     const firstName =
@@ -81,6 +104,25 @@ export async function listClubMembersArchive(
         return parts.length > 1 ? parts.slice(1).join(' ') : '';
       })();
     const memberType = text(row.membershipType) || 'Standard';
+    let scopedSafe: {
+      otherDetails?: { groupTrainedId?: string };
+      settings?: { football?: { teamNames?: string; category?: string }; teamSport?: string };
+    } = {};
+    try {
+      scopedSafe = row.profile?.profileJson
+        ? (JSON.parse(row.profile.profileJson) as typeof scopedSafe)
+        : {};
+    } catch {
+      scopedSafe = {};
+    }
+    const sport =
+      ownerSportByUser.get(row.memberId) ||
+      text(scopedSafe.settings?.football?.category) ||
+      text(scopedSafe.settings?.teamSport) ||
+      '-';
+    const groupTrainedId = text(scopedSafe.otherDetails?.groupTrainedId);
+    const groupTrained =
+      text(scopedSafe.settings?.football?.teamNames) || groupTrainedId || '-';
 
     return {
       id: row.member.id,
@@ -103,6 +145,9 @@ export async function listClubMembersArchive(
       localCity: text(row.member.country) || '-',
       Localcity: text(row.member.country) || '-',
       phone: '-',
+      sport,
+      groupTrained,
+      groupTrainedId: groupTrainedId || '',
       insertDate: row.joinedAt.toISOString().slice(0, 10),
       insertDateDisplay: formatArchiveDate(row.joinedAt),
       operator: titleCaseRole(row.role),
@@ -113,40 +158,93 @@ export async function listClubMembersArchive(
   return paginate(applyFilters(items, params), page, pageSize);
 }
 
+export async function listClubParentsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {},
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const members = await prisma.clubMember.findMany({
+    where: { clubId: ctx.club.id },
+    include: {
+      member: {
+        select: { id: true, firstName: true, surname: true, name: true, username: true },
+      },
+      profile: { select: { profileJson: true } },
+    },
+    orderBy: { joinedAt: 'desc' },
+  });
+
+  const items: Record<string, unknown>[] = [];
+  for (const row of members) {
+    const memberLabel =
+      formatName(row.member.firstName, row.member.surname, row.member.name) ||
+      text(row.member.username) ||
+      row.memberId;
+    let scoped: {
+      parents?: {
+        parent1?: Record<string, unknown>;
+        parent2?: Record<string, unknown>;
+      };
+    } = {};
+    try {
+      scoped = row.profile?.profileJson
+        ? (JSON.parse(row.profile.profileJson) as typeof scoped)
+        : {};
+    } catch {
+      scoped = {};
+    }
+    for (const slot of ['parent1', 'parent2'] as const) {
+      const p = scoped.parents?.[slot] || {};
+      const surname = text(p.surname);
+      const name = text(p.name);
+      const fiscalCode = text(p.fiscalCode);
+      const mail = text(p.mainEmail);
+      if (!surname && !name && !fiscalCode && !mail) continue;
+      items.push({
+        key: `${row.memberId}:${slot}`,
+        surname: surname || '-',
+        name: name || '-',
+        birthDate: text(p.birthDate) || '-',
+        fiscalCode: fiscalCode || '-',
+        mail: mail || '-',
+        phone: text(p.phone1) || '-',
+        country: text(p.country) || '-',
+        location: text(p.location) || text(p.residenceLocation) || '-',
+        province: text(p.province) || text(p.residenceProvince) || '-',
+        memberLabel,
+        slot,
+      });
+    }
+  }
+
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
 export async function listClubOperatorsArchive(
   ctx: ClubAuthContext,
   params: ArchiveQueryParams = {}
 ): Promise<PaginatedArchive<Record<string, unknown>>> {
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? 25;
-  const table = await findExistingTable(['club_operators', 'club_operator']);
   const items: Record<string, unknown>[] = [];
 
-  if (table) {
-    const operatorRows = await prisma.$queryRawUnsafe<
-      { id: bigint | number; user_id: bigint | number | null; clubadmin_id: bigint | number | null }[]
-    >(`SELECT id, user_id, clubadmin_id FROM \`${table}\` ORDER BY id DESC LIMIT 500`);
-
-    const userIds = operatorRows.map((r) => String(r.user_id ?? '')).filter(Boolean);
-    const users =
-      userIds.length > 0
-        ? await prisma.user.findMany({
-            where: { id: { in: userIds } },
-            select: { id: true, firstName: true, surname: true, name: true, username: true, image: true },
-          })
-        : [];
-    const userMap = new Map(users.map((u) => [u.id, u]));
-
-    for (const row of operatorRows) {
-      const user = userMap.get(String(row.user_id ?? ''));
-      if (!user) continue;
+  const staffOperators = await fetchClubStaffOperators(ctx.club.id);
+  if (staffOperators.length > 0) {
+    const userIds = staffOperators.map((s) => s.id);
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, image: true },
+    });
+    const imageMap = new Map(users.map((u) => [u.id, u.image]));
+    for (const row of staffOperators) {
       items.push({
-        id: String(row.id),
-        name: formatName(user.firstName, user.surname, user.name),
-        image: user.image,
+        id: row.id,
+        name: row.name,
+        image: imageMap.get(row.id) ?? null,
         insertDate: '-',
-        typology: 'Operator',
-        operator: user.username,
+        typology: row.occupation || 'Operator',
+        operator: row.username,
       });
     }
   } else {

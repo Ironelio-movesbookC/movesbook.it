@@ -5,18 +5,32 @@ import {
   CheckRow,
   Field,
   Row2,
+  Row4,
   SectionCard,
   TextInput,
   TextSelect,
 } from '@/components/club/memberProfile/FormBits';
+import PaymentModeSelect from '@/components/club/PaymentModeSelect';
 import type { ClubMemberScopedData } from '@/lib/club/memberProfileTypes';
 import {
+  ATHLETE_STATUS_OPTIONS,
   ATHLETIC_LEVEL_OPTIONS,
   FOLLOW_UP_NOTIFICATION_OPTIONS,
   MAIN_SPORTS,
   SHARING_DEFAULT_OPTIONS,
 } from '@/lib/club/memberProfileTypes';
 import { getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesClient';
+import {
+  ENTITY_SPORT_OPTIONS,
+  isFootballSport,
+  normalizeEntitySport,
+} from '@/lib/sport/entitySportOptions';
+import {
+  MAX_DEFAULT_PAYMENT_METHODS,
+  PAYMENT_STATUS_OPTIONS,
+  PAYMENT_TYPE_OPTIONS,
+  sanitizeDefaultPaymentMethods,
+} from '@/lib/procedures/payModes';
 
 type MemberTypeOption = {
   id: string;
@@ -30,22 +44,30 @@ type MemberTypeOption = {
 };
 
 type Props = {
+  clubId: string;
+  entitySportDefault: string;
   club: ClubMemberScopedData;
   setClub: (
     next: ClubMemberScopedData | ((prev: ClubMemberScopedData) => ClubMemberScopedData),
   ) => void;
   readOnlyClub: boolean;
   showVisibility: boolean;
+  canEditPaymentDefaults: boolean;
   saving: boolean;
   message: string;
   onSave: () => void;
 };
 
+type InstallmentKey = 'firstPayment' | 'secondPayment' | 'thirdPayment';
+
 export default function MemberProfileSettingsTab({
+  clubId,
+  entitySportDefault,
   club,
   setClub,
   readOnlyClub,
   showVisibility,
+  canEditPaymentDefaults,
   saving,
   message,
   onSave,
@@ -55,6 +77,8 @@ export default function MemberProfileSettingsTab({
   const ss = s.secondaryScreen;
   const [memberTypes, setMemberTypes] = useState<MemberTypeOption[]>([]);
   const [memberTypesLoading, setMemberTypesLoading] = useState(true);
+  const [defaultPaymentMethods, setDefaultPaymentMethods] = useState<string[]>([]);
+  const [defaultsMessage, setDefaultsMessage] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -71,27 +95,29 @@ export default function MemberProfileSettingsTab({
         if (cancelled) return;
         const items = Array.isArray(json.items) ? json.items : [];
         setMemberTypes(
-          items.map(
-            (row: {
-              id?: string;
-              name?: string;
-              discountSubscription?: string;
-              discountServices?: string;
-              discountRest?: string;
-              discountSupplement?: string;
-              discountClothing?: string;
-              discountOutfit?: string;
-            }) => ({
-              id: String(row.id || ''),
-              name: String(row.name || '').trim(),
-              discountSubscription: String(row.discountSubscription || ''),
-              discountServices: String(row.discountServices || ''),
-              discountRest: String(row.discountRest || ''),
-              discountSupplement: String(row.discountSupplement || ''),
-              discountClothing: String(row.discountClothing || ''),
-              discountOutfit: String(row.discountOutfit || ''),
-            }),
-          ).filter((row: MemberTypeOption) => row.id && row.name),
+          items
+            .map(
+              (row: {
+                id?: string;
+                name?: string;
+                discountSubscription?: string;
+                discountServices?: string;
+                discountRest?: string;
+                discountSupplement?: string;
+                discountClothing?: string;
+                discountOutfit?: string;
+              }) => ({
+                id: String(row.id || ''),
+                name: String(row.name || '').trim(),
+                discountSubscription: String(row.discountSubscription || ''),
+                discountServices: String(row.discountServices || ''),
+                discountRest: String(row.discountRest || ''),
+                discountSupplement: String(row.discountSupplement || ''),
+                discountClothing: String(row.discountClothing || ''),
+                discountOutfit: String(row.discountOutfit || ''),
+              }),
+            )
+            .filter((row: MemberTypeOption) => row.id && row.name),
         );
       } catch {
         if (!cancelled) setMemberTypes([]);
@@ -105,15 +131,66 @@ export default function MemberProfileSettingsTab({
     };
   }, []);
 
+  useEffect(() => {
+    if (!clubId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/clubs/${encodeURIComponent(clubId)}/payment-method-defaults`,
+          { headers: getAuthHeaders() },
+        );
+        const json = await res.json().catch(() => ({}));
+        if (cancelled || !res.ok) return;
+        setDefaultPaymentMethods(sanitizeDefaultPaymentMethods(json.defaultPaymentMethods));
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clubId]);
+
   const patchSettings = (
     patch: (prev: ClubMemberScopedData['settings']) => ClubMemberScopedData['settings'],
   ) => {
     setClub((c) => ({ ...c, settings: patch(c.settings) }));
   };
 
+  const patchInstallment = (
+    key: InstallmentKey,
+    field: 'amount' | 'date' | 'status',
+    value: string,
+  ) => {
+    patchSettings((prev) => ({
+      ...prev,
+      football: {
+        ...prev.football,
+        [key]: { ...prev.football[key], [field]: value },
+      },
+    }));
+  };
+
+  const toggleDefaultPaymentMethod = (methodId: string) => {
+    setDefaultPaymentMethods((prev) => {
+      if (prev.includes(methodId)) return prev.filter((id) => id !== methodId);
+      if (prev.length >= MAX_DEFAULT_PAYMENT_METHODS) return prev;
+      return [...prev, methodId];
+    });
+    setDefaultsMessage('');
+  };
+
   const sportMode =
     s.sportMode ?? (s.teamFootballEnabled && !s.clubGymEnabled ? 'TEAM-FOOTBALL' : 'CLUB-GYM');
-  const isClubGymMode = sportMode !== 'TEAM-FOOTBALL';
+  const memberSettingKind: 'club' | 'team' =
+    s.memberSettingKind ?? (sportMode === 'TEAM-FOOTBALL' ? 'team' : 'club');
+  const accessFunctionsEnabled = Boolean(s.accessFunctionsEnabled);
+  const accessFieldsDisabled = readOnlyClub || !accessFunctionsEnabled;
+  const selectedTeamSport = normalizeEntitySport(
+    s.teamSport || entitySportDefault || 'Football',
+  );
+  const showFootballFields = memberSettingKind === 'team' && isFootballSport(selectedTeamSport);
 
   const applyMemberType = (memberTypeId: string) => {
     const selected = memberTypes.find((item) => item.id === memberTypeId);
@@ -132,6 +209,39 @@ export default function MemberProfileSettingsTab({
         : prev.discounts,
     }));
   };
+
+  const handleSave = async () => {
+    if (canEditPaymentDefaults && clubId) {
+      try {
+        const res = await fetch(
+          `/api/clubs/${encodeURIComponent(clubId)}/payment-method-defaults`,
+          {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ defaultPaymentMethods }),
+          },
+        );
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setDefaultsMessage(json.error || 'Failed to save payment method defaults');
+        } else {
+          setDefaultPaymentMethods(
+            sanitizeDefaultPaymentMethods(json.defaultPaymentMethods ?? defaultPaymentMethods),
+          );
+          setDefaultsMessage('');
+        }
+      } catch {
+        setDefaultsMessage('Failed to save payment method defaults');
+      }
+    }
+    onSave();
+  };
+
+  const installmentRows: Array<{ key: InstallmentKey; label: string }> = [
+    { key: 'firstPayment', label: 'First payment' },
+    { key: 'secondPayment', label: 'Second payment' },
+    { key: 'thirdPayment', label: 'Third payment' },
+  ];
 
   return (
     <div>
@@ -152,174 +262,253 @@ export default function MemberProfileSettingsTab({
       ) : null}
 
       <SectionCard title="Preferences">
-            <p className="mb-3 text-sm font-semibold text-gray-800">Default assigned</p>
-            <Field label="Member type">
-              <TextSelect
-                disabled={readOnlyClub || memberTypesLoading}
-                value={s.memberTypeId}
-                onChange={(e) => applyMemberType(e.target.value)}
-              >
-                <option value="">{memberTypesLoading ? 'Loading…' : 'Select'}</option>
-                {memberTypes.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
+        <p className="mb-3 text-sm font-semibold text-gray-800">Default assigned</p>
+        <Field label="Member type">
+          <TextSelect
+            disabled={readOnlyClub || memberTypesLoading}
+            value={s.memberTypeId}
+            onChange={(e) => applyMemberType(e.target.value)}
+          >
+            <option value="">{memberTypesLoading ? 'Loading…' : 'Select'}</option>
+            {memberTypes.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+            {s.memberTypeId && !memberTypes.some((item) => item.id === s.memberTypeId) ? (
+              <option value={s.memberTypeId}>Saved type #{s.memberTypeId}</option>
+            ) : null}
+          </TextSelect>
+        </Field>
+        <p className="mb-2 mt-3 text-sm font-semibold text-gray-800">Discount %</p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[36rem] border border-gray-300 text-sm">
+            <thead>
+              <tr className="bg-gray-100">
+                {(
+                  [
+                    ['subscript', 'Subscript'],
+                    ['service', 'Service'],
+                    ['barRest', 'Bar/Rest'],
+                    ['supply', 'Supply'],
+                    ['clothing', 'Clothing'],
+                    ['outfit', 'Outfit'],
+                  ] as const
+                ).map(([, label]) => (
+                  <th key={label} className="border border-gray-300 px-2 py-1.5 text-left">
+                    {label}
+                  </th>
                 ))}
-                {s.memberTypeId &&
-                !memberTypes.some((item) => item.id === s.memberTypeId) ? (
-                  <option value={s.memberTypeId}>Saved type #{s.memberTypeId}</option>
-                ) : null}
-              </TextSelect>
-            </Field>
-            <p className="mb-2 mt-3 text-sm font-semibold text-gray-800">Discount %</p>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[36rem] border border-gray-300 text-sm">
-                <thead>
-                  <tr className="bg-gray-100">
-                    {(
-                      [
-                        ['subscript', 'Subscript'],
-                        ['service', 'Service'],
-                        ['barRest', 'Bar/Rest'],
-                        ['supply', 'Supply'],
-                        ['clothing', 'Clothing'],
-                        ['outfit', 'Outfit'],
-                      ] as const
-                    ).map(([, label]) => (
-                      <th key={label} className="border border-gray-300 px-2 py-1.5 text-left">
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    {(
-                      [
-                        'subscript',
-                        'service',
-                        'barRest',
-                        'supply',
-                        'clothing',
-                        'outfit',
-                      ] as const
-                    ).map((key) => (
-                      <td key={key} className="border border-gray-300 p-1">
-                        <TextInput
-                          disabled={readOnlyClub}
-                          value={s.discounts[key]}
-                          maxLength={2}
-                          onChange={(e) =>
-                            patchSettings((prev) => ({
-                              ...prev,
-                              discounts: { ...prev.discounts, [key]: e.target.value },
-                            }))
-                          }
-                          className="bg-[#fffde7]"
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </SectionCard>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {(
+                  ['subscript', 'service', 'barRest', 'supply', 'clothing', 'outfit'] as const
+                ).map((key) => (
+                  <td key={key} className="border border-gray-300 p-1">
+                    <TextInput
+                      disabled={readOnlyClub}
+                      value={s.discounts[key]}
+                      maxLength={2}
+                      onChange={(e) =>
+                        patchSettings((prev) => ({
+                          ...prev,
+                          discounts: { ...prev.discounts, [key]: e.target.value },
+                        }))
+                      }
+                      className="bg-[#fffde7]"
+                    />
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
 
-          <SectionCard title="Maximum permitted total debt at the time of the purchases">
-            <Field label="Debt purchases">
-              <TextInput
-                disabled={readOnlyClub}
-                value={s.debtPurchases}
-                onChange={(e) =>
-                  patchSettings((prev) => ({ ...prev, debtPurchases: e.target.value }))
-                }
-              />
-            </Field>
-          </SectionCard>
+      <SectionCard title="Maximum permitted total debt at the time of the purchases">
+        <Field label="Debt purchases">
+          <TextInput
+            disabled={readOnlyClub}
+            value={s.debtPurchases}
+            onChange={(e) =>
+              patchSettings((prev) => ({ ...prev, debtPurchases: e.target.value }))
+            }
+          />
+        </Field>
+      </SectionCard>
 
-          <SectionCard title="Other settings">
-            <Row2>
-              <Field label="Heart rate">
-                <TextInput
-                  disabled={readOnlyClub}
-                  value={s.heartRate}
-                  placeholder="heart rate min"
-                  onChange={(e) =>
-                    patchSettings((prev) => ({ ...prev, heartRate: e.target.value }))
-                  }
-                />
-              </Field>
-              <Field label="Athletic level">
-                <TextSelect
-                  disabled={readOnlyClub}
-                  value={s.athleticLevel}
-                  onChange={(e) =>
-                    patchSettings((prev) => ({ ...prev, athleticLevel: e.target.value }))
-                  }
-                >
-                  <option value="">—</option>
-                  {ATHLETIC_LEVEL_OPTIONS.map((lvl) => (
-                    <option key={lvl} value={lvl}>
-                      {lvl}
-                    </option>
-                  ))}
-                </TextSelect>
-              </Field>
-              <Field label="Sharing default">
-                <TextSelect
-                  disabled={readOnlyClub}
-                  value={s.sharingDefault}
-                  onChange={(e) =>
-                    patchSettings((prev) => ({ ...prev, sharingDefault: e.target.value }))
-                  }
-                >
-                  {SHARING_DEFAULT_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </TextSelect>
-              </Field>
-              <Field label="Receive follow ups notifications and mails">
-                <TextSelect
-                  disabled={readOnlyClub}
-                  value={s.followUpNotifications}
-                  onChange={(e) =>
-                    patchSettings((prev) => ({
-                      ...prev,
-                      followUpNotifications: e.target.value,
-                    }))
-                  }
-                >
-                  {FOLLOW_UP_NOTIFICATION_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </TextSelect>
-              </Field>
-            </Row2>
-            <CheckRow
-              label="Information and updates"
+      <SectionCard title="Other settings">
+        <Row2>
+          <Field label="Heart rate">
+            <TextInput
               disabled={readOnlyClub}
-              checked={s.informationUpdates}
-              onChange={(v) =>
-                patchSettings((prev) => ({ ...prev, informationUpdates: v }))
+              value={s.heartRate}
+              placeholder="heart rate min"
+              onChange={(e) =>
+                patchSettings((prev) => ({ ...prev, heartRate: e.target.value }))
               }
             />
-          </SectionCard>
+          </Field>
+          <Field label="Athletic level">
+            <TextSelect
+              disabled={readOnlyClub}
+              value={s.athleticLevel}
+              onChange={(e) =>
+                patchSettings((prev) => ({ ...prev, athleticLevel: e.target.value }))
+              }
+            >
+              <option value="">—</option>
+              {ATHLETIC_LEVEL_OPTIONS.map((lvl) => (
+                <option key={lvl} value={lvl}>
+                  {lvl}
+                </option>
+              ))}
+            </TextSelect>
+          </Field>
+          <Field label="Sharing default">
+            <TextSelect
+              disabled={readOnlyClub}
+              value={s.sharingDefault}
+              onChange={(e) =>
+                patchSettings((prev) => ({ ...prev, sharingDefault: e.target.value }))
+              }
+            >
+              {SHARING_DEFAULT_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </TextSelect>
+          </Field>
+          <Field label="Receive follow ups notifications and mails">
+            <TextSelect
+              disabled={readOnlyClub}
+              value={s.followUpNotifications}
+              onChange={(e) =>
+                patchSettings((prev) => ({
+                  ...prev,
+                  followUpNotifications: e.target.value,
+                }))
+              }
+            >
+              {FOLLOW_UP_NOTIFICATION_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </TextSelect>
+          </Field>
+        </Row2>
+        <CheckRow
+          label="Information and updates"
+          disabled={readOnlyClub}
+          checked={s.informationUpdates}
+          onChange={(v) => patchSettings((prev) => ({ ...prev, informationUpdates: v }))}
+        />
+      </SectionCard>
 
-          {isClubGymMode ? (
-            <>
-          <SectionCard title="Access control about the member">
+      <SectionCard title="The settings if the member…" tone="red">
+        <div className="space-y-3 text-sm text-gray-800">
+          <label className="flex items-start gap-2">
+            <input
+              type="radio"
+              name="member-setting-kind"
+              disabled={readOnlyClub}
+              checked={memberSettingKind === 'club'}
+              onChange={() =>
+                patchSettings((prev) => ({
+                  ...prev,
+                  memberSettingKind: 'club',
+                  clubGymEnabled: true,
+                  teamFootballEnabled: false,
+                  sportMode: 'CLUB-GYM',
+                }))
+              }
+              className="mt-1"
+            />
+            <span>
+              The settings if the member is member of a <strong>Club</strong>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2">
+            <input
+              type="radio"
+              name="member-setting-kind"
+              disabled={readOnlyClub}
+              checked={memberSettingKind === 'team'}
+              onChange={() =>
+                patchSettings((prev) => ({
+                  ...prev,
+                  memberSettingKind: 'team',
+                  clubGymEnabled: false,
+                  teamFootballEnabled: true,
+                  sportMode: 'TEAM-FOOTBALL',
+                  teamSport: normalizeEntitySport(
+                    prev.teamSport || entitySportDefault || 'Football',
+                  ),
+                }))
+              }
+              className="mt-1"
+            />
+            <span>
+              The settings if the member is member of a <strong>Team</strong>
+            </span>
+          </label>
+
+          {memberSettingKind === 'team' ? (
+            <Field label="Type of team">
+              <TextSelect
+                disabled={readOnlyClub}
+                value={normalizeEntitySport(s.teamSport || entitySportDefault)}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    teamSport: e.target.value,
+                  }))
+                }
+              >
+                {ENTITY_SPORT_OPTIONS.map((sport) => (
+                  <option key={sport} value={sport}>
+                    {sport}
+                  </option>
+                ))}
+              </TextSelect>
+              <p className="mt-1 text-xs text-gray-500">
+                Default from Team/Club profile: {entitySportDefault || 'Football'}
+              </p>
+            </Field>
+          ) : null}
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Access & display functions">
+        <CheckRow
+          label="Enable Access control, debt at access, and secondary screen functions"
+          disabled={readOnlyClub}
+          checked={accessFunctionsEnabled}
+          onChange={(v) =>
+            patchSettings((prev) => ({ ...prev, accessFunctionsEnabled: v }))
+          }
+        />
+        {!accessFunctionsEnabled ? (
+          <p className="mt-2 text-xs text-gray-500">
+            These sections stay visible for Club and Team. Uncheck to disable the functions.
+          </p>
+        ) : null}
+      </SectionCard>
+
+      <SectionCard title="Access control about the member">
             <p className="mb-2 text-sm font-semibold text-gray-800">
               Type of control enabled on this member
             </p>
-            <div className="space-y-3 text-sm">
+            <div className={`space-y-3 text-sm ${accessFieldsDisabled ? 'opacity-60' : ''}`}>
               <label className="flex items-start gap-2">
                 <input
                   type="radio"
-                  disabled={readOnlyClub}
+                  disabled={accessFieldsDisabled}
                   checked={ac.activeBlockAccess === 'analyzes_all'}
                   onChange={() =>
                     patchSettings((prev) => ({
@@ -340,7 +529,7 @@ export default function MemberProfileSettingsTab({
                 <label className="inline-flex items-center gap-2">
                   <input
                     type="radio"
-                    disabled={readOnlyClub}
+                    disabled={accessFieldsDisabled}
                     checked={ac.activeBlockAccess === 'free_access'}
                     onChange={() =>
                       patchSettings((prev) => ({
@@ -358,7 +547,7 @@ export default function MemberProfileSettingsTab({
                 </label>
                 <TextInput
                   type="date"
-                  disabled={readOnlyClub || ac.activeBlockAccess !== 'free_access'}
+                  disabled={accessFieldsDisabled || ac.activeBlockAccess !== 'free_access'}
                   value={ac.freeAccessDate}
                   onChange={(e) =>
                     patchSettings((prev) => ({
@@ -376,7 +565,7 @@ export default function MemberProfileSettingsTab({
                 <label className="inline-flex items-center gap-2">
                   <input
                     type="radio"
-                    disabled={readOnlyClub}
+                    disabled={accessFieldsDisabled}
                     checked={ac.activeBlockAccess === 'access_from'}
                     onChange={() =>
                       patchSettings((prev) => ({
@@ -392,7 +581,7 @@ export default function MemberProfileSettingsTab({
                 </label>
                 <TextInput
                   type="date"
-                  disabled={readOnlyClub || ac.activeBlockAccess !== 'access_from'}
+                  disabled={accessFieldsDisabled || ac.activeBlockAccess !== 'access_from'}
                   value={ac.activeBlockAccessFrom}
                   onChange={(e) =>
                     patchSettings((prev) => ({
@@ -408,7 +597,7 @@ export default function MemberProfileSettingsTab({
                 <strong className="text-red-700">to</strong>
                 <TextInput
                   type="date"
-                  disabled={readOnlyClub || ac.activeBlockAccess !== 'access_from'}
+                  disabled={accessFieldsDisabled || ac.activeBlockAccess !== 'access_from'}
                   value={ac.activeBlockAccessTo}
                   onChange={(e) =>
                     patchSettings((prev) => ({
@@ -428,7 +617,7 @@ export default function MemberProfileSettingsTab({
           <SectionCard title="Maximum permitted total debt at the time of access">
             <Field label="Debt max">
               <TextInput
-                disabled={readOnlyClub}
+                disabled={accessFieldsDisabled}
                 value={ac.debtMax}
                 onChange={(e) =>
                   patchSettings((prev) => ({
@@ -443,7 +632,7 @@ export default function MemberProfileSettingsTab({
           <SectionCard title="Personal setting for secondary screen">
             <CheckRow
               label="Personal setting for secondary screen"
-              disabled={readOnlyClub}
+              disabled={accessFieldsDisabled}
               checked={ss.enabled}
               onChange={(v) =>
                 patchSettings((prev) => ({
@@ -472,7 +661,7 @@ export default function MemberProfileSettingsTab({
                 <CheckRow
                   key={key}
                   label={label}
-                  disabled={readOnlyClub || !ss.enabled}
+                  disabled={accessFieldsDisabled || !ss.enabled}
                   checked={ss[key]}
                   onChange={(v) =>
                     patchSettings((prev) => ({
@@ -484,166 +673,147 @@ export default function MemberProfileSettingsTab({
               ))}
             </div>
           </SectionCard>
-            </>
-          ) : null}
 
-      <SectionCard title="Sport mode" tone="red">
-        <Field label="Settings for">
-          <TextSelect
-            disabled={readOnlyClub}
-            value={sportMode}
-            onChange={(e) => {
-              const mode = e.target.value as 'CLUB-GYM' | 'TEAM-FOOTBALL';
-              patchSettings((prev) => ({
-                ...prev,
-                sportMode: mode,
-                clubGymEnabled: mode === 'CLUB-GYM' ? true : prev.clubGymEnabled,
-                teamFootballEnabled: mode === 'TEAM-FOOTBALL' ? true : prev.teamFootballEnabled,
-              }));
-            }}
-          >
-            <option value="CLUB-GYM">CLUB-GYM</option>
-            <option value="TEAM-FOOTBALL">TEAM-FOOTBALL</option>
-          </TextSelect>
-        </Field>
-        <CheckRow
-          label="The settings if the member is member of a CLUB-GYM"
-          disabled={readOnlyClub}
-          checked={s.clubGymEnabled}
-          onChange={(v) =>
-            patchSettings((prev) => ({
-              ...prev,
-              clubGymEnabled: v,
-              sportMode:
-                v ? 'CLUB-GYM' : prev.teamFootballEnabled ? 'TEAM-FOOTBALL' : prev.sportMode,
-            }))
-          }
-        />
-        <CheckRow
-          label="The settings if the member is member of a TEAM-FOOTBALL"
-          disabled={readOnlyClub}
-          checked={s.teamFootballEnabled}
-          onChange={(v) =>
-            patchSettings((prev) => ({
-              ...prev,
-              teamFootballEnabled: v,
-              sportMode: v ? 'TEAM-FOOTBALL' : prev.clubGymEnabled ? 'CLUB-GYM' : prev.sportMode,
-            }))
-          }
-        />
+      <SectionCard title="Type of payments — method default" tone="red">
+        <p className="mb-3 text-xs text-gray-600">
+          Tag up to {MAX_DEFAULT_PAYMENT_METHODS} payment types shown first on payment forms.
+          Operators can choose <strong>Others</strong> to see the remaining types.
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {PAYMENT_TYPE_OPTIONS.map((method) => {
+            const checked = defaultPaymentMethods.includes(method.value);
+            const disableNew =
+              !checked && defaultPaymentMethods.length >= MAX_DEFAULT_PAYMENT_METHODS;
+            return (
+              <label
+                key={method.value}
+                className={`inline-flex items-center gap-2 text-sm ${
+                  disableNew ? 'text-gray-400' : 'text-gray-800'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  disabled={!canEditPaymentDefaults || readOnlyClub || disableNew}
+                  checked={checked}
+                  onChange={() => toggleDefaultPaymentMethod(method.value)}
+                />
+                <span>{method.label}</span>
+              </label>
+            );
+          })}
+        </div>
+        {defaultsMessage ? (
+          <p className="mt-2 text-xs text-red-600">{defaultsMessage}</p>
+        ) : (
+          <p className="mt-2 text-xs text-gray-500">
+            Selected: {defaultPaymentMethods.length}/{MAX_DEFAULT_PAYMENT_METHODS}
+          </p>
+        )}
       </SectionCard>
 
-      {sportMode === 'TEAM-FOOTBALL' ? (
-        <SectionCard title="TEAM-FOOTBALL fields">
-          <Row2>
-            <Field label="Annual membership fee">
-              <TextInput
-                disabled={readOnlyClub}
-                value={s.football.annualMembershipFee}
-                onChange={(e) =>
-                  patchSettings((prev) => ({
-                    ...prev,
-                    football: { ...prev.football, annualMembershipFee: e.target.value },
-                  }))
-                }
-              />
-            </Field>
-            <Field label="First payment date">
-              <TextInput
-                type="date"
-                disabled={readOnlyClub}
-                value={s.football.firstPaymentDate}
-                onChange={(e) =>
-                  patchSettings((prev) => ({
-                    ...prev,
-                    football: { ...prev.football, firstPaymentDate: e.target.value },
-                  }))
-                }
-              />
-            </Field>
-            <Field label="Second payment date">
-              <TextInput
-                type="date"
-                disabled={readOnlyClub}
-                value={s.football.secondPaymentDate}
-                onChange={(e) =>
-                  patchSettings((prev) => ({
-                    ...prev,
-                    football: { ...prev.football, secondPaymentDate: e.target.value },
-                  }))
-                }
-              />
-            </Field>
-            <Field label="Third payment date">
-              <TextInput
-                type="date"
-                disabled={readOnlyClub}
-                value={s.football.thirdPaymentDate}
-                onChange={(e) =>
-                  patchSettings((prev) => ({
-                    ...prev,
-                    football: { ...prev.football, thirdPaymentDate: e.target.value },
-                  }))
-                }
-              />
-            </Field>
+      {showFootballFields ? (
+        <SectionCard title={`TEAM fields — ${selectedTeamSport}`}>
+          <Field label="Annual membership fee">
+            <TextInput
+              disabled={readOnlyClub}
+              value={s.football.annualMembershipFee}
+              onChange={(e) =>
+                patchSettings((prev) => ({
+                  ...prev,
+                  football: { ...prev.football, annualMembershipFee: e.target.value },
+                }))
+              }
+            />
+          </Field>
+
+          <div className="mt-3 space-y-3">
+            <p className="text-sm font-semibold text-gray-800">Payments</p>
+            {installmentRows.map(({ key, label }) => (
+              <div key={key} className="grid grid-cols-1 gap-2 md:grid-cols-3 md:items-end">
+                <Field label={`${label} amount`}>
+                  <TextInput
+                    disabled={readOnlyClub}
+                    value={s.football[key].amount}
+                    onChange={(e) => patchInstallment(key, 'amount', e.target.value)}
+                  />
+                </Field>
+                <Field label="Date payment">
+                  <TextInput
+                    type="date"
+                    disabled={readOnlyClub}
+                    value={s.football[key].date}
+                    onChange={(e) => patchInstallment(key, 'date', e.target.value)}
+                  />
+                </Field>
+                <Field label="Status">
+                  <TextSelect
+                    disabled={readOnlyClub}
+                    value={s.football[key].status}
+                    onChange={(e) => patchInstallment(key, 'status', e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {PAYMENT_STATUS_OPTIONS.map((x) => (
+                      <option key={x} value={x}>
+                        {x}
+                      </option>
+                    ))}
+                  </TextSelect>
+                </Field>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4">
             <Field label="Payment method">
-              <TextSelect
+              <PaymentModeSelect
                 disabled={readOnlyClub}
+                className="w-full rounded border border-gray-400 bg-[#fffde7] px-2 py-1.5 text-sm text-gray-900 disabled:bg-gray-100"
                 value={s.football.paymentMethod}
-                onChange={(e) =>
+                defaultPaymentMethods={defaultPaymentMethods}
+                onChange={(value) =>
                   patchSettings((prev) => ({
                     ...prev,
-                    football: { ...prev.football, paymentMethod: e.target.value },
+                    football: { ...prev.football, paymentMethod: value },
                   }))
                 }
-              >
-                <option value="">—</option>
-                {['Cash', 'Bank transfer', 'POS', 'SEPA'].map((x) => (
-                  <option key={x} value={x}>
-                    {x}
-                  </option>
-                ))}
-              </TextSelect>
+              />
             </Field>
-            <Field label="Payment status">
-              <TextSelect
-                disabled={readOnlyClub}
-                value={s.football.paymentStatus}
-                onChange={(e) =>
-                  patchSettings((prev) => ({
-                    ...prev,
-                    football: { ...prev.football, paymentStatus: e.target.value },
-                  }))
-                }
-              >
-                <option value="">—</option>
-                {['Paid', 'Pending', 'Not paid'].map((x) => (
-                  <option key={x} value={x}>
-                    {x}
-                  </option>
-                ))}
-              </TextSelect>
-            </Field>
+          </div>
+
+          <div className="mt-4">
             <Field label="Athlete status">
-              <TextSelect
-                disabled={readOnlyClub}
-                value={s.football.athleteStatus}
-                onChange={(e) =>
-                  patchSettings((prev) => ({
-                    ...prev,
-                    football: { ...prev.football, athleteStatus: e.target.value },
-                  }))
-                }
-              >
-                {['Active', 'Inactive', 'Injured', 'Suspended'].map((x) => (
-                  <option key={x} value={x}>
-                    {x}
-                  </option>
+              <div className="flex flex-wrap gap-4">
+                {ATHLETE_STATUS_OPTIONS.map((status) => (
+                  <label
+                    key={status}
+                    className="inline-flex items-center gap-2 text-sm text-gray-800"
+                  >
+                    <input
+                      type="radio"
+                      name="settingsAthleteStatus"
+                      disabled={readOnlyClub}
+                      checked={s.football.athleteStatus === status}
+                      onChange={() =>
+                        setClub((c) => ({
+                          ...c,
+                          otherDetails: { ...c.otherDetails, athleteStatus: status },
+                          settings: {
+                            ...c.settings,
+                            football: { ...c.settings.football, athleteStatus: status },
+                          },
+                        }))
+                      }
+                      className="border-gray-400"
+                    />
+                    {status}
+                  </label>
                 ))}
-              </TextSelect>
+              </div>
             </Field>
-            <Field label="Team names">
+          </div>
+
+          <Row2>
+            <Field label="Team/Club name" labelClassName="text-lg">
               <TextInput
                 disabled={readOnlyClub}
                 value={s.football.teamNames}
@@ -695,18 +865,6 @@ export default function MemberProfileSettingsTab({
                 <option value="No">No</option>
               </TextSelect>
             </Field>
-            <Field label="Category">
-              <TextInput
-                disabled={readOnlyClub}
-                value={s.football.category}
-                onChange={(e) =>
-                  patchSettings((prev) => ({
-                    ...prev,
-                    football: { ...prev.football, category: e.target.value },
-                  }))
-                }
-              />
-            </Field>
             <Field label="Sports season">
               <TextInput
                 disabled={readOnlyClub}
@@ -719,8 +877,28 @@ export default function MemberProfileSettingsTab({
                 }
               />
             </Field>
-            <Field label="Position">
-              <TextInput
+          </Row2>
+
+          <Row2>
+            <Field label="Category ** (SuperAdmin)">
+              <TextSelect
+                disabled={readOnlyClub}
+                value={s.football.category}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: { ...prev.football, category: e.target.value },
+                  }))
+                }
+              >
+                <option value="">— Select —</option>
+                {s.football.category ? (
+                  <option value={s.football.category}>{s.football.category}</option>
+                ) : null}
+              </TextSelect>
+            </Field>
+            <Field label="Role ** (SuperAdmin)">
+              <TextSelect
                 disabled={readOnlyClub}
                 value={s.football.position}
                 onChange={(e) =>
@@ -729,8 +907,33 @@ export default function MemberProfileSettingsTab({
                     football: { ...prev.football, position: e.target.value },
                   }))
                 }
-              />
+              >
+                <option value="">— Select —</option>
+                {s.football.position ? (
+                  <option value={s.football.position}>{s.football.position}</option>
+                ) : null}
+              </TextSelect>
             </Field>
+            <Field label="Specialty ** (SuperAdmin)">
+              <TextSelect
+                disabled={readOnlyClub}
+                value={s.football.specialty}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: { ...prev.football, specialty: e.target.value },
+                  }))
+                }
+              >
+                <option value="">— Select —</option>
+                {s.football.specialty ? (
+                  <option value={s.football.specialty}>{s.football.specialty}</option>
+                ) : null}
+              </TextSelect>
+            </Field>
+          </Row2>
+
+          <Row2>
             <Field label="Foot/Hand">
               <TextSelect
                 disabled={readOnlyClub}
@@ -762,6 +965,131 @@ export default function MemberProfileSettingsTab({
                 }
               />
             </Field>
+            <Field label="Jersey size (max 5)">
+              <TextInput
+                disabled={readOnlyClub}
+                maxLength={5}
+                value={s.football.jerseySize}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: {
+                      ...prev.football,
+                      jerseySize: e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 5),
+                    },
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Shorts size (max 5)">
+              <TextInput
+                disabled={readOnlyClub}
+                maxLength={5}
+                value={s.football.shortsSize}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: {
+                      ...prev.football,
+                      shortsSize: e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 5),
+                    },
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Shoe size (max 5)">
+              <TextInput
+                disabled={readOnlyClub}
+                maxLength={5}
+                value={s.football.shoeSize}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: {
+                      ...prev.football,
+                      shoeSize: e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 5),
+                    },
+                  }))
+                }
+              />
+            </Field>
+          </Row2>
+
+          <Row2>
+            <Field label="Shoes number">
+              <TextSelect
+                disabled={readOnlyClub}
+                value={s.football.shoesNumber}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: { ...prev.football, shoesNumber: e.target.value },
+                  }))
+                }
+              >
+                <option value="">—</option>
+                {Array.from({ length: 21 }, (_, i) => String(30 + i)).map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </TextSelect>
+            </Field>
+            <div />
+          </Row2>
+
+          <Row4>
+            <Field label="Weight">
+              <TextInput
+                disabled={readOnlyClub}
+                value={s.football.weight}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: { ...prev.football, weight: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Height">
+              <TextInput
+                disabled={readOnlyClub}
+                value={s.football.height}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: { ...prev.football, height: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Reaction time">
+              <TextInput
+                disabled={readOnlyClub}
+                value={s.football.reactionTime}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: { ...prev.football, reactionTime: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Vertical jump">
+              <TextInput
+                disabled={readOnlyClub}
+                value={s.football.verticalJump}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: { ...prev.football, verticalJump: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+          </Row4>
+
+          <Row2>
             <Field label="Coach">
               <TextInput
                 disabled={readOnlyClub}
@@ -847,21 +1175,21 @@ export default function MemberProfileSettingsTab({
             </div>
           </Field>
         </SectionCard>
-      ) : (
-        <SectionCard title="CLUB-GYM">
+      ) : memberSettingKind === 'team' ? (
+        <SectionCard title={`TEAM fields — ${selectedTeamSport}`}>
           <p className="text-sm text-gray-600">
-            Gym club preferences are stored in the sections above. Football-specific fields
-            appear when sport mode is TEAM-FOOTBALL.
+            Sport-specific fields for <strong>{selectedTeamSport}</strong> will appear here.
+            Football fields are shown when the type of team is Football.
           </p>
         </SectionCard>
-      )}
+      ) : null}
 
       {!readOnlyClub ? (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
             disabled={saving}
-            onClick={onSave}
+            onClick={() => void handleSave()}
             className="rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save'}

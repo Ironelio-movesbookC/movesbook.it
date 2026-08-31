@@ -27,7 +27,7 @@ export default function ClubOperatorListPage() {
         title="Archive — Operators"
         archiveType="operators"
         columns={columns}
-        footerHint="Club operators from legacy club_operators or club admin."
+        footerHint="Staff operators from club_operators with employment occupation (Instructor, Personal Trainer, …)."
       />
     </div>
   );

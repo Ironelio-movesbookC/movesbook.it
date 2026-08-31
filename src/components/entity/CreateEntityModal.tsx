@@ -4,9 +4,12 @@ import { X } from 'lucide-react';
 import ClubProfileEditor, {
   type ClubProfileFormPayload,
 } from '@/components/club/ClubProfileEditor';
+import TeamProfileEditor, {
+  type TeamProfileFormPayload,
+} from '@/components/team/TeamProfileEditor';
 import type { ManagedEntityKind } from '@/lib/entity/entityProfileLabels';
 
-export type CreateEntityFormPayload = ClubProfileFormPayload;
+export type CreateEntityFormPayload = ClubProfileFormPayload | TeamProfileFormPayload;
 
 type CreateEntityModalProps = {
   entityKind: ManagedEntityKind;
@@ -34,7 +37,7 @@ export default function CreateEntityModal({
       aria-modal="true"
       aria-labelledby="create-entity-modal-title"
     >
-      <div className="relative my-auto w-full max-w-4xl border border-gray-400 bg-[#f3f3f3] shadow-2xl">
+      <div className="relative my-auto w-full max-w-5xl border border-gray-400 bg-[#f3f3f3] shadow-2xl">
         <button
           type="button"
           onClick={onClose}
@@ -48,14 +51,24 @@ export default function CreateEntityModal({
           Create {entityKind}
         </div>
 
-        <ClubProfileEditor
-          mode="create"
-          entityKind={entityKind}
-          adminUsername={adminUsername}
-          onSave={onSave}
-          saving={saving}
-          onCancel={onClose}
-        />
+        {entityKind === 'team' ? (
+          <TeamProfileEditor
+            mode="create"
+            adminUsername={adminUsername}
+            onSave={onSave as (payload: TeamProfileFormPayload) => Promise<void>}
+            saving={saving}
+            onCancel={onClose}
+          />
+        ) : (
+          <ClubProfileEditor
+            mode="create"
+            entityKind={entityKind}
+            adminUsername={adminUsername}
+            onSave={onSave as (payload: ClubProfileFormPayload) => Promise<void>}
+            saving={saving}
+            onCancel={onClose}
+          />
+        )}
       </div>
     </div>
   );

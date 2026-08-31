@@ -16,19 +16,19 @@ type TabMeta = { id: ProfileTabId; label: string; clubScoped: boolean };
 
 const SHARED_TABS: TabMeta[] = [
   { id: 'owner-profile', label: 'Owner profile', clubScoped: false },
-  { id: 'contacts', label: 'User contacts', clubScoped: false },
+  { id: 'contacts', label: 'Contacts', clubScoped: false },
   { id: 'activities', label: 'My Activities', clubScoped: false },
   { id: 'references', label: 'References', clubScoped: false },
 ];
 
 const CLUB_TABS: TabMeta[] = [
   { id: 'pay-for', label: 'Pay for…', clubScoped: true },
-  { id: 'other-details', label: "Other member's details", clubScoped: true },
+  { id: 'other-details', label: 'Other data', clubScoped: true },
   { id: 'parents', label: PARENTS_TAB_LABEL, clubScoped: true },
   { id: 'settings', label: 'Settings', clubScoped: true },
-  { id: 'messages-staff', label: 'Messages from the Staff', clubScoped: true },
-  { id: 'notes-coach', label: 'Notes of the Coach', clubScoped: true },
-  { id: 'presences', label: 'Graphs of the presences', clubScoped: true },
+  { id: 'messages-staff', label: 'Messages', clubScoped: true },
+  { id: 'notes-coach', label: 'Notes', clubScoped: true },
+  { id: 'presences', label: 'Presences', clubScoped: true },
 ];
 
 function tabVisibleForViewer(tab: TabMeta, data: MemberProfileBundle): boolean {
@@ -127,7 +127,7 @@ export default function ClubMemberProfilePage() {
     : 'Member';
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
+    <div className="w-full p-4 md:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
@@ -174,7 +174,7 @@ export default function ClubMemberProfilePage() {
       ) : data ? (
         <>
           <div className="mb-3 rounded-lg border border-gray-200 bg-white p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">
+            <p className="text-base font-semibold uppercase tracking-wide text-teal-700">
               Club member profile — {data.clubName}
             </p>
             <h1 className="mt-1 text-2xl font-bold text-gray-900">{displayName}</h1>
@@ -188,15 +188,20 @@ export default function ClubMemberProfilePage() {
             </p>
           </div>
 
-          <div className="mb-0 flex flex-wrap gap-1 border-b border-gray-300">
+          <nav
+            className="mb-0 grid w-full gap-px border-b border-gray-300"
+            style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+            aria-label="Member profile sections"
+          >
             {tabs.map((tab) => {
               const active = activeTab === tab.id;
               return (
                 <button
                   key={tab.id}
                   type="button"
+                  title={tab.label}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`rounded-t px-3 py-2 text-sm font-medium ${
+                  className={`min-w-0 truncate rounded-t px-1 py-2 text-center text-[11px] font-medium leading-tight sm:px-1.5 sm:text-xs md:text-sm ${
                     active
                       ? 'bg-gray-900 text-white'
                       : tab.clubScoped
@@ -208,16 +213,25 @@ export default function ClubMemberProfilePage() {
                 </button>
               );
             })}
-          </div>
+          </nav>
 
           <div className="rounded-b-lg border border-t-0 border-gray-300 bg-white p-4 md:p-6">
             <div
-              className={`mb-4 px-3 py-2 text-sm font-semibold text-white ${
-                activeMeta?.clubScoped ? 'bg-sky-700' : 'bg-[#2f6fb5]'
-              }`}
+              className={`mb-4 px-3 py-2 font-semibold text-white ${
+                activeMeta?.id === 'pay-for' ? 'text-lg' : 'text-sm'
+              } ${activeMeta?.clubScoped ? 'bg-sky-700' : 'bg-[#2f6fb5]'}`}
             >
               {activeMeta?.label}
-              {activeMeta?.clubScoped ? ' · club-specific' : ' · shared profile'}
+              {activeMeta?.clubScoped ? (
+                <>
+                  {' · '}
+                  <span className={activeMeta?.id === 'pay-for' ? 'text-xl' : 'text-base'}>
+                    {data.clubName}
+                  </span>
+                </>
+              ) : (
+                ' · shared profile'
+              )}
             </div>
 
             <ClubMemberProfileEditor

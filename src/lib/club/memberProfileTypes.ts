@@ -38,22 +38,37 @@ export type OwnerProfileData = {
     gender: string;
     dateOfBirth: string;
     age: number | null;
+    /** Birthday country */
+    countryOfBirth: string;
     locationOfBirth: string;
     provinceOfBirth: string;
     nameDay: string;
     occupation: string;
+    /** User/Member entry date */
     sinceDate: string;
     mainSport: string;
     otherSports: string[];
   };
   administrative: {
     fiscalCode: string;
+    /** Check: Identification code for foreigners */
+    foreignerIdCode: boolean;
     documentId: string;
     citizenship: string;
     carDrivingLicense: string;
+    iban: string;
+  };
+  /** Personal documents: number + expiry + front/back photos */
+  documents: {
+    idCard: PersonalDocumentData;
+    drivingLicence: PersonalDocumentData;
+    healthInsuranceCard: PersonalDocumentData;
+    passport: PersonalDocumentData;
+    residencePermit: PersonalDocumentData;
   };
   medical: {
     bloodGroup: string;
+    /** Medical certificate info */
     medicalExamination: string;
     releaseDate: string;
     expirationDate: string;
@@ -63,8 +78,21 @@ export type OwnerProfileData = {
     emergencyContactPhone: string;
     emergencyContactName: string;
     allergies: string;
+    intolerances: string;
+    blsdExpiry: string;
+    firstAidExpiry: string;
     imageUrl: string;
     pdfUrl: string;
+    ecgUrl: string;
+  };
+  bodyMeasurements: {
+    height: string;
+    heightUnit: 'cm' | 'inches';
+    weight: string;
+    weightUnit: 'kg' | 'pounds';
+    jerseySize: string;
+    shortsSize: string;
+    shoeSize: string;
   };
   otherReferences: {
     language: string;
@@ -73,6 +101,13 @@ export type OwnerProfileData = {
     theme: string;
     notes: string;
   };
+};
+
+export type PersonalDocumentData = {
+  number: string;
+  expiry: string;
+  frontUrl: string;
+  backUrl: string;
 };
 
 export type ContactsData = {
@@ -95,7 +130,10 @@ export type ContactsData = {
 export type ActivitiesData = {
   notes: string;
   preferredDays: string[];
+  /** @deprecated was misused as free-time text; kept for migration */
   preferredTime: string;
+  /** Selected free-time activity labels (from FREE_TIME_ACTIVITY_OPTIONS). */
+  freeTimeActivities: string[];
 };
 
 export type ClubVisibilityFlags = {
@@ -113,18 +151,42 @@ export type ParentData = {
   name: string;
   surname: string;
   fiscalCode: string;
+  /** Identification code for foreigners */
+  foreignerIdCode: boolean;
+  /** The holder of this tax code will receive the invoice */
+  invoiceHolder: boolean;
   kinship: string;
   birthDate: string;
+  country: string;
   location: string;
+  province: string;
   phone1: string;
   phone2: string;
   mainEmail: string;
   alternativeMail: string;
   residentialAddress: string;
+  residenceLocation: string;
+  residenceZip: string;
+  residenceProvince: string;
   whatsappGroup: boolean;
   telegramGroup: boolean;
+  /**
+   * Link key when chosen from club parents catalog:
+   * `${memberId}:parent1|parent2`
+   */
+  linkedParentKey: string;
   /** Tagged club member ids (siblings); parent data is copied to their profiles on save. */
   otherChildrenMemberIds: string[];
+};
+
+/** Parent/tutor entry collected from club member profiles (for search/autofill). */
+export type ClubParentCatalogEntry = {
+  key: string;
+  label: string;
+  sourceMemberId: string;
+  sourceMemberLabel: string;
+  slot: 'parent1' | 'parent2';
+  data: ParentData;
 };
 
 export type ClubMemberScopedData = {
@@ -133,6 +195,9 @@ export type ClubMemberScopedData = {
   otherDetails: {
     membershipFrom: string;
     membershipTo: string;
+    /** Membership Registration to (org / federation) */
+    membershipRegistrationTo: string;
+    membershipRegistrationNumber: string;
     privacyDataTreatments: boolean;
     privacyThirdParty: boolean;
     userUnderage: boolean;
@@ -144,9 +209,18 @@ export type ClubMemberScopedData = {
     coachEnabled: boolean;
     /** Selected coach option id (PHP load_from_coach). */
     coachName: string;
+    /** Athlete status radios */
+    athleteStatus: string;
+    /** Duplicate data from existing user id (admin create/edit helper). */
+    duplicateFromUserId: string;
+    /** Connect member to a trained group (blank = none). */
+    groupTrainedId: string;
     insuranceCompany: string;
+    insuranceNumber: string;
     insuranceDeadline: string;
-    badges: Array<{ name: string; deadline: string }>;
+    supplementaryInsuranceRequired: boolean;
+    preferredPaymentMethods: string[];
+    badges: Array<{ name: string; number: string; deadline: string }>;
     badgeFederationType: string;
     sportSeason: string;
     acceptanceRules: boolean;
@@ -160,6 +234,12 @@ export type ClubMemberScopedData = {
     newsPostCategories: string[];
     genericAutoMessages: boolean;
     specificAlertMessages: boolean;
+    /** Date of initial affiliation */
+    initialAffiliationDate: string;
+    photoVideoApproval: boolean;
+    consentDate: string;
+    /** Answers keyed by custom question id */
+    customQuestionAnswers: Record<string, string | boolean>;
   };
   parents: {
     parent1: ParentData;
@@ -171,10 +251,14 @@ export type ClubMemberScopedData = {
     signatureDataUrl: string;
   };
   settings: {
-    /** The settings if the member is member of a CLUB-GYM */
+    /** Club radio — settings if the member is member of a Club. */
     clubGymEnabled: boolean;
-    /** The settings if the member is member of a TEAM-FOOTBALL */
+    /** Team radio — settings if the member is member of a Team. */
     teamFootballEnabled: boolean;
+    /** Active selection: club or team. */
+    memberSettingKind: 'club' | 'team';
+    /** Type of team / sport (dropdown). Defaults from Team/Club profile sport. */
+    teamSport: string;
     /** Club setting member type id (PHP member_type_id). */
     memberTypeId: string;
     discounts: {
@@ -191,6 +275,11 @@ export type ClubMemberScopedData = {
     sharingDefault: string;
     followUpNotifications: string;
     informationUpdates: boolean;
+    /**
+     * Master switch for Access control / debt at access / secondary screen.
+     * Sections stay visible for Club and Team; unchecked disables those functions.
+     */
+    accessFunctionsEnabled: boolean;
     accessControl: {
       activeBlockAccess: 'analyzes_all' | 'free_access' | 'access_from';
       freeAccessDate: string;
@@ -210,15 +299,26 @@ export type ClubMemberScopedData = {
       otherManagementData: boolean;
       msgFromOtherMember: boolean;
     };
-    /** Primary sport mode view (controls TEAM-FOOTBALL vs CLUB-GYM section below). */
+    /** Primary view: Club vs Team (derived from memberSettingKind for older UI). */
     sportMode: 'CLUB-GYM' | 'TEAM-FOOTBALL';
     football: {
       annualMembershipFee: string;
-      firstPaymentDate: string;
-      secondPaymentDate: string;
-      thirdPaymentDate: string;
+      firstPayment: {
+        amount: string;
+        date: string;
+        status: string;
+      };
+      secondPayment: {
+        amount: string;
+        date: string;
+        status: string;
+      };
+      thirdPayment: {
+        amount: string;
+        date: string;
+        status: string;
+      };
       paymentMethod: string;
-      paymentStatus: string;
       receiptIssued: boolean;
       imageRelease: boolean;
       travelAuthorization: boolean;
@@ -231,8 +331,17 @@ export type ClubMemberScopedData = {
       category: string;
       sportsSeason: string;
       position: string;
+      specialty: string;
       footHand: string;
       jerseyNumber: string;
+      shoesNumber: string;
+      jerseySize: string;
+      shortsSize: string;
+      shoeSize: string;
+      weight: string;
+      height: string;
+      reactionTime: string;
+      verticalJump: string;
       coach: string;
       startDateWithTeam: string;
     };
@@ -249,6 +358,8 @@ export type ClubMemberScopedData = {
 export type MemberProfileBundle = {
   clubId: string;
   clubName: string;
+  /** Sport from Club/Team profile (category) — default for Settings team-type dropdown. */
+  entitySportDefault: string;
   clubMemberId: string;
   memberId: string;
   role: string | null;
@@ -278,10 +389,18 @@ export type MemberProfileBundle = {
   contacts: ContactsData;
   activities: ActivitiesData;
   referencesHtml: string;
+  /** 1–6, same as PHP / club references level. */
+  referencesLevel: string;
   club: ClubMemberScopedData;
   clubMembersForPayFor: Array<{ id: string; label: string }>;
-  /** Options for Vendors / Coach selects (club operators + members). */
+  /** Options for Vendors select (club operators + members). */
   vendorCoachOptions: Array<{ id: string; label: string }>;
+  /** Coach select: Staff\\Operators who are Instructors or Personal Trainers. */
+  coachOptions: Array<{ id: string; label: string }>;
+  /** Parents/tutors already filled on club members (for search + autofill). */
+  clubParentsCatalog: import('@/lib/club/memberProfileTypes').ClubParentCatalogEntry[];
+  /** Club customized questions (admin-defined). */
+  customQuestions: CustomQuestionDef[];
   staffNotes: Array<{
     id: string;
     title: string;
@@ -300,6 +419,10 @@ export type MemberProfileBundle = {
     commentsEnabled: boolean;
     imageUrls: string[];
     authorImage?: string | null;
+    enableFrom: string;
+    enableTo: string;
+    showAtLogin: boolean;
+    showAtLogout: boolean;
     replies: Array<{ id: string; body: string; createdAt: string; authorLabel: string }>;
   }>;
 };
@@ -314,7 +437,80 @@ export const MAIN_SPORTS = [
   'Swimming',
   'Volley',
   'Gym',
+  'Running',
+  'Dance',
 ] as const;
+
+export const ATHLETE_STATUS_OPTIONS = [
+  'Member',
+  'Not a member',
+  'On probation',
+  'Non-member Associate',
+] as const;
+
+export const INSURANCE_COMPANY_OPTIONS = [
+  'ACSI SPORT',
+  'AICS',
+  'ALLEANZA ASSICURAZIONI',
+  'ALLIANZ',
+  'ASC',
+  'ASI',
+  'AXA',
+  'CATTOLICA ASSICURAZIONI',
+  'ConTe.it',
+  'Credit Agricole Assicurazioni',
+  'CSAIN',
+  'CSEN',
+  'CSI',
+  'DAN',
+  'DIRECT ASSICURAZIONI',
+  'ENDAS',
+  'FEDERKOMBAT',
+  'FGI',
+  'FIE',
+  'FIGC',
+  'Fijlkam',
+  'FIPAV',
+  'FISI',
+  'FITW',
+  'GENERALI ITALIA',
+  'GENIALLIFE',
+  'GROUPAMA',
+  'LIBERTAS',
+  'LINEAR ASSICURAZIONI',
+  'OPES',
+  'PGS',
+  'Poste Assicura',
+  'Posteassicura',
+  'Prima.it',
+  'Reale Mutua Assicurazioni',
+  'SciSicuro',
+  'UBI Assicurazioni',
+  'UISP',
+  'UNIPOL Sai',
+  'US ACLI',
+  'Verti Assicurazioni',
+  'Vittoria Assicurazioni spa',
+  'Vittoria Assicurazioni PGS FGI',
+  'Zurich',
+  'Zurich Connect',
+] as const;
+
+export type CustomQuestionAnswerType =
+  | 'free'
+  | 'checkbox'
+  | 'yes_no'
+  | 'list';
+
+export type CustomQuestionDef = {
+  id: string;
+  question: string;
+  answerType: CustomQuestionAnswerType;
+  visibleInRegistration: boolean;
+  mandatory: boolean;
+  /** Comma-separated options when answerType is list */
+  listOptions: string;
+};
 
 export const PARENTS_TAB_LABEL = 'Parents';
 
