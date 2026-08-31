@@ -191,14 +191,19 @@ const menuSections: MenuSection[] = [
     title: "Messages",
     items: [
       {
-        label: "Messages from Movesbook",
+        label: "Notifications by Movesbook",
         href: "/users/notification/all/all/movesbook",
         icon: Bell,
       },
       {
-        label: "Messages with club staff",
-        href: "#",
+        label: "Notifications by Club Staff",
+        href: "/users/notification/all/all/clubs",
         icon: MessageCircle,
+      },
+      {
+        label: "Send club notifications",
+        href: "/users/clubnotification",
+        icon: Mail,
       },
       {
         label: "Messages with members",
