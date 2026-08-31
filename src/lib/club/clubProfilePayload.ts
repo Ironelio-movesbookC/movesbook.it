@@ -134,7 +134,8 @@ export function mergeClubDescriptionForSave(
     legalDocuments: prev.legalDocuments,
     defaultPaymentMethods: prev.defaultPaymentMethods,
     customQuestions: prev.customQuestions,
-    teamProfile: prev.teamProfile,
+    // Club account form — do not keep team-tab payload on club saves.
+    teamProfile: undefined,
   };
   const hasMeta = Object.values(meta).some((v) => v !== undefined && v !== '');
   return hasMeta ? JSON.stringify(meta) : JSON.stringify({ createdViaForm: true });

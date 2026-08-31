@@ -39,7 +39,9 @@ export function mapClubMemberRows(
       birthdate: Date | null;
       country: string | null;
     };
-  }[]
+    profile?: { profileJson: string | null } | null;
+  }[],
+  ownerSportByUser: Map<string, string> = new Map()
 ): Record<string, unknown>[] {
   return rows.map((row, i) => {
     const firstName =
@@ -53,6 +55,26 @@ export function mapClubMemberRows(
         const parts = text(row.member.name).split(/\s+/).filter(Boolean);
         return parts.length > 1 ? parts.slice(1).join(' ') : '';
       })();
+
+    let scopedSafe: {
+      otherDetails?: { groupTrainedId?: string };
+      settings?: { football?: { teamNames?: string; category?: string }; teamSport?: string };
+    } = {};
+    try {
+      scopedSafe = row.profile?.profileJson
+        ? (JSON.parse(row.profile.profileJson) as typeof scopedSafe)
+        : {};
+    } catch {
+      scopedSafe = {};
+    }
+    const sport =
+      ownerSportByUser.get(row.member.id) ||
+      text(scopedSafe.settings?.football?.category) ||
+      text(scopedSafe.settings?.teamSport) ||
+      '-';
+    const groupTrainedId = text(scopedSafe.otherDetails?.groupTrainedId);
+    const groupTrained =
+      text(scopedSafe.settings?.football?.teamNames) || groupTrainedId || '-';
 
     return {
       id: row.member.id,
@@ -72,6 +94,9 @@ export function mapClubMemberRows(
       insertDateDisplay: formatArchiveDate(row.joinedAt),
       operator: titleCaseRole(row.role),
       typology: titleCaseRole(row.role),
+      sport,
+      groupTrained,
+      groupTrainedId: groupTrainedId || '',
     };
   });
 }
@@ -97,6 +122,7 @@ async function fetchClubMemberRows(clubId: string, memberIds?: string[]) {
           createdAt: true,
         },
       },
+      profile: { select: { profileJson: true } },
     },
     orderBy: { joinedAt: 'desc' },
   });
@@ -110,7 +136,32 @@ export async function listClubMemberArchiveRows(
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? 25;
   const rows = await fetchClubMemberRows(ctx.club.id, memberIds);
-  const items = mapClubMemberRows(rows);
+
+  const userIds = rows.map((r) => r.memberId);
+  const ownerSportByUser = new Map<string, string>();
+  if (userIds.length > 0) {
+    try {
+      const extrasRows = await prisma.userProfileExtras.findMany({
+        where: { userId: { in: userIds } },
+        select: { userId: true, ownerJson: true },
+      });
+      for (const ex of extrasRows) {
+        try {
+          const owner = JSON.parse(ex.ownerJson || '{}') as {
+            personal?: { mainSport?: string };
+          };
+          const sport = text(owner.personal?.mainSport);
+          if (sport) ownerSportByUser.set(ex.userId, sport);
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch {
+      /* extras table may be missing */
+    }
+  }
+
+  const items = mapClubMemberRows(rows, ownerSportByUser);
   return paginate(applyFilters(items, params), page, pageSize);
 }
 

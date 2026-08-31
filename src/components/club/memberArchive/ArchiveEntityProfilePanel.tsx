@@ -1,12 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import ClubProfileEditor, {
+  type ClubProfileSavePayload,
+} from '@/components/club/ClubProfileEditor';
 import TeamProfileEditor, {
   type TeamProfileFormPayload,
 } from '@/components/team/TeamProfileEditor';
+import { clubProfilePayloadForApi } from '@/lib/club/clubProfilePayload';
+import {
+  isClubCreatedFromForm,
+  parseClubDescriptionMeta,
+} from '@/lib/club/clubSidebarLabel';
+import { applyEntityLogoOnSave } from '@/lib/entity/applyEntityLogoOnSave';
 import { getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesClient';
-import { isClubCreatedFromForm } from '@/lib/club/clubSidebarLabel';
 import { useAuth } from '@/hooks/useAuth';
 
 type EntityRecord = {
@@ -21,8 +29,18 @@ type Props = {
   clubId: string | null;
 };
 
+/** True only for entities created/saved with the Team tabbed form. */
+function isTeamEntity(description?: string | null): boolean {
+  const meta = parseClubDescriptionMeta(description);
+  const tp = meta.teamProfile;
+  if (!tp || typeof tp !== 'object') return false;
+  return Object.keys(tp).length > 0;
+}
+
 /**
- * Athletes\Members → Club / Team Profile editor for the selected workspace entity.
+ * Athletes\Members profile panel.
+ * Clubs → ClubProfileEditor (same as Create Club / My Club edit on profile_002).
+ * Teams → TeamProfileEditor (same as Create Team / My Team edit).
  */
 export default function ArchiveEntityProfilePanel({ clubId }: Props) {
   const { user } = useAuth();
@@ -31,6 +49,11 @@ export default function ArchiveEntityProfilePanel({ clubId }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [savedMsg, setSavedMsg] = useState('');
+
+  const useTeamEditor = useMemo(
+    () => (entity ? isTeamEntity(entity.description) : false),
+    [entity],
+  );
 
   const load = useCallback(async () => {
     if (!clubId) {
@@ -75,7 +98,36 @@ export default function ArchiveEntityProfilePanel({ clubId }: Props) {
     void load();
   }, [load]);
 
-  const handleSave = async (payload: TeamProfileFormPayload) => {
+  const handleSaveClub = async (payload: ClubProfileSavePayload) => {
+    if (!clubId) return;
+    setSaving(true);
+    setSavedMsg('');
+    try {
+      if (payload.logoFile || payload.removeLogo) {
+        await applyEntityLogoOnSave('club', clubId, payload);
+      }
+      const res = await fetch(
+        withSelectedClubId(`/api/clubs/${encodeURIComponent(clubId)}`),
+        {
+          method: 'PATCH',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(clubProfilePayloadForApi(payload)),
+        },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof json.error === 'string' ? json.error : 'Failed to save profile',
+        );
+      }
+      setSavedMsg('Club profile saved.');
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveTeam = async (payload: TeamProfileFormPayload) => {
     if (!clubId) return;
     setSaving(true);
     setSavedMsg('');
@@ -94,7 +146,7 @@ export default function ArchiveEntityProfilePanel({ clubId }: Props) {
           typeof json.error === 'string' ? json.error : 'Failed to save profile',
         );
       }
-      setSavedMsg('Club / Team profile saved.');
+      setSavedMsg('Team profile saved.');
       await load();
     } finally {
       setSaving(false);
@@ -119,24 +171,39 @@ export default function ArchiveEntityProfilePanel({ clubId }: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" key={`${entity.id}-${useTeamEditor ? 'team' : 'club'}`}>
       {savedMsg ? (
         <p className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           {savedMsg}
         </p>
       ) : null}
-      <TeamProfileEditor
-        mode="edit"
-        entityKind="club"
-        adminUsername={user?.username || 'admin'}
-        initialTeam={{
-          name: entity.name,
-          description: entity.description,
-          sport: entity.sport,
-        }}
-        saving={saving}
-        onSave={handleSave}
-      />
+      {useTeamEditor ? (
+        <TeamProfileEditor
+          mode="edit"
+          entityKind="team"
+          adminUsername={user?.username || 'admin'}
+          initialTeam={{
+            name: entity.name,
+            description: entity.description,
+            sport: entity.sport,
+          }}
+          saving={saving}
+          onSave={handleSaveTeam}
+        />
+      ) : (
+        <ClubProfileEditor
+          mode="edit"
+          entityKind="club"
+          adminUsername={user?.username || 'admin'}
+          initialClub={{
+            name: entity.name,
+            description: entity.description,
+            location: entity.location,
+          }}
+          saving={saving}
+          onSave={handleSaveClub}
+        />
+      )}
     </div>
   );
 }

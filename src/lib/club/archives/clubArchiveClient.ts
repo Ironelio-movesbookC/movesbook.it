@@ -45,10 +45,6 @@ export type ArchiveFetchParams = {
   expandDeadlines?: boolean;
   /** Scope to a single member (e.g. "Member selected" vs "All members" toggle). */
   memberId?: string;
-  /** Deadlines archive: one row per installment instead of one row per record. */
-  expandDeadlines?: boolean;
-  /** Scope to a single member (e.g. "Member selected" vs "All members" toggle). */
-  memberId?: string;
   /** Club to load; required for correct Archive of Members when admin owns several clubs. */
   clubId?: string;
   /** Scope to the record selected in the archive we came from ("Record selected"). */

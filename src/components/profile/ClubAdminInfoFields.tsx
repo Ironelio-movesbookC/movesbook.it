@@ -96,8 +96,6 @@ export default function ClubAdminInfoFields({
     });
   };
 
-  const phoneValue = [value.phonePrefix.trim(), value.phoneNumber.trim()].filter(Boolean).join(' ');
-
   return (
     <div className="overflow-hidden rounded-lg border border-gray-300 shadow-sm">
       <div className="border-b border-gray-300 bg-gray-200 px-4 py-2.5">
@@ -115,20 +113,23 @@ export default function ClubAdminInfoFields({
         </FormRow>
 
         <FormRow label="Phone">
-          <input
-            type="text"
-            value={phoneValue}
-            onChange={(e) =>
-              onChange({
-                ...value,
-                phonePrefix: '',
-                phoneNumber: e.target.value,
-              })
-            }
-            disabled={disabled}
-            placeholder="+39 …"
-            className={`${INPUT_CLASS} max-w-md`}
-          />
+          <div className="flex max-w-md gap-2">
+            <input
+              type="text"
+              value={value.phonePrefix}
+              onChange={(e) => onChange({ ...value, phonePrefix: e.target.value })}
+              disabled={disabled}
+              placeholder="+39"
+              className={`${INPUT_CLASS} w-24 shrink-0`}
+            />
+            <input
+              type="text"
+              value={value.phoneNumber}
+              onChange={(e) => onChange({ ...value, phoneNumber: e.target.value })}
+              disabled={disabled}
+              className={INPUT_CLASS}
+            />
+          </div>
         </FormRow>
 
         {value.socialSites.map((site, index) => (

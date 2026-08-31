@@ -132,36 +132,68 @@ export async function listClubMembersArchive(
     },
     orderBy: { joinedAt: 'desc' },
   });
-  const staffRows = await prisma.clubStaff.findMany({
-    where: { clubId: ctx.club.id },
-    include: {
-      user: {
-        select: {
-          id: true,
-          firstName: true,
-          surname: true,
-          name: true,
-          username: true,
-          image: true,
-          gender: true,
-          birthdate: true,
-          country: true,
-          createdAt: true,
+
+  type StaffRow = {
+    userId: string;
+    staffType: string;
+    role: string;
+    createdAt: Date;
+    user: {
+      id: string;
+      firstName: string | null;
+      surname: string | null;
+      name: string;
+      username: string;
+      image: string | null;
+      gender: string | null;
+      birthdate: Date | null;
+      country: string | null;
+      createdAt: Date;
+    };
+  };
+
+  let staffRows: StaffRow[] = [];
+  try {
+    staffRows = await prisma.clubStaff.findMany({
+      where: { clubId: ctx.club.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            surname: true,
+            name: true,
+            username: true,
+            image: true,
+            gender: true,
+            birthdate: true,
+            country: true,
+            createdAt: true,
+          },
         },
       },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+      orderBy: { createdAt: 'desc' },
+    });
+  } catch (error) {
+    // Main added ClubStaff model; local DB may not have `club_staff` yet.
+    console.warn('listClubMembersArchive: club_staff unavailable, continuing without staff rows', error);
+    staffRows = [];
+  }
 
-  type StaffRow = (typeof staffRows)[number];
   const memberIds = rows.map((r) => r.memberId);
-  const extrasRows =
-    memberIds.length > 0
-      ? await prisma.userProfileExtras.findMany({
-          where: { userId: { in: memberIds } },
-          select: { userId: true, ownerJson: true },
-        })
-      : [];
+  let extrasRows: Array<{ userId: string; ownerJson: string }> = [];
+  try {
+    extrasRows =
+      memberIds.length > 0
+        ? await prisma.userProfileExtras.findMany({
+            where: { userId: { in: memberIds } },
+            select: { userId: true, ownerJson: true },
+          })
+        : [];
+  } catch (error) {
+    console.warn('listClubMembersArchive: user_profile_extras unavailable', error);
+    extrasRows = [];
+  }
   const ownerSportByUser = new Map<string, string>();
   for (const ex of extrasRows) {
     try {

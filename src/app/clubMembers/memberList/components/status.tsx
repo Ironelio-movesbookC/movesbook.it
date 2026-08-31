@@ -80,14 +80,13 @@ export default function ClubMemberArchiveHeader({
           >
             Status accounts
           </button>
-          {capacity.subscriptionExpirationLabel ? (
-            <p className="flex items-start gap-1 text-sm font-semibold text-red-600">
-              <span>
-                Expiration date of the Subscription: {capacity.subscriptionExpirationLabel}
-              </span>
-              <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            </p>
-          ) : null}
+          <p className="flex items-start gap-1 text-sm font-semibold text-red-600">
+            <span>
+              Expiration date of the Subscription:{' '}
+              {capacity.subscriptionExpirationLabel || '—'}
+            </span>
+            <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          </p>
         </div>
       </div>
     </div>

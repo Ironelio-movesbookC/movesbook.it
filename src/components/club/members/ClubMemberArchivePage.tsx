@@ -112,7 +112,11 @@ export default function ClubMemberArchivePage({
             (appliedFilters.search ? `&search=${encodeURIComponent(appliedFilters.search)}` : '') +
             (appliedFilters.fromDate ? `&fromDate=${appliedFilters.fromDate}` : '') +
             (appliedFilters.toDate ? `&toDate=${appliedFilters.toDate}` : '') +
-            (appliedFilters.orderBy ? `&orderBy=${appliedFilters.orderBy}` : '')
+            (appliedFilters.orderBy ? `&orderBy=${appliedFilters.orderBy}` : '') +
+            (appliedFilters.sport ? `&sport=${encodeURIComponent(appliedFilters.sport)}` : '') +
+            (appliedFilters.groupTrained
+              ? `&groupTrained=${encodeURIComponent(appliedFilters.groupTrained)}`
+              : '')
         );
         const fetchRes = await fetch(url, { headers: getAuthHeaders() });
         const payload = await fetchRes.json().catch(() => ({}));
@@ -126,7 +130,11 @@ export default function ClubMemberArchivePage({
             (appliedFilters.search ? `&search=${encodeURIComponent(appliedFilters.search)}` : '') +
             (appliedFilters.fromDate ? `&fromDate=${appliedFilters.fromDate}` : '') +
             (appliedFilters.toDate ? `&toDate=${appliedFilters.toDate}` : '') +
-            (appliedFilters.orderBy ? `&orderBy=${appliedFilters.orderBy}` : '')
+            (appliedFilters.orderBy ? `&orderBy=${appliedFilters.orderBy}` : '') +
+            (appliedFilters.sport ? `&sport=${encodeURIComponent(appliedFilters.sport)}` : '') +
+            (appliedFilters.groupTrained
+              ? `&groupTrained=${encodeURIComponent(appliedFilters.groupTrained)}`
+              : '')
         );
         const fetchRes = await fetch(url, { headers: getAuthHeaders() });
         const payload = await fetchRes.json().catch(() => ({}));
