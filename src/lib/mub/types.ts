@@ -2,7 +2,10 @@ export type MubScope = 'USER' | 'STAFF' | 'CLUB';
 
 export type MubCategory = 'CLUB_MANAGEMENT' | 'WORKOUT' | 'SOCIAL';
 
-export type MubRoleTemplate = 'CLUB' | 'TEAM' | 'COACH';
+export type MubRoleTemplate = 'SINGLE_USER' | 'COACH' | 'TEAM' | 'CLUB' | 'GROUP';
+
+/** How the button URL opens (client answer #2). */
+export type MubPageOpenMode = 'same_label' | 'new_tab' | 'popup';
 
 export type MubIconSource = 'INTERNAL' | 'EXTERNAL';
 

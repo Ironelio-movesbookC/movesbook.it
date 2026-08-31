@@ -2981,9 +2981,11 @@ enum MubCategory {
 }
 
 enum MubRoleTemplate {
-  CLUB
-  TEAM
+  SINGLE_USER
   COACH
+  TEAM
+  CLUB
+  GROUP
 }
 
 enum MubIconSource {
