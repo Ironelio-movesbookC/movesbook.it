@@ -2,8 +2,14 @@ import type { TeamProfileSections } from '@/lib/team/teamProfileTypes';
 
 export type ClubDescriptionMeta = {
   createdViaForm?: boolean;
+  /** ISO date (YYYY-MM-DD) — current network subscription start for this club. */
+  subscriptionStart?: string;
   /** ISO date (YYYY-MM-DD) — network subscription end for this club. */
   subscriptionEnd?: string;
+  /** Cumulative member slots purchased before the current subscription allowance. */
+  membersPurchasedBase?: number;
+  /** Number of subscription renewals applied (0 = first subscription period). */
+  subscriptionRenewalCount?: number;
   username?: string;
   directAccess?: string;
   category?: string;
@@ -27,7 +33,7 @@ export type ClubDescriptionMeta = {
   };
   /** Up to 5 payment method ids shown by default on payment forms. */
   defaultPaymentMethods?: string[];
-  /** Club/Team logo (data URL or public path). */
+  /** Public path under `/uploads/entity_logos/` (or data URL / absolute URL). */
   logoUrl?: string;
   /** Phone for club/team account. */
   phone?: string;

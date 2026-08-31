@@ -233,7 +233,13 @@ function PaymentDetailPageInner() {
             : undefined
         }
         activeTab="deadline"
-        tabs={getServiceSaleTabs('deadline', id, scopedRecordIds)}
+        tabs={getServiceSaleTabs(
+          'deadline',
+          id,
+          scopedRecordIds,
+          null,
+          purchase?.userId ?? null
+        )}
         error={!purchase ? error : undefined}
       >
         {purchase && options && (

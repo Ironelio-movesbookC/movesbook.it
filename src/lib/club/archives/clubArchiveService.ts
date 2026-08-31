@@ -1,10 +1,16 @@
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
 import { procedureService } from '@/lib/procedures';
+import {
+  listInstallmentsForRecords,
+  projectInstallmentsOnBalance,
+  type InstallmentDto,
+} from '@/lib/procedures/installmentService';
 import { getProcedureTypology } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import type { ClubAuthContext } from '@/lib/procedures/types';
 import { fetchClubStaffOperators } from '@/lib/procedures/clubOperators';
+import { staffTypeLabel } from '@/lib/club/clubStaff.constants';
 import {
   type ArchiveQueryParams,
   applyFilters,
@@ -41,12 +47,69 @@ function titleCaseRole(role: string | null | undefined): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
+type ArchivePerson = {
+  id: string;
+  firstName: string | null;
+  surname: string | null;
+  name: string;
+  username: string;
+  image: string | null;
+  gender: string | null;
+  birthdate: Date | null;
+  country: string | null;
+};
+
+function mapArchivePersonRow(params: {
+  person: ArchivePerson;
+  joinedAt: Date;
+  membershipType: string | null;
+  operatorLabel: string;
+  staffType?: string | null;
+  staffRole?: string | null;
+}): Record<string, unknown> {
+  const { person, joinedAt, membershipType, operatorLabel, staffType, staffRole } = params;
+  const firstName =
+    text(person.firstName) ||
+    text(person.name).split(/\s+/)[0] ||
+    text(person.username) ||
+    '-';
+  const surname =
+    text(person.surname) ||
+    (() => {
+      const parts = text(person.name).split(/\s+/).filter(Boolean);
+      return parts.length > 1 ? parts.slice(1).join(' ') : '';
+    })();
+
+  return {
+    id: person.id,
+    memberId: person.id,
+    name: firstName,
+    surname: surname || '-',
+    fullName: formatName(person.firstName, person.surname, person.name),
+    image: person.image,
+    gender: text(person.gender) || '-',
+    dateOfBirth: formatArchiveDate(person.birthdate),
+    memberType: text(membershipType) || 'Standard',
+    localCity: text(person.country) || '-',
+    Localcity: text(person.country) || '-',
+    phone: '-',
+    /** ISO for From/To filters; UI formats for display. */
+    insertDate: joinedAt.toISOString().slice(0, 10),
+    insertDateDisplay: formatArchiveDate(joinedAt),
+    operator: operatorLabel,
+    typology: operatorLabel,
+    staffType: staffType ?? null,
+    staffRole: staffRole ?? null,
+  };
+}
+
 export async function listClubMembersArchive(
   ctx: ClubAuthContext,
   params: ArchiveQueryParams = {}
 ): Promise<PaginatedArchive<Record<string, unknown>>> {
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? 25;
+
   const rows = await prisma.clubMember.findMany({
     where: { clubId: ctx.club.id },
     include: {
@@ -69,7 +132,28 @@ export async function listClubMembersArchive(
     },
     orderBy: { joinedAt: 'desc' },
   });
+  const staffRows = await prisma.clubStaff.findMany({
+    where: { clubId: ctx.club.id },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          surname: true,
+          name: true,
+          username: true,
+          image: true,
+          gender: true,
+          birthdate: true,
+          country: true,
+          createdAt: true,
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 
+  type StaffRow = (typeof staffRows)[number];
   const memberIds = rows.map((r) => r.memberId);
   const extrasRows =
     memberIds.length > 0
@@ -91,19 +175,17 @@ export async function listClubMembersArchive(
     }
   }
 
-  const items = rows.map((row, i) => {
-    const firstName =
-      text(row.member.firstName) ||
-      text(row.member.name).split(/\s+/)[0] ||
-      text(row.member.username) ||
-      '-';
-    const surname =
-      text(row.member.surname) ||
-      (() => {
-        const parts = text(row.member.name).split(/\s+/).filter(Boolean);
-        return parts.length > 1 ? parts.slice(1).join(' ') : '';
-      })();
-    const memberType = text(row.membershipType) || 'Standard';
+  const staffByUserId = new Map<string, StaffRow>(
+    staffRows.map((row) => [row.userId, row]),
+  );
+  const memberUserIds = new Set(rows.map((row) => row.memberId));
+
+  const memberItems: Record<string, unknown>[] = rows.map((row) => {
+    const staff = staffByUserId.get(row.memberId);
+    const operatorLabel = staff
+      ? staffTypeLabel(staff.staffType)
+      : titleCaseRole(row.role);
+
     let scopedSafe: {
       otherDetails?: { groupTrainedId?: string };
       settings?: { football?: { teamNames?: string; category?: string }; teamSport?: string };
@@ -124,35 +206,52 @@ export async function listClubMembersArchive(
     const groupTrained =
       text(scopedSafe.settings?.football?.teamNames) || groupTrainedId || '-';
 
+    const base = mapArchivePersonRow({
+      person: row.member,
+      joinedAt: row.joinedAt,
+      membershipType: row.membershipType,
+      operatorLabel,
+      staffType: staff?.staffType ?? null,
+      staffRole: staff?.role ?? null,
+    });
+
     return {
-      id: row.member.id,
-      memberId: row.member.id,
-      clubMemberId: row.id,
-      number: i + 1,
-      name: firstName,
-      surname: surname || '-',
-      username: text(row.member.username) || '-',
+      ...base,
       email: text(row.member.email) || '',
-      fullName: formatName(row.member.firstName, row.member.surname, row.member.name),
-      image: row.member.image,
-      gender: text(row.member.gender) || '-',
-      dateOfBirth: row.member.birthdate
-        ? row.member.birthdate.toISOString().slice(0, 10)
-        : '',
-      dateOfBirthDisplay: formatArchiveDate(row.member.birthdate),
-      memberType,
-      typology: memberType,
-      localCity: text(row.member.country) || '-',
-      Localcity: text(row.member.country) || '-',
-      phone: '-',
+      clubMemberId: row.id,
       sport,
       groupTrained,
       groupTrainedId: groupTrainedId || '',
-      insertDate: row.joinedAt.toISOString().slice(0, 10),
-      insertDateDisplay: formatArchiveDate(row.joinedAt),
-      operator: titleCaseRole(row.role),
       casual: 'No',
     };
+  });
+
+  const staffOnlyItems: Record<string, unknown>[] = staffRows
+    .filter((row) => !memberUserIds.has(row.userId))
+    .map((row) => ({
+      ...mapArchivePersonRow({
+        person: row.user,
+        joinedAt: row.createdAt,
+        membershipType: 'Staff',
+        operatorLabel: staffTypeLabel(row.staffType),
+        staffType: row.staffType,
+        staffRole: row.role,
+      }),
+      sport: '-',
+      groupTrained: '-',
+      groupTrainedId: '',
+      casual: 'No',
+    }));
+
+  const items: Record<string, unknown>[] = [...memberItems, ...staffOnlyItems].sort(
+    (a, b) => {
+      const aDate = String(a.insertDate ?? '');
+      const bDate = String(b.insertDate ?? '');
+      return bDate.localeCompare(aDate);
+    },
+  );
+  items.forEach((item, i) => {
+    item.number = i + 1;
   });
 
   return paginate(applyFilters(items, params), page, pageSize);
@@ -792,52 +891,138 @@ const UNIFIED_PROCEDURE_TYPES = [
   PROCEDURE_TYPE_CODES.COURSE_SUBSCRIPTION,
 ] as const;
 
+type UnifiedDeadlineRecord = Awaited<
+  ReturnType<typeof procedureService.listRecords>
+>['items'][number];
+
+/** One row per procedure record, with the record's own totals. */
+function deadlineRecordRow(
+  procedureType: string,
+  r: UnifiedDeadlineRecord
+): Record<string, unknown> {
+  const meta = r.metadata ?? {};
+  const primary =
+    String(meta.serviceName ?? meta.productName ?? meta.expenseName ?? meta.debtLabel ?? '').trim() ||
+    '-';
+  const secondary = String(meta.sectorName ?? meta.typologyName ?? '').trim() || '';
+  return {
+    id: r.id,
+    userId: r.memberId,
+    memberId: r.memberId,
+    name: r.memberName,
+    image: r.memberImage,
+    typology: getProcedureTypology(procedureType),
+    procedureType,
+    procedureRecordId: r.id,
+    service: primary,
+    course: secondary || undefined,
+    insertDate: r.recordDate,
+    expirationDate: r.dueDate ?? r.recordDate,
+    value: r.totalAmount,
+    paid: r.paidAmount,
+    rest: r.balanceAmount,
+    casual: r.notes ?? '',
+    operator: r.operatorName,
+    dateEnd: r.lastPaymentDate,
+  };
+}
+
+/** Records created before deadlines were split still owe their balance as a single deadline. */
+function recordAsSingleInstallment(r: UnifiedDeadlineRecord): InstallmentDto {
+  return {
+    id: `${r.id}-record`,
+    procedureRecordId: r.id,
+    paid: r.paidAmount,
+    balance: r.balanceAmount,
+    paymentDate: r.recordDate,
+    expireDate: r.dueDate,
+    createdAt: r.createdAt,
+    description: null,
+  };
+}
+
+/**
+ * "Display every deadlines": one row per installment, matching the Deadlines list of the payment
+ * form — each row carries that deadline's own expire date, amount and rest.
+ */
+function deadlineInstallmentRows(
+  procedureType: string,
+  r: UnifiedDeadlineRecord,
+  installments: InstallmentDto[],
+  includePaid: boolean
+): Record<string, unknown>[] {
+  const base = deadlineRecordRow(procedureType, r);
+  const source =
+    installments.length > 0
+      ? projectInstallmentsOnBalance(installments, r.balanceAmount)
+      : [recordAsSingleInstallment(r)];
+
+  const rows = source.map((inst, index) => ({
+    ...base,
+    id: inst.id,
+    deadlineNo: `${index + 1} of ${source.length}`,
+    expirationDate: inst.expireDate ?? inst.paymentDate,
+    expireAt: inst.createdAt,
+    value: Math.round((inst.paid + inst.balance) * 100) / 100,
+    paid: inst.paid,
+    rest: inst.balance,
+    casual: inst.description ?? base.casual,
+  }));
+
+  if (includePaid) return rows;
+  const open = rows.filter((row) => row.rest > 0.005);
+  // Never let a record that still owes money vanish because its installments drifted.
+  return open.length > 0 || r.balanceAmount <= 0.005 ? open : rows;
+}
+
 /** Archives menu: all typologies in one Deadlines list. */
 export async function listUnifiedDeadlines(
   ctx: ClubAuthContext,
-  params: ArchiveQueryParams & { includePaid?: boolean } = {}
+  params: ArchiveQueryParams & { includePaid?: boolean; expandDeadlines?: boolean } = {}
 ): Promise<PaginatedArchive<Record<string, unknown>>> {
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? 25;
-  const items: Record<string, unknown>[] = [];
+  const records: { procedureType: string; record: UnifiedDeadlineRecord }[] = [];
 
   for (const procedureType of UNIFIED_PROCEDURE_TYPES) {
     const res = await procedureService
       .listRecords(
         ctx,
         procedureType,
-        { page: 1, pageSize: 500 },
+        {
+          page: 1,
+          pageSize: 500,
+          memberId: params.memberId,
+          recordId: params.recordId,
+        },
         { onlyWithBalance: !params.includePaid }
       )
-      .catch(() => ({ items: [] as Awaited<ReturnType<typeof procedureService.listRecords>>['items'] }));
+      .catch(() => ({ items: [] as UnifiedDeadlineRecord[] }));
 
-    for (const r of res.items) {
-      const meta = r.metadata ?? {};
-      const primary =
-        String(meta.serviceName ?? meta.productName ?? meta.expenseName ?? meta.debtLabel ?? '').trim() ||
-        '-';
-      const secondary = String(meta.sectorName ?? meta.typologyName ?? '').trim() || '';
-      items.push({
-        id: r.id,
-        userId: r.memberId,
-        memberId: r.memberId,
-        name: r.memberName,
-        image: r.memberImage,
-        typology: getProcedureTypology(procedureType),
-        procedureType,
-        service: primary,
-        course: secondary || undefined,
-        insertDate: r.dueDate ?? r.recordDate,
-        value: r.totalAmount,
-        paid: r.paidAmount,
-        rest: r.balanceAmount,
-        casual: r.notes ?? '',
-        operator: r.operatorName,
-        dateEnd: r.lastPaymentDate,
-      });
-    }
+    for (const record of res.items) records.push({ procedureType, record });
   }
 
+  const installmentsByRecord = params.expandDeadlines
+    ? await listInstallmentsForRecords(records.map((r) => r.record.id))
+    : new Map<string, InstallmentDto[]>();
+
+  const items: Record<string, unknown>[] = [];
+  for (const { procedureType, record } of records) {
+    if (!params.expandDeadlines) {
+      items.push(deadlineRecordRow(procedureType, record));
+      continue;
+    }
+    items.push(
+      ...deadlineInstallmentRows(
+        procedureType,
+        record,
+        installmentsByRecord.get(record.id) ?? [],
+        Boolean(params.includePaid)
+      )
+    );
+  }
+
+  // Stable sort keeps the deadlines of one record together, oldest expire date first.
   items.sort((a, b) => String(b.insertDate).localeCompare(String(a.insertDate)));
   return paginate(applyFilters(items, params), page, pageSize);
 }
@@ -853,12 +1038,19 @@ export async function listUnifiedPayments(
 
   for (const procedureType of UNIFIED_PROCEDURE_TYPES) {
     const res = await procedureService
-      .listPayments(ctx, procedureType, { page: 1, pageSize: 500, memberId: params.memberId })
+      .listPayments(ctx, procedureType, {
+        page: 1,
+        pageSize: 500,
+        memberId: params.memberId,
+        recordId: params.recordId,
+      })
       .catch(() => ({ items: [] as Awaited<ReturnType<typeof procedureService.listPayments>>['items'] }));
 
     for (const p of res.items) {
       items.push({
         id: p.id,
+        userId: p.memberId,
+        memberId: p.memberId,
         procedureRecordId: p.procedureRecordId,
         procedureType,
         name: p.memberName,
@@ -871,6 +1063,7 @@ export async function listUnifiedPayments(
         rest: p.balanceAfter ?? p.residualDebt,
         casual: p.notes ?? '',
         operator: p.operatorName,
+        operatorId: p.operatorId,
         payMod: p.payMode,
       });
     }
@@ -891,12 +1084,19 @@ export async function listUnifiedReceipts(
 
   for (const procedureType of UNIFIED_PROCEDURE_TYPES) {
     const res = await procedureService
-      .listReceipts(ctx, procedureType, { page: 1, pageSize: 500, memberId: params.memberId })
+      .listReceipts(ctx, procedureType, {
+        page: 1,
+        pageSize: 500,
+        memberId: params.memberId,
+        recordId: params.recordId,
+      })
       .catch(() => ({ items: [] as Awaited<ReturnType<typeof procedureService.listReceipts>>['items'] }));
 
     for (const r of res.items) {
       items.push({
         id: r.id,
+        userId: r.memberId,
+        memberId: r.memberId,
         procedureRecordId: r.procedureRecordId,
         procedureType,
         name: r.memberName,

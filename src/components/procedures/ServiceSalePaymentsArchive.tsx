@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import ArchiveListToolbar, {
+  emptyArchiveFilterValues,
+} from '@/components/procedures/ArchiveListToolbar';
 import {
   SERVICE_SALE_PAGE_SIZE,
   serviceSaleCashInColumns,
@@ -57,6 +60,7 @@ export default function ServiceSalePaymentsArchive({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(SERVICE_SALE_PAGE_SIZE);
   const [total, setTotal] = useState(0);
 
   const tableColumns =
@@ -66,7 +70,7 @@ export default function ServiceSalePaymentsArchive({
     setLoading(true);
     setError('');
     try {
-      const res = await fetchPayments({ page, pageSize: SERVICE_SALE_PAGE_SIZE });
+      const res = await fetchPayments({ page, pageSize });
       setTotal(res.total);
       setData(res.items.map(mapPaymentRow));
     } catch (e) {
@@ -74,28 +78,34 @@ export default function ServiceSalePaymentsArchive({
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, pageSize]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   return (
-    <ProcedureArchiveShell
-      title={title}
-      activeTab=""
-      tabs={[]}
-      error={error}
-      footerHint={footerHint}
-      pagination={
-        <ProcedurePagination
-          page={page}
-          pageSize={SERVICE_SALE_PAGE_SIZE}
-          total={total}
-          onPageChange={setPage}
-        />
-      }
-    >
+    <ProcedureArchiveShell title={title} activeTab="" tabs={[]} error={error} footerHint={footerHint}>
+      <ArchiveListToolbar
+        title={title}
+        hideFilters
+        values={emptyArchiveFilterValues()}
+        onChange={() => {}}
+        onApply={() => {}}
+        onClear={() => {}}
+        pagination={
+          <ProcedurePagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => {
+              setPageSize(n);
+              setPage(1);
+            }}
+          />
+        }
+      />
       <ProcedureArchiveTable
         columns={tableColumns}
         rows={data}

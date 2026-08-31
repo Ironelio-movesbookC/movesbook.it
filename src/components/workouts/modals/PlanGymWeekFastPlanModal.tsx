@@ -599,7 +599,7 @@ export default function PlanGymWeekFastPlanModal({
       });
       return { ...d, sectors };
     }));
-  }, [activeDayIdx, levelCat, exerciseListVisible, planSeriesVisible, planSeriesTableLocked, trainingLevel]);
+  }, [activeDayIdx, levelCat, exerciseListVisible, trainingLevel]);
 
   const changeExerciseCount = useCallback((secIdx: number, delta: number) => {
     if (planSeriesTableLocked) return;
@@ -676,7 +676,7 @@ export default function PlanGymWeekFastPlanModal({
       });
       return { ...d, sectors };
     }));
-  }, [activeDayIdx, levelCat, exerciseListVisible, planSeriesVisible, planSeriesTableLocked]);
+  }, [activeDayIdx, levelCat, planSeriesTableLocked]);
 
   const removeExerciseAt = useCallback((secIdx: number, exIdx: number) => {
     setPlanDays(prev => prev.map((d, di) => {
@@ -954,7 +954,7 @@ export default function PlanGymWeekFastPlanModal({
       if (di !== activeDayIdx) return d;
       return { ...d, sectors: [...d.sectors, newSector] };
     }));
-  }, [activeDayIdx, levelCat, exerciseListVisible, planSeriesVisible, planSeriesTableLocked]);
+  }, [activeDayIdx, levelCat, exerciseListVisible]);
 
   const templateFromMuscleGroup = useCallback((mg: GymWeekMuscleGroup, totalSeries: number): PlanSector => {
     const reps        = 12;
@@ -1063,7 +1063,7 @@ export default function PlanGymWeekFastPlanModal({
       });
       return { ...d, sectors };
     }));
-  }, [activeDayIdx, levelCat, scalarsForDay, planSeriesVisible, exerciseListVisible, trainingLevel]);
+  }, [activeDayIdx, levelCat, scalarsForDay, planSeriesVisible, trainingLevel]);
 
   const applyManualYearlyScalarsToDay = useCallback((): boolean => {
     const s = yearlyPeriodSettings;

@@ -1619,13 +1619,16 @@ export function SeriesDistDialog({
     (s) => constantIdSetForDay.has(s.sectorId) || constantIdSetForDay.has(s.sectorLabel)
   );
 
-  const pctsForDay = (dIdx: number) => {
-    const secs = days[dIdx]?.sectors ?? [];
-    const ids = getConstantSectorIdsForDay
-      ? getConstantSectorIdsForDay(dIdx)
-      : constantSectorIds;
-    return initialDistributionPctsForSectors(secs, ids);
-  };
+  const pctsForDay = useCallback(
+    (dIdx: number) => {
+      const secs = days[dIdx]?.sectors ?? [];
+      const ids = getConstantSectorIdsForDay
+        ? getConstantSectorIdsForDay(dIdx)
+        : constantSectorIds;
+      return initialDistributionPctsForSectors(secs, ids);
+    },
+    [days, getConstantSectorIdsForDay, constantSectorIds],
+  );
 
   const [totalSeries, setTotalSeries] = useState(() =>
     computeDistDialogInitialTotal(
@@ -1643,7 +1646,7 @@ export function SeriesDistDialog({
     setTotalSeries(computeDistDialogInitialTotal(secs, dayIdx, getSuggestedTotalSeriesForDay));
     setPcts(init);
     setPrevPcts(init);
-  }, [dayIdx, days, getConstantSectorIdsForDay, constantSectorIds, getSuggestedTotalSeriesForDay]);
+  }, [dayIdx, days, getConstantSectorIdsForDay, constantSectorIds, getSuggestedTotalSeriesForDay, pctsForDay]);
 
   const changePct = (idx: number, newPct: number) => {
     const isConst = idx === constantIdx;
@@ -2862,7 +2865,7 @@ export default function PlanGymWeekManualModal({
     );
     const cp = Math.min(tp, Math.max(1, Math.floor(s.currentPeriod)));
     return { tp, cp };
-  }, [yearlyPeriodSettings.totalPeriods, yearlyPeriodSettings.currentPeriod]);
+  }, [yearlyPeriodSettings]);
 
   /** Interpolated reps + pauses + routine series total from `wp_goalParams` (level, period, sessions %). */
   const workoutParamsPeriodPreview = useMemo(() => {

@@ -2,14 +2,21 @@
 
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { CalendarDays, CreditCard, Mail, User, X } from 'lucide-react';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
-import AdminPcuDatePicker, { isoToMmDdYyyy, mmDdYyyyToIso, parseIsoDate } from '@/components/admin/AdminPcuDatePicker';
+import AdminPcuDatePicker, {
+  ddMmYyyyToIso,
+  formatPcuIsoDate,
+  isoToDdMmYyyy,
+  parseIsoDate,
+  toIsoDate,
+} from '@/components/admin/AdminPcuDatePicker';
 import NewsCategoriesMultiSelect from '@/components/admin/NewsCategoriesMultiSelect';
 import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import {
   createNewsCategoriesState,
   createVipCountriesState,
@@ -22,6 +29,7 @@ import {
   mergeVipCountriesAllowed,
   type PcuSettings,
 } from '@/lib/admin/userPcuSettings';
+import { normalizePcuAlertDateToInput } from '@/lib/admin/userPcuAlertMsg';
 import {
   flushSharedLangEditors,
   useLangHtmlEditor,
@@ -61,7 +69,13 @@ import {
   resolveRegisteredUserActionSegment,
   type PcuPanelPayload,
 } from '@/lib/admin/userPcuPanel';
+import { buildPcuHistoryUserUrl } from '@/lib/admin/pcuHistoryUserUrl';
 import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
+import { resolveProfileAccessDates, hasPendingMembershipRenewal } from '@/lib/admin/profileAccessDates';
+import NotYetActivePeriodEditControl, {
+  subscriptionPeriodDateClassName,
+} from '@/components/admin/NotYetActivePeriodEditControl';
+import ProfileReferencesReadOnly from '@/components/admin/ProfileReferencesReadOnly';
 import {
   normalizeFavouritePriority,
   type FavouritePriority,
@@ -161,19 +175,56 @@ type SubscriptionRow = {
   status: string;
 };
 
+function normalizeIsoDate(value: string | null | undefined): string {
+  const raw = value?.trim() || '';
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return ddMmYyyyToIso(raw) || raw;
+}
+
+function pcuSettingsEndpoint(userId: string, entityId?: string | null): string {
+  const base = `/api/admin/registered-users/${encodeURIComponent(userId)}/pcu-settings`;
+  const id = entityId?.trim();
+  if (!id) return base;
+  return `${base}?${new URLSearchParams({ entityId: id }).toString()}`;
+}
+
+function withPcuEntityScope(
+  payload: Record<string, unknown>,
+  entityId?: string | null,
+): Record<string, unknown> {
+  const id = entityId?.trim();
+  if (!id) return payload;
+  return { ...payload, entityId: id, clubId: id };
+}
+
 function resolvePcuAccessDates(
   user: PcuPanelPayload,
   subscriptionRows: SubscriptionRow[],
   initialPcuAccess?: PcuAccessSettings,
 ): { accessStart: string; accessEnd: string } {
-  const activeRow =
-    subscriptionRows.find((row) => row.status?.toLowerCase() === 'active') ?? subscriptionRows[0];
-  const defaultStart = user.startDateIso || activeRow?.dateStart || '';
-  const defaultEnd = user.endDateIso || activeRow?.dateEnd || '';
+  const resolved = resolveProfileAccessDates(subscriptionRows, initialPcuAccess, {
+    start: user.startDateIso,
+    end: user.endDateIso,
+  });
   return {
-    accessStart: initialPcuAccess?.accessStartIso?.trim() || defaultStart,
-    accessEnd: initialPcuAccess?.accessEndIso?.trim() || defaultEnd,
+    accessStart: normalizeIsoDate(resolved.accessStart),
+    accessEnd: normalizeIsoDate(resolved.accessEnd),
   };
+}
+
+/** Extended expiration = actual subscription end + N days (-1 = no auto date). */
+function computeExtendedExpirationIso(actualIso: string, daysStr: string): string {
+  const actual = actualIso.trim();
+  const daysRaw = daysStr.trim();
+  if (!actual || actual.startsWith('0000') || !daysRaw || daysRaw === '-1') return '';
+  const days = Number(daysRaw);
+  if (!Number.isFinite(days) || days < 0) return '';
+  const base = parseIsoDate(actual);
+  if (!base) return '';
+  const next = new Date(base);
+  next.setDate(next.getDate() + days);
+  return toIsoDate(next);
 }
 
 type UserPcuControlPanelProps = {
@@ -184,12 +235,16 @@ type UserPcuControlPanelProps = {
   initialPcuAccess?: PcuAccessSettings;
   /** Tab shown first (history user page uses subscription / iPurchases). */
   defaultActiveTab?: TopTabId;
+  /** Profile tab: Admin Profile vs club/team/group/coach profile (from URL). */
+  defaultProfileSubTab?: 'admin' | 'entity';
   /** Segment for admin actions API (falls back to user.segment). */
   actionSegment?: string;
   /** Saved admin tab settings loaded from the server. */
   initialPcuSettings?: PcuSettings | null;
   /** Link back to read-only PCU overview (user search eye icon). */
   overviewHref?: string;
+  /** Reload profile/subscription rows after access dates change. */
+  onAccessDatesSaved?: () => void | Promise<void>;
 };
 
 function SubscriptionFilterRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -208,16 +263,26 @@ export default function UserPcuControlPanel({
   profilePanel,
   initialPcuAccess,
   defaultActiveTab = 'profile',
+  defaultProfileSubTab = 'admin',
   actionSegment,
   initialPcuSettings = null,
   overviewHref,
+  onAccessDatesSaved,
 }: UserPcuControlPanelProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const segmentForActions = resolveRegisteredUserActionSegment(actionSegment, user.segment);
+  const pcuEntityId = user.entityId;
   const loadedPcuSettingsRef = useRef<PcuSettings | null>(null);
   const reloadPcuFromServerRef = useRef<(pcu: PcuSettings | undefined) => void>(() => {});
+  const initialPcuHydratedRef = useRef(false);
+  const vipBannerBlobRef = useRef<string | null>(null);
   const [activeTab, setActiveTab] = useState<TopTabId>(defaultActiveTab);
-  const [profileSubTab, setProfileSubTab] = useState<'admin' | 'entity'>('admin');
+  const [profileSubTab, setProfileSubTab] = useState<'admin' | 'entity'>(defaultProfileSubTab);
+
+  useEffect(() => {
+    setProfileSubTab(defaultProfileSubTab);
+  }, [user.userId, defaultProfileSubTab]);
   const initialAccessDates = resolvePcuAccessDates(user, subscriptionRows, initialPcuAccess);
   const [accessStart, setAccessStart] = useState(() => initialAccessDates.accessStart);
   const [accessEnd, setAccessEnd] = useState(() => initialAccessDates.accessEnd);
@@ -257,7 +322,6 @@ export default function UserPcuControlPanel({
   const [filterYear, setFilterYear] = useState<string>('2010');
   const [ordering, setOrdering] = useState<OrderingOption>('ordering');
   const [adminTab, setAdminTab] = useState<'operator' | 'blocks' | 'vip'>('operator');
-  const [adminLang, setAdminLang] = useState<PcuLangKey>('en');
   const [adminSaving, setAdminSaving] = useState(false);
   const [adminSaveError, setAdminSaveError] = useState('');
   const [adminSaveSuccess, setAdminSaveSuccess] = useState('');
@@ -308,30 +372,15 @@ export default function UserPcuControlPanel({
   const [vipUsername, setVipUsername] = useState(() => user.username || '');
   const [vipYoutubeUrl, setVipYoutubeUrl] = useState('');
   const [vipBannerImagePath, setVipBannerImagePath] = useState<string | null>(null);
+  const [vipBannerPreviewBlob, setVipBannerPreviewBlob] = useState<string | null>(null);
+  const [vipBannerVersion, setVipBannerVersion] = useState(0);
   const [vipBannerUploading, setVipBannerUploading] = useState(false);
   const [vipBannerUploadError, setVipBannerUploadError] = useState('');
   const [vipReferencesHtmlByLang, setVipReferencesHtmlByLang] = useState<Record<string, string>>(() =>
     emptyHtmlByLang(),
   );
-  const vipReferencesEditor = useLangHtmlEditor(
-    adminLang,
-    setAdminLang,
-    vipReferencesHtmlByLang,
-    setVipReferencesHtmlByLang,
-  );
   const [vipPriorityLevel, setVipPriorityLevel] = useState('First');
   const [vipFavourite, setVipFavourite] = useState(false);
-  const [profileReferencesHtml, setProfileReferencesHtml] = useState(user.referencesHtml || '');
-  const [profileReferencesLevel, setProfileReferencesLevel] = useState(user.referencesLevel || '1');
-  const [clubReferencesHtml, setClubReferencesHtml] = useState(
-    () => user.entityProfile?.referencesHtml ?? '',
-  );
-  const [clubReferencesLevel, setClubReferencesLevel] = useState(
-    () => user.entityProfile?.referencesLevel ?? '1',
-  );
-  const [clubReferencesSaving, setClubReferencesSaving] = useState(false);
-  const [clubReferencesSaveError, setClubReferencesSaveError] = useState('');
-  const [clubReferencesSaveSuccess, setClubReferencesSaveSuccess] = useState('');
 
   // Admin's settings (single user / athlete) - VIP Settings selections
   const [vipEnabled, setVipEnabled] = useState(false);
@@ -379,13 +428,30 @@ export default function UserPcuControlPanel({
   const [newsCategoriesFollowed, setNewsCategoriesFollowed] = useState<Record<string, boolean>>(() =>
     createNewsCategoriesState(),
   );
-  const [vipDuration, setVipDuration] = useState(() => isoToMmDdYyyy(new Date().toISOString().slice(0, 10)));
+  const [vipDuration, setVipDuration] = useState(() => isoToDdMmYyyy(new Date().toISOString().slice(0, 10)));
   const [vipAllowVisitorsProfile, setVipAllowVisitorsProfile] = useState(true);
   const [vipAllowVisitorsBiography, setVipAllowVisitorsBiography] = useState(true);
   const [vipAllowVisitorsFriendship, setVipAllowVisitorsFriendship] = useState(true);
   const [vipAllowVisitorsMail, setVipAllowVisitorsMail] = useState(true);
 
   const [vipBannerImageFileName, setVipBannerImageFileName] = useState('No file chosen');
+
+  const clearVipBannerPreviewBlob = useCallback(() => {
+    if (vipBannerBlobRef.current) {
+      URL.revokeObjectURL(vipBannerBlobRef.current);
+      vipBannerBlobRef.current = null;
+    }
+    setVipBannerPreviewBlob(null);
+  }, []);
+
+  const vipBannerDisplaySrc = useMemo(() => {
+    if (vipBannerPreviewBlob) return vipBannerPreviewBlob;
+    const resolved = resolvePublicImageUrl(vipBannerImagePath);
+    if (!resolved) return null;
+    return vipBannerVersion > 0 ? `${resolved}?v=${vipBannerVersion}` : resolved;
+  }, [vipBannerPreviewBlob, vipBannerImagePath, vipBannerVersion]);
+
+  useEffect(() => () => clearVipBannerPreviewBlob(), [clearVipBannerPreviewBlob]);
 
   // Functions tab (club-focused UI)
   const [functionsLang, setFunctionsLang] = useState<PcuLangKey>('en');
@@ -475,12 +541,34 @@ export default function UserPcuControlPanel({
   const [trainingMemberPages, setTrainingMemberPages] = useState(false);
 
   const currentSubscriptionExpirationIso = useMemo(() => {
+    const access = accessEnd.trim();
+    if (access && !access.startsWith('0000')) return access;
     const lic = subscriptionExpiration.trim();
     if (lic && !lic.startsWith('0000')) return lic;
-    const end = user.endDateIso?.trim() || '';
-    if (end && !end.startsWith('0000')) return end;
+    const profile = user.endDateIso?.trim() || '';
+    if (profile && !profile.startsWith('0000')) return profile;
     return '';
-  }, [subscriptionExpiration, user.endDateIso]);
+  }, [accessEnd, subscriptionExpiration, user.endDateIso]);
+
+  useEffect(() => {
+    const actual = currentSubscriptionExpirationIso;
+    if (!actual) return;
+    if (subscriptionExpiration !== actual) {
+      setSubscriptionExpiration(actual);
+    }
+  }, [currentSubscriptionExpirationIso, subscriptionExpiration]);
+
+  useEffect(() => {
+    if (!expireExtendEnabled) return;
+    const extended = computeExtendedExpirationIso(
+      currentSubscriptionExpirationIso,
+      expireExtendDays,
+    );
+    if (extended) {
+      setExpireExtendedTo(extended);
+      setExpirationExtendDateError('');
+    }
+  }, [currentSubscriptionExpirationIso, expireExtendEnabled, expireExtendDays]);
 
   const handleExpireExtendedToChange = useCallback(
     (iso: string) => {
@@ -702,16 +790,21 @@ export default function UserPcuControlPanel({
     try {
       const token = localStorage.getItem('adminToken');
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          deletePosts: {
-            types: { question: deletePostsQuestion, suggestion: deletePostsSuggestion, problem: deletePostsProblem },
-            from: deletePostsFrom,
-            to: deletePostsTo,
-          },
-        }),
+        body: JSON.stringify(
+          withPcuEntityScope(
+            {
+              deletePosts: {
+                types: { question: deletePostsQuestion, suggestion: deletePostsSuggestion, problem: deletePostsProblem },
+                from: deletePostsFrom,
+                to: deletePostsTo,
+              },
+            },
+            pcuEntityId,
+          ),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save delete posts');
@@ -751,18 +844,28 @@ export default function UserPcuControlPanel({
 
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const enableFrom = normalizePcuAlertDateToInput(alertMsgEnableFrom);
+      const enableTo = normalizePcuAlertDateToInput(alertMsgEnableTo);
+      setAlertMsgEnableFrom(enableFrom);
+      setAlertMsgEnableTo(enableTo);
+
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          alertMsg: {
-            activated: alertMsgActivated,
-            enableFrom: alertMsgEnableFrom,
-            enableTo: alertMsgEnableTo,
-            showAt: { login: alertMsgShowLogin, logout: alertMsgShowLogout },
-            htmlByLang,
-          },
-        }),
+        body: JSON.stringify(
+          withPcuEntityScope(
+            {
+              alertMsg: {
+                activated: alertMsgActivated,
+                enableFrom,
+                enableTo,
+                showAt: { login: alertMsgShowLogin, logout: alertMsgShowLogout },
+                htmlByLang,
+              },
+            },
+            pcuEntityId,
+          ),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save alert message');
@@ -783,39 +886,44 @@ export default function UserPcuControlPanel({
     try {
       const token = localStorage.getItem('adminToken');
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          idCards: {
-            terms: { creditCard: idCardsCreditCard, sendMoneyLaterDays: idCardsSendMoneyLaterDays },
-            messages: {
-              afterExpeditionNotPaid: {
-                enabled: idCardsMsgAfterExpeditionEnabled,
-                days: idCardsMsgAfterExpeditionDays,
-                htmlByLang: idCardsMsgAfterExpeditionHtmlByLang,
-              },
-              thirdPartyPricelist: {
-                enabled: idCardsThirdPartyEnabled,
-                htmlByLang: idCardsThirdPartyHtmlByLang,
+        body: JSON.stringify(
+          withPcuEntityScope(
+            {
+              idCards: {
+                terms: { creditCard: idCardsCreditCard, sendMoneyLaterDays: idCardsSendMoneyLaterDays },
+                messages: {
+                  afterExpeditionNotPaid: {
+                    enabled: idCardsMsgAfterExpeditionEnabled,
+                    days: idCardsMsgAfterExpeditionDays,
+                    htmlByLang: idCardsMsgAfterExpeditionHtmlByLang,
+                  },
+                  thirdPartyPricelist: {
+                    enabled: idCardsThirdPartyEnabled,
+                    htmlByLang: idCardsThirdPartyHtmlByLang,
+                  },
+                },
+                cardsEnabled: {
+                  tab: idCardsEnabledTab,
+                  from: idCardsFrom,
+                  to: idCardsTo,
+                  blockDate: idCardsBlockDate,
+                  sendEmail: idCardsSendEmail,
+                  allow: {
+                    magnetic: idCardsAllowMagnetic,
+                    rfid: idCardsAllowRfid,
+                    smartcard: idCardsAllowSmartcard,
+                    qr: idCardsAllowQr,
+                  },
+                },
+                history: { query: idCardsHistoryQuery, invoice: idCardsHistoryInvoice, page: idCardsHistoryPage },
               },
             },
-            cardsEnabled: {
-              tab: idCardsEnabledTab,
-              from: idCardsFrom,
-              to: idCardsTo,
-              blockDate: idCardsBlockDate,
-              sendEmail: idCardsSendEmail,
-              allow: {
-                magnetic: idCardsAllowMagnetic,
-                rfid: idCardsAllowRfid,
-                smartcard: idCardsAllowSmartcard,
-                qr: idCardsAllowQr,
-              },
-            },
-            history: { query: idCardsHistoryQuery, invoice: idCardsHistoryInvoice, page: idCardsHistoryPage },
-          },
-        }),
+            pcuEntityId,
+          ),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save ID cards');
@@ -1071,10 +1179,12 @@ export default function UserPcuControlPanel({
     try {
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ functions: buildFunctionsSettingsPayload() }),
+        body: JSON.stringify(
+          withPcuEntityScope({ functions: buildFunctionsSettingsPayload() }, pcuEntityId),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save functions');
@@ -1152,10 +1262,12 @@ export default function UserPcuControlPanel({
     async (functionsPatch: Partial<PcuFunctionsSettings>) => {
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ functions: functionsPatch }),
+        body: JSON.stringify(
+          withPcuEntityScope({ functions: functionsPatch }, pcuEntityId),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save section');
@@ -1163,7 +1275,7 @@ export default function UserPcuControlPanel({
       if (pcu) reloadPcuFromServerRef.current(pcu);
       return pcu;
     },
-    [user.userId],
+    [user.userId, pcuEntityId],
   );
 
   const saveExpirationNotifySection = useCallback(async () => {
@@ -1273,18 +1385,20 @@ export default function UserPcuControlPanel({
       const token = getAdminBearerToken();
       if (!token) return;
       try {
-        const res = await fetch(
-          `/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`,
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({
-              functions: {
-                procedure: buildProcedureSavePayload(nextByTab, tab),
+        const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(
+            withPcuEntityScope(
+              {
+                functions: {
+                  procedure: buildProcedureSavePayload(nextByTab, tab),
+                },
               },
-            }),
-          },
-        );
+              pcuEntityId,
+            ),
+          ),
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) return;
         if (data.pcuSettings) {
@@ -1294,7 +1408,7 @@ export default function UserPcuControlPanel({
         /* optional auto-save; use Save for explicit confirmation */
       }
     },
-    [user.userId],
+    [user.userId, pcuEntityId],
   );
 
   const updateProcedureRows = useCallback(
@@ -1327,19 +1441,38 @@ export default function UserPcuControlPanel({
   }, [activeTab, topTabs, defaultActiveTab]);
 
   const countryCode = countryCodeFromName(user.country);
-  const entityProfileLabel = `${user.roleTitle}_profile`;
   const isSingleUserProfile = user.segment === 'single-user';
+  const ownedEntities = user.ownedEntities ?? [];
+  const selectedEntityId = user.entityId;
+
+  const navigateProfileView = useCallback(
+    (view: 'admin' | { entityId: string }) => {
+      const href = buildPcuHistoryUserUrl(user.userId, {
+        scope: searchParams?.get('scope'),
+        segment: segmentForActions || user.segment,
+        q: searchParams?.get('q'),
+        tab: 'profile',
+        profileSubTab: view === 'admin' ? 'admin' : 'entity',
+        clubId: view === 'admin' ? null : view.entityId,
+      });
+      router.push(href);
+    },
+    [router, searchParams, segmentForActions, user.segment, user.userId],
+  );
+  const profileAvatarRaw =
+    !isSingleUserProfile && profileSubTab === 'entity'
+      ? user.entityImageUrl
+      : user.imageUrl;
+  const profileAvatarSrc = resolvePublicImageUrl(profileAvatarRaw) ?? profileAvatarRaw;
+  const profileAvatarCaption =
+    !isSingleUserProfile && profileSubTab === 'entity' && user.entityProfile
+      ? user.entityProfile.officialName || user.entityProfile.username || user.username
+      : user.username;
   /** Club owner accounts share the athlete-style Admin's settings panel (operator, publishing, VIP, etc.). */
   const showAthleteStyleAdminSettings =
     user.segment === 'single-user' || user.segment === 'clubs';
 
   useEffect(() => {
-    setProfileReferencesHtml(user.referencesHtml || '');
-    setProfileReferencesLevel(user.referencesLevel || '1');
-    setClubReferencesHtml(user.entityProfile?.referencesHtml ?? '');
-    setClubReferencesLevel(user.entityProfile?.referencesLevel ?? '1');
-    setClubReferencesSaveError('');
-    setClubReferencesSaveSuccess('');
     setAdminSaveError('');
     setAdminSaveSuccess('');
   }, [user.userId, user.referencesHtml, user.referencesLevel, user.entityProfile]);
@@ -1406,8 +1539,8 @@ export default function UserPcuControlPanel({
     if (pcu.alertMsg) {
       const am = pcu.alertMsg;
       if (am.activated != null) setAlertMsgActivated(Boolean(am.activated));
-      if (am.enableFrom != null) setAlertMsgEnableFrom(String(am.enableFrom));
-      if (am.enableTo != null) setAlertMsgEnableTo(String(am.enableTo));
+      setAlertMsgEnableFrom(normalizePcuAlertDateToInput(am.enableFrom));
+      setAlertMsgEnableTo(normalizePcuAlertDateToInput(am.enableTo));
       if (am.showAt) {
         if (am.showAt.login != null) setAlertMsgShowLogin(Boolean(am.showAt.login));
         if (am.showAt.logout != null) setAlertMsgShowLogout(Boolean(am.showAt.logout));
@@ -1441,6 +1574,7 @@ export default function UserPcuControlPanel({
     }
     if (pcu.vip) {
       const vip = pcu.vip;
+      clearVipBannerPreviewBlob();
       setVipShowInReferenceList(Boolean(vip.showInReferenceList));
       setVipShowInBanner(Boolean(vip.showInBanner));
       setVipUsernameEnabled(
@@ -1453,6 +1587,7 @@ export default function UserPcuControlPanel({
       setVipYoutubeUrl(vip.youtubeUrl ?? '');
       const bannerPath = vip.bannerImage?.trim() || null;
       setVipBannerImagePath(bannerPath);
+      setVipBannerVersion(bannerPath ? Date.now() : 0);
       setVipBannerImageFileName(
         bannerPath ? bannerPath.split('/').pop() || 'No file chosen' : 'No file chosen',
       );
@@ -1484,7 +1619,7 @@ export default function UserPcuControlPanel({
     if (pcu.functions) {
       applyFunctionsSettingsToForm(pcu.functions);
     }
-  }, [user.username, applyFunctionsSettingsToForm]);
+  }, [user.username, applyFunctionsSettingsToForm, clearVipBannerPreviewBlob]);
 
   const reloadPcuFromServer = useCallback((pcu: PcuSettings | undefined) => {
     if (!pcu) return;
@@ -1497,6 +1632,13 @@ export default function UserPcuControlPanel({
   }, [reloadPcuFromServer]);
 
   useEffect(() => {
+    initialPcuHydratedRef.current = false;
+    clearVipBannerPreviewBlob();
+  }, [user.userId, pcuEntityId, clearVipBannerPreviewBlob]);
+
+  useEffect(() => {
+    if (!initialPcuSettings || initialPcuHydratedRef.current) return;
+    initialPcuHydratedRef.current = true;
     applyPcuSettingsToForm(initialPcuSettings);
   }, [initialPcuSettings, applyPcuSettingsToForm]);
 
@@ -1630,10 +1772,10 @@ export default function UserPcuControlPanel({
     async (bannerImage: string | null) => {
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ vip: { bannerImage } }),
+        body: JSON.stringify(withPcuEntityScope({ vip: { bannerImage } }, pcuEntityId)),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save banner');
@@ -1641,7 +1783,7 @@ export default function UserPcuControlPanel({
         loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
       }
     },
-    [user.userId],
+    [user.userId, pcuEntityId],
   );
 
   const handleVipBannerFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -1651,6 +1793,11 @@ export default function UserPcuControlPanel({
     setVipBannerUploadError('');
     setVipBannerUploading(true);
     setVipBannerImageFileName(file.name);
+
+    clearVipBannerPreviewBlob();
+    const localPreview = URL.createObjectURL(file);
+    vipBannerBlobRef.current = localPreview;
+    setVipBannerPreviewBlob(localPreview);
 
     try {
       const token = getAdminBearerToken();
@@ -1669,9 +1816,18 @@ export default function UserPcuControlPanel({
       const path = typeof uploadData.path === 'string' ? uploadData.path : '';
       if (!path) throw new Error('Upload did not return a file path');
 
+      clearVipBannerPreviewBlob();
       setVipBannerImagePath(path);
+      setVipBannerVersion(Date.now());
       await persistVipBannerImage(path);
+      if (loadedPcuSettingsRef.current?.vip) {
+        loadedPcuSettingsRef.current = {
+          ...loadedPcuSettingsRef.current,
+          vip: { ...loadedPcuSettingsRef.current.vip, bannerImage: path },
+        };
+      }
     } catch (err: unknown) {
+      clearVipBannerPreviewBlob();
       setVipBannerUploadError(err instanceof Error ? err.message : 'Failed to upload banner');
       setVipBannerImageFileName(
         vipBannerImagePath ? vipBannerImagePath.split('/').pop() || 'No file chosen' : 'No file chosen',
@@ -1686,7 +1842,9 @@ export default function UserPcuControlPanel({
     setVipBannerUploadError('');
     setVipBannerUploading(true);
     try {
+      clearVipBannerPreviewBlob();
       setVipBannerImagePath(null);
+      setVipBannerVersion(0);
       setVipBannerImageFileName('No file chosen');
       await persistVipBannerImage(null);
     } catch (err: unknown) {
@@ -1703,10 +1861,10 @@ export default function UserPcuControlPanel({
     try {
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(buildAdminSettingsPayload()),
+        body: JSON.stringify(withPcuEntityScope(buildAdminSettingsPayload(), pcuEntityId)),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save settings');
@@ -1786,6 +1944,11 @@ export default function UserPcuControlPanel({
     }
   }, [user.segment]);
 
+  const alreadyRenewed = useMemo(
+    () => hasPendingMembershipRenewal(subscriptionRows),
+    [subscriptionRows],
+  );
+
   useEffect(() => {
     if (profilePanel) {
       setTagUser(Boolean(profilePanel.tagged));
@@ -1823,49 +1986,6 @@ export default function UserPcuControlPanel({
   }, [accessStart, accessEnd, suspendAccessControl, suspend]);
 
   const isFavourite = favouritePriority !== 'not_selected';
-
-  const saveClubReferences = useCallback(async () => {
-    const token = getAdminBearerToken();
-    if (!token) {
-      setClubReferencesSaveError('Admin session not found. Please log in again.');
-      return;
-    }
-    if (!user.entityId) {
-      setClubReferencesSaveError('No club selected for this user.');
-      return;
-    }
-
-    setClubReferencesSaving(true);
-    setClubReferencesSaveError('');
-    setClubReferencesSaveSuccess('');
-    try {
-      const res = await fetch(
-        `/api/admin/registered-users/${encodeURIComponent(user.userId)}/club-references`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            clubId: user.entityId,
-            referencesHtml: clubReferencesHtml,
-            referencesLevel: clubReferencesLevel,
-          }),
-        },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to save club references');
-      setClubReferencesSaveSuccess('Saved');
-      window.setTimeout(() => setClubReferencesSaveSuccess(''), 2500);
-    } catch (e: unknown) {
-      setClubReferencesSaveError(
-        e instanceof Error ? e.message : 'Failed to save club references',
-      );
-    } finally {
-      setClubReferencesSaving(false);
-    }
-  }, [user.userId, user.entityId, clubReferencesHtml, clubReferencesLevel]);
 
   const saveProfilePanelSettings = useCallback(
     async (patch: { tagged?: boolean; favouritePriority?: FavouritePriority }) => {
@@ -1924,6 +2044,15 @@ export default function UserPcuControlPanel({
         suspend: patch.suspend ?? prev.suspend,
       };
 
+      if (
+        merged.accessStartIso.trim() &&
+        merged.accessEndIso.trim() &&
+        merged.accessEndIso < merged.accessStartIso
+      ) {
+        window.alert('End date cannot be earlier than start date.');
+        return;
+      }
+
       setAccessStart(merged.accessStartIso);
       setAccessEnd(merged.accessEndIso);
       setSuspendAccessControl(merged.suspendAccessControl);
@@ -1956,7 +2085,12 @@ export default function UserPcuControlPanel({
               Authorization: `Bearer ${token}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify(merged),
+            body: JSON.stringify({
+              ...merged,
+              clubId: user.entityId ?? undefined,
+              entityId: user.entityId ?? undefined,
+              entityKind: user.entityKind ?? undefined,
+            }),
           },
         );
         const data = await res.json().catch(() => ({}));
@@ -1978,6 +2112,9 @@ export default function UserPcuControlPanel({
             suspend: Boolean(data.pcuAccess.suspend),
           };
         }
+        if (onAccessDatesSaved && ('accessStartIso' in patch || 'accessEndIso' in patch)) {
+          await onAccessDatesSaved();
+        }
       } catch (e: unknown) {
         setAccessStart(prev.accessStart);
         setAccessEnd(prev.accessEnd);
@@ -1989,7 +2126,7 @@ export default function UserPcuControlPanel({
         setPcuAccessSaving(false);
       }
     },
-    [user, subscriptionRows],
+    [user, subscriptionRows, onAccessDatesSaved],
   );
 
   const resolveActionUserIds = useCallback((): string[] => {
@@ -2158,29 +2295,33 @@ export default function UserPcuControlPanel({
     }
   }, [backHref, resolveActionUserIds, router, segmentForActions, user.fullname, user.username]);
 
-  const handleOpenProfile = () => {
-    if (user.dashboardPath) {
-      window.open(user.dashboardPath, '_blank', 'noopener,noreferrer');
-    }
-  };
-
   const handleAdminSettings = () => {
     // PCU Admin's settings is handled in-panel; keep routing for future deep-links if needed.
   };
 
   return (
-    <div className="print-area w-full max-w-5xl mx-auto">
+    <div className="print-area w-full min-w-0 max-w-5xl mx-auto">
       <div className="bg-gray-200 border border-gray-300 rounded shadow-sm">
-        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300">
-          <div className="flex items-center gap-3">
-            <button type="button" className="p-1.5 rounded hover:bg-gray-300" title="Menu">
+        <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-gray-300">
+          <div className="flex items-center gap-3 min-w-0">
+            <button type="button" className="p-1.5 rounded hover:bg-gray-300 shrink-0" title="Menu">
               <span className="block w-5 h-0.5 bg-gray-700 mb-1" />
               <span className="block w-5 h-0.5 bg-gray-700 mb-1" />
               <span className="block w-5 h-0.5 bg-gray-700" />
             </button>
-            <div className="text-sm font-semibold text-red-700">Panel control about the User</div>
+            <div className="text-sm font-semibold text-red-700 whitespace-nowrap">
+              Panel control about the User
+            </div>
+            <button
+              type="button"
+              className="text-sm font-semibold text-red-700 hover:underline whitespace-nowrap"
+              onClick={() => router.push('/admin/all')}
+            >
+              Back to the List
+            </button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0" />
+          <div className="flex items-center gap-2 shrink-0">
             {overviewHref ? (
               <button
                 type="button"
@@ -2261,26 +2402,28 @@ export default function UserPcuControlPanel({
               </button>
               <div className="flex items-center gap-2 text-sm">
                 <span>Start</span>
-                <input
-                  type="date"
+                <AdminPcuDatePicker
                   value={accessStart}
                   disabled={pcuAccessSaving}
-                  onChange={(e) => void savePcuAccessSettings({ accessStartIso: e.target.value })}
-                  className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm disabled:opacity-60"
+                  onChange={(iso) => void savePcuAccessSettings({ accessStartIso: iso })}
+                  className="w-32"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
                 <CreditCard className="w-5 h-5 text-gray-600" />
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <span>End</span>
-                <input
-                  type="date"
+                <AdminPcuDatePicker
                   value={accessEnd}
+                  minDateIso={accessStart || undefined}
                   disabled={pcuAccessSaving}
-                  onChange={(e) => void savePcuAccessSettings({ accessEndIso: e.target.value })}
-                  className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm text-red-600 disabled:opacity-60"
+                  onChange={(iso) => void savePcuAccessSettings({ accessEndIso: iso })}
+                  className="w-32 text-red-600"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
+                {alreadyRenewed ? (
+                  <span className="text-green-600 font-semibold">(already renewed)</span>
+                ) : null}
               </div>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
@@ -2326,6 +2469,13 @@ export default function UserPcuControlPanel({
             onClick={() => {
               setActiveTab(tab.id);
               if (tab.id === 'admin') handleAdminSettings();
+              if (typeof window !== 'undefined') {
+                const params = new URLSearchParams(window.location.search);
+                params.set('tab', tab.id);
+                router.replace(`${window.location.pathname}?${params.toString()}`, {
+                  scroll: false,
+                });
+              }
             }}
             className={`px-3 py-2 text-xs sm:text-sm font-medium border-r border-gray-400 last:border-r-0 ${
               activeTab === tab.id
@@ -2355,37 +2505,44 @@ export default function UserPcuControlPanel({
               >
                 BACK
               </button>
-              <button
-                type="button"
-                onClick={handleOpenProfile}
-                className="px-3 py-1.5 bg-gray-600 text-white text-sm rounded"
-              >
-                Open user profile
-              </button>
             </div>
 
             <div className="px-4">
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setProfileSubTab('admin')}
-                  className={`px-4 py-2 text-sm font-semibold rounded-t ${
+                  onClick={() => navigateProfileView('admin')}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t ${
                     profileSubTab === 'admin' ? 'bg-black text-white' : 'bg-gray-400 text-gray-900'
                   }`}
                 >
                   {isSingleUserProfile ? 'User Profile' : 'Admin Profile'}
                 </button>
-                {isSingleUserProfile ? null : (
-                  <button
-                    type="button"
-                    onClick={() => setProfileSubTab('entity')}
-                    className={`px-4 py-2 text-sm font-semibold rounded-t ${
-                      profileSubTab === 'entity' ? 'bg-black text-white' : 'bg-gray-400 text-gray-900'
-                    }`}
-                  >
-                    {entityProfileLabel}
-                  </button>
-                )}
+                {isSingleUserProfile
+                  ? null
+                  : ownedEntities.map((entity) => {
+                      const isActive =
+                        profileSubTab === 'entity' && selectedEntityId === entity.id;
+                      return (
+                        <button
+                          key={entity.id}
+                          type="button"
+                          onClick={() => navigateProfileView({ entityId: entity.id })}
+                          className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t ${
+                            isActive ? 'bg-black text-white' : 'bg-gray-400 text-gray-900'
+                          }`}
+                          title={entity.tabLabel}
+                        >
+                          <span
+                            className={`inline-block h-3 w-3 shrink-0 rounded-full ${
+                              isActive ? 'bg-green-500' : 'bg-red-500'
+                            }`}
+                            aria-hidden
+                          />
+                          <span>{entity.tabLabel}</span>
+                        </button>
+                      );
+                    })}
               </div>
               <div className="border-b border-gray-300" />
             </div>
@@ -2402,24 +2559,25 @@ export default function UserPcuControlPanel({
                 <div className="grid gap-4 md:grid-cols-[160px_1fr]">
                   <div className="flex flex-col items-center gap-2">
                     <div className="w-24 h-24 bg-gray-200 border border-gray-300 overflow-hidden flex items-center justify-center">
-                      {user.imageUrl ? (
-                        isDataUrl(user.imageUrl) ? (
+                      {profileAvatarSrc ? (
+                        isDataUrl(profileAvatarSrc) ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={user.imageUrl} alt="" className="w-full h-full object-cover" />
+                          <img src={profileAvatarSrc} alt="" className="w-full h-full object-cover" />
                         ) : (
                           <Image
-                            src={user.imageUrl}
+                            src={profileAvatarSrc}
                             alt=""
                             width={96}
                             height={96}
                             className="object-cover w-full h-full"
+                            unoptimized
                           />
                         )
                       ) : (
                         <User className="w-10 h-10 text-gray-500" />
                       )}
                     </div>
-                    <div className="text-sm text-gray-600 text-center">{user.username}</div>
+                    <div className="text-sm text-gray-600 text-center">{profileAvatarCaption}</div>
                   </div>
 
                   <div className="space-y-2">
@@ -2467,28 +2625,11 @@ export default function UserPcuControlPanel({
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
                               References
                             </div>
-                            <div className="border border-gray-300 p-3 bg-white">
-                              <CKEditorComponent
-                                value={profileReferencesHtml}
-                                onChange={(html) => setProfileReferencesHtml(html)}
-                                minHeightPx={260}
-                                placeholder=""
-                              />
-                              <div className="mt-3 grid grid-cols-[120px_1fr] items-center gap-2">
-                                <label className="text-sm text-gray-700">References level</label>
-                                <select
-                                  value={profileReferencesLevel}
-                                  onChange={(e) => setProfileReferencesLevel(e.target.value)}
-                                  className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm w-24"
-                                >
-                                  {['1', '2', '3', '4', '5', '6'].map((n) => (
-                                    <option key={n} value={n}>
-                                      {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
+                            <ProfileReferencesReadOnly
+                              referencesHtml={user.referencesHtml}
+                              referencesLevel={user.referencesLevel}
+                              emptyMessage="No admin references have been added yet."
+                            />
                           </div>
                         </>
                       ) : profileSubTab === 'admin' ? (
@@ -2520,31 +2661,14 @@ export default function UserPcuControlPanel({
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
                               References
                             </div>
-                            <div className="border border-gray-300 p-3 bg-white">
-                              <CKEditorComponent
-                                value={profileReferencesHtml}
-                                onChange={(html) => setProfileReferencesHtml(html)}
-                                minHeightPx={260}
-                                placeholder=""
-                              />
-                              <div className="mt-3 grid grid-cols-[120px_1fr] items-center gap-2">
-                                <label className="text-sm text-gray-700">References level</label>
-                                <select
-                                  value={profileReferencesLevel}
-                                  onChange={(e) => setProfileReferencesLevel(e.target.value)}
-                                  className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm w-24"
-                                >
-                                  {['1', '2', '3', '4', '5', '6'].map((n) => (
-                                    <option key={n} value={n}>
-                                      {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
+                            <ProfileReferencesReadOnly
+                              referencesHtml={user.referencesHtml}
+                              referencesLevel={user.referencesLevel}
+                              emptyMessage="No admin references have been added yet."
+                            />
                           </div>
                         </>
-                      ) : user.segment === 'clubs' && user.entityProfile ? (
+                      ) : profileSubTab === 'entity' && user.entityProfile ? (
                         <>
                           <ProfileField label="Username*" value={user.entityProfile.username} />
                           <ProfileField label="Official name" value={user.entityProfile.officialName} />
@@ -2572,52 +2696,32 @@ export default function UserPcuControlPanel({
 
                           <div className="mt-6">
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
-                              References of the club
+                              {user.segment === 'clubs'
+                                ? 'References of the club'
+                                : `References of the ${user.roleTitle.toLowerCase()}`}
                             </div>
-                            <div className="border border-gray-300 p-3 bg-white">
-                              <CKEditorComponent
-                                value={clubReferencesHtml}
-                                onChange={(html) => setClubReferencesHtml(html)}
-                                minHeightPx={260}
-                                placeholder=""
-                              />
-                              <div className="mt-3 grid grid-cols-[120px_1fr] items-center gap-2">
-                                <label className="text-sm text-gray-700">References level</label>
-                                <select
-                                  value={clubReferencesLevel}
-                                  onChange={(e) => setClubReferencesLevel(e.target.value)}
-                                  className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm w-24"
-                                >
-                                  {['1', '2', '3', '4', '5', '6'].map((n) => (
-                                    <option key={n} value={n}>
-                                      {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => void saveClubReferences()}
-                                  disabled={clubReferencesSaving}
-                                  className="px-8 py-2 bg-red-600 text-white text-sm font-semibold rounded disabled:opacity-50"
-                                >
-                                  {clubReferencesSaving ? 'Saving…' : 'Save'}
-                                </button>
-                              </div>
-                              {clubReferencesSaveError ? (
-                                <p className="mt-2 text-center text-sm text-red-600">
-                                  {clubReferencesSaveError}
-                                </p>
-                              ) : null}
-                              {clubReferencesSaveSuccess ? (
-                                <p className="mt-2 text-center text-sm text-green-700">
-                                  {clubReferencesSaveSuccess}
-                                </p>
-                              ) : null}
-                            </div>
+                            <ProfileReferencesReadOnly
+                              referencesHtml={user.entityProfile.referencesHtml}
+                              referencesLevel={user.entityProfile.referencesLevel}
+                              emptyMessage={
+                                user.segment === 'clubs'
+                                  ? 'No club references have been added yet.'
+                                  : `No ${user.roleTitle.toLowerCase()} references have been added yet.`
+                              }
+                            />
                           </div>
                         </>
+                      ) : profileSubTab === 'entity' ? (
+                        <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
+                          <p className="text-sm font-semibold text-gray-800">
+                            Select a {user.roleTitle.toLowerCase()} tab above to view its profile.
+                          </p>
+                          {ownedEntities.length === 0 ? (
+                            <p className="mt-2 text-sm text-gray-600">
+                              This admin has no registered {user.roleTitle.toLowerCase()} profiles yet.
+                            </p>
+                          ) : null}
+                        </div>
                       ) : (
                         <>
                           <ProfileField label="Username*" value={user.username} />
@@ -2639,28 +2743,11 @@ export default function UserPcuControlPanel({
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
                               References
                             </div>
-                            <div className="border border-gray-300 p-3 bg-white">
-                              <CKEditorComponent
-                                value={profileReferencesHtml}
-                                onChange={(html) => setProfileReferencesHtml(html)}
-                                minHeightPx={260}
-                                placeholder=""
-                              />
-                              <div className="mt-3 grid grid-cols-[120px_1fr] items-center gap-2">
-                                <label className="text-sm text-gray-700">References level</label>
-                                <select
-                                  value={profileReferencesLevel}
-                                  onChange={(e) => setProfileReferencesLevel(e.target.value)}
-                                  className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm w-24"
-                                >
-                                  {['1', '2', '3', '4', '5', '6'].map((n) => (
-                                    <option key={n} value={n}>
-                                      {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
+                            <ProfileReferencesReadOnly
+                              referencesHtml={user.referencesHtml}
+                              referencesLevel={user.referencesLevel}
+                              emptyMessage="No references have been added yet."
+                            />
                           </div>
                         </>
                       )}
@@ -2699,7 +2786,10 @@ export default function UserPcuControlPanel({
                       <strong>Location:</strong> {user.locality || user.cityClubTeam || '—'}
                     </div>
                     <div>
-                      <strong>Official {user.roleTitle}name:</strong> {user.entityName || '—'}
+                      <strong>Official {user.roleTitle}name:</strong>{' '}
+                      <span className="text-base font-bold text-red-600">
+                        {user.entityName || '—'}
+                      </span>
                     </div>
                     <div>
                       <strong>Sport</strong> {user.sport || '—'}
@@ -2950,11 +3040,23 @@ export default function UserPcuControlPanel({
                               <td className="px-2 py-2">{r.username || user.username}</td>
                               <td className="px-2 py-2">{user.roleTitle}</td>
                               <td className="px-2 py-2">{r.version}</td>
-                              <td className="px-2 py-2">{accessStart || r.dateStart}</td>
-                              <td className="px-2 py-2">{accessEnd || r.dateEnd || '—'}</td>
+                              <td className={`px-2 py-2 whitespace-nowrap ${subscriptionPeriodDateClassName(r.status)}`}>
+                                {formatPcuIsoDate(r.dateStart)}
+                              </td>
+                              <td className={`px-2 py-2 whitespace-nowrap ${subscriptionPeriodDateClassName(r.status)}`}>
+                                {formatPcuIsoDate(r.dateEnd) || '—'}
+                              </td>
                               <td className="px-2 py-2">{String(user.logs ?? 0)}</td>
                               <td className="px-2 py-2">{r.e}</td>
-                              <td className="px-2 py-2">{r.status}</td>
+                              <td className="px-2 py-2">
+                                <NotYetActivePeriodEditControl
+                                  userId={user.userId}
+                                  entityId={user.entityId}
+                                  entityKind={user.entityKind}
+                                  row={r}
+                                  onSaved={onAccessDatesSaved}
+                                />
+                              </td>
                             </tr>
                           ))
                         ) : (
@@ -3112,11 +3214,10 @@ export default function UserPcuControlPanel({
                                   checked={enableBlogs}
                                   onChange={(e) => setEnableBlogs(e.target.checked)}
                                 />
-                                <input
-                                  type="date"
+                                <AdminPcuDatePicker
                                   value={blogsDate}
-                                  onChange={(e) => setBlogsDate(e.target.value)}
-                                  className="px-2 py-1 border border-gray-300 flex-1"
+                                  onChange={setBlogsDate}
+                                  className="flex-1"
                                 />
                               </div>
                             </div>
@@ -3327,7 +3428,19 @@ export default function UserPcuControlPanel({
                                   <input
                                     type="checkbox"
                                     checked={!!vipTypes[k]}
-                                    onChange={(e) => setVipTypes((p) => ({ ...p, [k]: e.target.checked }))}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setVipTypes((p) => {
+                                        if (k === 'all') {
+                                          const next: Record<string, boolean> = { ...p, all: checked };
+                                          for (const key of Object.keys(p)) {
+                                            if (key !== 'all') next[key] = checked;
+                                          }
+                                          return next;
+                                        }
+                                        return { ...p, [k]: checked, all: false };
+                                      });
+                                    }}
                                   />
                                   <span className={k === 'all' ? 'font-semibold' : ''}>{label}</span>
                                 </label>
@@ -3353,9 +3466,19 @@ export default function UserPcuControlPanel({
                                   <input
                                     type="checkbox"
                                     checked={!!vipVisibleToUserTypes[k]}
-                                    onChange={(e) =>
-                                      setVipVisibleToUserTypes((p) => ({ ...p, [k]: e.target.checked }))
-                                    }
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setVipVisibleToUserTypes((p) => {
+                                        if (k === 'all') {
+                                          const next: Record<string, boolean> = { ...p, all: checked };
+                                          for (const key of Object.keys(p)) {
+                                            if (key !== 'all') next[key] = checked;
+                                          }
+                                          return next;
+                                        }
+                                        return { ...p, [k]: checked, all: false };
+                                      });
+                                    }}
                                   />
                                   <span className={k === 'all' ? 'font-semibold' : ''}>{label}</span>
                                 </label>
@@ -3371,7 +3494,19 @@ export default function UserPcuControlPanel({
                                   <input
                                     type="checkbox"
                                     checked={!!vipLanguagesAllowed[k]}
-                                    onChange={(e) => setVipLanguagesAllowed((p) => ({ ...p, [k]: e.target.checked }))}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setVipLanguagesAllowed((p) => {
+                                        if (k === 'all') {
+                                          const next: Record<string, boolean> = { ...p, all: checked };
+                                          for (const key of Object.keys(p)) {
+                                            if (key !== 'all') next[key] = checked;
+                                          }
+                                          return next;
+                                        }
+                                        return { ...p, [k]: checked, all: false };
+                                      });
+                                    }}
                                   />
                                   <span className={k === 'all' ? 'font-semibold' : ''}>
                                     {k === 'all' ? 'select all languages' : k}
@@ -3423,8 +3558,8 @@ export default function UserPcuControlPanel({
                           <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-4 items-center mt-4">
                             <div className="text-sm text-gray-700">Duration</div>
                             <AdminPcuDatePicker
-                              value={mmDdYyyyToIso(vipDuration)}
-                              onChange={(iso) => setVipDuration(isoToMmDdYyyy(iso))}
+                              value={ddMmYyyyToIso(vipDuration)}
+                              onChange={(iso) => setVipDuration(isoToDdMmYyyy(iso))}
                             />
                           </div>
 
@@ -3502,12 +3637,18 @@ export default function UserPcuControlPanel({
                               </div>
 
                               <div className="mt-3 bg-gray-100 border border-gray-200 h-44 flex items-center justify-center overflow-hidden relative">
-                                {vipBannerImagePath ? (
+                                {vipBannerDisplaySrc ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
-                                    src={vipBannerImagePath}
+                                    key={vipBannerDisplaySrc}
+                                    src={vipBannerDisplaySrc}
                                     alt="VIP reference banner"
                                     className="w-full h-full object-contain"
+                                    onError={() =>
+                                      setVipBannerUploadError(
+                                        'Banner preview could not load. Save again or re-upload the image.',
+                                      )
+                                    }
                                   />
                                 ) : (
                                   <span className="text-4xl font-semibold text-gray-400 text-center leading-tight">
@@ -3549,63 +3690,68 @@ export default function UserPcuControlPanel({
 
                           <div className="mt-6">
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
-                              References
+                              References of the admin
                             </div>
-                            <div className="border border-gray-300 p-3 bg-white">
-                              <div className="flex flex-wrap gap-3 text-sm mb-2">
-                                {LANG_KEYS.map((l) => (
-                                  <button
-                                    key={l}
-                                    type="button"
-                                    onClick={() => vipReferencesEditor.switchLang(l)}
-                                    className={`px-2 py-1 border ${adminLang === l ? 'border-red-600 text-red-700' : 'border-transparent'} `}
-                                  >
-                                    {l}
-                                  </button>
-                                ))}
-                              </div>
-                              <CKEditorComponent
-                                instanceId="vip-references-editor"
-                                localeKey={vipReferencesEditor.localeKey}
-                                registerGetData={vipReferencesEditor.registerGetData}
-                                value={vipReferencesEditor.editorValue}
-                                onChange={vipReferencesEditor.onEditorChange}
-                                minHeightPx={260}
-                                placeholder=""
-                              />
-                              <div className="mt-3 flex flex-wrap items-center gap-6 text-sm">
-                                <div className="flex items-center gap-2">
-                                  <span>Priority Level :</span>
-                                  <select
-                                    value={vipPriorityLevel}
-                                    onChange={(e) => setVipPriorityLevel(e.target.value)}
-                                    className="px-2 py-1 border border-gray-300 bg-white"
-                                  >
-                                    {['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth'].map((p) => (
-                                      <option key={p} value={p}>
-                                        {p}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <label className="inline-flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={vipFavourite}
-                                    onChange={(e) => setVipFavourite(e.target.checked)}
-                                  />
-                                  Favourite VIP
-                                </label>
-                              </div>
+                            <ProfileReferencesReadOnly
+                              referencesHtml={user.referencesHtml}
+                              referencesLevel={user.referencesLevel}
+                              emptyMessage="No admin references have been added yet."
+                            />
+                          </div>
 
-                              <AdminSettingsSaveBar
-                                saving={adminSaving}
-                                error={adminSaveError}
-                                success={adminSaveSuccess}
-                                onSave={() => void saveAdminSettings()}
-                                onCancel={resetAdminSettingsForm}
+                          {user.entityProfile ? (
+                            <div className="mt-6">
+                              <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
+                                {user.segment === 'clubs'
+                                  ? 'References of the club'
+                                  : `References of the ${user.roleTitle.toLowerCase()}`}
+                              </div>
+                              <ProfileReferencesReadOnly
+                                referencesHtml={user.entityProfile.referencesHtml}
+                                referencesLevel={user.entityProfile.referencesLevel}
+                                emptyMessage={
+                                  user.segment === 'clubs'
+                                    ? 'No club references have been added yet.'
+                                    : `No ${user.roleTitle.toLowerCase()} references have been added yet.`
+                                }
                               />
                             </div>
+                          ) : null}
+
+                          <div className="mt-6 border border-gray-300 p-3 bg-white">
+                            <div className="text-sm font-semibold mb-3">VIP list settings</div>
+                            <div className="flex flex-wrap items-center gap-6 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span>Priority Level :</span>
+                                <select
+                                  value={vipPriorityLevel}
+                                  onChange={(e) => setVipPriorityLevel(e.target.value)}
+                                  className="px-2 py-1 border border-gray-300 bg-white"
+                                >
+                                  {['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth'].map((p) => (
+                                    <option key={p} value={p}>
+                                      {p}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <label className="inline-flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={vipFavourite}
+                                  onChange={(e) => setVipFavourite(e.target.checked)}
+                                />
+                                Favourite VIP
+                              </label>
+                            </div>
+
+                            <AdminSettingsSaveBar
+                              saving={adminSaving}
+                              error={adminSaveError}
+                              success={adminSaveSuccess}
+                              onSave={() => void saveAdminSettings()}
+                              onCancel={resetAdminSettingsForm}
+                            />
                           </div>
                         </div>
                       </div>
@@ -3692,11 +3838,10 @@ export default function UserPcuControlPanel({
                         <label className="text-sm">
                           Date of expiration of the subscription to Movesbook and related licenses:
                         </label>
-                        <input
-                          type="date"
+                        <AdminPcuDatePicker
                           value={subscriptionExpiration}
-                          onChange={(e) => setSubscriptionExpiration(e.target.value)}
-                          className="px-2 py-1 border border-gray-300 w-40"
+                          onChange={setSubscriptionExpiration}
+                          className="w-40"
                         />
                       </div>
                       <div className="grid grid-cols-[260px_1fr] items-center gap-2">
@@ -4192,13 +4337,39 @@ export default function UserPcuControlPanel({
                         <input
                           type="checkbox"
                           checked={expireExtendEnabled}
-                          onChange={(e) => setExpireExtendEnabled(e.target.checked)}
+                          onChange={(e) => {
+                            const enabled = e.target.checked;
+                            setExpireExtendEnabled(enabled);
+                            if (enabled) {
+                              const extended = computeExtendedExpirationIso(
+                                currentSubscriptionExpirationIso,
+                                expireExtendDays,
+                              );
+                              if (extended) {
+                                setExpireExtendedTo(extended);
+                                setExpirationExtendDateError('');
+                              }
+                            }
+                          }}
                         />
                         enable the extension of date for
                       </label>
                       <input
                         value={expireExtendDays}
-                        onChange={(e) => setExpireExtendDays(e.target.value)}
+                        onChange={(e) => {
+                          const nextDays = e.target.value;
+                          setExpireExtendDays(nextDays);
+                          if (expireExtendEnabled) {
+                            const extended = computeExtendedExpirationIso(
+                              currentSubscriptionExpirationIso,
+                              nextDays,
+                            );
+                            if (extended) {
+                              setExpireExtendedTo(extended);
+                              setExpirationExtendDateError('');
+                            }
+                          }
+                        }}
                         className="px-2 py-1 border border-gray-300 w-16 text-center"
                       />
                       <span>days after the expiration date of the current subscription</span>
@@ -4213,7 +4384,7 @@ export default function UserPcuControlPanel({
                           readOnly
                           value={
                             currentSubscriptionExpirationIso
-                              ? isoToMmDdYyyy(currentSubscriptionExpirationIso)
+                              ? isoToDdMmYyyy(currentSubscriptionExpirationIso)
                               : ''
                           }
                           placeholder="—"
@@ -5222,27 +5393,17 @@ export default function UserPcuControlPanel({
                   <div className="flex items-center justify-center gap-3 text-sm mb-6">
                     <span className="font-semibold">From</span>
                     <div className="flex items-center gap-2">
-                      <input
-                        type="date"
+                      <AdminPcuDatePicker
                         value={deletePostsFrom}
-                        onChange={(e) => setDeletePostsFrom(e.target.value)}
-                        className="px-3 py-2 border border-gray-300"
+                        onChange={setDeletePostsFrom}
                       />
-                      <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
-                        📅
-                      </span>
                     </div>
                     <span className="font-semibold">To</span>
                     <div className="flex items-center gap-2">
-                      <input
-                        type="date"
+                      <AdminPcuDatePicker
                         value={deletePostsTo}
-                        onChange={(e) => setDeletePostsTo(e.target.value)}
-                        className="px-3 py-2 border border-gray-300"
+                        onChange={setDeletePostsTo}
                       />
-                      <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
-                        📅
-                      </span>
                     </div>
                   </div>
 
@@ -5308,28 +5469,18 @@ export default function UserPcuControlPanel({
 
                       <div className="flex items-center gap-2">
                         <span>Enable From</span>
-                        <input
-                          type="date"
+                        <AdminPcuDatePicker
                           value={alertMsgEnableFrom}
-                          onChange={(e) => setAlertMsgEnableFrom(e.target.value)}
-                          className="px-2 py-1 border border-gray-300"
+                          onChange={setAlertMsgEnableFrom}
                         />
-                        <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
-                          📅
-                        </span>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <span>To</span>
-                        <input
-                          type="date"
+                        <AdminPcuDatePicker
                           value={alertMsgEnableTo}
-                          onChange={(e) => setAlertMsgEnableTo(e.target.value)}
-                          className="px-2 py-1 border border-gray-300"
+                          onChange={setAlertMsgEnableTo}
                         />
-                        <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
-                          📅
-                        </span>
                       </div>
                     </div>
 

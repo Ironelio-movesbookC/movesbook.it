@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -154,7 +155,7 @@ export function SearchResultUserWallLeftSidebar({
           <div className="flex gap-3">
             <div className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded border border-zinc-600 bg-zinc-800">
               {image ? (
-                <img src={image} alt="" className="h-full w-full object-cover" />
+                <Image src={image} alt="" className="h-full w-full object-cover" width={48} height={48} unoptimized />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500">
                   —

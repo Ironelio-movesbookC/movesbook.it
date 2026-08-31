@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { User, Mail, Calendar, Users, Award, Trophy, Settings as SettingsIcon } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
@@ -16,6 +17,15 @@ import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubAdminInfoForm from '@/components/profile/ClubAdminInfoForm';
 import MemberSelfProfilePanel from '@/components/profile/MemberSelfProfilePanel';
+
+const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), {
+  ssr: false,
+  loading: () => (
+    <div className="min-h-[200px] rounded border border-gray-300 bg-white p-4 text-sm text-gray-500">
+      Loading editor…
+    </div>
+  ),
+});
 
 interface UserProfileData {
   id: string;
@@ -54,6 +64,8 @@ interface UserProfileData {
     workoutTemplates: number;
     clubMemberships: number;
   };
+  referencesHtml?: string;
+  referencesLevel?: string;
 }
 
 type ProfileFormState = {
@@ -135,6 +147,8 @@ export default function UserProfile({
   const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
   const [avatarOverride, setAvatarOverride] = useState<string | null | undefined>(undefined);
   const [bannerOverride, setBannerOverride] = useState<AthleteLegacyBannerProfile | null>(null);
+  const [referencesHtml, setReferencesHtml] = useState('');
+  const [referencesLevel, setReferencesLevel] = useState('1');
 
   const applyProfileToForm = useCallback((data: UserProfileData) => {
     setForm({
@@ -149,6 +163,8 @@ export default function UserProfile({
       youtubeChannelUrl: data.youtubeChannelUrl ?? '',
       mainSports: data.mainSports?.map((s) => s.sport) ?? [],
     });
+    setReferencesHtml(data.referencesHtml ?? '');
+    setReferencesLevel(data.referencesLevel?.trim() || '1');
   }, []);
 
   const loadProfile = useCallback(async () => {
@@ -237,6 +253,12 @@ export default function UserProfile({
           telegramAccount: form.telegramAccount.trim() || null,
           youtubeChannelUrl: form.youtubeChannelUrl.trim() || null,
           mainSports: form.mainSports,
+          ...(profile && isClubAccountUserType(profile.userType)
+            ? {
+                referencesHtml,
+                referencesLevel,
+              }
+            : {}),
         }),
       });
 
@@ -420,17 +442,40 @@ export default function UserProfile({
               ← Back to dashboard
             </Link>
             <span className="text-gray-300">|</span>
-            <a href={`#${infoSectionId}`} className="text-gray-600 hover:text-gray-900 font-medium">
-              {infoSectionTitle}
-            </a>
+            {isClubAdmin ? (
+              <>
+                <a href="#member-profile" className="text-gray-600 hover:text-gray-900 font-medium">
+                  User Profile
+                </a>
+                <span className="text-gray-300">|</span>
+                <a href={`#${infoSectionId}`} className="text-gray-600 hover:text-gray-900">
+                  {infoSectionTitle}
+                </a>
+              </>
+            ) : (
+              <>
+                <a href={`#${infoSectionId}`} className="text-gray-600 hover:text-gray-900 font-medium">
+                  {infoSectionTitle}
+                </a>
+                <span className="text-gray-300">|</span>
+                <a href="#member-profile" className="text-gray-600 hover:text-gray-900">
+                  User Profile
+                </a>
+              </>
+            )}
           </div>
         )}
         {/* Header */}
         {!embedded && (
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
             <div className="flex items-center gap-4">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-3xl font-bold">
-                {displayName.charAt(0).toUpperCase()}
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-3xl font-bold overflow-hidden shrink-0">
+                {avatarSrc ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarSrc} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  displayName.charAt(0).toUpperCase()
+                )}
               </div>
               <div className="flex-1">
                 <h1 className="text-3xl font-bold text-gray-800">{displayName}</h1>
@@ -458,25 +503,19 @@ export default function UserProfile({
           </div>
         )}
 
-        {/* Member info / Admin info */}
-        {(!embedded || isEmbeddedAdminProfile) && (
+        {/* Member info (non-club accounts only; club Admin info appears after User Profile) */}
+        {!embedded && !isClubAdmin && (
         <section
           id={infoSectionId}
-          className={`scroll-mt-24 mb-6 ${
-            isClubAdmin ? '' : 'bg-white rounded-lg shadow-lg p-4 md:p-6'
-          }`}
+          className="scroll-mt-24 mb-6 bg-white rounded-lg shadow-lg p-4 md:p-6"
         >
-          {isClubAdmin ? (
-            <ClubAdminInfoForm profileYoutubeUrl={profile.youtubeChannelUrl} />
-          ) : (
-            <MemberSelfProfilePanel
-              userId={profile.id}
-              clubs={(profile.clubMemberships || []).map((m) => ({
-                id: m.club.id,
-                name: m.club.name,
-              }))}
-            />
-          )}
+          <MemberSelfProfilePanel
+            userId={profile.id}
+            clubs={(profile.clubMemberships || []).map((m) => ({
+              id: m.club.id,
+              name: m.club.name,
+            }))}
+          />
         </section>
         )}
 
@@ -697,6 +736,38 @@ export default function UserProfile({
               />
               <p className="mt-1 text-xs text-gray-500">Select one or more sports from the list.</p>
             </div>
+            {isClubAdmin ? (
+              <div className="md:col-span-2">
+                <div className="mb-2 border border-[#c9bd7a] bg-[#efe7b3] px-4 py-2 text-sm font-semibold text-gray-900">
+                  References of the admin
+                </div>
+                <p className="mb-2 text-xs text-gray-600">
+                  These references belong to the club administrator account, not to the club itself.
+                </p>
+                <div className="border border-gray-300 bg-white p-3">
+                  <CKEditorComponent
+                    value={referencesHtml}
+                    onChange={(html) => setReferencesHtml(html)}
+                    minHeightPx={260}
+                    placeholder=""
+                  />
+                  <div className="mt-3 grid max-w-md grid-cols-[160px_1fr] items-center gap-2 text-sm">
+                    <label className="text-gray-800">References level</label>
+                    <select
+                      value={referencesLevel}
+                      onChange={(e) => setReferencesLevel(e.target.value)}
+                      className="w-24 rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
+                    >
+                      {['1', '2', '3', '4', '5', '6'].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <div className="md:col-span-2 mt-2 flex flex-wrap items-center gap-3">
               <button
                 type="submit"
@@ -725,6 +796,13 @@ export default function UserProfile({
           </form>
         </section>
         ) : null}
+
+        {/* Admin info (club accounts only; my-club Contact Info tab uses ClubAdminInfoForm) */}
+        {!embedded && isClubAdmin && (
+        <section id={infoSectionId} className="scroll-mt-24 mb-6">
+          <ClubAdminInfoForm profileYoutubeUrl={profile.youtubeChannelUrl} />
+        </section>
+        )}
 
         {/* Statistics */}
         {!embedded && (!isClubAdmin || !editProfileMode) && (

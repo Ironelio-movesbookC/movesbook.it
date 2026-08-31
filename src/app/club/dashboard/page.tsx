@@ -6,7 +6,7 @@ import NewsOGPPanel from '@/components/news/NewsOGPPanel';
 import AddMemberModal from '@/components/AddMemberModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import { canAccessClubWorkspace } from '@/utils/dashboardRouting';
 import ClubIdentificationDevicesPanel from './components/ClubIdentificationDevicesPanel';
 import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettingsPanel';
 import ClubBachecaMemberPanel from '@/components/club/websiteSettings/ClubBachecaMemberPanel';
@@ -33,7 +33,12 @@ function ClubDashboardContent() {
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
 
-  const { activeTab, selectedClubId: contextClubId } = useClubWorkspace();
+  const {
+    activeTab,
+    selectedClubId: contextClubId,
+    myPageNewsPanel,
+    setMyPageNewsPanel,
+  } = useClubWorkspace();
 
   const [clubs, setClubs] = useState<any[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(contextClubId);
@@ -41,6 +46,7 @@ function ClubDashboardContent() {
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
   const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
   const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
+  const [myPageOgpExpanded, setMyPageOgpExpanded] = useState(false);
   const [clubMainPanel, setClubMainPanel] = useState<
     | 'default'
     | 'identification-devices'
@@ -54,6 +60,7 @@ function ClubDashboardContent() {
     | 'club-news-ogp'
     | 'club-global-news'
     | 'club-movesbook-news'
+    | 'mb-news'
   >('default');
   const [clubTopicId, setClubTopicId] = useState<string | null>(null);
 
@@ -101,6 +108,12 @@ function ClubDashboardContent() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (myPageNewsPanel !== 'ogp-news') {
+      setMyPageOgpExpanded(false);
+    }
+  }, [myPageNewsPanel]);
+
+  useEffect(() => {
     if (searchParams != null && searchParams.get('open') === 'news' && formClubs.length > 0) {
       const clubId = selectedClubId ?? formClubs[0]?.id;
       if (clubId && !selectedClubId) {
@@ -108,16 +121,18 @@ function ClubDashboardContent() {
         localStorage.setItem('selectedClub', clubId);
       }
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(true);
       router.replace('/club/dashboard', { scroll: false });
     }
-  }, [searchParams, router, formClubs, selectedClubId]);
+  }, [searchParams, router, formClubs, selectedClubId, setMyPageNewsPanel]);
 
   useEffect(() => {
     const panel = searchParams?.get('panel');
     if (panel === 'identification-devices') {
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
@@ -126,6 +141,7 @@ function ClubDashboardContent() {
     }
     if (panel === 'outcome-settings') {
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
@@ -134,6 +150,7 @@ function ClubDashboardContent() {
     }
     if (panel === 'suggest-movesbook') {
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
@@ -142,6 +159,7 @@ function ClubDashboardContent() {
     }
     if (panel === 'chat') {
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
@@ -150,6 +168,7 @@ function ClubDashboardContent() {
     }
     if (panel === 'club-news') {
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
@@ -158,6 +177,7 @@ function ClubDashboardContent() {
     }
     if (panel === 'club-news-ogp') {
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
@@ -166,6 +186,7 @@ function ClubDashboardContent() {
     }
     if (panel === 'club-global-news') {
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
@@ -174,10 +195,20 @@ function ClubDashboardContent() {
     }
     if (panel === 'club-movesbook-news') {
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
       setClubMainPanel('club-movesbook-news');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+    if (panel === 'mb-news') {
+      writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('mb-news');
       router.replace('/club/dashboard', { scroll: false });
     }
     if (panel === 'bacheca') {
@@ -187,6 +218,7 @@ function ClubDashboardContent() {
         localStorage.setItem('selectedClub', queryClubId);
       }
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
@@ -204,6 +236,7 @@ function ClubDashboardContent() {
         setClubTopicId(queryTopicId);
       }
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
@@ -216,16 +249,17 @@ function ClubDashboardContent() {
         localStorage.setItem('selectedClub', queryClubId);
       }
       writeClubWorkspaceTab('my-entity');
+      setMyPageNewsPanel(null);
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
       setClubMainPanel('topics-horizontal');
       setClubTopicId(null);
     }
-  }, [searchParams, router]);
+  }, [searchParams, router, setMyPageNewsPanel]);
 
   useEffect(() => {
-    if (user && isClubAccountUserType(user.userType)) {
+    if (user && canAccessClubWorkspace(user.userType)) {
       void loadClubs();
     }
   }, [user]);
@@ -242,6 +276,45 @@ function ClubDashboardContent() {
 
   const dashboardShellActiveTab: 'my-page' | 'my-entity' =
     activeClub ? activeTab : 'my-page';
+
+  if (dashboardShellActiveTab === 'my-page' && myPageNewsPanel === 'movesbook-news') {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <ClubMovesbookNewsPanel
+          title="Movesbook News"
+          onClose={() => setMyPageNewsPanel(null)}
+        />
+      </div>
+    );
+  }
+
+  if (dashboardShellActiveTab === 'my-page' && myPageNewsPanel === 'mb-news') {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <ClubNewsArchivePanel
+          title="News"
+          onClose={() => setMyPageNewsPanel(null)}
+        />
+      </div>
+    );
+  }
+
+  if (dashboardShellActiveTab === 'my-page' && myPageNewsPanel === 'ogp-news') {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col py-4">
+        <NewsOGPPanel
+          title="OGP News"
+          onClose={() => {
+            setMyPageNewsPanel(null);
+            setMyPageOgpExpanded(false);
+          }}
+          embedded
+          isExpanded={myPageOgpExpanded}
+          onExpandReduce={() => setMyPageOgpExpanded((prev) => !prev)}
+        />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -367,12 +440,12 @@ function ClubDashboardContent() {
             <ClubSharedNewsPanel
               clubId={(selectedClubId ?? activeClub?.id)!}
               type="all"
-              title="Club Global News"
+              title="Club News & OGP News"
             />
           ) : (
             <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-6 shadow-sm">
               <p className="py-12 text-center text-sm text-gray-600">
-                Select a club in the sidebar to view Club Global News.
+                Select a club in the sidebar to view Club News & OGP News.
               </p>
             </div>
           )}
@@ -380,6 +453,13 @@ function ClubDashboardContent() {
       ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'club-movesbook-news' ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <ClubMovesbookNewsPanel title="Movesbook News" />
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'mb-news' ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <ClubNewsArchivePanel
+            title="News"
+            onClose={() => setClubMainPanel('default')}
+          />
         </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection ? (
         <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">

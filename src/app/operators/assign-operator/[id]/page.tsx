@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Eye, User, UserMinus, UserPlus } from 'lucide-react';
 import { persistOperatorNavContext } from '@/lib/operatorSubNav';
-import { fetchCoAdminLinkedOperatorIds } from '@/lib/staffCoAdminClientAccess';
+import { cacheCoAdminLinkedOperatorIds } from '@/lib/staffCoAdminClientAccess';
 import { usePanelSession } from '@/hooks/usePanelSession';
 
 type StaffItem = {
@@ -61,21 +61,17 @@ export default function AssignOperatorPage() {
         typeof data.canManageLinks === 'boolean' ? data.canManageLinks : canManageStaff,
       );
       const assignedList = Array.isArray(data.assignedOperators) ? data.assignedOperators : [];
-      try {
-        sessionStorage.setItem(
-          'coAdminLinkedOperatorIds',
-          JSON.stringify(assignedList.map((o: { id: string }) => o.id)),
-        );
-      } catch {
-        /* ignore */
-      }
+      cacheCoAdminLinkedOperatorIds(
+        coAdminId,
+        assignedList.map((o: { id: string }) => o.id),
+      );
       setSelectedIds(new Set());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
-  }, [coAdminId]);
+  }, [coAdminId, canManageStaff]);
 
   useEffect(() => {
     persistOperatorNavContext('CO_ADMIN');
@@ -197,6 +193,13 @@ export default function AssignOperatorPage() {
           <p className="text-sm text-gray-600 bg-amber-50 border border-amber-200 rounded px-4 py-3">
             Operators listed below were assigned to you by Super Admin. Use each operator&apos;s
             profile → My Customers to assign Movesbook users.
+          </p>
+        )}
+
+        {!loading && !canManageLinks && assigned.length === 0 && (
+          <p className="text-sm text-gray-600 bg-white border border-gray-300 rounded px-4 py-6 text-center">
+            No operators have been assigned to you yet. Super Admin can link operators from this
+            page when logged in as Super Admin.
           </p>
         )}
 

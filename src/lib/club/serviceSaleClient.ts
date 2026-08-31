@@ -116,9 +116,10 @@ export function mapRecord(record: ProcedureRecordDto): ServiceSalePurchase {
     sectorName: metaString(meta, 'sectorName') || '-',
     serviceName: metaString(meta, 'serviceName') || '-',
     recordDate: record.recordDate,
-    // Keep legacy `paydate` as the expiration/deadline date for existing callers.
+    // Legacy `paydate` doubles as a generic movement date for callers that predate `expireDate`.
     paydate: record.dueDate ?? record.recordDate,
-    expireDate: record.dueDate ?? record.recordDate,
+    // Never fall back to the record date: an absent expiration must stay visibly absent.
+    expireDate: record.dueDate,
     createdAt: record.createdAt ?? null,
     value: record.totalAmount,
     pay: record.paidAmount,
@@ -185,6 +186,10 @@ export type ListParams = {
   memberId?: string;
   /** When fetching deadlines, also include Rest = 0 rows. */
   includePaid?: boolean;
+  search?: string;
+  fromDate?: string;
+  toDate?: string;
+  orderBy?: 'recent' | 'old';
 };
 
 export type PaginatedResult<T> = {
@@ -213,6 +218,10 @@ function buildQuery(params?: ListParams & { view?: string }): string {
   }
   if (params?.memberId) qs.set('memberId', params.memberId);
   if (params?.includePaid) qs.set('includePaid', '1');
+  if (params?.search) qs.set('search', params.search);
+  if (params?.fromDate) qs.set('fromDate', params.fromDate);
+  if (params?.toDate) qs.set('toDate', params.toDate);
+  if (params?.orderBy) qs.set('orderBy', params.orderBy);
   return qs.toString();
 }
 
@@ -279,7 +288,10 @@ export type CreatePurchaseInput = {
   pay?: number;
   recordDate: string;
   movementTime?: string;
-  paydate: string;
+  /** When the service stops being valid. Independent from the payment date. */
+  expireDate: string;
+  /** Defaults to `recordDate`: the initial payment happens at the movement, not at the expiration. */
+  paymentDate?: string;
   causal?: string;
   notes?: string;
   payMode?: string;
@@ -306,8 +318,8 @@ export async function createPurchase(input: CreatePurchaseInput): Promise<{ purc
       totalAmount: input.value,
       initialPayment: pay,
       recordDate: input.recordDate,
-      paymentDate: input.paydate,
-      dueDate: input.paydate,
+      paymentDate: input.paymentDate ?? input.recordDate,
+      dueDate: input.expireDate,
       causal: input.causal ?? input.notes ?? null,
       notes: input.causal ?? input.notes ?? null,
       sectorId: input.sectorId || null,

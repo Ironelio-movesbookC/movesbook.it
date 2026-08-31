@@ -120,7 +120,8 @@ export default function ChangeBannerModal({
       setError((uploadData as { error?: string }).error || t('change_banner_error_upload'));
       return null;
     }
-    return (uploadData as { path?: string }).path ?? null;
+    const data = uploadData as { path?: string; imageUrl?: string };
+    return data.imageUrl || data.path || null;
   };
 
   const handleUploadImage = async () => {

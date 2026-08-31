@@ -211,7 +211,7 @@ export default function ServicePaymentForm({
   const [installmentError, setInstallmentError] = useState('');
   const [paymentType, setPaymentType] = useState<'D' | 'B'>('D');
   const [debtTotal, setDebtTotal] = useState(String(totalRest || purchase.rest));
-  const [debtExpire, setDebtExpire] = useState(purchase.paydate ?? new Date().toISOString().slice(0, 10));
+  const [debtExpire, setDebtExpire] = useState(purchase.expireDate ?? '');
   const [description, setDescription] = useState(purchase.notes);
   const [amountPaid, setAmountPaid] = useState('0');
   const amountPaidTouchedRef = useRef(false);
@@ -365,24 +365,26 @@ export default function ServicePaymentForm({
     });
 
     const sum = expired.reduce((acc, r) => acc + r.balance, 0);
-    const lastDate = expired.reduce((latest, r) => {
+    // The debt runs from the day it first fell due, so several expired deadlines report the oldest.
+    const oldestDate = expired.reduce((oldest, r) => {
       const dateStr = effectiveExpireDate(r.expireDate, r.paymentDate);
-      if (!dateStr) return latest;
-      return !latest || dateStr > latest ? dateStr : latest;
+      if (!dateStr) return oldest;
+      return !oldest || dateStr < oldest ? dateStr : oldest;
     }, '');
 
-    return { sum, lastDate };
+    return { sum, oldestDate };
   }, [installmentRows, todayYmd]);
 
   useEffect(() => {
-    // If there are expired deadlines, auto-fill the Debt section with their sum and latest date.
+    // If there are expired deadlines, auto-fill the Debt section with their sum and oldest date.
     if (expiredDeadlinesStats.sum > 0) {
       setDebtTotal(String(expiredDeadlinesStats.sum.toFixed(2)));
-      setDebtExpire(expiredDeadlinesStats.lastDate);
+      setDebtExpire(expiredDeadlinesStats.oldestDate);
     } else {
       // Fallback to previous logic if nothing is expired.
       setDebtTotal(String((totalRest || purchase.rest).toFixed(2)));
-      setDebtExpire(purchase.paydate ?? todayYmd);
+      // Left empty when the record has no expiration, so paying cannot invent one.
+      setDebtExpire(purchase.expireDate ?? '');
     }
     
     // Proactively select the expired installments
@@ -396,7 +398,7 @@ export default function ServicePaymentForm({
     if (expiredIds.length > 0) {
       setSelectedInstallmentIds(new Set(expiredIds));
     }
-  }, [expiredDeadlinesStats, totalRest, purchase.rest, purchase.paydate, todayYmd, installmentRows]);
+  }, [expiredDeadlinesStats, totalRest, purchase.rest, purchase.expireDate, todayYmd, installmentRows]);
 
   useEffect(() => {
     if (!onSelectedRecordIdsChange) return;
@@ -977,7 +979,6 @@ export default function ServicePaymentForm({
                 <span className="text-gray-600">Expired</span>
                 <input
                   type="date"
-                  min={todayYmd}
                   className={`mt-1 ${procedureHighlightInputClass}`}
                   style={{ backgroundColor: '#d3f07b' }}
                   value={debtExpire}

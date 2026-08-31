@@ -1,9 +1,38 @@
 import { parseAdminSettingsJson } from '@/lib/admin/userProfilePanelSettings';
+import { mergePcuSettingsPatch } from '@/lib/admin/userPcuFunctionsSettings';
 import type { PcuFunctionsSettings } from '@/lib/admin/userPcuFunctionsSettings';
 import {
   createNewsCategoriesState,
   createVipCountriesState,
 } from '@/lib/admin/pcuAdminSettingsOptions';
+
+/** Per-entity PCU settings bucket inside `adminSettings.pcu.byEntity`. */
+export const PCU_BY_ENTITY_KEY = 'byEntity';
+
+const ENTITY_SCOPED_PCU_KEYS = [
+  'extend',
+  'assignment',
+  'publishing',
+  'sponsors',
+  'blocks',
+  'alert',
+  'vip',
+  'functions',
+  'alertMsg',
+  'idCards',
+  'deletePosts',
+] as const;
+
+function hasEntityScopedPcuContent(settings: Record<string, unknown> | null | undefined): boolean {
+  if (!settings) return false;
+  return ENTITY_SCOPED_PCU_KEYS.some((key) => settings[key] != null);
+}
+
+function readLegacyRootPcuSettings(store: Record<string, unknown>): PcuSettings | null {
+  const { [PCU_BY_ENTITY_KEY]: _byEntity, ...root } = store;
+  if (!hasEntityScopedPcuContent(root)) return null;
+  return root as PcuSettings;
+}
 
 export type PcuSettings = {
   extend?: { enabled?: boolean; months?: string };
@@ -95,11 +124,99 @@ export type PcuSettings = {
   updatedAt?: string;
 };
 
-export function readPcuSettings(adminSettingsRaw: string | null | undefined): PcuSettings | null {
+function readPcuSettingsStore(adminSettingsRaw: string | null | undefined): Record<string, unknown> {
   const adminSettings = parseAdminSettingsJson(adminSettingsRaw);
   const pcu = adminSettings.pcu;
-  if (!pcu || typeof pcu !== 'object') return null;
-  return pcu as PcuSettings;
+  if (!pcu || typeof pcu !== 'object') return {};
+  return pcu as Record<string, unknown>;
+}
+
+/** Resolve entity id from query/body (`entityId` or legacy `clubId`). */
+export function resolvePcuEntityId(
+  ...candidates: (string | null | undefined)[]
+): string | null {
+  for (const candidate of candidates) {
+    const id = candidate?.trim();
+    if (id) return id;
+  }
+  return null;
+}
+
+/**
+ * Load PCU tab settings for the active scope.
+ * - With `entityId`: settings for that club/team/group/coaching group only.
+ * - Without `entityId`: account-level settings (single user / coach account).
+ */
+export function readPcuSettingsForScope(
+  adminSettingsRaw: string | null | undefined,
+  entityId?: string | null,
+): PcuSettings | null {
+  const store = readPcuSettingsStore(adminSettingsRaw);
+  const id = entityId?.trim();
+
+  if (id) {
+    const byEntity = store[PCU_BY_ENTITY_KEY];
+    if (byEntity && typeof byEntity === 'object') {
+      const entitySettings = (byEntity as Record<string, unknown>)[id];
+      if (
+        entitySettings &&
+        typeof entitySettings === 'object' &&
+        hasEntityScopedPcuContent(entitySettings as Record<string, unknown>)
+      ) {
+        return entitySettings as PcuSettings;
+      }
+    }
+    // Pre-migration installs kept one shared blob at the root for every owned entity.
+    return readLegacyRootPcuSettings(store);
+  }
+
+  const { [PCU_BY_ENTITY_KEY]: _byEntity, ...root } = store;
+  if (Object.keys(root).length === 0) return null;
+  return root as PcuSettings;
+}
+
+/** @deprecated Prefer {@link readPcuSettingsForScope} — account-level settings only. */
+export function readPcuSettings(adminSettingsRaw: string | null | undefined): PcuSettings | null {
+  return readPcuSettingsForScope(adminSettingsRaw, null);
+}
+
+/** Merge a PCU PATCH into admin settings for the given entity (or account when no entity). */
+export function mergePcuSettingsForScope(
+  adminSettingsRaw: string | null | undefined,
+  entityId: string | null | undefined,
+  patch: Record<string, unknown>,
+): string {
+  const adminSettings = parseAdminSettingsJson(adminSettingsRaw);
+  const prevStore = readPcuSettingsStore(adminSettingsRaw);
+  const id = entityId?.trim();
+  const updatedAt = new Date().toISOString();
+
+  if (id) {
+    const byEntityRaw = prevStore[PCU_BY_ENTITY_KEY];
+    const byEntity: Record<string, unknown> =
+      byEntityRaw && typeof byEntityRaw === 'object'
+        ? { ...(byEntityRaw as Record<string, unknown>) }
+        : {};
+    const prevEntity =
+      byEntity[id] && typeof byEntity[id] === 'object'
+        ? (byEntity[id] as Record<string, unknown>)
+        : {};
+    byEntity[id] = {
+      ...mergePcuSettingsPatch(prevEntity, patch),
+      updatedAt,
+    };
+    const nextStore = { ...prevStore, [PCU_BY_ENTITY_KEY]: byEntity, updatedAt };
+    return JSON.stringify({ ...adminSettings, pcu: nextStore });
+  }
+
+  const { [PCU_BY_ENTITY_KEY]: byEntity, ...prevRoot } = prevStore;
+  const mergedRoot = mergePcuSettingsPatch(prevRoot, patch);
+  const nextStore = {
+    ...mergedRoot,
+    ...(byEntity && typeof byEntity === 'object' ? { [PCU_BY_ENTITY_KEY]: byEntity } : {}),
+    updatedAt,
+  };
+  return JSON.stringify({ ...adminSettings, pcu: nextStore });
 }
 
 /** Merge saved country / news category maps with full option lists. */

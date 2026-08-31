@@ -6,7 +6,7 @@ import MubPageClient from '@/components/mub/MubPageClient';
 
 export default function MubStaffPageRouteClient() {
   const searchParams = useSearchParams();
-  const role = (searchParams?.get('role') ?? 'CLUB').toUpperCase() as MubRoleTemplate;
+  const role = (searchParams?.get('role') ?? 'SINGLE_USER').toUpperCase() as MubRoleTemplate;
 
   return (
     <div className="px-4 py-6">

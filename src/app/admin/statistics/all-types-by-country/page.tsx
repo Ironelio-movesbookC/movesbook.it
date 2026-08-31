@@ -25,7 +25,10 @@ export default function AllTypesByCountryPage() {
   });
   const [selection, setSelection] = useState<Selection | null>(null);
 
-  const blocks = data?.allTypesByCountry ?? [];
+  const blocks = useMemo(
+    () => data?.allTypesByCountry ?? [],
+    [data?.allTypesByCountry],
+  );
 
   const namedByKind = useMemo(() => {
     const map: Record<string, string[]> = {};

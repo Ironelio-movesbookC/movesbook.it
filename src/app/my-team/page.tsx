@@ -6,11 +6,18 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Users, UserPlus, X, Loader2, Pencil } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
+import ManagedEntitySidebarAvatar from '@/components/entity/ManagedEntitySidebarAvatar';
 import { useAuth } from '@/hooks/useAuth';
 import {
   getClubMyPageDisplayName,
   isClubCreatedFromForm,
 } from '@/lib/club/clubSidebarLabel';
+import { useEntityDirectAccessGuard } from '@/hooks/useEntityDirectAccessGuard';
+import {
+  getEntityDirectAccessLock,
+  getEntityDirectAccessProfilePath,
+} from '@/lib/entity/entityDirectAccessSession';
+import { isTeamAccountUserType } from '@/utils/dashboardRouting';
 
 interface TeamMember {
   id: string;
@@ -31,12 +38,14 @@ interface Team {
   name: string;
   description: string | null;
   sport: string | null;
+  imageUrl?: string | null;
 }
 
 function MyTeamContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  useEntityDirectAccessGuard(!authLoading && !!user);
   const teamId = searchParams?.get('teamId');
 
   const [team, setTeam] = useState<Team | null>(null);
@@ -81,14 +90,22 @@ function MyTeamContent() {
 
   useEffect(() => {
     if (authLoading || !user) return;
+    const lock = getEntityDirectAccessLock();
     if (!teamId) {
-      // If no teamId selected, redirect to My Page to select a team
-      if (user?.userType === 'TEAM_MANAGER') {
-        router.push('/my-page');
+      if (lock?.kind === 'team') {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
+      if (user && isTeamAccountUserType(user.userType)) {
+        router.replace('/team/dashboard');
         return;
       }
       setLoading(false);
     } else {
+      if (lock?.kind === 'team' && teamId !== lock.entityId) {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
       loadTeamData();
     }
   }, [teamId, user, router, authLoading, loadTeamData]);
@@ -158,8 +175,13 @@ function MyTeamContent() {
           <div className="w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 h-full flex flex-col">
               <div className="text-center mb-8">
-                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <Users className="w-10 h-10 text-white" />
+                <div className="mx-auto mb-4 w-20 h-20">
+                  <ManagedEntitySidebarAvatar
+                    description={team?.description}
+                    imageUrl={team?.imageUrl}
+                    userImageUrl={user?.image}
+                    alt={team?.name || 'Team'}
+                  />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900">{teamDisplayName}</h2>
                 <p className="text-gray-600 text-sm mt-2">{team?.sport || 'Team'}</p>

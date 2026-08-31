@@ -2,14 +2,14 @@
 
 import { X } from 'lucide-react';
 import ClubProfileEditor, {
-  type ClubProfileFormPayload,
+  type ClubProfileSavePayload,
 } from '@/components/club/ClubProfileEditor';
 import TeamProfileEditor, {
   type TeamProfileFormPayload,
 } from '@/components/team/TeamProfileEditor';
 import type { ManagedEntityKind } from '@/lib/entity/entityProfileLabels';
 
-export type CreateEntityFormPayload = ClubProfileFormPayload | TeamProfileFormPayload;
+export type CreateEntityFormPayload = ClubProfileSavePayload | TeamProfileFormPayload;
 
 type CreateEntityModalProps = {
   entityKind: ManagedEntityKind;
@@ -64,7 +64,7 @@ export default function CreateEntityModal({
             mode="create"
             entityKind={entityKind}
             adminUsername={adminUsername}
-            onSave={onSave as (payload: ClubProfileFormPayload) => Promise<void>}
+            onSave={onSave as (payload: ClubProfileSavePayload) => Promise<void>}
             saving={saving}
             onCancel={onClose}
           />

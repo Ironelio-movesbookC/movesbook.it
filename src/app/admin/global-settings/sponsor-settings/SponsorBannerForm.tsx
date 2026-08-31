@@ -1,4 +1,5 @@
 "use client";
+import Image from 'next/image';
 
 import Link from "next/link";
 import { ChangeEvent, useState } from "react";
@@ -143,10 +144,13 @@ export default function BannerForm({
 
             {preview && (
               <div className="border border-[#ccc] bg-[#fafafa] p-[8px]">
-                <img
+                <Image
                   src={preview}
                   alt="Banner preview"
                   className="h-[100px] w-[220px] object-cover"
+                  width={220}
+                  height={100}
+                  unoptimized
                 />
               </div>
             )}

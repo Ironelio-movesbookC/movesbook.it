@@ -872,7 +872,7 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
       setShowSubExercises(false);
       setShowExercisePopup(false);
     }
-  }, [mode, existingNutritionFood?.id, existingNutritionFood?.nutritionComponents, existingNutritionFood?.notes, existingNutritionFood?.fastPlannerData]);
+  }, [mode, existingNutritionFood?.id, existingNutritionFood?.nutritionComponents, existingNutritionFood?.notes, existingNutritionFood?.fastPlannerData, existingNutritionFood?.macroFinal]);
 
   // Mock frequently used exercises (for blue indicator)
   const frequentlyUsedExercises = ['shoulders-0', 'chest-0', 'biceps-1', 'quadriceps-0'];

@@ -44,6 +44,15 @@ export default function ProcedureArchiveTabs({ tabs, activeTab, trailing }: Prop
               );
             }
             if (!tab.href) return null;
+            // The active tab marks where you already are — on the payment form it must never
+            // navigate back to the archive grid behind it.
+            if (tab.id === activeTab) {
+              return (
+                <span key={tab.id} aria-current="page" className={tabClass(tab.id)}>
+                  {tab.label}
+                </span>
+              );
+            }
             return (
               <Link key={tab.id} href={tab.href} className={tabClass(tab.id)}>
                 {tab.label}

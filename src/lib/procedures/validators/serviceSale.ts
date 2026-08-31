@@ -67,7 +67,8 @@ export function mapServiceSaleCreateToInput(
     totalAmount: data.totalAmount,
     initialPayment: data.initialPayment,
     recordDate: data.recordDate,
-    dueDate: data.dueDate ?? paymentDate,
+    // A service expiration is its own value: never inherit the payment date.
+    dueDate: data.dueDate ?? null,
     notes,
     metadata: {
       sectorId: data.sectorId ?? null,

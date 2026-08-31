@@ -6,8 +6,9 @@ import ServicePaymentForm, {
   type ServicePaymentSubmitValues,
 } from '@/components/club/services/ServicePaymentForm';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
+import { archiveScopeQuery } from '@/lib/club/archives/archiveScope';
 import { createProcedureClient } from '@/lib/club/procedureClient';
-import { getProcedureTabs } from '@/lib/procedures/registry';
+import { getProcedureDefinition, getProcedureTabs } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import type {
   ServiceSaleFormOptions,
@@ -64,7 +65,10 @@ function mapPurchase(r: {
   typology: string;
   secondaryLabel: string;
   primaryLabel: string;
+  recordDate: string;
   paydate: string | null;
+  expireDate: string | null;
+  createdAt: string;
   value: number;
   pay: number;
   rest: number;
@@ -83,7 +87,7 @@ function mapPurchase(r: {
     serviceName: r.primaryLabel,
     recordDate: r.recordDate,
     paydate: r.paydate,
-    expireDate: r.expireDate ?? r.paydate,
+    expireDate: r.expireDate,
     createdAt: r.createdAt ?? null,
     value: r.value,
     pay: r.pay,
@@ -212,13 +216,18 @@ export default function MemberDebtPaymentDetailPage() {
     load().catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
   }, [load]);
 
-  const tabs = useMemo(
-    () =>
-      getProcedureTabs(PROCEDURE_TYPE_CODES.MEMBER_DEBT, 'deadlines', id).filter(
-        (t) => t.id === 'deadlines' || t.id === 'payments'
-      ),
-    [id]
-  );
+  // Payments must open on this member only — not the whole club list.
+  const tabs = useMemo(() => {
+    const memberId = purchase?.userId ?? null;
+    const paymentsPath = getProcedureDefinition(PROCEDURE_TYPE_CODES.MEMBER_DEBT)!.routes.payments;
+    return getProcedureTabs(PROCEDURE_TYPE_CODES.MEMBER_DEBT, 'deadlines', id, memberId)
+      .filter((t) => t.id === 'deadlines' || t.id === 'payments')
+      .map((t) =>
+        t.id === 'payments' && memberId
+          ? { ...t, href: `${paymentsPath}${archiveScopeQuery(null, memberId)}` }
+          : t
+      );
+  }, [id, purchase?.userId]);
 
   async function handleAddToRecordTotal(additionalAmount: number): Promise<void> {
     if (!purchase) return;

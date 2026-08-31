@@ -72,6 +72,17 @@ interface OGPFormProps {
   isFavourite?: boolean;
   /** When set, form opens prefilled for editing an existing entry. */
   initialValues?: OGPFormInitialValues | null;
+  /**
+   * Club OGP News: show audience radios in News Setting
+   * (Only me / club members / members + filters).
+   */
+  showClubAudienceRadios?: boolean;
+}
+
+function defaultVisibility(showClubAudienceRadios: boolean): OgpVisibilitySettings {
+  return showClubAudienceRadios
+    ? { ...defaultSettings, clubAudienceMode: 'me-and-club-members' }
+    : defaultSettings;
 }
 
 export default function OGPForm({
@@ -81,6 +92,7 @@ export default function OGPForm({
   variant = 'news',
   isFavourite = false,
   initialValues = null,
+  showClubAudienceRadios = false,
 }: OGPFormProps) {
   const isMusic = variant === 'music';
   const [url, setUrl] = useState(() => initialValues?.url ?? '');
@@ -108,7 +120,7 @@ export default function OGPForm({
   });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [visibility, setVisibility] = useState<OgpVisibilitySettings>(
-    () => initialValues?.visibility ?? defaultSettings
+    () => initialValues?.visibility ?? defaultVisibility(showClubAudienceRadios)
   );
   const [settingsOptions, setSettingsOptions] = useState<{
     userTypes: { value: string; label: string }[];
@@ -211,7 +223,7 @@ export default function OGPForm({
       setLanguageCode('');
       setFetchedOg(null);
       setError(null);
-      setVisibility(defaultSettings);
+      setVisibility(defaultVisibility(showClubAudienceRadios));
       if (isMusic) resetMusicFields();
     } else if (descriptionToSave && onSaveTyped) {
       onSaveTyped(descriptionToSave, genreToSave, {
@@ -460,8 +472,9 @@ export default function OGPForm({
         onClose={() => setShowSettingsModal(false)}
         initialSettings={visibility}
         onSave={(s) => setVisibility(s)}
-        onDeleteSettings={() => setVisibility(defaultSettings)}
+        onDeleteSettings={() => setVisibility(defaultVisibility(showClubAudienceRadios))}
         options={settingsOptions}
+        showClubAudienceRadios={showClubAudienceRadios}
       />
     </div>
   );

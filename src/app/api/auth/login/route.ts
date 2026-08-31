@@ -4,6 +4,11 @@ import { prisma } from '@/lib/prisma';
 import { verifyPassword, generateToken, hashPassword } from '@/lib/auth';
 import { MOVESBOOK_LOGIN_USER_TYPES } from '@/lib/adminLoginLogLabels';
 import { tryEntityCompanyLogin } from '@/lib/entity/entityDirectLogin';
+import { tryEntityDirectAccessLogin } from '@/lib/entity/entityDirectAccessLogin';
+import {
+  parseEntityRedirectMeta,
+  type EntityDirectAccessKind,
+} from '@/lib/entity/entityDirectAccessMeta';
 import mysql from 'mysql2/promise';
 
 type LegacyDbConfig = {
@@ -228,6 +233,47 @@ const hasLegacyUsersTable = async (): Promise<boolean> => {
   return false;
 };
 
+type EntityAccessMode = 'company-password' | 'direct-access-only';
+
+function applyEntityLoginRedirect(redirectTo: string, mode: EntityAccessMode) {
+  const meta = parseEntityRedirectMeta(redirectTo);
+  return {
+    entityDirectLoginRedirect: redirectTo,
+    entityAccessMode: mode,
+    entityKind: meta?.kind ?? null,
+    entityId: meta?.entityId ?? null,
+    clubAccessMode: meta?.kind === 'club' ? mode : null,
+    clubAccessClubId: meta?.kind === 'club' ? meta.entityId : null,
+  };
+}
+
+async function tryEntityCredentialLogins(
+  loginIdentifier: string,
+  password: string,
+) {
+  const entityLogin = await tryEntityCompanyLogin(loginIdentifier, password);
+  if (entityLogin) {
+    const adminUser = await loadAdminUserForEntityLogin(entityLogin.adminId);
+    if (adminUser) {
+      return {
+        user: adminUser,
+        ...applyEntityLoginRedirect(entityLogin.redirectTo, 'company-password'),
+      };
+    }
+  }
+  const directLogin = await tryEntityDirectAccessLogin(loginIdentifier, password);
+  if (directLogin) {
+    const adminUser = await loadAdminUserForEntityLogin(directLogin.adminId);
+    if (adminUser) {
+      return {
+        user: adminUser,
+        ...applyEntityLoginRedirect(directLogin.redirectTo, 'direct-access-only'),
+      };
+    }
+  }
+  return null;
+}
+
 async function loadAdminUserForEntityLogin(adminId: string) {
   return prisma.user.findUnique({
     where: { id: adminId },
@@ -288,6 +334,11 @@ export async function POST(request: NextRequest) {
     let user = null;
     let passwordAlreadyVerified = false;
     let entityDirectLoginRedirect: string | null = null;
+    let entityAccessMode: EntityAccessMode | null = null;
+    let entityKind: EntityDirectAccessKind | null = null;
+    let entityId: string | null = null;
+    let clubAccessMode: EntityAccessMode | null = null;
+    let clubAccessClubId: string | null = null;
     
     if (newUsers.length > 0) {
       for (const candidate of newUsers) {
@@ -533,14 +584,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (!user) {
-      const entityLogin = await tryEntityCompanyLogin(loginIdentifier, password);
-      if (entityLogin) {
-        const adminUser = await loadAdminUserForEntityLogin(entityLogin.adminId);
-        if (adminUser) {
-          user = adminUser;
-          passwordAlreadyVerified = true;
-          entityDirectLoginRedirect = entityLogin.redirectTo;
-        }
+      const entityHit = await tryEntityCredentialLogins(loginIdentifier, password);
+      if (entityHit) {
+        user = entityHit.user;
+        passwordAlreadyVerified = true;
+        entityDirectLoginRedirect = entityHit.entityDirectLoginRedirect;
+        entityAccessMode = entityHit.entityAccessMode;
+        entityKind = entityHit.entityKind;
+        entityId = entityHit.entityId;
+        clubAccessMode = entityHit.clubAccessMode;
+        clubAccessClubId = entityHit.clubAccessClubId;
       }
       if (!user) {
         return NextResponse.json(
@@ -560,13 +613,17 @@ export async function POST(request: NextRequest) {
       console.log(`🔐 Password verification result: ${isPasswordValid ? '✅ VALID' : '❌ INVALID'}`);
       
       if (!isPasswordValid) {
-        const entityLogin = await tryEntityCompanyLogin(loginIdentifier, password);
-        if (entityLogin) {
-          const adminUser = await loadAdminUserForEntityLogin(entityLogin.adminId);
-          if (adminUser) {
-            user = adminUser;
+        if (!passwordAlreadyVerified) {
+          const entityHit = await tryEntityCredentialLogins(loginIdentifier, password);
+          if (entityHit) {
+            user = entityHit.user;
             passwordAlreadyVerified = true;
-            entityDirectLoginRedirect = entityLogin.redirectTo;
+            entityDirectLoginRedirect = entityHit.entityDirectLoginRedirect;
+            entityAccessMode = entityHit.entityAccessMode;
+            entityKind = entityHit.entityKind;
+            entityId = entityHit.entityId;
+            clubAccessMode = entityHit.clubAccessMode;
+            clubAccessClubId = entityHit.clubAccessClubId;
           }
         }
         if (!passwordAlreadyVerified) {
@@ -587,7 +644,15 @@ export async function POST(request: NextRequest) {
     // Check user type if specified
     if (userType) {
       const expectedUserType = mapUserType(userType);
-      if (user.userType !== expectedUserType) {
+      const clubStaffTypes = new Set<string>([
+        UserType.CLUB_TRAINER,
+        'CLUB_COADMIN',
+        'CLUB_OPERATOR',
+        'CLUB_COLLABORATOR',
+      ]);
+      const matchesClubStaffAsClub =
+        expectedUserType === UserType.CLUB && clubStaffTypes.has(String(user.userType));
+      if (user.userType !== expectedUserType && !matchesClubStaffAsClub) {
         return NextResponse.json(
           { error: `This account is not registered as a ${userType}` },
           { status: 403 }
@@ -597,15 +662,27 @@ export async function POST(request: NextRequest) {
 
     const userSettings = await prisma.userSettings.findUnique({
       where: { userId: user.id },
-      select: { language: true }
+      select: { language: true, adminSettings: true },
     });
 
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
+    const userLang = userSettings?.language || 'en';
     const userPayload = {
       ...userWithoutPassword,
-      language: userSettings?.language || 'en'
+      language: userLang,
     };
+
+    let pcuAlert: { title: string; bodyHtml: string } | undefined;
+    try {
+      const { readPcuSettings } = await import('@/lib/admin/userPcuSettings');
+      const { resolvePcuAlertDisplay } = await import('@/lib/admin/userPcuAlertMsg');
+      const pcu = readPcuSettings(userSettings?.adminSettings);
+      const resolved = resolvePcuAlertDisplay(pcu, 'login', userLang);
+      if (resolved) pcuAlert = resolved;
+    } catch {
+      /* PCU alert optional */
+    }
 
     if (MOVESBOOK_LOGIN_USER_TYPES.includes(user.userType)) {
       try {
@@ -621,11 +698,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate JWT token with RSA signing
+    const tokenExtra =
+      entityAccessMode === 'direct-access-only' && entityKind && entityId
+        ? {
+            entityDirectAccessOnly: true,
+            entityDirectAccessKind: entityKind,
+            entityDirectAccessEntityId: entityId,
+            ...(entityKind === 'club'
+              ? {
+                  clubDirectAccessOnly: true,
+                  clubDirectAccessClubId: entityId,
+                }
+              : {}),
+          }
+        : {};
+
     const token = generateToken(
       user.id,
       user.email,
       user.username,
-      user.userType
+      user.userType,
+      tokenExtra,
     );
 
     return NextResponse.json({
@@ -633,6 +726,12 @@ export async function POST(request: NextRequest) {
       token,
       user: userPayload,
       ...(entityDirectLoginRedirect ? { redirectTo: entityDirectLoginRedirect } : {}),
+      ...(entityAccessMode ? { entityAccessMode } : {}),
+      ...(entityKind ? { entityKind } : {}),
+      ...(entityId ? { entityId } : {}),
+      ...(clubAccessMode ? { clubAccessMode } : {}),
+      ...(clubAccessClubId ? { clubId: clubAccessClubId } : {}),
+      ...(pcuAlert ? { pcuAlert } : {}),
     });
 
   } catch (error) {
@@ -662,6 +761,12 @@ function mapUserType(roleIdOrType: number | string): UserType {
       'CLUB': UserType.CLUB,
       'CLUB_TRAINER': UserType.CLUB,
       'club_trainer': UserType.CLUB,
+      'CLUB_COADMIN': 'CLUB_COADMIN' as UserType,
+      'club_coadmin': 'CLUB_COADMIN' as UserType,
+      'CLUB_OPERATOR': 'CLUB_OPERATOR' as UserType,
+      'club_operator': 'CLUB_OPERATOR' as UserType,
+      'CLUB_COLLABORATOR': 'CLUB_COLLABORATOR' as UserType,
+      'club_collaborator': 'CLUB_COLLABORATOR' as UserType,
       'group': UserType.GROUP,
       'GROUP': UserType.GROUP,
       'groupAdmin': UserType.GROUP_ADMIN,

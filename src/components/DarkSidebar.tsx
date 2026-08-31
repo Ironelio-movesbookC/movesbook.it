@@ -3,6 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
+import { REGISTRATION_ONLY_ID_CARDS_TOOLTIP } from '@/lib/registration/clubIdentificationCardsRegistration';
 import type { LucideIcon } from 'lucide-react';
 import { 
   Home,
@@ -118,6 +119,7 @@ import {
   isGroupAccountUserType,
   isManagedEntityAdminUserType,
   isTeamAccountUserType,
+  showSuggestMovesbookForTab,
   userOwnsMovesbookWebsite,
 } from '@/utils/dashboardRouting';
 import {
@@ -126,6 +128,7 @@ import {
   isClubCreatedFromForm,
   userHasClubProfile,
 } from '@/lib/club/clubSidebarLabel';
+import { formatCreatableCompaniesSidebarLabel } from '@/lib/club/creatableCompaniesQuota.shared';
 import { canManageClubWebsite } from '@/lib/club/clubWebsitePermissions';
 import {
   formatEntitySidebarLabel,
@@ -155,6 +158,11 @@ import {
 } from '@/lib/club/clubTopicsNavigation';
 import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
 import { getAuthToken } from '@/utils/auth.utils';
+import { withSelectedClubId } from '@/lib/club/servicePurchasesClient';
+import {
+  CLUB_STAFF_CHANGED_EVENT,
+  type ClubStaffListItem,
+} from '@/lib/club/clubStaff.constants';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
   return (
@@ -286,7 +294,6 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: ShoppingCart, label: 'Shop/Selling of products', path: '/ArchiveSeles/product_sale_list' },
     { kind: 'icon', Icon: Users2, label: 'Archive of Memberships', path: '/clubs/memberships/archive' },
     { kind: 'icon', Icon: BookOpen, label: 'Archive of Course Subs', path: '/clubs/courses/archive' },
-    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '/clubs/new_moment_cash' },
     { kind: 'icon', Icon: FileText, label: 'Archive of Services', path: '/clubs/archive_service_list' },
     { kind: 'icon', Icon: Receipt, label: 'Member expenses', path: '/clubs/new_expense' },
     { kind: 'icon', Icon: FileStack, label: 'Archive of Expenses', path: '/clubs/archive_expense_list' },
@@ -352,6 +359,8 @@ interface DarkSidebarProps {
   onMyGroupClick?: () => void;
   onMyCoachingGroupClick?: () => void;
   onPostsClick?: () => void;
+  /** Member info → Registration info (purchased version details in dashboard). */
+  onRegistrationInfoClick?: () => void;
   /** Messages → My feedbacks for Staff — swap center section (keep left/right sidebars) */
   onMyFeedbacksStaffClick?: () => void;
   /** My Club → Music for the club → Add songs & playlists (same as navbar "Add Songs") */
@@ -374,6 +383,12 @@ interface DarkSidebarProps {
   onClubOgpNewsSectionClick?: () => void;
   /** My Club → Club News → Club Global News (all shared) */
   onClubGlobalNewsSectionClick?: () => void;
+  /** My Page → News → Movesbook News (superadmin Global News, read-only) */
+  onMyPageMovesbookNewsClick?: () => void;
+  /** My Page → News → News (same as top-nav MB News / news-by-movesbook) */
+  onMyPageNewsClick?: () => void;
+  /** My Page → News → OGP News (same as top-nav News / ?open=news) */
+  onMyPageOgpNewsClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
@@ -395,8 +410,12 @@ interface DarkSidebarProps {
    * only while that workspace is open from the sidebar — hidden on My Page.
    */
   clubMyClubTabVisible?: boolean;
+  /** Direct Access login: hide My Page tab; user stays on My Club only. */
+  hideMyPageTab?: boolean;
   /** Club workspace: clubs list has finished loading from the API. */
   clubProfileLoaded?: boolean;
+  /** Club admin — companies creatable vs already created (from subscription version). */
+  creatableCompaniesQuota?: import('@/lib/club/creatableCompaniesQuota.shared').CreatableCompaniesQuota | null;
 }
 
 export default function DarkSidebar({
@@ -410,6 +429,7 @@ export default function DarkSidebar({
   onMyGroupClick,
   onMyCoachingGroupClick,
   onPostsClick,
+  onRegistrationInfoClick,
   onMyFeedbacksStaffClick,
   onClubAddSongsPlaylistsClick,
   onClubMusicPanelClick,
@@ -421,6 +441,9 @@ export default function DarkSidebar({
   onClubMovesbookNewsSectionClick,
   onClubOgpNewsSectionClick,
   onClubGlobalNewsSectionClick,
+  onMyPageMovesbookNewsClick,
+  onMyPageNewsClick,
+  onMyPageOgpNewsClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
@@ -431,7 +454,9 @@ export default function DarkSidebar({
   onCreateTeamClick,
   onCreateGroupClick,
   clubMyClubTabVisible = false,
+  hideMyPageTab = false,
   clubProfileLoaded = true,
+  creatableCompaniesQuota = null,
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -447,6 +472,7 @@ export default function DarkSidebar({
 
   const currentTab = onTabChange ? activeTab : internalActiveTab;
   const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
+  const showSuggestMovesbook = showSuggestMovesbookForTab(userType, currentTab);
 
   const [communitiesOpen, setCommunitiesOpen] = useState(false);
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
@@ -692,6 +718,13 @@ export default function DarkSidebar({
   const [friendsFindOpen, setFriendsFindOpen] = useState(true);
   const [clubManagementOpen, setClubManagementOpen] = useState(false);
   const [clubCurrentOperatorsOpen, setClubCurrentOperatorsOpen] = useState(false);
+  /** Live club-admin profile for Current Operators → Administrator (from /api/user/profile). */
+  const [clubAdminOperatorProfile, setClubAdminOperatorProfile] = useState<{
+    name: string;
+    country: string | null;
+    image: string | null;
+  } | null>(null);
+  const [clubStaffItems, setClubStaffItems] = useState<ClubStaffListItem[]>([]);
   const [accountsAndDeviceOpen, setAccountsAndDeviceOpen] = useState(false);
   const [clubAccountsSectionOpen, setClubAccountsSectionOpen] = useState(false);
   const [clubIdDevicesSectionOpen, setClubIdDevicesSectionOpen] = useState(false);
@@ -711,6 +744,7 @@ export default function DarkSidebar({
   const [clubUserGuidesOpen, setClubUserGuidesOpen] = useState(false);
   const [clubPostsOpen, setClubPostsOpen] = useState(false);
   const [clubNewsOpen, setClubNewsOpen] = useState(false);
+  const [myPageNewsOpen, setMyPageNewsOpen] = useState(false);
   const [musicForClubOpen, setMusicForClubOpen] = useState(false);
   const [clubInternetLinksOpen, setClubInternetLinksOpen] = useState(false);
   const [clubInternetMyClubsOpen, setClubInternetMyClubsOpen] = useState(true);
@@ -724,10 +758,112 @@ export default function DarkSidebar({
   const sidebarProfileImageSrc = resolvePublicImageUrl(
     userImageOverride ?? profileImageFromDb ?? user?.image
   );
+  const clubAdminOperatorDisplayName =
+    clubAdminOperatorProfile?.name || user?.name || 'Admin';
+  const clubAdminOperatorCountry =
+    clubAdminOperatorProfile?.country || user?.country?.trim() || null;
+  const clubAdminOperatorImageSrc = resolvePublicImageUrl(
+    clubAdminOperatorProfile?.image ??
+      userImageOverride ??
+      profileImageFromDb ??
+      user?.image,
+  );
   /** When parent sends a new `users_new.image`, drop local override before paint so banner + sidebar stay in sync. */
   useLayoutEffect(() => {
     setUserImageOverride(undefined);
   }, [profileImageFromDb]);
+
+  useEffect(() => {
+    if (!clubCurrentOperatorsOpen || !user?.id) return;
+    const token = getAuthToken();
+    if (!token) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/user/profile', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          name?: string | null;
+          firstName?: string | null;
+          surname?: string | null;
+          country?: string | null;
+          image?: string | null;
+        };
+        const displayName =
+          [data.firstName, data.surname].filter(Boolean).join(' ').trim() ||
+          data.name?.trim() ||
+          user.name ||
+          'Admin';
+        if (cancelled) return;
+        setClubAdminOperatorProfile({
+          name: displayName,
+          country: data.country?.trim() || null,
+          image: data.image ?? null,
+        });
+      } catch {
+        /* optional — fall back to auth user */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clubCurrentOperatorsOpen, user?.id, user?.name]);
+
+  useEffect(() => {
+    if (!clubCurrentOperatorsOpen) return;
+    const token = getAuthToken();
+    if (!token) return;
+
+    let cancelled = false;
+    const loadStaff = async () => {
+      try {
+        const res = await fetch(withSelectedClubId('/api/club/staff'), {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { items?: ClubStaffListItem[] };
+        if (cancelled) return;
+        setClubStaffItems(Array.isArray(data.items) ? data.items : []);
+      } catch {
+        if (!cancelled) setClubStaffItems([]);
+      }
+    };
+    void loadStaff();
+    window.addEventListener(CLUB_STAFF_CHANGED_EVENT, loadStaff);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(CLUB_STAFF_CHANGED_EVENT, loadStaff);
+    };
+  }, [clubCurrentOperatorsOpen, selectedEntityId]);
+
+  const goToClubStaffList = (preset?: 'coadmin' | 'operator' | 'collaborator') => {
+    writeClubWorkspaceTab('my-entity');
+    const qs = preset ? `?preset=${preset}` : '';
+    router.push(`/club/staff${qs}`);
+  };
+
+  const removeClubStaff = async (staffId: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+    if (!window.confirm('Remove this club staff member?')) return;
+    try {
+      const res = await fetch(withSelectedClubId(`/api/club/staff/${staffId}`), {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      setClubStaffItems((prev) => prev.filter((item) => item.id !== staffId));
+      window.dispatchEvent(new Event(CLUB_STAFF_CHANGED_EVENT));
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     if (!clubManagementOpen) {
@@ -1050,6 +1186,7 @@ export default function DarkSidebar({
   };
 
   const handleMyPageTab = () => {
+    if (hideMyPageTab) return;
     writeClubWorkspaceTab('my-page');
     setCurrentTab('my-page');
     if (onMyPageClick) {
@@ -1402,13 +1539,15 @@ export default function DarkSidebar({
             </div>
 
             <div className="py-3 bg-gray-850 border-t border-gray-700">
-              <button
-                type="button"
-                onClick={handleSuggestMovesbookClick}
-                className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
-              >
-                Suggest Movesbook to your friends
-              </button>
+              {showSuggestMovesbook ? (
+                <button
+                  type="button"
+                  onClick={handleSuggestMovesbookClick}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                >
+                  Suggest Movesbook to your friends
+                </button>
+              ) : null}
             </div>
           </div>
         )}
@@ -1467,17 +1606,19 @@ export default function DarkSidebar({
     <div className="w-full h-full bg-gray-900 text-white flex flex-col overflow-hidden" style={{ width: '320px' }}>
       {/* Tab Navigation — club accounts: My Club tab only while a sidebar club workspace is open */}
       <div className="flex flex-shrink-0 border-b border-gray-700 bg-gray-900">
-        <button
-          onClick={handleMyPageTab}
-          className={`${showMyClubTab ? 'flex-1' : 'w-full'} py-3 px-4 text-center font-medium transition-colors ${
-            currentTab === 'my-page'
-              ? 'bg-gray-700 text-white border-b-2 border-yellow-400'
-              : 'bg-gray-800 text-gray-300 hover:bg-gray-750 hover:text-white'
-          }`}
-        >
-          {t('sidebar_my_page')}
-        </button>
-        {showMyClubTab && (
+        {!hideMyPageTab && (
+          <button
+            onClick={handleMyPageTab}
+            className={`${showMyClubTab ? 'flex-1' : 'w-full'} py-3 px-4 text-center font-medium transition-colors ${
+              currentTab === 'my-page'
+                ? 'bg-gray-700 text-white border-b-2 border-yellow-400'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-750 hover:text-white'
+            }`}
+          >
+            {t('sidebar_my_page')}
+          </button>
+        )}
+        {(showMyClubTab || hideMyPageTab) && (
           <button
             onClick={handleMyEntityTab}
             className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
@@ -1658,14 +1799,21 @@ export default function DarkSidebar({
                   className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left transition-colors hover:bg-teal-700"
                 >
                   <Mail className="h-5 w-5 shrink-0" />
-                  <span>
-                    {isCoachUser
-                      ? t('sidebar_my_groups_trained')
-                      : isTeamManagerUser
-                        ? t('sidebar_my_teams')
-                        : isGroupAdminUser
-                          ? t('sidebar_my_group')
-                          : t('sidebar_my_clubs')}
+                  <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span>
+                      {isCoachUser
+                        ? t('sidebar_my_groups_trained')
+                        : isTeamManagerUser
+                          ? t('sidebar_my_teams')
+                          : isGroupAdminUser
+                            ? t('sidebar_my_group')
+                            : t('sidebar_my_clubs')}
+                    </span>
+                    {isClubAccountUserType(userType) && creatableCompaniesQuota ? (
+                      <span className="text-[11px] font-semibold normal-case text-yellow-300">
+                        {formatCreatableCompaniesSidebarLabel(creatableCompaniesQuota)}
+                      </span>
+                    ) : null}
                   </span>
                 </button>
                 <button
@@ -1684,7 +1832,8 @@ export default function DarkSidebar({
                   <button
                     type="button"
                     onClick={() => onCreateClubClick?.()}
-                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800"
+                    disabled={creatableCompaniesQuota ? !creatableCompaniesQuota.canCreate : false}
+                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:from-red-500 disabled:hover:to-red-700"
                   >
                     Create a club
                   </button>
@@ -1978,8 +2127,22 @@ export default function DarkSidebar({
                   <div className="border-t border-teal-900/40 bg-[#2d2d2d] text-sm text-white">
                     <button
                       type="button"
-                      onClick={() => router.push('/profile#member-info')}
+                      onClick={() => {
+                        if (onRegistrationInfoClick) {
+                          onRegistrationInfoClick();
+                        } else {
+                          router.push('/profile#member-registration-info');
+                        }
+                      }}
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+                    >
+                      <ClipboardList className="h-4 w-4 shrink-0 opacity-90" />
+                      <span>Registration info</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/profile#member-info')}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90 border-t border-black/25"
                     >
                       <UserCircle className="h-4 w-4 shrink-0 opacity-90" />
                       <span>Member info</span>
@@ -2232,13 +2395,52 @@ export default function DarkSidebar({
               <ChevronDown className="w-4 h-4 opacity-80" />
             </button>
 
-            <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
-              <div className="flex items-center gap-3">
-                <Newspaper className="w-5 h-5" />
-                <span>{t('sidebar_news')}</span>
-              </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+            <div className="w-full border-b border-teal-700">
+              <button
+                type="button"
+                onClick={() => setMyPageNewsOpen((v) => !v)}
+                aria-expanded={myPageNewsOpen}
+                className="flex w-full items-center justify-between bg-teal-800 py-3 px-4 text-white transition-colors hover:bg-teal-700"
+              >
+                <div className="flex items-center gap-3">
+                  <Newspaper className="h-5 w-5 shrink-0" />
+                  <span>{t('sidebar_my_news')}</span>
+                </div>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 opacity-80 transition-transform duration-200 ${
+                    myPageNewsOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {myPageNewsOpen && (
+                <div className="bg-[#4a4a4a] text-white">
+                  <button
+                    type="button"
+                    onClick={() => onMyPageMovesbookNewsClick?.()}
+                    className="mb-1.5 flex w-full items-center gap-2.5 border-b-2 border-gray-400/70 px-4 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                  >
+                    <BookOpen className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                    <span className="min-w-0 leading-snug">Movesbook News</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMyPageNewsClick?.()}
+                    className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-4 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                  >
+                    <Newspaper className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                    <span className="min-w-0 leading-snug">News</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMyPageOgpNewsClick?.()}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                  >
+                    <Link2 className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                    <span className="min-w-0 leading-snug">OGP News</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
               <div className="flex items-center gap-3">
@@ -2495,13 +2697,15 @@ export default function DarkSidebar({
                   </div>
 
                   <div className="py-3 bg-gray-850 border-t border-gray-700">
-                    <button
-                      type="button"
-                      onClick={handleSuggestMovesbookClick}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
-                    >
-                      Suggest Movesbook to your friends
-                    </button>
+                    {showSuggestMovesbook ? (
+                      <button
+                        type="button"
+                        onClick={handleSuggestMovesbookClick}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                      >
+                        Suggest Movesbook to your friends
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -2871,7 +3075,7 @@ export default function DarkSidebar({
                         <button
                           type="button"
                           onClick={() => onClubMovesbookNewsSectionClick?.()}
-                          className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                          className="mb-1.5 flex w-full items-center gap-2.5 border-b-2 border-gray-400/70 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                         >
                           <BookOpen className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
                           <span className="min-w-0 leading-snug">Movesbook News</span>
@@ -2898,7 +3102,7 @@ export default function DarkSidebar({
                           className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                         >
                           <Globe className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                          <span className="min-w-0 leading-snug">Club Global News</span>
+                          <span className="min-w-0 leading-snug">Club News &amp; OGP News</span>
                         </button>
                       </div>
                     )}
@@ -3246,8 +3450,18 @@ export default function DarkSidebar({
                                   Administrator
                                 </div>
                                 <div className="flex gap-2 border-b border-gray-700 px-2 py-2">
-                                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-sm bg-gray-600">
-                                    <UserCircle className="h-10 w-10 text-gray-400" />
+                                  <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-gray-600">
+                                    {clubAdminOperatorImageSrc ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        key={clubAdminOperatorImageSrc}
+                                        src={clubAdminOperatorImageSrc}
+                                        alt=""
+                                        className="absolute inset-0 h-full w-full object-cover"
+                                      />
+                                    ) : (
+                                      <UserCircle className="h-10 w-10 text-gray-400" />
+                                    )}
                                   </div>
                                   <div className="min-w-0 flex-1 text-[11px] leading-snug">
                                     <div className="flex items-center gap-1.5 text-white">
@@ -3255,9 +3469,13 @@ export default function DarkSidebar({
                                       <span>Online</span>
                                     </div>
                                     <div className="text-yellow-300">Admin</div>
-                                    <div className="font-bold text-white">Ironelio Buonocore</div>
+                                    <div className="truncate font-bold text-white">
+                                      {clubAdminOperatorDisplayName}
+                                    </div>
                                     <div className="text-yellow-300">Country</div>
-                                    <div className="text-white">-</div>
+                                    <div className="truncate text-white">
+                                      {clubAdminOperatorCountry || '-'}
+                                    </div>
                                   </div>
                                 </div>
 
@@ -3277,30 +3495,44 @@ export default function DarkSidebar({
                                     <span>Co-admins</span>
                                     <button
                                       type="button"
+                                      onClick={() => goToClubStaffList('coadmin')}
                                       className="flex items-center gap-0.5 font-semibold hover:underline"
                                     >
                                       <Plus className="h-3 w-3" />
                                       Add
                                     </button>
                                   </div>
-                                  <div className="flex items-center gap-2 px-2 py-2">
-                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
-                                      <UserCircle className="h-7 w-7 text-gray-400" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="text-[11px] font-medium text-yellow-300">
-                                        shrutika chaudhari
-                                      </div>
-                                      <div className="text-[11px] text-white">90 Members</div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
-                                      aria-label="Remove"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </button>
-                                  </div>
+                                  {clubStaffItems
+                                    .filter((item) => item.staffType === 'coadmin')
+                                    .map((item) => {
+                                      const src = resolvePublicImageUrl(item.image);
+                                      return (
+                                        <div key={item.id} className="flex items-center gap-2 px-2 py-2">
+                                          {src ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={src} alt="" className="h-9 w-9 shrink-0 rounded-sm object-cover" />
+                                          ) : (
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
+                                              <UserCircle className="h-7 w-7 text-gray-400" />
+                                            </div>
+                                          )}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[11px] font-medium text-yellow-300">
+                                              {item.name}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white">@{item.username}</div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => void removeClubStaff(item.id)}
+                                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
+                                            aria-label="Remove"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
                                 </div>
 
                                 <div className="border-b border-gray-700">
@@ -3311,34 +3543,92 @@ export default function DarkSidebar({
                                     </div>
                                     <button
                                       type="button"
+                                      onClick={() => goToClubStaffList('operator')}
                                       className="flex items-center gap-0.5 font-semibold hover:underline"
                                     >
                                       <Plus className="h-3 w-3" />
                                       Add
                                     </button>
                                   </div>
+                                  {clubStaffItems
+                                    .filter((item) => item.staffType === 'operator')
+                                    .map((item) => {
+                                      const src = resolvePublicImageUrl(item.image);
+                                      return (
+                                        <div key={item.id} className="flex items-center gap-2 px-2 py-2">
+                                          {src ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={src} alt="" className="h-9 w-9 shrink-0 rounded-sm object-cover" />
+                                          ) : (
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
+                                              <UserCircle className="h-7 w-7 text-gray-400" />
+                                            </div>
+                                          )}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[11px] font-medium text-yellow-300">
+                                              {item.name}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white">@{item.username}</div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => void removeClubStaff(item.id)}
+                                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
+                                            aria-label="Remove"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
                                 </div>
 
                                 <div>
-                                  <div className="flex items-center gap-2 border-b border-gray-700 bg-[#383838] px-2 py-1.5 text-[11px] font-semibold text-white">
-                                    <Contact2 className="h-4 w-4 shrink-0 opacity-95" />
-                                    <span>Staff & collaborators</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 px-2 py-2">
-                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
-                                      <UserCircle className="h-7 w-7 text-gray-400" />
-                                    </div>
-                                    <div className="min-w-0 flex-1 text-[11px] font-medium text-yellow-300">
-                                      shrutika chaudhari
+                                  <div className="flex items-center justify-between bg-[#c4c4c4] px-2 py-1.5 text-[11px] font-semibold text-gray-900">
+                                    <div className="flex items-center gap-2">
+                                      <UserCircle className="h-4 w-4 text-emerald-700" />
+                                      <span>Collaborators</span>
                                     </div>
                                     <button
                                       type="button"
-                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
-                                      aria-label="Remove"
+                                      onClick={() => goToClubStaffList('collaborator')}
+                                      className="flex items-center gap-0.5 font-semibold hover:underline"
                                     >
-                                      <X className="h-3 w-3" />
+                                      <Plus className="h-3 w-3" />
+                                      Add
                                     </button>
                                   </div>
+                                  {clubStaffItems
+                                    .filter((item) => item.staffType === 'collaborator')
+                                    .map((item) => {
+                                      const src = resolvePublicImageUrl(item.image);
+                                      return (
+                                        <div key={item.id} className="flex items-center gap-2 px-2 py-2">
+                                          {src ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={src} alt="" className="h-9 w-9 shrink-0 rounded-sm object-cover" />
+                                          ) : (
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
+                                              <UserCircle className="h-7 w-7 text-gray-400" />
+                                            </div>
+                                          )}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[11px] font-medium text-yellow-300">
+                                              {item.name}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white">@{item.username}</div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => void removeClubStaff(item.id)}
+                                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
+                                            aria-label="Remove"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
                                 </div>
                               </div>
                             )}
@@ -3467,34 +3757,33 @@ export default function DarkSidebar({
                                         </button>
                                         {clubAccountsYellowOpen && (
                                           <div className="border-t border-gray-700/70 bg-[#2a2a2a]">
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                                              <span>Price list</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                                              <span>Requests of accounts</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-lime-400" />
-                                              <span>Accounts purchased</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-800" />
-                                              <span>Manage member&apos;s accounts</span>
-                                            </button>
+                                            {(
+                                              [
+                                                { dot: 'bg-amber-400', label: 'Price list' },
+                                                { dot: 'bg-red-500', label: 'Requests of accounts' },
+                                                { dot: 'bg-lime-400', label: 'Accounts purchased' },
+                                                {
+                                                  dot: 'bg-emerald-800',
+                                                  label: "Manage member's accounts",
+                                                  last: true,
+                                                },
+                                              ] as const
+                                            ).map((item) => (
+                                              <button
+                                                key={item.label}
+                                                type="button"
+                                                disabled
+                                                title="Club account purchase is available only during club registration / creation."
+                                                className={`flex w-full cursor-not-allowed items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-gray-500 opacity-60 ${
+                                                  'last' in item && item.last
+                                                    ? ''
+                                                    : 'border-b border-gray-700/60'
+                                                }`}
+                                              >
+                                                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                                                <span>{item.label}</span>
+                                              </button>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
@@ -3542,34 +3831,33 @@ export default function DarkSidebar({
                                         </button>
                                         {clubQrCodesOpen && (
                                           <div className="border-t border-gray-700/70 bg-[#2a2a2a]">
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                                              <span>Price list</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                                              <span>Requests of QR Code</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-lime-400" />
-                                              <span>QR Code purchased</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" />
-                                              <span>Manage QR Code assignement</span>
-                                            </button>
+                                            {(
+                                              [
+                                                { dot: 'bg-amber-400', label: 'Price list' },
+                                                { dot: 'bg-red-500', label: 'Requests of QR Code' },
+                                                { dot: 'bg-lime-400', label: 'QR Code purchased' },
+                                                {
+                                                  dot: 'bg-sky-400',
+                                                  label: 'Manage QR Code assignement',
+                                                  last: true,
+                                                },
+                                              ] as const
+                                            ).map((item) => (
+                                              <button
+                                                key={item.label}
+                                                type="button"
+                                                disabled
+                                                title={REGISTRATION_ONLY_ID_CARDS_TOOLTIP}
+                                                className={`flex w-full cursor-not-allowed items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-gray-500 opacity-60 ${
+                                                  'last' in item && item.last
+                                                    ? ''
+                                                    : 'border-b border-gray-700/60'
+                                                }`}
+                                              >
+                                                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                                                <span>{item.label}</span>
+                                              </button>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
@@ -3591,34 +3879,33 @@ export default function DarkSidebar({
                                         </button>
                                         {clubRfidBadgesOpen && (
                                           <div className="border-t border-gray-700/70 bg-[#2a2a2a]">
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                                              <span>Price list</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                                              <span>Requests of Rfids</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-lime-400" />
-                                              <span>Rfids purchased</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" />
-                                              <span>Manage rfidbadge assignement</span>
-                                            </button>
+                                            {(
+                                              [
+                                                { dot: 'bg-amber-400', label: 'Price list' },
+                                                { dot: 'bg-red-500', label: 'Requests of Rfids' },
+                                                { dot: 'bg-lime-400', label: 'Rfids purchased' },
+                                                {
+                                                  dot: 'bg-sky-400',
+                                                  label: 'Manage rfidbadge assignement',
+                                                  last: true,
+                                                },
+                                              ] as const
+                                            ).map((item) => (
+                                              <button
+                                                key={item.label}
+                                                type="button"
+                                                disabled
+                                                title={REGISTRATION_ONLY_ID_CARDS_TOOLTIP}
+                                                className={`flex w-full cursor-not-allowed items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-gray-500 opacity-60 ${
+                                                  'last' in item && item.last
+                                                    ? ''
+                                                    : 'border-b border-gray-700/60'
+                                                }`}
+                                              >
+                                                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                                                <span>{item.label}</span>
+                                              </button>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
@@ -3640,34 +3927,33 @@ export default function DarkSidebar({
                                         </button>
                                         {clubMagneticOpen && (
                                           <div className="border-t border-gray-700/70 bg-[#2a2a2a]">
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                                              <span>Price list</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                                              <span>Requests of badges</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-lime-400" />
-                                              <span>Badges purchased</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" />
-                                              <span>Manage magnetic assignement</span>
-                                            </button>
+                                            {(
+                                              [
+                                                { dot: 'bg-amber-400', label: 'Price list' },
+                                                { dot: 'bg-red-500', label: 'Requests of badges' },
+                                                { dot: 'bg-lime-400', label: 'Badges purchased' },
+                                                {
+                                                  dot: 'bg-sky-400',
+                                                  label: 'Manage magnetic assignement',
+                                                  last: true,
+                                                },
+                                              ] as const
+                                            ).map((item) => (
+                                              <button
+                                                key={item.label}
+                                                type="button"
+                                                disabled
+                                                title={REGISTRATION_ONLY_ID_CARDS_TOOLTIP}
+                                                className={`flex w-full cursor-not-allowed items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-gray-500 opacity-60 ${
+                                                  'last' in item && item.last
+                                                    ? ''
+                                                    : 'border-b border-gray-700/60'
+                                                }`}
+                                              >
+                                                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                                                <span>{item.label}</span>
+                                              </button>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
@@ -3689,34 +3975,33 @@ export default function DarkSidebar({
                                         </button>
                                         {clubSmartcardsOpen && (
                                           <div className="border-t border-gray-700/70 bg-[#2a2a2a]">
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                                              <span>Price list</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                                              <span>Requests of badges</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-b border-gray-700/60 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-lime-400" />
-                                              <span>Badges purchased</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-white hover:bg-[#333]"
-                                            >
-                                              <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" />
-                                              <span>Manage smartcard assignement</span>
-                                            </button>
+                                            {(
+                                              [
+                                                { dot: 'bg-amber-400', label: 'Price list' },
+                                                { dot: 'bg-red-500', label: 'Requests of badges' },
+                                                { dot: 'bg-lime-400', label: 'Badges purchased' },
+                                                {
+                                                  dot: 'bg-sky-400',
+                                                  label: 'Manage smartcard assignement',
+                                                  last: true,
+                                                },
+                                              ] as const
+                                            ).map((item) => (
+                                              <button
+                                                key={item.label}
+                                                type="button"
+                                                disabled
+                                                title={REGISTRATION_ONLY_ID_CARDS_TOOLTIP}
+                                                className={`flex w-full cursor-not-allowed items-center gap-2 py-2 pl-8 pr-2 text-left text-[11px] font-medium text-gray-500 opacity-60 ${
+                                                  'last' in item && item.last
+                                                    ? ''
+                                                    : 'border-b border-gray-700/60'
+                                                }`}
+                                              >
+                                                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                                                <span>{item.label}</span>
+                                              </button>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
@@ -4539,6 +4824,18 @@ export default function DarkSidebar({
                       </div>
                     </button>
                   </>
+                )}
+
+                {showSuggestMovesbook && (
+                  <div className="py-3 px-3 bg-gray-850 border-t border-gray-700">
+                    <button
+                      type="button"
+                      onClick={handleSuggestMovesbookClick}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                    >
+                      Suggest Movesbook to your friends
+                    </button>
+                  </div>
                 )}
               </>
             )}

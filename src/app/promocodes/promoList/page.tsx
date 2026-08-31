@@ -1,7 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isPromocodeInviteSentMessage } from '@/lib/promocodes/promocodeInviteEvents';
+import {
+  consumePromocodeListRefreshSignal,
+  isPromocodeInviteSentMessage,
+  isPromocodeSavedMessage,
+  PROMOCODE_LIST_REFRESH_STORAGE_KEY,
+} from '@/lib/promocodes/promocodeInviteEvents';
 import PromocodesTabs from '@/components/promocodes/PromocodesTabs';
 import PromocodeListSubTabs from '@/components/promocodes/PromocodeListSubTabs';
 import PromocodeSendInviteModal from '@/components/promocodes/PromocodeSendInviteModal';
@@ -18,10 +23,12 @@ export default function PromocodesPromoListPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [orderBy, setOrderBy] = useState('');
   const [usableBy, setUsableBy] = useState('');
   const [versionId, setVersionId] = useState('');
   const [available, setAvailable] = useState('');
+  const [creatorSource, setCreatorSource] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
@@ -29,16 +36,19 @@ export default function PromocodesPromoListPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePromocodeRow, setInvitePromocodeRow] = useState<PromocodeSettingRow | null>(null);
   const invitePopupPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const addPopupPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { page?: number }) => {
+    const effectivePage = options?.page ?? page;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), pageSize: '5' });
-      if (search.trim()) params.set('search', search.trim());
+      const params = new URLSearchParams({ page: String(effectivePage), pageSize: '5' });
+      if (appliedSearch.trim()) params.set('search', appliedSearch.trim());
       if (orderBy) params.set('orderBy', orderBy);
       if (usableBy) params.set('usableBy', usableBy);
       if (versionId) params.set('versionId', versionId);
       if (available) params.set('available', available);
+      if (creatorSource) params.set('creatorSource', creatorSource);
       const res = await promocodesFetch(`/api/admin/promocodes/settings?${params}`);
       setData(await res.json());
     } catch (e) {
@@ -46,28 +56,79 @@ export default function PromocodesPromoListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, orderBy, usableBy, versionId, available]);
+  }, [page, appliedSearch, orderBy, usableBy, versionId, available, creatorSource]);
+
+  const refreshAfterPromocodeCreate = useCallback(
+    (createdId?: number) => {
+      setPage(1);
+      setSelectedIds([]);
+      if (createdId != null && Number.isFinite(createdId)) {
+        setHighlightedId(createdId);
+      }
+      void load({ page: 1 });
+    },
+    [load]
+  );
+
+  const checkPromocodeListRefreshSignal = useCallback(() => {
+    const signal = consumePromocodeListRefreshSignal();
+    if (signal) {
+      refreshAfterPromocodeCreate(signal.createdId);
+      return true;
+    }
+    return false;
+  }, [refreshAfterPromocodeCreate]);
 
   useEffect(() => {
     if (ready) void load();
   }, [ready, load]);
 
   useEffect(() => {
+    if (!ready) return;
+    checkPromocodeListRefreshSignal();
+  }, [ready, checkPromocodeListRefreshSignal]);
+
+  useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       if (isPromocodeInviteSentMessage(event.data)) {
         void load();
+        return;
+      }
+      if (isPromocodeSavedMessage(event.data)) {
+        refreshAfterPromocodeCreate(event.data.createdId);
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [load]);
+  }, [load, refreshAfterPromocodeCreate]);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== PROMOCODE_LIST_REFRESH_STORAGE_KEY) return;
+      checkPromocodeListRefreshSignal();
+    };
+    const onFocus = () => {
+      checkPromocodeListRefreshSignal();
+    };
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [checkPromocodeListRefreshSignal]);
 
   useEffect(() => {
     return () => {
       if (invitePopupPollRef.current) {
         clearInterval(invitePopupPollRef.current);
         invitePopupPollRef.current = null;
+      }
+      if (addPopupPollRef.current) {
+        clearInterval(addPopupPollRef.current);
+        addPopupPollRef.current = null;
       }
     };
   }, []);
@@ -161,6 +222,26 @@ export default function PromocodesPromoListPage() {
     }, 400);
   };
 
+  const watchAddPopupUntilClosed = (popup: Window | null) => {
+    if (!popup) return;
+    if (addPopupPollRef.current) {
+      clearInterval(addPopupPollRef.current);
+    }
+    addPopupPollRef.current = setInterval(() => {
+      if (!popup.closed) return;
+      if (addPopupPollRef.current) {
+        clearInterval(addPopupPollRef.current);
+        addPopupPollRef.current = null;
+      }
+      checkPromocodeListRefreshSignal();
+    }, 400);
+  };
+
+  const openAddPromocodePopup = () => {
+    const popup = window.open('/promocodes/add', '_blank', 'noopener,noreferrer');
+    watchAddPopupUntilClosed(popup);
+  };
+
   const submitInviteFromModal = () => {
     if (!inviteEmail.trim()) {
       showAlert('Please enter an email address.');
@@ -181,9 +262,16 @@ export default function PromocodesPromoListPage() {
     <div className="promocodes-page max-w-[1400px] mx-auto">
       <div className="reddish_row1 mtop10">Subscriptions with Promo codes</div>
 
-      <PromocodesTabs active="promoList" showCreditsLink />
+      <PromocodesTabs active="promoList" onAddPromocode={openAddPromocodePopup} />
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <form
+        className="mt-4 flex flex-wrap items-center gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setAppliedSearch(search);
+          setPage(1);
+        }}
+      >
         <button
           type="button"
           onClick={() => setFilterOpen(!filterOpen)}
@@ -191,6 +279,18 @@ export default function PromocodesPromoListPage() {
         >
           Filter ▾
         </button>
+        <select
+          value={creatorSource}
+          onChange={(e) => {
+            setCreatorSource(e.target.value);
+            setPage(1);
+          }}
+          className="px-3 py-2 border text-sm min-w-[180px]"
+        >
+          <option value="">Movesbook and other users</option>
+          <option value="movesbook">Movesbook</option>
+          <option value="other">Other users</option>
+        </select>
         <select
           value={orderBy}
           onChange={(e) => setOrderBy(e.target.value)}
@@ -210,11 +310,7 @@ export default function PromocodesPromoListPage() {
           className="px-3 py-2 border text-sm"
         />
         <button
-          type="button"
-          onClick={() => {
-            setPage(1);
-            void load();
-          }}
+          type="submit"
           className="px-4 py-2 bg-[#7b0a26] text-white text-sm rounded"
         >
           Search
@@ -227,7 +323,7 @@ export default function PromocodesPromoListPage() {
             Delete
           </button>
         </div>
-      </div>
+      </form>
 
       {filterOpen && (
         <div className="mt-3 p-4 bg-gray-100 border border-gray-300 rounded space-y-3 max-w-md">
@@ -268,7 +364,7 @@ export default function PromocodesPromoListPage() {
             type="button"
             onClick={() => {
               setPage(1);
-              void load();
+              void load({ page: 1 });
               setFilterOpen(false);
             }}
             className="px-4 py-2 bg-[#7b0a26] text-white text-sm rounded"
@@ -282,8 +378,8 @@ export default function PromocodesPromoListPage() {
 
       <PromocodeListSubTabs
         onRecipientsSelected={handleRecipientsSelected}
-        onAllRecipients={() => window.open('/promocodes/promoAll', '_blank')}
         onSendInvite={handleSendInvite}
+        onAddNew={openAddPromocodePopup}
       />
 
       {loading ? (

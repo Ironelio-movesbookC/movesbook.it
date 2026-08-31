@@ -1,25 +1,36 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Camera, User, X } from 'lucide-react';
+import { User, X } from 'lucide-react';
 import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
+import {
+  membershipDateClassName,
+  membershipStatusToneFromLabel,
+} from '@/lib/admin/clubSubscriptionStatus';
+import { periodStatusFromDates } from '@/lib/admin/networkSubscriptionHistory';
+import { formatPcuIsoDate } from '@/components/admin/AdminPcuDatePicker';
 
 export interface ClubUserPanelData {
   modalTitle: string;
   fullName: string;
   username: string;
   officialName: string;
-  clubname: string;
+  officialNameLabel?: string;
+  region: string;
+  cityLocality: string;
   country: string;
-  city: string;
+  address: string;
   sport: string;
   dateStart: string;
   dateEnd: string | null;
+  alreadyRenewed?: boolean;
   version: string;
   paid: number;
   adminImageUrl: string | null;
+  companyLogoUrl: string | null;
   clubId: string | null;
   typeBadge: string;
   /** `/searchresults/search/[club name]` — public visitor wall */
@@ -34,7 +45,10 @@ interface AdminClubUserPanelModalProps {
   error: string;
   data: ClubUserPanelData | null;
   onClose: () => void;
+  /** Full PCU panel (`/subscriptionuserlists/historyuser/...`). */
   onControlPanel?: () => void;
+  /** Inline subscription details on the registered-users list. */
+  onSubscriptions?: () => void;
 }
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
@@ -52,11 +66,24 @@ function countryCodeFromName(name: string): string {
   return COUNTRIES_WITH_CODES.find((c) => c.name === name.trim())?.id ?? '';
 }
 
-function PanelRow({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
+function PanelRow({
+  label,
+  value,
+  valueClassName,
+  suffix,
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+  suffix?: ReactNode;
+}) {
   return (
     <div className="grid grid-cols-[9rem_1fr] gap-2 py-1 text-sm">
       <span className="font-bold text-gray-900">{label}</span>
-      <span className={valueClassName ?? 'text-gray-900'}>{value || '—'}</span>
+      <span className={valueClassName ?? 'text-gray-900'}>
+        {value || '—'}
+        {suffix}
+      </span>
     </div>
   );
 }
@@ -77,6 +104,7 @@ export default function AdminClubUserPanelModal({
   data,
   onClose,
   onControlPanel,
+  onSubscriptions,
 }: AdminClubUserPanelModalProps) {
   const router = useRouter();
 
@@ -97,6 +125,16 @@ export default function AdminClubUserPanelModal({
       ? `/searchresults/search/${encodeURIComponent(data.username.trim())}`
       : null);
   const websiteUrl = data?.websiteUrl?.trim() || null;
+  const membershipDateClass = data
+    ? membershipDateClassName(
+        membershipStatusToneFromLabel(
+          periodStatusFromDates({ dateStart: data.dateStart, dateEnd: data.dateEnd }),
+        ),
+      )
+    : undefined;
+  const alreadyRenewedSuffix = data?.alreadyRenewed ? (
+    <span className="text-green-600 font-semibold ml-2">(already renewed)</span>
+  ) : null;
 
   return (
     <div
@@ -152,8 +190,29 @@ export default function AdminClubUserPanelModal({
               </div>
 
               <div className="flex-1 flex flex-col items-center justify-center min-h-[4.5rem] px-2">
-                <Camera className="w-8 h-8 text-green-600 mb-1" />
-                <span className="text-xs text-gray-500 text-center">No Photo Available</span>
+                {data.companyLogoUrl ? (
+                  <div className="w-20 h-20 border border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden">
+                    {isDataUrl(data.companyLogoUrl) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={data.companyLogoUrl}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Image
+                        src={data.companyLogoUrl}
+                        alt=""
+                        width={80}
+                        height={80}
+                        className="object-cover w-full h-full"
+                        unoptimized
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs text-gray-500 text-center">No Photo Available</span>
+                )}
               </div>
 
               <div className="flex flex-col items-center shrink-0 w-16">
@@ -168,13 +227,22 @@ export default function AdminClubUserPanelModal({
             <div className="px-5 py-3 space-y-0.5">
               <PanelRow label="Full Name:" value={data.fullName} />
               <PanelRow label="Username:" value={data.username} />
-              <PanelRow label="Official:" value={data.officialName} />
-              <PanelRow label="Clubname:" value={data.clubname} />
+              <PanelRow
+                label={data.officialNameLabel?.trim() || 'Official clubname:'}
+                value={data.officialName}
+              />
+              <PanelRow label="Region:" value={data.region} />
+              <PanelRow label="City\\Locality:" value={data.cityLocality} />
               <PanelRow label="Country:" value={data.country} />
-              <PanelRow label="City:" value={data.city} />
+              <PanelRow label="Address:" value={data.address} />
               <PanelRow label="Sport:" value={data.sport} />
-              <PanelRow label="Data Start:" value={data.dateStart} />
-              <PanelRow label="Data End:" value={data.dateEnd ?? '—'} />
+              <PanelRow label="Data Start:" value={formatPcuIsoDate(data.dateStart)} valueClassName={membershipDateClass} />
+              <PanelRow
+                label="Data End:"
+                value={formatPcuIsoDate(data.dateEnd) || '—'}
+                valueClassName={membershipDateClass}
+                suffix={alreadyRenewedSuffix}
+              />
               <PanelRow label="Version:" value={data.version} />
               <PanelRow
                 label="Paid:"
@@ -212,6 +280,10 @@ export default function AdminClubUserPanelModal({
                     onClick={() => {
                       if (action.id === 'control') {
                         onControlPanel?.();
+                        return;
+                      }
+                      if (action.id === 'subscriptions') {
+                        onSubscriptions?.();
                         return;
                       }
                       if (action.id === 'visit' && visitPath) {

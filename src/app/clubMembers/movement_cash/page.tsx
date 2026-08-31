@@ -7,12 +7,19 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pencil } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import ArchiveListToolbar from '@/components/procedures/ArchiveListToolbar';
+import { useArchiveListFilters } from '@/components/procedures/useArchiveListFilters';
+import {
+  DeleteRowButton,
+  EditRowButton,
+  usePasswordGate,
+} from '@/components/procedures/ArchiveRowActions';
 import MovementCashDetailModal from '@/components/club/archives/MovementCashDetailModal';
 import {
+  deletePurchase,
   fetchPurchases,
   type ServiceSalePurchase,
 } from '@/lib/club/serviceSaleClient';
@@ -74,6 +81,7 @@ const columns: Column[] = [
   { key: 'operator', header: 'Vendor' },
   { key: 'casual', header: 'Description' },
   { key: 'edit', header: 'Edit' },
+  { key: 'delete', header: 'Delete' },
 ];
 
 function daysAgoIso(days: number): string {
@@ -97,53 +105,44 @@ function rangeBtnClass(active: boolean) {
 }
 
 export default function MovementCashPage() {
+  const filters = useArchiveListFilters();
   const [items, setItems] = useState<ServiceSalePurchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [dayRange, setDayRange] = useState<DayRange>('all');
   const [view, setView] = useState<ViewTab>('list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [appliedSearch, setAppliedSearch] = useState('');
-  const [orderBy, setOrderBy] = useState<'recent' | 'old'>('recent');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailMode, setDetailMode] = useState<'details' | 'edit'>('details');
+  const { request: requestPassword, modal: passwordModal } = usePasswordGate();
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetchPurchases({ page: 1, pageSize: 500 });
-      let list = [...res.items];
+      const dayFrom = dayRange !== 'all' ? daysAgoIso(Number(dayRange)) : undefined;
+      const appliedFrom = filters.applied.fromDate;
+      const fromDate =
+        dayFrom && appliedFrom
+          ? dayFrom > appliedFrom
+            ? dayFrom
+            : appliedFrom
+          : appliedFrom || dayFrom;
 
-      if (dayRange !== 'all') {
-        const from = daysAgoIso(Number(dayRange));
-        list = list.filter((r) => (r.paydate || '') >= from);
-      }
-      if (appliedSearch.trim()) {
-        const q = appliedSearch.trim().toLowerCase();
-        list = list.filter(
-          (r) =>
-            r.memberName.toLowerCase().includes(q) ||
-            r.serviceName.toLowerCase().includes(q) ||
-            r.sectorName.toLowerCase().includes(q) ||
-            (r.notes || '').toLowerCase().includes(q) ||
-            (r.operatorName || '').toLowerCase().includes(q)
-        );
-      }
-
-      list.sort((a, b) => {
-        const da = a.paydate || '';
-        const db = b.paydate || '';
-        return orderBy === 'recent' ? db.localeCompare(da) : da.localeCompare(db);
+      const res = await fetchPurchases({
+        page,
+        pageSize,
+        ...filters.applied,
+        fromDate,
       });
-
-      setTotal(list.length);
-      const start = (page - 1) * PAGE_SIZE;
-      setItems(list.slice(start, start + PAGE_SIZE));
+      setTotal(res.total);
+      setItems(res.items);
+      setSelectedIds(new Set());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
       setItems([]);
@@ -151,11 +150,15 @@ export default function MovementCashPage() {
     } finally {
       setLoading(false);
     }
-  }, [appliedSearch, dayRange, orderBy, page]);
+  }, [dayRange, filters.applied, page, pageSize]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filters.applied, dayRange]);
 
   const rows: Member[] = useMemo(
     () =>
@@ -171,23 +174,33 @@ export default function MovementCashPage() {
         operator: r.operatorName || '',
         casual: r.notes || '',
         edit: (
-          <button
-            type="button"
-            title="Edit"
-            className="text-gray-700 hover:text-blue-700"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedId(r.id);
-              setDetailMode('edit');
-              setDetailOpen(true);
-              setView('details');
-            }}
-          >
-            <Pencil className="h-4 w-4" />
-          </button>
+          <EditRowButton
+            onClick={() =>
+              requestPassword(() => {
+                setSelectedId(r.id);
+                setDetailMode('edit');
+                setDetailOpen(true);
+                setView('details');
+              })
+            }
+          />
+        ),
+        delete: (
+          <DeleteRowButton
+            onClick={() =>
+              requestPassword(async () => {
+                try {
+                  await deletePurchase(r.id);
+                  load();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : 'Delete failed');
+                }
+              })
+            }
+          />
         ),
       })),
-    [items]
+    [items, requestPassword, load]
   );
 
   function openDetails() {
@@ -203,6 +216,22 @@ export default function MovementCashPage() {
   function showList() {
     setView('list');
     setDetailOpen(false);
+  }
+
+  function handleDeleteSelected() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    requestPassword(async () => {
+      try {
+        for (const id of ids) {
+          await deletePurchase(id);
+        }
+        setSelectedIds(new Set());
+        load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Delete failed');
+      }
+    });
   }
 
   const tabActions = (
@@ -224,17 +253,7 @@ export default function MovementCashPage() {
         tabs={[]}
         tabActions={tabActions}
         error={error || undefined}
-        footerHint="Select a purchase, then Details of receipts — or use Edit on the row."
-        pagination={
-          total > PAGE_SIZE ? (
-            <ProcedurePagination
-              page={page}
-              pageSize={PAGE_SIZE}
-              total={total}
-              onPageChange={setPage}
-            />
-          ) : undefined
-        }
+        footerHint="Select a purchase, then Details of receipts — or use Edit on the row. Check rows to delete selected. Edit and Delete ask for your password."
       >
         <div className="mb-3 flex flex-wrap gap-2">
           {(
@@ -259,74 +278,65 @@ export default function MovementCashPage() {
           ))}
         </div>
 
-        <form
-          className="mb-3 flex flex-wrap items-end gap-3 rounded-md border border-teal-800/20 bg-[#eef6f5] px-4 py-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setPage(1);
-            setAppliedSearch(search);
+        <ArchiveListToolbar
+          title="Filter · Archive of Receipts"
+          values={filters.draft}
+          onChange={filters.onChange}
+          onApply={() => {
+            if (filters.apply()) setPage(1);
           }}
-        >
-          <label className="flex min-w-[160px] flex-col">
-            <span className="mb-1 text-[12px] font-semibold text-gray-800">Ordering</span>
-            <select
-              className="!mb-0 h-9 rounded border border-gray-400 bg-white px-2.5 text-[13px] text-gray-900"
-              value={orderBy}
-              onChange={(e) => {
+          onClear={() => {
+            filters.clear();
+            setPage(1);
+          }}
+          dateRangeError={filters.dateRangeError}
+          selectedCount={selectedIds.size}
+          onDeleteSelected={handleDeleteSelected}
+          pagination={
+            <ProcedurePagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => {
+                setPageSize(n);
                 setPage(1);
-                setOrderBy(e.target.value as 'recent' | 'old');
               }}
-            >
-              <option value="recent">Most recent</option>
-              <option value="old">Oldest first</option>
-            </select>
-          </label>
-          <label className="flex min-w-[200px] flex-1 flex-col">
-            <span className="mb-1 text-[12px] font-semibold text-gray-800">Search by firstname</span>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by firstname"
-              className="h-9 rounded border border-gray-400 bg-white px-2.5 text-[13px] text-gray-900"
             />
-          </label>
-          <div className="flex h-9 items-center gap-2 self-end">
-            <button
-              type="submit"
-              className="h-9 rounded border border-red-900 bg-red-700 px-4 text-[13px] font-semibold text-white hover:bg-red-800"
-            >
-              Proceed
-            </button>
-            <button
-              type="button"
-              className="h-9 rounded border border-gray-400 bg-white px-4 text-[13px] font-semibold text-gray-800"
-              onClick={() => {
-                setSearch('');
-                setAppliedSearch('');
-                setOrderBy('recent');
-                setPage(1);
-              }}
-            >
-              Clear
-            </button>
-          </div>
-        </form>
+          }
+        />
 
         <ProcedureArchiveTable
           columns={columns}
           rows={rows}
           selectedId={selectedId}
-          showCheckboxes
-          showSelectAll={false}
+          selectable
+          selectOnlyOpenRest={false}
+          selectedIds={selectedIds}
           loading={loading}
           emptyMessage="Data not available"
           onRowClick={(row) => row.id && setSelectedId(row.id)}
-          onToggleCheck={(row, checked) => {
+          onToggleSelect={(row) => {
             if (!row.id) return;
-            setSelectedId(checked ? row.id : null);
+            setSelectedId(row.id);
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(row.id!)) next.delete(row.id!);
+              else next.add(row.id!);
+              return next;
+            });
+          }}
+          onToggleSelectAll={(checked) => {
+            if (!checked) {
+              setSelectedIds(new Set());
+              return;
+            }
+            setSelectedIds(new Set(rows.map((r) => r.id).filter(Boolean) as string[]));
           }}
         />
       </ProcedureArchiveShell>
+
+      {passwordModal}
 
       <MovementCashDetailModal
         isOpen={detailOpen}

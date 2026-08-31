@@ -52,6 +52,7 @@ export type ProcedureRecordDto = {
 export type ProcedurePaymentDto = {
   id: string;
   procedureRecordId: string;
+  memberId: string;
   memberName: string;
   amount: number;
   paymentDate: string;
@@ -70,6 +71,7 @@ export type ProcedureReceiptDto = {
   id: string;
   procedureRecordId: string;
   procedurePaymentId: string | null;
+  memberId: string;
   memberName: string;
   documentType: string | null;
   documentNumber: string | null;
@@ -158,6 +160,10 @@ export type ListQuery = {
   recordId?: string;
   /** Filter to these procedure record ids (payment-form scoped archives). */
   recordIds?: string[];
+  search?: string;
+  fromDate?: string;
+  toDate?: string;
+  orderBy?: 'recent' | 'old';
 };
 
 export function decimalToNumber(value: Decimal | number | string): number {

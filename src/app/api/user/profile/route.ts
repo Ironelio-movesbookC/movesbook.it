@@ -5,6 +5,10 @@ import jwt from 'jsonwebtoken';
 import { verifyToken } from '@/lib/auth';
 import { collectReferencedUploadPaths, deleteUnreferencedUserMediaFiles } from '@/lib/userMediaUploadCleanup';
 import { isValidSportType, normalizeTelegramAccount } from '@/lib/profileSports';
+import {
+  mergeProfilePanelIntoAdminSettings,
+  readAdminReferences,
+} from '@/lib/admin/userProfilePanelSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,7 +123,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    return NextResponse.json(user);
+    const adminReferences = readAdminReferences(user.settings?.adminSettings);
+
+    return NextResponse.json({
+      ...user,
+      referencesHtml: adminReferences.referencesHtml,
+      referencesLevel: adminReferences.referencesLevel,
+    });
     
   } catch (error) {
     console.error('Error fetching user profile:', error);
@@ -156,6 +166,8 @@ export async function PATCH(request: NextRequest) {
       telegramAccount,
       youtubeChannelUrl,
       mainSports,
+      referencesHtml,
+      referencesLevel,
     } = body as {
       profileBanner?: string | null;
       profileBannerAlignment?: string | null;
@@ -172,6 +184,8 @@ export async function PATCH(request: NextRequest) {
       telegramAccount?: string | null;
       youtubeChannelUrl?: string | null;
       mainSports?: string[] | null;
+      referencesHtml?: string | null;
+      referencesLevel?: string | null;
     };
 
     const data: {
@@ -221,7 +235,8 @@ export async function PATCH(request: NextRequest) {
         const paths = arr
           .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
           .map((x) => x.trim())
-          .filter((x) => x.length <= 512)
+          // Allow data URLs (banner-upload); keep legacy short paths too.
+          .filter((x) => x.startsWith('data:') || x.length <= 2048)
           .slice(0, 30);
         data.profileBannerSequence = JSON.stringify(paths);
         if (paths.length > 0) {
@@ -238,7 +253,13 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (image !== undefined) {
-      data.image = image === null || image === '' ? null : String(image).trim().slice(0, 512);
+      if (image === null || image === '') {
+        data.image = null;
+      } else {
+        const trimmed = String(image).trim();
+        // Paths/URLs stay short; data URLs (operator-style avatar) need LongText capacity.
+        data.image = trimmed.startsWith('data:') ? trimmed : trimmed.slice(0, 512);
+      }
     }
 
     if (name !== undefined) {
@@ -329,6 +350,36 @@ export async function PATCH(request: NextRequest) {
       });
     }
 
+    if (referencesHtml !== undefined || referencesLevel !== undefined) {
+      const existing = await prisma.userSettings.findUnique({
+        where: { userId: decoded.userId },
+        select: { adminSettings: true },
+      });
+      const nextAdminSettings = mergeProfilePanelIntoAdminSettings(existing?.adminSettings, {
+        ...(referencesHtml !== undefined ? { referencesHtml: String(referencesHtml) } : {}),
+        ...(referencesLevel !== undefined
+          ? { referencesLevel: String(referencesLevel ?? '1').trim() || '1' }
+          : {}),
+      });
+      await prisma.userSettings.upsert({
+        where: { userId: decoded.userId },
+        update: { adminSettings: nextAdminSettings },
+        create: {
+          userId: decoded.userId,
+          language: 'en',
+          colorSettings: '{}',
+          toolsSettings: '{}',
+          favouritesSettings: '{}',
+          myBestSettings: '{}',
+          adminSettings: nextAdminSettings,
+          workoutPreferences: '{}',
+          socialSettings: '{}',
+          notificationSettings: '{}',
+          widgetArrangement: '[]',
+        },
+      });
+    }
+
     const mediaTouched =
       data.image !== undefined ||
       data.profileBanner !== undefined ||
@@ -388,7 +439,7 @@ export async function PATCH(request: NextRequest) {
         youtubeChannelUrl: true,
         userType: true,
         mainSports: { select: { sport: true, order: true }, orderBy: { order: 'asc' } },
-        settings: { select: { language: true } },
+        settings: { select: { language: true, adminSettings: true } },
       } as Prisma.UserSelect,
     });
 
@@ -403,7 +454,15 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, user });
+    return NextResponse.json({
+      success: true,
+      user: user
+        ? {
+            ...user,
+            ...readAdminReferences(user.settings?.adminSettings),
+          }
+        : user,
+    });
   } catch (error) {
     console.error('Error updating user profile:', error);
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });

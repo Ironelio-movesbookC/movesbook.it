@@ -9,6 +9,11 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { COUNTRIES } from '@/lib/news/countries';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
+import WaysToGetStartedSection from '@/components/register/WaysToGetStartedSection';
+import {
+  getDefaultVersionId,
+  type RegistrationUserType,
+} from '@/lib/registration/waysToGetStarted';
 
 export default function RegisterPage() {
   const { t } = useLanguage();
@@ -23,7 +28,8 @@ export default function RegisterPage() {
     gender: '' as '' | 'male' | 'female' | 'other',
     birthdate: '',
     country: '',
-    language: 'en'
+    language: 'en',
+    subscriptionVersionId: getDefaultVersionId('athlete') as number | null,
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -66,7 +72,8 @@ export default function RegisterPage() {
           gender: formData.gender || undefined,
           birthdate: formData.birthdate || undefined,
           country: formData.country,
-          language: formData.language
+          language: formData.language,
+          subscriptionVersionId: formData.subscriptionVersionId ?? undefined,
         }),
       });
 
@@ -157,7 +164,14 @@ export default function RegisterPage() {
                 className="w-full px-4 py-2.5 bg-white bg-opacity-10 backdrop-blur-sm border border-cyan-500 border-opacity-30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all duration-200"
                 style={{ color: formData.userType ? 'white' : '#a0d2eb' }}
                 value={formData.userType}
-                onChange={(e) => setFormData({...formData, userType: e.target.value as any})}
+                onChange={(e) => {
+                  const userType = e.target.value as RegistrationUserType;
+                  setFormData({
+                    ...formData,
+                    userType,
+                    subscriptionVersionId: getDefaultVersionId(userType),
+                  });
+                }}
               >
                 <option value="athlete" className="text-gray-800">Athlete</option>
                 <option value="coach" className="text-gray-800">Coach</option>
@@ -166,6 +180,22 @@ export default function RegisterPage() {
                 <option value="group" className="text-gray-800">Group</option>
               </select>
             </div>
+
+            <WaysToGetStartedSection
+              userType={formData.userType}
+              onUserTypeChange={(userType) =>
+                setFormData({
+                  ...formData,
+                  userType,
+                  subscriptionVersionId: getDefaultVersionId(userType),
+                })
+              }
+              selectedVersionId={formData.subscriptionVersionId}
+              onVersionSelect={(subscriptionVersionId) =>
+                setFormData({ ...formData, subscriptionVersionId })
+              }
+              lang={formData.language}
+            />
 
             {/* Name + Surname - 2 Columns */}
             <div className="grid grid-cols-2 gap-3">
@@ -247,7 +277,7 @@ export default function RegisterPage() {
                   name="country"
                   required
                   size={1}
-                  className="w-full px-4 py-2.5 bg-white bg-opacity-10 backdrop-blur-sm border border-cyan-500 border-opacity-30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all duration-200 appearance-none cursor-pointer relative z-50"
+                  className="w-full px-4 py-2.5 bg-white bg-opacity-10 backdrop-blur-sm border border-cyan-500 border-opacity-30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all duration-200 appearance-none cursor-pointer"
                   style={{ 
                     color: formData.country ? 'white' : '#a0d2eb',
                     backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23a0d2eb' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,

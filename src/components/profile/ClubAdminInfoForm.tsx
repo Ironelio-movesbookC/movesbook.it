@@ -1,65 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import {
-  CLUB_ADMIN_PUBLIC_LINK_FIELDS,
-  CLUB_ADMIN_SOCIAL_PLATFORMS,
-  EMPTY_CLUB_ADMIN_INFO,
-  type ClubAdminInfo,
-  type ClubAdminPublicLink,
-} from '@/lib/club/clubAdminInfo';
-
-const INPUT_CLASS =
-  'w-full min-w-0 px-3 py-1.5 border border-gray-400 rounded bg-white text-gray-900 text-sm focus:outline-none focus:ring-1 focus:ring-gray-500';
-
-function FormRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-[11rem_1fr] border-b border-gray-200 last:border-b-0">
-      <div className="bg-gray-50/80 px-4 py-3 sm:flex sm:items-start sm:justify-end">
-        <span className="text-sm font-bold text-gray-800 sm:text-right">{label}</span>
-      </div>
-      <div className="px-4 py-3 min-w-0">{children}</div>
-    </div>
-  );
-}
-
-function PublicLinkField({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: ClubAdminPublicLink;
-  onChange: (next: ClubAdminPublicLink) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="space-y-2">
-      <input
-        type="text"
-        value={value.url}
-        onChange={(e) => onChange({ ...value, url: e.target.value })}
-        disabled={disabled}
-        className={INPUT_CLASS}
-      />
-      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={value.showInClubAdminInfo}
-          onChange={(e) => onChange({ ...value, showInClubAdminInfo: e.target.checked })}
-          disabled={disabled}
-          className="rounded border-gray-400"
-        />
-        Show in Club admin info
-      </label>
-    </div>
-  );
-}
+import { useCallback, useEffect, useState } from 'react';
+import { EMPTY_CLUB_ADMIN_INFO, type ClubAdminInfo } from '@/lib/club/clubAdminInfo';
+import ClubAdminInfoFields from '@/components/profile/ClubAdminInfoFields';
 
 type ClubAdminInfoFormProps = {
   /** Seed YouTube when DB has no saved URL yet (from profile load). */
@@ -156,24 +99,6 @@ export default function ClubAdminInfoForm({ profileYoutubeUrl }: ClubAdminInfoFo
     setMessage(null);
   };
 
-  const updateSocialSite = (index: 0 | 1, patch: Partial<ClubAdminInfo['socialSites'][0]>) => {
-    setForm((prev) => {
-      const socialSites = [...prev.socialSites] as ClubAdminInfo['socialSites'];
-      socialSites[index] = { ...socialSites[index], ...patch };
-      return { ...prev, socialSites };
-    });
-  };
-
-  const updateLink = (
-    key: (typeof CLUB_ADMIN_PUBLIC_LINK_FIELDS)[number]['key'],
-    patch: Partial<ClubAdminPublicLink>,
-  ) => {
-    setForm((prev) => ({
-      ...prev,
-      [key]: { ...prev[key], ...patch },
-    }));
-  };
-
   if (loading) {
     return (
       <div className="py-10 text-center text-sm text-gray-600">Loading admin info…</div>
@@ -182,90 +107,7 @@ export default function ClubAdminInfoForm({ profileYoutubeUrl }: ClubAdminInfoFo
 
   return (
     <div>
-      <div className="rounded-lg border border-gray-300 overflow-hidden shadow-sm">
-        <div className="bg-gray-200 border-b border-gray-300 px-4 py-2.5">
-          <h2 className="text-sm font-bold text-gray-800">Admin Info</h2>
-        </div>
-        <div className="bg-white">
-          <FormRow label="Alternate Email">
-            <input
-              type="email"
-              value={form.alternateEmail}
-              onChange={(e) => setForm((f) => ({ ...f, alternateEmail: e.target.value }))}
-              disabled={saving}
-              className={INPUT_CLASS}
-            />
-          </FormRow>
-
-          <FormRow label="Phone">
-            <div className="flex gap-2 max-w-md">
-              <input
-                type="text"
-                value={form.phonePrefix}
-                onChange={(e) => setForm((f) => ({ ...f, phonePrefix: e.target.value }))}
-                disabled={saving}
-                placeholder="+39"
-                className={`${INPUT_CLASS} w-24 shrink-0`}
-              />
-              <input
-                type="text"
-                value={form.phoneNumber}
-                onChange={(e) => setForm((f) => ({ ...f, phoneNumber: e.target.value }))}
-                disabled={saving}
-                className={INPUT_CLASS}
-              />
-            </div>
-          </FormRow>
-
-          {form.socialSites.map((site, index) => (
-            <FormRow key={index} label="Social Site">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <select
-                  value={site.platform}
-                  onChange={(e) =>
-                    updateSocialSite(index as 0 | 1, { platform: e.target.value })
-                  }
-                  disabled={saving}
-                  className={`${INPUT_CLASS} sm:w-36 shrink-0`}
-                >
-                  {CLUB_ADMIN_SOCIAL_PLATFORMS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={site.url}
-                  onChange={(e) => updateSocialSite(index as 0 | 1, { url: e.target.value })}
-                  disabled={saving}
-                  className={INPUT_CLASS}
-                />
-              </div>
-            </FormRow>
-          ))}
-
-          {CLUB_ADMIN_PUBLIC_LINK_FIELDS.map(({ key, label }) => (
-            <FormRow key={key} label={label}>
-              <PublicLinkField
-                value={form[key]}
-                onChange={(next) => updateLink(key, next)}
-                disabled={saving}
-              />
-            </FormRow>
-          ))}
-
-          <FormRow label="About Me">
-            <textarea
-              value={form.aboutMe}
-              onChange={(e) => setForm((f) => ({ ...f, aboutMe: e.target.value }))}
-              disabled={saving}
-              rows={5}
-              className={`${INPUT_CLASS} resize-y min-h-[120px]`}
-            />
-          </FormRow>
-        </div>
-      </div>
+      <ClubAdminInfoFields value={form} onChange={setForm} disabled={saving} />
 
       <div className="mt-6 flex flex-col items-center gap-3">
         <div className="flex flex-wrap justify-center gap-4">

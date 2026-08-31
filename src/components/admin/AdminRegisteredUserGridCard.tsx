@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { User } from 'lucide-react';
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { flagEmojiFromCountryName } from '@/lib/admin/countryFlag';
 import {
   entityCompanyLabel,
@@ -9,13 +10,27 @@ import {
   ownedEntitiesLabel,
   type AdminGridCardGroup,
 } from '@/lib/admin/groupRegisteredUserGridCards';
-import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import {
+  inferMembershipEndDateYmd,
+  membershipDateClassName,
+  type ClubSubscriptionStatusTone,
+} from '@/lib/admin/clubSubscriptionStatus';
 
-const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
+function formatMembershipDateRange(
+  dateStart: string | null | undefined,
+  dateEnd: string | null | undefined,
+): string {
+  const start = dateStart?.trim() || '—';
+  const end = inferMembershipEndDateYmd(dateStart, dateEnd) ?? '—';
+  return `${start} — ${end}`;
+}
+const isDataUrl = (src: string) =>
+  src.startsWith('data:image/') || src.startsWith('blob:');
 
 function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
   switch (tone) {
+    case 'not-yet-active':
+      return 'text-sky-400 font-semibold';
     case 'expiring':
       return 'text-amber-600 font-semibold';
     case 'partial-expired':
@@ -30,33 +45,27 @@ function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
 
 type AdminRegisteredUserGridCardProps = {
   group: AdminGridCardGroup;
-  isAllSegment: boolean;
-  isClubsSegment: boolean;
-  onOpenClubPanel?: (userId: string, clubId: string | null) => void;
-  onOpenUserProfile: (userId: string, entityId?: string | null) => void;
+  /** Opens PCU history user page → Profile tab → Admin Profile sub-tab. */
+  onOpenAdminProfile: (userId: string, userType: string, clubId?: string | null) => void;
+  /** Opens PCU history user page → Profile tab → club/team/group/coach profile sub-tab. */
+  onOpenEntityProfile: (
+    userId: string,
+    userType: string,
+    entityId: string | null,
+  ) => void;
+  /** Opens the online_new_* / online_old_* user panel modal. */
+  onOpenUserPanel: (userId: string, entityId: string | null) => void;
 };
 
 export default function AdminRegisteredUserGridCard({
   group,
-  isAllSegment,
-  isClubsSegment,
-  onOpenClubPanel,
-  onOpenUserProfile,
+  onOpenAdminProfile,
+  onOpenEntityProfile,
+  onOpenUserPanel,
 }: AdminRegisteredUserGridCardProps) {
   const { admin, entities } = group;
   const showOwnedList = gridCardShowsOwnedEntities(group);
-  const isClubAdmin =
-    isClubsSegment || (isAllSegment && isClubAccountUserType(admin.userType));
-  const location = admin.location?.trim() || '';
-  const dateLine = [admin.dateStart, admin.dateEnd].filter(Boolean).join(' — ');
-
-  const openPanel = () => {
-    if (isClubAdmin && onOpenClubPanel) {
-      onOpenClubPanel(admin.id, admin.primaryClubId ?? null);
-      return;
-    }
-    onOpenUserProfile(admin.id, admin.primaryClubId);
-  };
+  const adminAvatarSrc = resolvePublicImageUrl(admin.imageUrl);
 
   return (
     <div className="border border-gray-300 bg-white p-4 rounded shadow-sm text-sm">
@@ -69,45 +78,58 @@ export default function AdminRegisteredUserGridCard({
               <span className="ml-0.5">{flagEmojiFromCountryName(admin.country)}</span>
             )}
           </div>
-          {location ? <div className="text-gray-600">{location}</div> : null}
-          {isClubAdmin && onOpenClubPanel ? (
+          <div className="text-gray-600">{admin.location?.trim() || '—'}</div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <button
               type="button"
-              onClick={() => onOpenClubPanel(admin.id, admin.primaryClubId ?? null)}
-              className="text-blue-800 underline hover:text-blue-950 text-left"
+              onClick={() =>
+                onOpenUserPanel(
+                  admin.id,
+                  admin.primaryClubId ?? entities[0]?.entityId ?? entities[0]?.primaryClubId ?? null,
+                )
+              }
+              className="text-blue-800 font-medium hover:text-blue-950 underline underline-offset-2"
             >
               @{admin.accountUsername ?? admin.username}
             </button>
-          ) : (
-            <div className="text-gray-600">@{admin.accountUsername ?? admin.username}</div>
-          )}
-          {dateLine ? <div className="text-gray-600">{dateLine}</div> : null}
+            <button
+              type="button"
+              onClick={() =>
+                onOpenAdminProfile(
+                  admin.id,
+                  admin.userType,
+                  admin.primaryClubId ?? entities[0]?.entityId ?? entities[0]?.primaryClubId ?? null,
+                )
+              }
+              className="text-blue-800 underline hover:text-blue-950"
+            >
+              View profile
+            </button>
+          </div>
+          <div className={membershipDateClassName(admin.statusTone)}>
+            {formatMembershipDateRange(admin.dateStart, admin.dateEnd)}
+          </div>
           <div className="text-gray-700">{admin.version}</div>
         </div>
-        <button
-          type="button"
-          onClick={openPanel}
-          className="w-14 h-14 shrink-0 border-2 border-red-600 bg-gray-50 flex items-center justify-center overflow-hidden"
-          title="Open User Panel"
-        >
-          {admin.imageUrl ? (
-            isDataUrl(admin.imageUrl) ? (
+        <div className="w-[4.5rem] h-[4.5rem] shrink-0 border-2 border-red-600 bg-gray-50 flex items-center justify-center overflow-hidden">
+          {adminAvatarSrc ? (
+            isDataUrl(adminAvatarSrc) ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={admin.imageUrl} alt="" className="h-full w-full object-cover" />
+              <img src={adminAvatarSrc} alt="" className="w-full h-full object-cover" />
             ) : (
               <Image
-                src={admin.imageUrl}
+                src={adminAvatarSrc}
                 alt=""
-                width={56}
-                height={56}
-                className="h-full w-full object-cover"
+                width={72}
+                height={72}
+                className="object-cover w-full h-full"
                 unoptimized
               />
             )
           ) : (
-            <User className="w-7 h-7 text-gray-400" />
+            <User className="w-9 h-9 text-gray-400" aria-hidden />
           )}
-        </button>
+        </div>
       </div>
 
       {showOwnedList ? (
@@ -117,31 +139,42 @@ export default function AdminRegisteredUserGridCard({
           </p>
           <ul className="mt-2 space-y-2 border-t border-gray-200 pt-2">
             {entities.map((entity) => (
-              <li
-                key={entity.rowKey}
-                className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm"
-              >
-                <span className="text-gray-800">
+              <li key={entity.rowKey} className="text-sm">
+                <div className="text-gray-800">
                   {entityCompanyLabel(entity.entityKind)}:{' '}
-                  <span className="font-medium">{entity.companyName?.trim() || '—'}</span>
-                </span>
-                {entity.dateEnd ? (
-                  <span className="text-red-600 whitespace-nowrap">{entity.dateEnd}</span>
-                ) : null}
-                <span className={clubAdminStatusClassName(entity.statusTone)}>
-                  {entity.status}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    isClubAdmin && entity.entityKind === 'club' && onOpenClubPanel
-                      ? onOpenClubPanel(admin.id, (entity.primaryClubId ?? entity.entityId) ?? null)
-                      : onOpenUserProfile(admin.id, entity.primaryClubId ?? entity.entityId)
-                  }
-                  className="text-blue-800 underline hover:text-blue-950"
-                >
-                  View profile
-                </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenUserPanel(
+                        admin.id,
+                        entity.entityId ?? entity.primaryClubId ?? null,
+                      )
+                    }
+                    className="font-medium text-blue-800 underline hover:text-blue-950"
+                  >
+                    {entity.companyName?.trim() || '—'}
+                  </button>
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span
+                    className={`whitespace-nowrap ${membershipDateClassName(entity.statusTone)}`}
+                  >
+                    {formatMembershipDateRange(entity.dateStart, entity.dateEnd)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenEntityProfile(
+                        admin.id,
+                        admin.userType,
+                        entity.entityId ?? entity.primaryClubId ?? null,
+                      )
+                    }
+                    className="text-blue-800 underline hover:text-blue-950"
+                  >
+                    View profile
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -151,10 +184,12 @@ export default function AdminRegisteredUserGridCard({
           <div className={`mt-2 ${clubAdminStatusClassName(admin.statusTone)}`}>{admin.status}</div>
           <button
             type="button"
-            onClick={() => onOpenUserProfile(admin.id, admin.primaryClubId)}
-            className="mt-2 text-left text-sm text-blue-800 underline hover:text-blue-950"
+            onClick={() =>
+              onOpenUserPanel(admin.id, admin.primaryClubId ?? null)
+            }
+            className="mt-2 text-sm text-blue-800 underline hover:text-blue-950"
           >
-            View profile (search)
+            View profile
           </button>
         </>
       )}

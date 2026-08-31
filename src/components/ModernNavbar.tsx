@@ -36,9 +36,16 @@ import {
   ListMusic
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { usePcuAlert } from '@/contexts/PcuAlertContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  fetchPcuAlert,
+  shouldShowPcuAtLogin,
+  storePendingPcuAlert,
+} from '@/lib/user/pcuAlertClient';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 import { clearClubWorkspaceSessionOnLogout } from '@/lib/club/clearClubWorkspaceSession';
+import SuggestMovesbookLoginPrompt from '@/components/promocodes/SuggestMovesbookLoginPrompt';
 import { persistAdminLoginSession } from '@/lib/panelSession';
 import QuickMenuButton from '@/app/my-page/components/QuickMenuButton';
 
@@ -94,6 +101,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout, isAuthenticated, requireAuth, login } = useAuth();
+  const { showAlert } = usePcuAlert();
   const { currentLanguage, setLanguage, t, availableLanguages } = useLanguage();
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -249,11 +257,20 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
   // Get current language display code
   const currentLangDisplay = currentLanguage.toUpperCase();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
     setIsUserDropdownOpen(false);
     setIsMobileMenuOpen(false);
-    router.push('/');
+    const lang = user?.language || currentLanguage || 'en';
+    const alert = await fetchPcuAlert('logout', lang);
+    const finishLogout = () => {
+      logout();
+      router.push('/');
+    };
+    if (alert) {
+      showAlert(alert, finishLogout);
+    } else {
+      finishLogout();
+    }
   };
 
   const networkSearchScopeLabel = useMemo(() => {
@@ -663,9 +680,9 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
           }
           if (groupIdMatch?.[1]) {
             const id = decodeURIComponent(groupIdMatch[1]);
-            if (path.includes('my-coaching-group')) {
+            if (path.includes('my-coaching-group') || path.includes('/coach/dashboard')) {
               localStorage.setItem('selectedCoachingGroup', id);
-            } else if (path.includes('my-group')) {
+            } else if (path.includes('my-group') || path.includes('/group/dashboard')) {
               localStorage.setItem('selectedGroup', id);
             }
           }
@@ -673,7 +690,42 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
             localStorage.setItem('selectedTeam', decodeURIComponent(teamMatch[1]));
           }
         }
-        login(data.token, data.user, redirectTo);
+        const entityAccessMode =
+          typeof data.entityAccessMode === 'string'
+            ? data.entityAccessMode
+            : typeof data.clubAccessMode === 'string'
+              ? data.clubAccessMode
+              : undefined;
+        const entityKind =
+          typeof data.entityKind === 'string' ? data.entityKind : undefined;
+        const entityId =
+          typeof data.entityId === 'string'
+            ? data.entityId
+            : typeof data.clubId === 'string'
+              ? data.clubId
+              : undefined;
+        if (
+          data.pcuAlert &&
+          (data.pcuAlert.bodyHtml?.trim() || data.pcuAlert.title?.trim()) &&
+          shouldShowPcuAtLogin(data.user.userType, entityAccessMode)
+        ) {
+          storePendingPcuAlert({
+            title: data.pcuAlert.title ?? '',
+            bodyHtml: data.pcuAlert.bodyHtml ?? '',
+          });
+        }
+        login(data.token, data.user, redirectTo, {
+          entityAccessMode,
+          entityKind: entityKind as
+            | 'club'
+            | 'team'
+            | 'group'
+            | 'coach'
+            | undefined,
+          entityId,
+          clubAccessMode: entityAccessMode,
+          clubId: entityKind === 'club' ? entityId : undefined,
+        });
         
         // Clear form
         setLoginUsername('');
@@ -1408,10 +1460,13 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
                       <div className="flex gap-3">
                         <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-zinc-200">
                           {item.image ? (
-                            <img
+                            <Image
                               src={item.image}
                               alt=""
                               className="h-full w-full object-cover"
+                              width={56}
+                              height={56}
+                              unoptimized
                             />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center text-[10px] font-medium uppercase leading-tight text-zinc-500">
@@ -1582,6 +1637,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick, hideContentNa
           </div>
         </div>
       )}
+      <SuggestMovesbookLoginPrompt />
     </>
   );
 }

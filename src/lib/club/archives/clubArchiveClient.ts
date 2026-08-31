@@ -41,10 +41,22 @@ export type ArchiveFetchParams = {
   toDate?: string;
   orderBy?: 'recent' | 'old';
   includePaid?: boolean;
+  /** Deadlines archive: one row per installment instead of one row per record. */
+  expandDeadlines?: boolean;
+  /** Scope to a single member (e.g. "Member selected" vs "All members" toggle). */
+  memberId?: string;
+  /** Deadlines archive: one row per installment instead of one row per record. */
+  expandDeadlines?: boolean;
   /** Scope to a single member (e.g. "Member selected" vs "All members" toggle). */
   memberId?: string;
   /** Club to load; required for correct Archive of Members when admin owns several clubs. */
   clubId?: string;
+  /** Scope to the record selected in the archive we came from ("Record selected"). */
+  recordId?: string;
+  /** Filter by sport. */
+  sport?: string;
+  /** Filter by group of training. */
+  groupTrained?: string;
 };
 
 export async function fetchClubArchive(
@@ -60,8 +72,12 @@ export async function fetchClubArchive(
   if (params?.toDate) qs.set('toDate', params.toDate);
   if (params?.orderBy) qs.set('orderBy', params.orderBy);
   if (params?.includePaid) qs.set('includePaid', '1');
+  if (params?.expandDeadlines) qs.set('expandDeadlines', '1');
   if (params?.memberId) qs.set('memberId', params.memberId);
   if (params?.clubId) qs.set('clubId', params.clubId);
+  if (params?.recordId) qs.set('recordId', params.recordId);
+  if (params?.sport) qs.set('sport', params.sport);
+  if (params?.groupTrained) qs.set('groupTrained', params.groupTrained);
   const query = qs.toString();
   const url = `/api/club/archives/${type}${query ? `?${query}` : ''}`;
   return clubApiFetch<ArchiveListResult>(url);

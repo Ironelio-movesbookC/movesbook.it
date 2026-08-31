@@ -215,6 +215,11 @@ export default function CountriesPage() {
       costVirtualProduct,
       usdEur: usdEurField,
     });
+    void fetch('/api/admin/country-pricing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ourAnnualIncomeEur: annualIncomeEur }),
+    }).catch(() => undefined);
   };
 
   if (loading) return null;

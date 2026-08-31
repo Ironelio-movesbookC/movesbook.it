@@ -348,8 +348,10 @@ export default function MyDeskSettingsTree({
   const listUrl = isClubDesk
     ? `/api/club-desk?clubId=${encodeURIComponent(clubId!)}`
     : '/api/my-desk';
-  const itemUrl = (id: string) =>
-    isClubDesk ? `/api/club-desk/${id}` : `/api/my-desk/${id}`;
+  const itemUrl = useCallback(
+    (id: string) => (isClubDesk ? `/api/club-desk/${id}` : `/api/my-desk/${id}`),
+    [isClubDesk],
+  );
   const reorderUrl = isClubDesk ? '/api/club-desk/reorder' : '/api/my-desk/reorder';
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [items, setItems] = useState<MyDeskNode[]>([]);

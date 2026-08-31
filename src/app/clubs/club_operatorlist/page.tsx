@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import ClubArchivePage from '@/components/club/archives/ClubArchivePage';
 import type { Column } from '@/types/clubTable';
@@ -9,7 +10,7 @@ const columns: Column[] = [
     header: 'Image',
     render: (value) =>
       value ? (
-        <img src={String(value)} alt="" className="w-10 h-10 rounded-full mx-auto object-cover" />
+        <Image src={String(value)} alt="" width={40} height={40} className="w-10 h-10 rounded-full mx-auto object-cover" unoptimized />
       ) : (
         <span>-</span>
       ),

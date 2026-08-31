@@ -6,11 +6,17 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
-import { fetchClubArchive, type ArchiveFetchParams } from '@/lib/club/archives/clubArchiveClient';
+import {
+  DeleteRowButton,
+  EditRowButton,
+  usePasswordGate,
+} from '@/components/procedures/ArchiveRowActions';
+import ArchiveListToolbar from '@/components/procedures/ArchiveListToolbar';
+import { useArchiveListFilters } from '@/components/procedures/useArchiveListFilters';
+import { fetchClubArchive } from '@/lib/club/archives/clubArchiveClient';
 import { createProcedureClient } from '@/lib/club/procedureClient';
 import { parseCashMovementId } from '@/lib/club/cashMovementClient';
 import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
@@ -39,9 +45,11 @@ const deadlineColumns: Column[] = [
   { key: 'typology', header: 'Typology' },
   { key: 'service', header: 'Service / Product' },
   { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
-  { key: 'value', header: 'Debt', render: (v) => formatEuro(v) },
+  { key: 'expirationDate', header: 'Expiration Date', render: (v) => formatDate(v) },
+  { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
   { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
   { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
+  { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
   { key: 'casual', header: 'Description' },
   { key: 'operator', header: 'Operator' },
 ];
@@ -73,22 +81,19 @@ export default function CashMovementsArchive({
   onEditItem,
   onDeleteItem,
 }: Props) {
-  const pageSize = 25;
+  const { request: requestPassword, modal: passwordModal } = usePasswordGate();
+  const filters = useArchiveListFilters();
   const [view, setView] = useState<ViewMode>('historical');
   const [historical, setHistorical] = useState<CashRow[]>([]);
   const [detailRows, setDetailRows] = useState<Member[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [orderBy, setOrderBy] = useState<'recent' | 'old'>('recent');
-  const [appliedFilters, setAppliedFilters] = useState<ArchiveFetchParams>({});
-  const [dateRangeError, setDateRangeError] = useState('');
 
   const selectedRow = useMemo(
     () => historical.find((r) => r.id === selectedId) ?? null,
@@ -103,39 +108,23 @@ export default function CashMovementsArchive({
         page,
         pageSize,
         direction,
-        ...appliedFilters,
+        ...filters.applied,
       });
       setTotal(res.total);
       const items = (res.items as CashRow[]).map((item) => {
         const enriched: CashRow = { ...item };
         if (onEditItem) {
           enriched.edit = (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEditItem(item);
-              }}
-              className="text-blue-600 hover:text-blue-800"
-              title="Edit"
-            >
-              <Pencil className="h-4 w-4" />
-            </button>
+            <EditRowButton
+              onClick={() => requestPassword(() => onEditItem(item))}
+            />
           );
         }
         if (onDeleteItem) {
           enriched.delete = (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteItem(item);
-              }}
-              className="text-red-500 hover:text-red-700"
-              title="Delete"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
+            <DeleteRowButton
+              onClick={() => requestPassword(() => onDeleteItem(item))}
+            />
           );
         }
         // Backfill procedureType from prefixed id when API older payloads omit it
@@ -148,16 +137,21 @@ export default function CashMovementsArchive({
         return enriched;
       });
       setHistorical(items);
+      setCheckedIds(new Set());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
-  }, [appliedFilters, direction, onDeleteItem, onEditItem, page, pageSize]);
+  }, [filters.applied, direction, onDeleteItem, onEditItem, page, pageSize, requestPassword]);
 
   useEffect(() => {
     loadHistorical();
   }, [loadHistorical]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filters.applied]);
 
   async function loadDetailsDeadline(row: CashRow) {
     if (!row.procedureRecordId || !row.procedureType) {
@@ -172,16 +166,19 @@ export default function CashMovementsArchive({
       setDetailRows([
         {
           id: record.id,
+          userId: record.userId,
           name: record.memberName,
           image: record.memberImage ?? undefined,
           typology: record.typology,
           service: record.primaryLabel,
-          insertDate: record.paydate ?? undefined,
+          insertDate: record.recordDate ?? undefined,
+          expirationDate: record.expireDate ?? undefined,
           value: record.value,
           paid: record.pay,
           rest: record.rest,
           casual: record.notes,
           operator: record.operatorName,
+          dateEnd: record.lastPaymentDate ?? undefined,
         },
       ]);
       setView('details_deadline');
@@ -201,8 +198,10 @@ export default function CashMovementsArchive({
     setError('');
     try {
       const client = createProcedureClient(row.procedureType as ProcedureTypeCode);
+      // Resolve the member, then list THAT member's payments only (not the whole club).
+      const { record } = await client.fetchRecord(row.procedureRecordId);
       const res = await client.fetchPayments({
-        recordId: row.procedureRecordId,
+        memberId: record.userId,
         page: 1,
         pageSize: 100,
       });
@@ -249,50 +248,33 @@ export default function CashMovementsArchive({
     setDetailRows([]);
   }
 
-  function applyFilterForm(e: React.FormEvent) {
-    e.preventDefault();
-    if (fromDate && toDate && fromDate > toDate) {
-      setDateRangeError('"From" date cannot be after "To" date.');
-      return;
-    }
-    setDateRangeError('');
+  function applyFilterForm() {
+    if (!filters.apply()) return;
     setPage(1);
     setView('historical');
-    setAppliedFilters({
-      search: search.trim() || undefined,
-      fromDate: fromDate || undefined,
-      toDate: toDate || undefined,
-      orderBy,
-    });
   }
 
   function clearFilters() {
-    setSearch('');
-    setFromDate('');
-    setToDate('');
-    setOrderBy('recent');
-    setDateRangeError('');
+    filters.clear();
     setPage(1);
     setView('historical');
-    setAppliedFilters({});
   }
 
-  function handleFromDateChange(value: string) {
-    setFromDate(value);
-    if (value && toDate && value > toDate) {
-      setDateRangeError('"From" date cannot be after "To" date.');
-    } else {
-      setDateRangeError('');
-    }
-  }
-
-  function handleToDateChange(value: string) {
-    setToDate(value);
-    if (fromDate && value && fromDate > value) {
-      setDateRangeError('"From" date cannot be after "To" date.');
-    } else {
-      setDateRangeError('');
-    }
+  function handleDeleteSelected() {
+    if (!onDeleteItem) return;
+    const items = historical.filter((r) => checkedIds.has(r.id));
+    if (items.length === 0) return;
+    requestPassword(async () => {
+      try {
+        for (const item of items) {
+          await onDeleteItem(item);
+        }
+        setCheckedIds(new Set());
+        loadHistorical();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Delete failed');
+      }
+    });
   }
 
   const showingHistorical = view === 'historical';
@@ -340,101 +322,44 @@ export default function CashMovementsArchive({
       footerHint={
         showingHistorical
           ? footerHint ??
-            'Select a payment, then open Details deadline or Totals about payments.'
+            'Select a payment, then open Details deadline or Totals about payments. Check rows to delete selected.'
           : view === 'details_deadline'
             ? 'Parent deadline / debt related to the selected payment. Click Historical to go back.'
-            : 'All payments related to the same deadline as the selected row. Click Historical to go back.'
-      }
-      pagination={
-        showingHistorical && total > pageSize ? (
-          <ProcedurePagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
-        ) : undefined
+            : 'All payments of the same member (same typology) as the selected row. Click Historical to go back.'
       }
     >
       {showingHistorical && (
-        <form
-          onSubmit={applyFilterForm}
-          className="mb-3 rounded-md border border-teal-800/20 bg-[#eef6f5] px-4 py-3"
-        >
-          <div className="mb-2 text-[13px] font-semibold text-teal-900">Filter movements</div>
-          <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-            <label className="flex min-w-[180px] flex-1 flex-col">
-              <span className="mb-1 block text-[12px] font-semibold text-gray-800">Search</span>
-              <input
-                type="text"
-                className="block h-9 w-full rounded border border-gray-400 bg-white px-2.5 text-[13px] text-gray-900 placeholder:text-gray-400 focus:border-teal-700 focus:outline-none focus:ring-1 focus:ring-teal-700"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Name, typology, notes..."
-              />
-            </label>
-            <label className="flex flex-col">
-              <span className="mb-1 block text-[12px] font-semibold text-gray-800">From</span>
-              <input
-                type="date"
-                className={`block h-9 rounded border bg-white px-2.5 text-[13px] text-gray-900 focus:outline-none focus:ring-1 ${
-                  dateRangeError
-                    ? 'border-red-500 focus:border-red-600 focus:ring-red-500'
-                    : 'border-gray-400 focus:border-teal-700 focus:ring-teal-700'
-                }`}
-                value={fromDate}
-                max={toDate || undefined}
-                onChange={(e) => handleFromDateChange(e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col">
-              <span className="mb-1 block text-[12px] font-semibold text-gray-800">To</span>
-              <input
-                type="date"
-                className={`block h-9 rounded border bg-white px-2.5 text-[13px] text-gray-900 focus:outline-none focus:ring-1 ${
-                  dateRangeError
-                    ? 'border-red-500 focus:border-red-600 focus:ring-red-500'
-                    : 'border-gray-400 focus:border-teal-700 focus:ring-teal-700'
-                }`}
-                value={toDate}
-                min={fromDate || undefined}
-                onChange={(e) => handleToDateChange(e.target.value)}
-              />
-            </label>
-            <label className="flex min-w-[150px] flex-col">
-              <span className="mb-1 block text-[12px] font-semibold text-gray-800">Order</span>
-              <select
-                className="!mb-0 box-border block h-9 w-full rounded border border-gray-400 bg-white px-2.5 text-[13px] leading-normal text-gray-900 focus:border-teal-700 focus:outline-none focus:ring-1 focus:ring-teal-700"
-                value={orderBy}
-                onChange={(e) => setOrderBy(e.target.value as 'recent' | 'old')}
-              >
-                <option value="recent">Most recent</option>
-                <option value="old">Oldest first</option>
-              </select>
-            </label>
-            <div className="flex h-9 items-center gap-2 self-end">
-              <button
-                type="submit"
-                className="h-9 rounded border border-teal-900 bg-teal-800 px-4 text-[13px] font-semibold text-white hover:bg-teal-900"
-              >
-                Filter
-              </button>
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="h-9 rounded border border-gray-400 bg-white px-4 text-[13px] font-semibold text-gray-800 hover:bg-gray-100"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-          {dateRangeError && (
-            <p className="mt-2 text-[12px] font-medium text-red-600">{dateRangeError}</p>
-          )}
-        </form>
+        <ArchiveListToolbar
+          title="Filter movements"
+          values={filters.draft}
+          onChange={filters.onChange}
+          onApply={applyFilterForm}
+          onClear={clearFilters}
+          dateRangeError={filters.dateRangeError}
+          selectedCount={onDeleteItem ? checkedIds.size : undefined}
+          onDeleteSelected={onDeleteItem ? handleDeleteSelected : undefined}
+          pagination={
+            <ProcedurePagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => {
+                setPageSize(n);
+                setPage(1);
+              }}
+            />
+          }
+        />
       )}
 
       <ProcedureArchiveTable
         columns={tableColumns}
         rows={tableRows}
         selectedId={showingHistorical ? selectedId : null}
-        showCheckboxes={showingHistorical}
-        showSelectAll={false}
+        selectable={showingHistorical}
+        selectOnlyOpenRest={false}
+        selectedIds={showingHistorical ? checkedIds : undefined}
         loading={tableLoading}
         emptyMessage={
           showingHistorical
@@ -450,15 +375,33 @@ export default function CashMovementsArchive({
               }
             : undefined
         }
-        onToggleCheck={
+        onToggleSelect={
           showingHistorical
-            ? (row, checked) => {
+            ? (row) => {
                 if (!row.id) return;
-                setSelectedId(checked ? row.id : null);
+                setSelectedId(row.id);
+                setCheckedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(row.id!)) next.delete(row.id!);
+                  else next.add(row.id!);
+                  return next;
+                });
+              }
+            : undefined
+        }
+        onToggleSelectAll={
+          showingHistorical
+            ? (checked) => {
+                if (!checked) {
+                  setCheckedIds(new Set());
+                  return;
+                }
+                setCheckedIds(new Set(historical.map((r) => r.id).filter(Boolean)));
               }
             : undefined
         }
       />
+      {passwordModal}
     </ProcedureArchiveShell>
   );
 }

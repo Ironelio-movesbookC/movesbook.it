@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuthWithUser, requireAuthForNews, getOrCreateUserForSuperAdmin, getSuperAdminCreatorIds } from '../auth';
 import { verifyClubOwnership } from '@/lib/clubNewsShareAuth';
+import { isClubOgpAudienceMode } from '@/lib/clubOgpAudience';
 
 /** Load viewCount even if Prisma client is stale (dev server locking generate). */
 async function loadOgpViewCounts(ids: string[]): Promise<Map<string, number>> {
@@ -308,6 +309,7 @@ export async function POST(request: NextRequest) {
       visibilityLanguages,
       visibilitySports,
       shareToClubId,
+      audienceMode: audienceModeRaw,
     } = body;
     if (!url || typeof url !== 'string' || !url.trim()) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
@@ -325,6 +327,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Club not found or access denied' }, { status: 403 });
       }
     }
+
+    const shareAudienceMode = isClubOgpAudienceMode(audienceModeRaw)
+      ? audienceModeRaw
+      : 'me-and-club-members';
 
     const topicName = typeof topic === 'string' && topic.trim() ? topic.trim() : 'News';
     const created = await prisma.ogpArticle.create({
@@ -357,8 +363,9 @@ export async function POST(request: NextRequest) {
           clubId: clubIdToShare,
           ogpArticleId: created.id,
           sharedById: userId,
+          audienceMode: shareAudienceMode,
         },
-        update: { sharedById: userId },
+        update: { sharedById: userId, audienceMode: shareAudienceMode },
       });
       sharedClubIds = [clubIdToShare];
     }
@@ -376,6 +383,7 @@ export async function POST(request: NextRequest) {
       languageCode: created.languageCode ?? null,
       savedAt: created.savedAt.toISOString(),
       sharedClubIds,
+      ...(clubIdToShare ? { clubAudienceMode: shareAudienceMode } : {}),
     });
   } catch (e) {
     console.error('POST /api/news/ogp', e);

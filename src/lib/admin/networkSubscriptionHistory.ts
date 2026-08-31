@@ -1,6 +1,18 @@
 import { parseAdminSettingsJson } from '@/lib/admin/userProfilePanelSettings';
-import { classifyClubSubscriptionEnd } from '@/lib/admin/clubSubscriptionStatus';
+import {
+  classifyClubSubscriptionEnd,
+  inferMembershipEndDateYmd,
+  MEMBERSHIP_RENEWAL_DURATION_DAYS,
+  MEMBERSHIP_STATUS_NOT_YET_ACTIVE,
+  parseClubSubscriptionEndDate,
+  parseClubSubscriptionStartDate,
+} from '@/lib/admin/clubSubscriptionStatus';
+import {
+  mergePcuAccessIntoAdminSettings,
+  readPcuAccessSettings,
+} from '@/lib/admin/userPcuAccessSettings';
 import type { RegisteredUserListRow } from '@/lib/admin/expandRegisteredUserListRows';
+import { membershipStatusToneFromLabel } from '@/lib/admin/clubSubscriptionStatus';
 
 /** One Movesbook network membership period (typically 6 months or 1 year). */
 export type NetworkSubscriptionPeriod = {
@@ -13,6 +25,9 @@ export type NetworkSubscriptionPeriod = {
   username?: string;
   status?: string;
   archivedAt?: string;
+  paymentMethod?: string;
+  amountPaid?: string;
+  discountPercent?: string;
 };
 
 export type MembershipViewMode = 'all' | 'current' | 'last' | 'lastPerUser';
@@ -26,12 +41,308 @@ export type MembershipListSortOrder =
   | 'date';
 
 const HISTORY_KEY = 'networkSubscriptionHistory';
+const DELETED_SUBSCRIPTIONS_KEY = 'deletedSubscriptionPeriods';
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 function parseYmdMs(value: string | null | undefined): number {
   if (!value?.trim()) return 0;
   const t = new Date(value.trim()).getTime();
   return Number.isNaN(t) ? 0 : t;
+}
+
+export function sliceYmd(value: string | null | undefined): string {
+  return value?.trim().slice(0, 10) ?? '';
+}
+
+export function addDaysYmd(ymd: string, days: number): string {
+  const d = new Date(ymd.trim());
+  if (Number.isNaN(d.getTime())) return ymd;
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Returns an error message when end is before start; otherwise null. */
+export function validateSubscriptionDateRange(
+  dateStart: string | null | undefined,
+  dateEnd: string | null | undefined,
+): string | null {
+  const startMs = parseYmdMs(dateStart);
+  const endMs = parseYmdMs(dateEnd);
+  if (!startMs || !endMs) return null;
+  if (endMs < startMs) return 'End date cannot be earlier than start date';
+  return null;
+}
+
+/**
+ * Movesbook renewal start date:
+ * - previous subscription already expired → today
+ * - previous subscription still valid → day after previous end
+ */
+export function computeRenewalStartDate(
+  previousEnd: string | null | undefined,
+  now: Date = new Date(),
+): string {
+  const today = now.toISOString().slice(0, 10);
+  const todayMs = parseYmdMs(today);
+  const prevEndMs = parseYmdMs(previousEnd);
+  if (!prevEndMs || prevEndMs < todayMs) return today;
+  return addDaysYmd(sliceYmd(previousEnd), 1);
+}
+
+export type PcuAccessWindow = {
+  accessStartIso: string;
+  accessEndIso: string;
+};
+
+export function isNotYetActiveMembershipPeriod(
+  period: Pick<NetworkSubscriptionPeriod, 'dateStart' | 'dateEnd'>,
+  now?: Date,
+): boolean {
+  return periodStatusFromDates(period, now) === MEMBERSHIP_STATUS_NOT_YET_ACTIVE;
+}
+
+function sortPeriodsByStartDesc(periods: NetworkSubscriptionPeriod[]): NetworkSubscriptionPeriod[] {
+  return [...periods].sort((a, b) => {
+    const startDiff = parseYmdMs(b.dateStart) - parseYmdMs(a.dateStart);
+    if (startDiff !== 0) return startDiff;
+    return parseYmdMs(b.dateEnd) - parseYmdMs(a.dateEnd);
+  });
+}
+
+/** PCU top Start/End: latest membership that is active, expiring, or expired — never not-yet-active. */
+export function pickPcuDisplayMembershipPeriod(
+  periods: NetworkSubscriptionPeriod[],
+  now?: Date,
+): NetworkSubscriptionPeriod | null {
+  if (periods.length === 0) return null;
+  const eligible = periods.filter((p) => !isNotYetActiveMembershipPeriod(p, now));
+  if (eligible.length === 0) return null;
+  return sortPeriodsByStartDesc(eligible)[0]!;
+}
+
+export function membershipPeriodRangeMs(
+  period: Pick<NetworkSubscriptionPeriod, 'dateStart' | 'dateEnd'>,
+): { startMs: number; endMs: number } | null {
+  const startMs = parseYmdMs(period.dateStart);
+  const endYmd = inferMembershipEndDateYmd(period.dateStart, period.dateEnd);
+  const endMs = endYmd ? parseYmdMs(endYmd) : null;
+  if (!startMs || !endMs) return null;
+  return { startMs, endMs };
+}
+
+export function membershipPeriodsOverlap(
+  a: Pick<NetworkSubscriptionPeriod, 'dateStart' | 'dateEnd'>,
+  b: Pick<NetworkSubscriptionPeriod, 'dateStart' | 'dateEnd'>,
+): boolean {
+  const ra = membershipPeriodRangeMs(a);
+  const rb = membershipPeriodRangeMs(b);
+  if (!ra || !rb) return false;
+  return ra.startMs <= rb.endMs && rb.startMs <= ra.endMs;
+}
+
+export function validateMembershipPeriodNoOverlap(
+  period: Pick<NetworkSubscriptionPeriod, 'id' | 'dateStart' | 'dateEnd'>,
+  others: NetworkSubscriptionPeriod[],
+): string | null {
+  for (const other of others) {
+    if (other.id === period.id) continue;
+    if (
+      sliceYmd(other.dateStart) === sliceYmd(period.dateStart) &&
+      sliceYmd(other.dateEnd) === sliceYmd(period.dateEnd)
+    ) {
+      continue;
+    }
+    if (membershipPeriodsOverlap(period, other)) {
+      return 'Date range overlaps an existing membership period';
+    }
+  }
+  return null;
+}
+
+export function appendMembershipPeriodToHistory(
+  adminSettingsRaw: string | null | undefined,
+  period: NetworkSubscriptionPeriod,
+): string {
+  const history = readNetworkSubscriptionHistory(adminSettingsRaw);
+  const key = periodDedupeKey(period);
+  if (history.some((p) => periodDedupeKey(p) === key)) {
+    return adminSettingsRaw?.trim() || '{}';
+  }
+  return mergeNetworkSubscriptionHistory(adminSettingsRaw, [...history, period]);
+}
+
+export function updateMembershipPeriodInHistory(
+  adminSettingsRaw: string | null | undefined,
+  periodId: string,
+  patch: { dateStart: string; dateEnd: string | null },
+): { adminSettings: string; period: NetworkSubscriptionPeriod | null } {
+  const history = readNetworkSubscriptionHistory(adminSettingsRaw);
+  let updated: NetworkSubscriptionPeriod | null = null;
+  const next = history.map((p) => {
+    if (p.id !== periodId) return p;
+    updated = {
+      ...p,
+      dateStart: patch.dateStart.trim().slice(0, 10),
+      dateEnd: patch.dateEnd?.trim().slice(0, 10) || null,
+    };
+    return updated;
+  });
+  if (!updated) {
+    return { adminSettings: adminSettingsRaw?.trim() || '{}', period: null };
+  }
+  return { adminSettings: mergeNetworkSubscriptionHistory(adminSettingsRaw, next), period: updated };
+}
+
+/** The single current membership among historical + live periods. */
+export function pickCurrentSubscriptionPeriod(
+  periods: NetworkSubscriptionPeriod[],
+  pcuAccess?: PcuAccessWindow | null,
+): NetworkSubscriptionPeriod | null {
+  if (periods.length === 0) return null;
+  const accessStart = sliceYmd(pcuAccess?.accessStartIso);
+  const accessEnd = sliceYmd(pcuAccess?.accessEndIso);
+  if (accessStart) {
+    const exact = periods.find(
+      (p) =>
+        sliceYmd(p.dateStart) === accessStart &&
+        sliceYmd(p.dateEnd) === accessEnd &&
+        !isNotYetActiveMembershipPeriod(p),
+    );
+    if (exact) return exact;
+  }
+  const eligible = periods.filter(
+    (p) => periodStatusFromDates(p) !== 'Expired' && !isNotYetActiveMembershipPeriod(p),
+  );
+  if (eligible.length > 0) {
+    return sortPeriodsByStartDesc(eligible)[0]!;
+  }
+  return sortPeriodsByStartDesc(periods.filter((p) => !isNotYetActiveMembershipPeriod(p)))[0] ?? null;
+}
+
+function periodDedupeKey(period: NetworkSubscriptionPeriod): string {
+  return `${period.entityId ?? ''}|${sliceYmd(period.dateStart)}|${sliceYmd(period.dateEnd)}`;
+}
+
+function pickPreferredSubscriptionPeriod(
+  a: NetworkSubscriptionPeriod,
+  b: NetworkSubscriptionPeriod,
+): NetworkSubscriptionPeriod {
+  const aCurrent = a.id.startsWith('current-');
+  const bCurrent = b.id.startsWith('current-');
+  if (aCurrent && !bCurrent) return a;
+  if (bCurrent && !aCurrent) return b;
+  const aArchived = parseYmdMs(a.archivedAt);
+  const bArchived = parseYmdMs(b.archivedAt);
+  if (bArchived > aArchived) return b;
+  return a;
+}
+
+/** Collapse duplicate history rows that share the same entity + start + end dates. */
+export function dedupeSubscriptionPeriods(
+  periods: NetworkSubscriptionPeriod[],
+): NetworkSubscriptionPeriod[] {
+  const byKey = new Map<string, NetworkSubscriptionPeriod>();
+  for (const period of periods) {
+    const key = periodDedupeKey(period);
+    const existing = byKey.get(key);
+    byKey.set(key, existing ? pickPreferredSubscriptionPeriod(existing, period) : period);
+  }
+  return Array.from(byKey.values());
+}
+
+/**
+ * Active / Expired / Expiring / Not yet active from subscription dates.
+ * Not yet active when start is strictly after today; expired only after the end date.
+ */
+export function periodStatusFromDates(
+  period: Pick<NetworkSubscriptionPeriod, 'dateStart' | 'dateEnd'>,
+  now: Date = new Date(),
+): string {
+  const todayMs = parseYmdMs(now.toISOString().slice(0, 10));
+  const startMs = parseYmdMs(period.dateStart);
+  if (startMs && todayMs < startMs) {
+    return MEMBERSHIP_STATUS_NOT_YET_ACTIVE;
+  }
+
+  const effectiveEnd = inferMembershipEndDateYmd(period.dateStart, period.dateEnd);
+  const endMs = effectiveEnd ? parseYmdMs(effectiveEnd) : null;
+
+  if (endMs && todayMs > endMs) return 'Expired';
+
+  return periodDisplayStatus(effectiveEnd);
+}
+
+/** Derive list/profile status from dates (never from stored status flags). */
+export function resolveMembershipPeriodStatus(
+  period: NetworkSubscriptionPeriod,
+  _current?: NetworkSubscriptionPeriod | null,
+  now?: Date,
+): string {
+  void _current;
+  return periodStatusFromDates(period, now);
+}
+
+function withResolvedMembershipStatuses(
+  periods: NetworkSubscriptionPeriod[],
+  _pcuAccess?: PcuAccessWindow | null,
+): NetworkSubscriptionPeriod[] {
+  void _pcuAccess;
+  return dedupeSubscriptionPeriods(periods).map((p) => ({
+    ...p,
+    status: periodStatusFromDates(p),
+  }));
+}
+
+export function computeRenewalEndDate(
+  startYmd: string,
+  durationDays: number = MEMBERSHIP_RENEWAL_DURATION_DAYS,
+): string {
+  return addDaysYmd(startYmd, durationDays);
+}
+
+export type MembershipRenewalInput = {
+  dateStart: string;
+  dateEnd: string | null;
+  version?: string;
+  entityId?: string | null;
+  companyName?: string;
+  username?: string;
+};
+
+/** Archive the previous period and prepare admin settings for a renewed membership. */
+export function applyMembershipRenewalToAdminSettings(
+  adminSettingsRaw: string | null | undefined,
+  previous: MembershipRenewalInput,
+  nextStart: string,
+  nextEnd: string,
+): string {
+  return appendArchivedPeriodIfChanged(
+    adminSettingsRaw,
+    { accessStartIso: previous.dateStart, accessEndIso: previous.dateEnd ?? '' },
+    { accessStartIso: nextStart, accessEndIso: nextEnd },
+    {
+      version: previous.version,
+      entityId: previous.entityId ?? null,
+      companyName: previous.companyName,
+      username: previous.username,
+    },
+  );
+}
+
+/** Whether global PCU access dates should move forward with this entity renewal. */
+export function shouldSyncPcuAccessOnRenewal(
+  entityId: string | null | undefined,
+  primaryEntityId: string | null | undefined,
+  previous: MembershipRenewalInput,
+  pcuAccess: PcuAccessWindow,
+): boolean {
+  if (!entityId) return true;
+  if (primaryEntityId && entityId === primaryEntityId) return true;
+  const prevStart = sliceYmd(previous.dateStart);
+  const prevEnd = sliceYmd(previous.dateEnd);
+  const pcuStart = sliceYmd(pcuAccess.accessStartIso);
+  const pcuEnd = sliceYmd(pcuAccess.accessEndIso);
+  return prevStart === pcuStart && prevEnd === pcuEnd;
 }
 
 export function periodDisplayStatus(dateEnd: string | null | undefined): string {
@@ -45,16 +356,10 @@ export function periodDisplayStatus(dateEnd: string | null | undefined): string 
 }
 
 export function isActiveMembershipPeriod(
-  dateEnd: string | null | undefined,
-  status?: string,
+  dateStart: string | null | undefined,
+  dateEnd?: string | null | undefined,
 ): boolean {
-  const normalized = (status ?? '').toLowerCase();
-  if (normalized === 'expired') return false;
-  if (normalized === 'active' || normalized === 'expiring') return true;
-  if (!dateEnd?.trim()) return true;
-  const end = new Date(dateEnd);
-  if (Number.isNaN(end.getTime())) return true;
-  return end.getTime() >= Date.now();
+  return periodStatusFromDates({ dateStart: dateStart ?? '', dateEnd: dateEnd ?? null }) !== 'Expired';
 }
 
 /**
@@ -93,7 +398,7 @@ export function readNetworkSubscriptionHistory(
   if (!block || typeof block !== 'object') return [];
   const periods = (block as { periods?: unknown }).periods;
   if (!Array.isArray(periods)) return [];
-  return periods
+  const parsed = periods
     .filter((p): p is Record<string, unknown> => Boolean(p && typeof p === 'object'))
     .map((p, index) => ({
       id: String(p.id ?? `hist-${index}`),
@@ -105,8 +410,12 @@ export function readNetworkSubscriptionHistory(
       username: typeof p.username === 'string' ? p.username : undefined,
       status: typeof p.status === 'string' ? p.status : undefined,
       archivedAt: typeof p.archivedAt === 'string' ? p.archivedAt : undefined,
+      paymentMethod: typeof p.paymentMethod === 'string' ? p.paymentMethod : undefined,
+      amountPaid: typeof p.amountPaid === 'string' ? p.amountPaid : undefined,
+      discountPercent: typeof p.discountPercent === 'string' ? p.discountPercent : undefined,
     }))
     .filter((p) => Boolean(p.dateStart));
+  return dedupeSubscriptionPeriods(parsed);
 }
 
 export function mergeNetworkSubscriptionHistory(
@@ -117,13 +426,13 @@ export function mergeNetworkSubscriptionHistory(
   return JSON.stringify({
     ...adminSettings,
     [HISTORY_KEY]: {
-      periods,
+      periods: dedupeSubscriptionPeriods(periods),
       updatedAt: new Date().toISOString(),
     },
   });
 }
 
-/** Archive the previous access window when admin changes subscription dates. */
+/** Archive the previous access window when admin changes subscription start date. */
 export function appendArchivedPeriodIfChanged(
   adminSettingsRaw: string | null | undefined,
   previous: { accessStartIso: string; accessEndIso: string },
@@ -134,7 +443,7 @@ export function appendArchivedPeriodIfChanged(
   const prevEnd = previous.accessEndIso.trim().slice(0, 10) || null;
   const nextStart = next.accessStartIso.trim().slice(0, 10);
   const nextEnd = next.accessEndIso.trim().slice(0, 10) || null;
-  if (!prevStart || (prevStart === nextStart && prevEnd === nextEnd)) {
+  if (!prevStart || prevStart === nextStart) {
     return adminSettingsRaw?.trim() || '{}';
   }
 
@@ -150,28 +459,137 @@ export function appendArchivedPeriodIfChanged(
     status: periodDisplayStatus(prevEnd),
     archivedAt: new Date().toISOString(),
   };
-  const deduped = history.filter(
-    (p) => !(p.dateStart === archived.dateStart && p.dateEnd === archived.dateEnd),
-  );
+  const samePeriod = (p: NetworkSubscriptionPeriod) =>
+    p.dateStart === archived.dateStart &&
+    (p.dateEnd ?? '') === (archived.dateEnd ?? '') &&
+    (p.entityId ?? null) === (archived.entityId ?? null);
+
+  if (history.some(samePeriod)) {
+    return adminSettingsRaw?.trim() || '{}';
+  }
+
+  const deduped = history.filter((p) => !samePeriod(p));
   return mergeNetworkSubscriptionHistory(adminSettingsRaw, [...deduped, archived]);
 }
 
-function rowToPeriod(row: RegisteredUserListRow): NetworkSubscriptionPeriod {
+function rowUsesPcuAccessDates(
+  row: RegisteredUserListRow,
+  pcuAccess?: PcuAccessWindow | null,
+): boolean {
+  if (!sliceYmd(pcuAccess?.accessStartIso)) return false;
+  if (!row.entityId) return true;
+  if (row.primaryClubId && row.entityId === row.primaryClubId) return true;
+  return false;
+}
+
+function rowToPeriod(
+  row: RegisteredUserListRow,
+  pcuAccess?: PcuAccessWindow | null,
+): NetworkSubscriptionPeriod {
+  const usePcu = rowUsesPcuAccessDates(row, pcuAccess);
+  const dateStart = usePcu ? sliceYmd(pcuAccess!.accessStartIso) : row.dateStart;
+  const dateEnd = usePcu
+    ? sliceYmd(pcuAccess!.accessEndIso) || null
+    : row.dateEnd;
   return {
     id: `current-${row.rowKey}`,
-    dateStart: row.dateStart,
-    dateEnd: row.dateEnd,
+    dateStart,
+    dateEnd,
     version: row.version,
     entityId: row.entityId ?? null,
     companyName: row.companyName,
     username: row.username,
-    status: row.status || periodDisplayStatus(row.dateEnd),
+    status: periodDisplayStatus(dateEnd),
   };
 }
 
-function periodsForRow(
+export function readDeletedSubscriptionPeriods(
+  adminSettingsRaw: string | null | undefined,
+): SubscriptionPeriodDeletion[] {
+  const adminSettings = parseAdminSettingsJson(adminSettingsRaw);
+  const arr = adminSettings[DELETED_SUBSCRIPTIONS_KEY];
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((p): p is Record<string, unknown> => Boolean(p && typeof p === 'object'))
+    .map((p) => ({
+      periodId: String(p.periodId ?? '').trim(),
+      entityId:
+        p.entityId === null || p.entityId === undefined
+          ? undefined
+          : String(p.entityId).trim() || null,
+      dateStart: typeof p.dateStart === 'string' ? p.dateStart.trim() : undefined,
+      dateEnd:
+        p.dateEnd === null
+          ? null
+          : typeof p.dateEnd === 'string'
+            ? p.dateEnd.trim() || null
+            : undefined,
+    }))
+    .filter((p) => Boolean(p.periodId));
+}
+
+function deletionRecordKey(del: SubscriptionPeriodDeletion): string {
+  return [
+    del.periodId,
+    del.entityId ?? '',
+    del.dateStart ?? '',
+    del.dateEnd ?? '',
+  ].join('|');
+}
+
+function mergeDeletedSubscriptionPeriods(
+  adminSettingsRaw: string | null | undefined,
+  deletions: SubscriptionPeriodDeletion[],
+): string {
+  const adminSettings = parseAdminSettingsJson(adminSettingsRaw);
+  const existing = readDeletedSubscriptionPeriods(adminSettingsRaw);
+  const seen = new Set(existing.map(deletionRecordKey));
+  const merged = [...existing];
+  for (const del of deletions) {
+    const key = deletionRecordKey(del);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(del);
+  }
+  return JSON.stringify({
+    ...adminSettings,
+    [DELETED_SUBSCRIPTIONS_KEY]: merged,
+  });
+}
+
+export function isSubscriptionPeriodDeleted(
+  period: NetworkSubscriptionPeriod,
+  deletions: SubscriptionPeriodDeletion[],
+  rowKey?: string,
+): boolean {
+  if (deletions.length === 0) return false;
+  return deletions.some((del) => {
+    if (periodMatchesDeletion(period, del)) return true;
+    if (rowKey && del.periodId === `current-${rowKey}` && period.id === `current-${rowKey}`) {
+      return true;
+    }
+    if (
+      del.dateStart &&
+      period.dateStart === del.dateStart.slice(0, 10) &&
+      (period.dateEnd ?? '') === (del.dateEnd?.trim().slice(0, 10) ?? '') &&
+      (del.entityId === undefined || (period.entityId ?? null) === (del.entityId ?? null))
+    ) {
+      return (
+        del.periodId === period.id ||
+        del.periodId.startsWith('current-') ||
+        del.periodId.startsWith('account-')
+      );
+    }
+    return false;
+  });
+}
+
+/** Historical + live membership periods for one owned entity (admin list / profile). */
+export function periodsForRow(
   row: RegisteredUserListRow,
   userHistory: NetworkSubscriptionPeriod[],
+  deleted: SubscriptionPeriodDeletion[] = [],
+  pcuAccess?: PcuAccessWindow | null,
 ): NetworkSubscriptionPeriod[] {
   const entityId = row.entityId ?? null;
   const matching = userHistory.filter((p) => {
@@ -179,45 +597,245 @@ function periodsForRow(
     return entityId ? pEntity === entityId : !pEntity;
   });
 
-  const current = rowToPeriod(row);
+  const current = rowToPeriod(row, pcuAccess);
   const sameAsCurrent = (p: NetworkSubscriptionPeriod) =>
     p.dateStart === current.dateStart && (p.dateEnd ?? '') === (current.dateEnd ?? '');
 
-  const merged = [...matching.filter((p) => !sameAsCurrent(p)), current];
-  return merged.sort((a, b) => parseYmdMs(a.dateStart) - parseYmdMs(b.dateStart));
+  const merged = [...matching.filter((p) => !sameAsCurrent(p)), current].filter(
+    (p) => !isSubscriptionPeriodDeleted(p, deleted, row.rowKey),
+  );
+  const sorted = merged.sort((a, b) => parseYmdMs(a.dateStart) - parseYmdMs(b.dateStart));
+  return withResolvedMembershipStatuses(sorted, pcuAccess);
+}
+
+/** Same membership window as the admin grid / list (history + PCU access + entity description). */
+export function resolveMembershipDatesForEntity(args: {
+  userId: string;
+  entityId: string | null;
+  adminSettingsRaw?: string | null;
+  entityDescription: string | null;
+  entityCreatedAt: Date;
+  companyName?: string;
+  username?: string;
+  version?: string;
+}): { dateStart: string; dateEnd: string | null } {
+  const descriptionStart =
+    parseClubSubscriptionStartDate(args.entityDescription, args.entityCreatedAt) ||
+    args.entityCreatedAt.toISOString().slice(0, 10);
+  const parsedEnd = parseClubSubscriptionEndDate(args.entityDescription, args.entityCreatedAt);
+  const descriptionEnd = inferMembershipEndDateYmd(
+    descriptionStart,
+    parsedEnd?.toISOString().slice(0, 10) ?? null,
+  );
+
+  const entityPart = args.entityId?.trim() || 'account';
+  const row: RegisteredUserListRow = {
+    rowKey: `${args.userId}-${entityPart}`,
+    id: args.userId,
+    username: args.username ?? '',
+    email: '',
+    displayName: '',
+    userType: '',
+    country: null,
+    location: null,
+    dateStart: descriptionStart,
+    dateEnd: descriptionEnd,
+    version: args.version ?? '',
+    amount: '—',
+    status: 'Active',
+    entityId: args.entityId,
+    primaryClubId: args.entityId,
+    companyName: args.companyName,
+  };
+
+  const pcu = readPcuAccessSettings(args.adminSettingsRaw, {
+    accessStartIso: '',
+    accessEndIso: '',
+  });
+  const pcuAccess =
+    pcu.accessStartIso.trim() && pcu.accessEndIso.trim()
+      ? { accessStartIso: pcu.accessStartIso, accessEndIso: pcu.accessEndIso }
+      : undefined;
+
+  const periods = periodsForRow(
+    row,
+    readNetworkSubscriptionHistory(args.adminSettingsRaw),
+    readDeletedSubscriptionPeriods(args.adminSettingsRaw),
+    pcuAccess,
+  );
+
+  if (periods.length === 0) {
+    return { dateStart: descriptionStart, dateEnd: descriptionEnd };
+  }
+
+  const latest = [...periods].sort((a, b) => parseYmdMs(b.dateStart) - parseYmdMs(a.dateStart))[0]!;
+  return {
+    dateStart: latest.dateStart,
+    dateEnd: inferMembershipEndDateYmd(latest.dateStart, latest.dateEnd),
+  };
+}
+
+export type PcuDisplayMembershipDates = {
+  dateStart: string;
+  dateEnd: string | null;
+  /** True when a not-yet-active (renewed) membership exists alongside the displayed period. */
+  alreadyRenewed: boolean;
+};
+
+/** PCU top / modal display dates — last active or expired membership, never not-yet-active. */
+export function resolvePcuDisplayMembershipDatesForEntity(args: {
+  userId: string;
+  entityId: string | null;
+  adminSettingsRaw?: string | null;
+  entityDescription: string | null;
+  entityCreatedAt: Date;
+  companyName?: string;
+  username?: string;
+  version?: string;
+}): PcuDisplayMembershipDates {
+  const descriptionStart =
+    parseClubSubscriptionStartDate(args.entityDescription, args.entityCreatedAt) ||
+    args.entityCreatedAt.toISOString().slice(0, 10);
+  const parsedEnd = parseClubSubscriptionEndDate(args.entityDescription, args.entityCreatedAt);
+  const descriptionEnd = inferMembershipEndDateYmd(
+    descriptionStart,
+    parsedEnd?.toISOString().slice(0, 10) ?? null,
+  );
+
+  const entityPart = args.entityId?.trim() || 'account';
+  const row: RegisteredUserListRow = {
+    rowKey: `${args.userId}-${entityPart}`,
+    id: args.userId,
+    username: args.username ?? '',
+    email: '',
+    displayName: '',
+    userType: '',
+    country: null,
+    location: null,
+    dateStart: descriptionStart,
+    dateEnd: descriptionEnd,
+    version: args.version ?? '',
+    amount: '—',
+    status: 'Active',
+    entityId: args.entityId,
+    primaryClubId: args.entityId,
+    companyName: args.companyName,
+  };
+
+  const pcu = readPcuAccessSettings(args.adminSettingsRaw, {
+    accessStartIso: '',
+    accessEndIso: '',
+  });
+  const pcuAccess =
+    pcu.accessStartIso.trim() && pcu.accessEndIso.trim()
+      ? { accessStartIso: pcu.accessStartIso, accessEndIso: pcu.accessEndIso }
+      : undefined;
+
+  const periods = periodsForRow(
+    row,
+    readNetworkSubscriptionHistory(args.adminSettingsRaw),
+    readDeletedSubscriptionPeriods(args.adminSettingsRaw),
+    pcuAccess,
+  );
+
+  const pcuStart = pcu.accessStartIso.trim().slice(0, 10);
+  const pcuEnd = pcu.accessEndIso.trim().slice(0, 10);
+  const pcuPeriodEligible =
+    pcuStart &&
+    pcuEnd &&
+    !isNotYetActiveMembershipPeriod({ dateStart: pcuStart, dateEnd: pcuEnd });
+  const periodsForDisplay =
+    pcuPeriodEligible && pcuAccess
+      ? [
+          ...periods,
+          {
+            id: `pcu-access-${args.entityId ?? 'account'}`,
+            dateStart: pcuStart,
+            dateEnd: pcuEnd,
+            entityId: args.entityId ?? null,
+            version: args.version,
+            companyName: args.companyName,
+            username: args.username,
+          },
+        ]
+      : periods;
+
+  const livePeriod = { dateStart: descriptionStart, dateEnd: descriptionEnd };
+  const alreadyRenewed =
+    periods.some((p) => isNotYetActiveMembershipPeriod(p)) ||
+    isNotYetActiveMembershipPeriod(livePeriod);
+  const liveIsPending = isNotYetActiveMembershipPeriod(livePeriod);
+
+  const display = pickPcuDisplayMembershipPeriod(periodsForDisplay);
+  if (display) {
+    return {
+      dateStart: display.dateStart,
+      dateEnd: inferMembershipEndDateYmd(display.dateStart, display.dateEnd),
+      alreadyRenewed,
+    };
+  }
+
+  if (!liveIsPending) {
+    return {
+      dateStart: descriptionStart,
+      dateEnd: descriptionEnd,
+      alreadyRenewed,
+    };
+  }
+
+  return {
+    dateStart: '',
+    dateEnd: null,
+    alreadyRenewed: true,
+  };
 }
 
 function periodToListRow(
   row: RegisteredUserListRow,
   period: NetworkSubscriptionPeriod,
 ): RegisteredUserListRow {
-  const status = period.status ?? periodDisplayStatus(period.dateEnd);
+  const status = periodStatusFromDates(period);
   return {
     ...row,
     rowKey: `${row.rowKey}-period-${period.id}`,
+    entityId: row.entityId ?? period.entityId ?? null,
+    entityKind: row.entityKind,
     dateStart: period.dateStart,
-    dateEnd: period.dateEnd,
+    dateEnd: inferMembershipEndDateYmd(period.dateStart, period.dateEnd),
     version: period.version?.trim() || row.version,
     companyName: period.companyName?.trim() || row.companyName,
     username: period.username?.trim() || row.username,
     status,
-    statusTone:
-      status === 'Expired'
-        ? 'all-expired'
-        : status === 'Expiring'
-          ? 'expiring'
-          : 'active',
+    statusTone: membershipStatusToneFromLabel(status),
   };
 }
 
 /** The chronologically last membership period (latest start date). */
-function pickLatestMembershipRow(rows: RegisteredUserListRow[]): RegisteredUserListRow | null {
+export function pickLatestMembershipRow(
+  rows: RegisteredUserListRow[],
+): RegisteredUserListRow | null {
   if (rows.length === 0) return null;
   return [...rows].sort((a, b) => {
     const startDiff = parseYmdMs(b.dateStart) - parseYmdMs(a.dateStart);
     if (startDiff !== 0) return startDiff;
     return parseYmdMs(b.dateEnd) - parseYmdMs(a.dateEnd);
   })[0]!;
+}
+
+/** Latest membership row per owned entity (club/team/group). */
+export function pickLatestMembershipRowPerEntity(
+  rows: RegisteredUserListRow[],
+): RegisteredUserListRow[] {
+  const byEntity = new Map<string, RegisteredUserListRow[]>();
+  for (const row of rows) {
+    const key = membershipEntityGroupKey(row);
+    const list = byEntity.get(key) ?? [];
+    list.push(row);
+    byEntity.set(key, list);
+  }
+  return Array.from(byEntity.values())
+    .map((group) => pickLatestMembershipRow(group))
+    .filter((r): r is RegisteredUserListRow => r != null);
 }
 
 function isMembershipStartedInLast30Days(dateStart: string): boolean {
@@ -287,15 +905,30 @@ export function sortMembershipListRows(
 export function expandListRowsWithMembershipPeriods(
   rows: RegisteredUserListRow[],
   historyByUserId: Map<string, NetworkSubscriptionPeriod[]>,
+  deletedByUserId?: Map<string, SubscriptionPeriodDeletion[]>,
+  pcuAccessByUserId?: Map<string, PcuAccessWindow>,
 ): RegisteredUserListRow[] {
   return rows.flatMap((row) => {
-    const periods = periodsForRow(row, historyByUserId.get(row.id) ?? []);
+    const deleted = deletedByUserId?.get(row.id) ?? [];
+    const periods = periodsForRow(
+      row,
+      historyByUserId.get(row.id) ?? [],
+      deleted,
+      pcuAccessByUserId?.get(row.id),
+    );
+    if (periods.length === 0) return [];
     if (periods.length <= 1) {
       const only = periods[0];
-      return only ? [periodToListRow(row, only)] : [row];
+      return only ? [periodToListRow(row, only)] : [];
     }
     return periods.map((p) => periodToListRow(row, p));
   });
+}
+
+/** Stable key: one membership stream per user + owned entity (club/team/group). */
+export function membershipEntityGroupKey(row: RegisteredUserListRow): string {
+  const entityPart = row.entityId?.trim() || 'account';
+  return `${row.id}:${entityPart}`;
 }
 
 /**
@@ -304,7 +937,7 @@ export function expandListRowsWithMembershipPeriods(
  * - **all**: every membership period (user may appear multiple times).
  * - **current**: only non-expired, currently valid memberships.
  * - **last**: memberships whose start date falls within the last 30 days.
- * - **lastPerUser**: one row per user — their chronologically last membership (active or expired).
+ * - **lastPerUser**: latest renewal per owned entity (each club/team/group separately).
  */
 export function applyMembershipView(
   rows: RegisteredUserListRow[],
@@ -313,7 +946,7 @@ export function applyMembershipView(
   if (rows.length === 0) return rows;
 
   if (mode === 'current') {
-    return rows.filter((r) => isActiveMembershipPeriod(r.dateEnd, r.status));
+    return rows.filter((r) => isActiveMembershipPeriod(r.dateStart, r.dateEnd));
   }
 
   if (mode === 'last') {
@@ -321,13 +954,14 @@ export function applyMembershipView(
   }
 
   if (mode === 'lastPerUser') {
-    const byUser = new Map<string, RegisteredUserListRow[]>();
+    const byEntity = new Map<string, RegisteredUserListRow[]>();
     for (const row of rows) {
-      const list = byUser.get(row.id) ?? [];
+      const key = membershipEntityGroupKey(row);
+      const list = byEntity.get(key) ?? [];
       list.push(row);
-      byUser.set(row.id, list);
+      byEntity.set(key, list);
     }
-    return Array.from(byUser.values())
+    return Array.from(byEntity.values())
       .map((group) => pickLatestMembershipRow(group))
       .filter((r): r is RegisteredUserListRow => r != null);
   }
@@ -340,10 +974,109 @@ export function buildMembershipListRows(
   historyByUserId: Map<string, NetworkSubscriptionPeriod[]>,
   mode: MembershipViewMode,
   sortOrder?: string | null,
+  deletedByUserId?: Map<string, SubscriptionPeriodDeletion[]>,
+  pcuAccessByUserId?: Map<string, PcuAccessWindow>,
 ): RegisteredUserListRow[] {
-  const withPeriods = expandListRowsWithMembershipPeriods(rows, historyByUserId);
+  const withPeriods = expandListRowsWithMembershipPeriods(
+    rows,
+    historyByUserId,
+    deletedByUserId,
+    pcuAccessByUserId,
+  );
   const filtered = mode === 'all' ? withPeriods : applyMembershipView(withPeriods, mode);
   return sortMembershipListRows(filtered, sortOrder, mode);
+}
+
+export type SubscriptionDateField = 'dateStart' | 'dateEnd';
+
+export function parseSubscriptionDateField(
+  raw: string | null | undefined,
+): SubscriptionDateField {
+  return raw?.trim() === 'dateEnd' ? 'dateEnd' : 'dateStart';
+}
+
+/** Filter list rows by Date Start or Date End within an inclusive YYYY-MM-DD range. */
+export function filterListRowsBySubscriptionDateRange(
+  rows: RegisteredUserListRow[],
+  field: SubscriptionDateField,
+  from: string,
+  to: string,
+): RegisteredUserListRow[] {
+  if (!from.trim() && !to.trim()) return rows;
+  const fromMs = from.trim() ? parseYmdMs(from.trim()) : 0;
+  const toMs = to.trim() ? parseYmdMs(to.trim()) : 0;
+  const fromBound = fromMs || null;
+  const toBound = toMs || null;
+
+  return rows.filter((row) => {
+    const raw = field === 'dateStart' ? row.dateStart : row.dateEnd;
+    const valMs = parseYmdMs(raw ?? '');
+    if (!valMs) return false;
+    if (fromBound && valMs < fromBound) return false;
+    if (toBound && valMs > toBound) return false;
+    return true;
+  });
+}
+
+export type SubscriptionPeriodDeletion = {
+  periodId: string;
+  entityId?: string | null;
+  dateStart?: string;
+  dateEnd?: string | null;
+};
+
+function periodMatchesDeletion(
+  period: NetworkSubscriptionPeriod,
+  del: SubscriptionPeriodDeletion,
+): boolean {
+  if (period.id !== del.periodId) return false;
+  if (del.entityId === undefined) return true;
+  return (period.entityId ?? null) === (del.entityId ?? null);
+}
+
+function deletionTouchesCurrentAccess(
+  del: SubscriptionPeriodDeletion,
+  accessStartIso: string,
+  accessEndIso: string,
+): boolean {
+  if (del.periodId.startsWith('account-') || del.periodId.startsWith('current-')) {
+    return true;
+  }
+  const start = del.dateStart?.trim().slice(0, 10);
+  if (!start) return false;
+  const accessStart = accessStartIso.trim().slice(0, 10);
+  const accessEnd = accessEndIso.trim().slice(0, 10) || null;
+  const delEnd = del.dateEnd?.trim().slice(0, 10) || null;
+  return start === accessStart && delEnd === accessEnd;
+}
+
+/** Remove selected subscription periods from admin settings (history + current access when needed). */
+export function applySubscriptionPeriodDeletions(
+  adminSettingsRaw: string | null | undefined,
+  deletions: SubscriptionPeriodDeletion[],
+  defaults?: { accessStartIso: string; accessEndIso: string },
+): string {
+  if (deletions.length === 0) return adminSettingsRaw?.trim() || '{}';
+
+  const history = readNetworkSubscriptionHistory(adminSettingsRaw);
+  const nextHistory = history.filter(
+    (p) => !deletions.some((del) => periodMatchesDeletion(p, del)),
+  );
+  let next = mergeNetworkSubscriptionHistory(adminSettingsRaw, nextHistory);
+
+  const pcu = readPcuAccessSettings(next, defaults ?? { accessStartIso: '', accessEndIso: '' });
+  const clearAccess = deletions.some((del) =>
+    deletionTouchesCurrentAccess(del, pcu.accessStartIso, pcu.accessEndIso),
+  );
+  if (clearAccess) {
+    next = mergePcuAccessIntoAdminSettings(next, {
+      accessStartIso: '',
+      accessEndIso: '',
+      suspend: true,
+    });
+  }
+
+  return mergeDeletedSubscriptionPeriods(next, deletions);
 }
 
 export function parseMembershipViewMode(raw: string | null | undefined): MembershipViewMode {

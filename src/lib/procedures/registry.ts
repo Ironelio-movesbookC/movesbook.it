@@ -9,6 +9,7 @@
  * 7. Add thin pages: form + 4 archives + payment detail (reuse archives/* components)
  * 8. Add sidebar links in DarkSidebar.tsx
  */
+import { archiveScopeQuery } from '@/lib/club/archives/archiveScope';
 import type { ProcedureTypeCode } from './types';
 import { PROCEDURE_TYPE_CODES } from './types';
 
@@ -309,9 +310,10 @@ export function getProcedureTabs(
     selectedRecordId
       ? def.routes.paymentDetail(selectedRecordId)
       : def.routes.deadlines;
-  const memberQuery = selectedMemberId ? `?memberId=${encodeURIComponent(selectedMemberId)}` : '';
-  const paymentsHref = `${def.routes.payments}${memberQuery}`;
-  const receiptsHref = `${def.routes.receipts}${memberQuery}`;
+  // Sibling archives open on the selected record and can widen to the member or the whole club.
+  const scopeQuery = archiveScopeQuery(selectedRecordId, selectedMemberId);
+  const paymentsHref = `${def.routes.payments}${scopeQuery}`;
+  const receiptsHref = `${def.routes.receipts}${scopeQuery}`;
 
   return (['records', 'deadlines', 'payments', 'receipts'] as const).map((tabId) => ({
     id: tabId,

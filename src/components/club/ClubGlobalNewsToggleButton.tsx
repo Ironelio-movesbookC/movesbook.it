@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Globe } from 'lucide-react';
 
 type ClubGlobalNewsToggleButtonProps = {
-  kind: 'news' | 'ogp';
+  kind: 'news' | 'ogp' | 'ogp-group';
   itemId: string;
   clubId: string;
   inClubGlobalNews: boolean;
@@ -44,9 +44,11 @@ export default function ClubGlobalNewsToggleButton({
     setLoading(true);
     try {
       const path =
-        kind === 'ogp'
-          ? `/api/clubs/shared-news/ogp/${encodeURIComponent(itemId)}`
-          : `/api/clubs/shared-news/news/${encodeURIComponent(itemId)}`;
+        kind === 'ogp-group'
+          ? `/api/clubs/shared-news/ogp-group/${encodeURIComponent(itemId)}`
+          : kind === 'ogp'
+            ? `/api/clubs/shared-news/ogp/${encodeURIComponent(itemId)}`
+            : `/api/clubs/shared-news/news/${encodeURIComponent(itemId)}`;
       const res = await fetch(path, {
         method: 'PATCH',
         headers: {

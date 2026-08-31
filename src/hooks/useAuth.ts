@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
+import {
+  clearEntityCompanyLoginSession,
+  clearEntityDirectAccessLock,
+  setEntityCompanyLoginSession,
+  setEntityDirectAccessLock,
+} from '@/lib/entity/entityDirectAccessSession';
+import type { EntityDirectAccessKind } from '@/lib/entity/entityDirectAccessMeta';
 import { clearClubWorkspaceSessionOnLogout } from '@/lib/club/clearClubWorkspaceSession';
 import {
   MEMBER_NOTE_LOGIN_EVENT,
@@ -17,6 +24,7 @@ export interface AuthUser {
   userType: string;
   country?: string | null;
   image?: string | null;
+  language?: string;
 }
 
 export function useAuth() {
@@ -38,6 +46,8 @@ export function useAuth() {
       }
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      clearEntityDirectAccessLock();
+      clearEntityCompanyLoginSession();
       clearClubWorkspaceSessionOnLogout();
     }
     setUser(null);
@@ -91,7 +101,19 @@ export function useAuth() {
     checkAuth();
   }, [checkAuth]);
 
-  const login = (token: string, userData: AuthUser, redirectPath?: string | null) => {
+  const login = (
+    token: string,
+    userData: AuthUser,
+    redirectPath?: string | null,
+    options?: {
+      entityAccessMode?: string;
+      entityKind?: EntityDirectAccessKind;
+      entityId?: string;
+      /** @deprecated Use entityAccessMode + entityKind + entityId */
+      clubAccessMode?: string;
+      clubId?: string;
+    },
+  ) => {
     if (typeof window !== 'undefined') {
       // Drop previous account's workspace hints before binding a new session.
       clearClubWorkspaceSessionOnLogout();
@@ -99,6 +121,18 @@ export function useAuth() {
       localStorage.setItem('user', JSON.stringify(userData));
       sessionStorage.setItem(MEMBER_NOTE_LOGIN_FLAG, 'login');
       window.dispatchEvent(new Event(MEMBER_NOTE_LOGIN_EVENT));
+      const mode = options?.entityAccessMode ?? options?.clubAccessMode;
+      const kind = options?.entityKind ?? (options?.clubId ? 'club' : undefined);
+      const entityId = options?.entityId ?? options?.clubId;
+      if (mode === 'direct-access-only' && kind && entityId) {
+        setEntityDirectAccessLock(kind, entityId);
+      } else if (mode === 'company-password' && kind && entityId) {
+        clearEntityDirectAccessLock();
+        setEntityCompanyLoginSession(kind, entityId);
+      } else {
+        clearEntityDirectAccessLock();
+        clearEntityCompanyLoginSession();
+      }
     }
     setUser(userData);
     setShowLoginModal(false);

@@ -404,6 +404,7 @@ export default function AdminRegisteredUsersList({
   const [profileSubFilterApplied, setProfileSubFilterApplied] =
     useState<ProfileSubscriptionFilterState>(EMPTY_PROFILE_SUB_FILTERS);
   const [profileOrdering, setProfileOrdering] = useState<ProfileSubOrdering>('');
+  const [profileEntityId, setProfileEntityId] = useState<string | null>(null);
 
   const [clubPanelOpen, setClubPanelOpen] = useState(false);
   const [clubPanelLoading, setClubPanelLoading] = useState(false);
@@ -612,6 +613,8 @@ export default function AdminRegisteredUsersList({
     setPage(1);
     setSelected(new Set());
     setFilterOpen(false);
+    // Reset filters only on segment change; membershipTab changes are handled above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segment]);
 
   const allOnPageSelected =
@@ -830,6 +833,7 @@ export default function AdminRegisteredUsersList({
     setProfileSubFilterDraft(EMPTY_PROFILE_SUB_FILTERS);
     setProfileSubFilterApplied(EMPTY_PROFILE_SUB_FILTERS);
     setProfileOrdering('');
+    setProfileEntityId(null);
     setProfileTagged(false);
     setProfileFavouritePriority('not_selected');
     setProfilePanelSaving(false);
@@ -977,6 +981,7 @@ export default function AdminRegisteredUsersList({
       setProfileSubFilterDraft(EMPTY_PROFILE_SUB_FILTERS);
       setProfileSubFilterApplied(EMPTY_PROFILE_SUB_FILTERS);
       setProfileOrdering('');
+      setProfileEntityId(clubId?.trim() || null);
       try {
         const token = localStorage.getItem('adminToken');
         if (!token) {
@@ -1286,6 +1291,9 @@ export default function AdminRegisteredUsersList({
               onProfileSubFilterOk={profileSubFilterOk}
               onProfileSubProceed={profileSubProceed}
               onClose={closeUserProfile}
+              userId={profileData.id}
+              profileEntityId={profileEntityId}
+              onPeriodDatesSaved={() => void openUserProfile(profileData.id, profileEntityId)}
               onPrint={handlePrint}
               onSendMsg={openProfileSendMsgModal}
               onSendMail={openProfileSendMailModal}

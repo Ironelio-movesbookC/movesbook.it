@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import CashMovementsArchive from '@/components/club/archives/CashMovementsArchive';
-import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
 import EditCashMovementModal from '@/components/club/archives/EditCashMovementModal';
 import { deleteCashMovement } from '@/lib/club/cashMovementClient';
 import type { Column, Member } from '@/types/clubTable';
@@ -22,19 +21,10 @@ const columns: Column[] = [
 
 export default function MovementCashInPage() {
   const [editTarget, setEditTarget] = useState<Member | null>(null);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Member | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   function reload() {
     setRefreshKey((k) => k + 1);
-  }
-
-  async function performDelete() {
-    if (!deleteTarget?.id) return;
-    await deleteCashMovement(deleteTarget.id);
-    setDeleteTarget(null);
-    reload();
   }
 
   return (
@@ -43,11 +33,12 @@ export default function MovementCashInPage() {
         title="Cash In"
         direction="IN"
         columns={columns}
-        footerHint="Select a payment row, then use Details deadline or Totals about payments."
+        footerHint="Check a payment row, then use Details deadline or Payments record selected. Edit and Delete ask for your password."
         onEditItem={setEditTarget}
-        onDeleteItem={(item) => {
-          setDeleteTarget(item);
-          setShowDeleteModal(true);
+        onDeleteItem={async (item) => {
+          if (!item.id) return;
+          await deleteCashMovement(item.id);
+          reload();
         }}
       />
 
@@ -60,18 +51,6 @@ export default function MovementCashInPage() {
           insertDate: editTarget?.insertDate ? String(editTarget.insertDate) : null,
           casual: editTarget?.casual ?? '',
           operator: editTarget?.operator ?? '',
-        }}
-      />
-
-      <AdminPasswordConfirmModal
-        isOpen={showDeleteModal}
-        onClose={() => {
-          setShowDeleteModal(false);
-          setDeleteTarget(null);
-        }}
-        onVerified={() => {
-          setShowDeleteModal(false);
-          void performDelete();
         }}
       />
     </div>

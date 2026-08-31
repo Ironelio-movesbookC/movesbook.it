@@ -336,8 +336,8 @@ export default function MembersMovesBookTable({
         columns,
       );
       const res = await fetch('/api/send-email', {
-        method: 'POST',
         headers: getAuthHeaders(),
+        method: 'POST',
         body: JSON.stringify({
           email: to,
           message,

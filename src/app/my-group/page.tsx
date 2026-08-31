@@ -6,11 +6,18 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Users, UserPlus, X, Loader2, Pencil } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
+import ManagedEntitySidebarAvatar from '@/components/entity/ManagedEntitySidebarAvatar';
 import { useAuth } from '@/hooks/useAuth';
 import {
   getClubMyPageDisplayName,
   isClubCreatedFromForm,
 } from '@/lib/club/clubSidebarLabel';
+import { useEntityDirectAccessGuard } from '@/hooks/useEntityDirectAccessGuard';
+import {
+  getEntityDirectAccessLock,
+  getEntityDirectAccessProfilePath,
+} from '@/lib/entity/entityDirectAccessSession';
+import { isGroupAccountUserType } from '@/utils/dashboardRouting';
 
 interface GroupMember {
   id: string;
@@ -30,12 +37,14 @@ interface Group {
   name: string;
   description: string | null;
   groupType: string | null;
+  imageUrl?: string | null;
 }
 
 function MyGroupContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  useEntityDirectAccessGuard(!authLoading && !!user);
   const groupId = searchParams?.get('groupId');
 
   const [group, setGroup] = useState<Group | null>(null);
@@ -80,14 +89,22 @@ function MyGroupContent() {
 
   useEffect(() => {
     if (authLoading || !user) return;
+    const lock = getEntityDirectAccessLock();
     if (!groupId) {
-      // If no groupId selected, redirect to My Page to select a group
-      if (user?.userType === 'GROUP_ADMIN') {
-        router.push('/my-page');
+      if (lock?.kind === 'group') {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
+      if (user && isGroupAccountUserType(user.userType)) {
+        router.replace('/group/dashboard');
         return;
       }
       setLoading(false);
     } else {
+      if (lock?.kind === 'group' && groupId !== lock.entityId) {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
       loadGroupData();
     }
   }, [groupId, user, router, authLoading, loadGroupData]);
@@ -157,8 +174,13 @@ function MyGroupContent() {
           <div className="w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 h-full flex flex-col">
               <div className="text-center mb-8">
-                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <Users className="w-10 h-10 text-white" />
+                <div className="mx-auto mb-4 w-20 h-20">
+                  <ManagedEntitySidebarAvatar
+                    description={group?.description}
+                    imageUrl={group?.imageUrl}
+                    userImageUrl={user?.image}
+                    alt={group?.name || 'Group'}
+                  />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900">{groupDisplayName}</h2>
                 <p className="text-gray-600 text-sm mt-2">{group?.groupType || 'Group'}</p>
