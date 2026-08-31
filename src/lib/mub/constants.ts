@@ -7,9 +7,11 @@ export const MUB_CATEGORIES: { id: MubCategory; legacyLabel: string }[] = [
 ];
 
 export const MUB_STAFF_ROLE_TEMPLATES: { id: MubRoleTemplate; label: string }[] = [
-  { id: 'CLUB', label: 'Clubs (ID8)' },
-  { id: 'TEAM', label: 'Teams (ID7)' },
+  { id: 'SINGLE_USER', label: 'Single Users / Athletes' },
   { id: 'COACH', label: 'Coaches (ID6)' },
+  { id: 'TEAM', label: 'Teams (ID7)' },
+  { id: 'CLUB', label: 'Clubs (ID8)' },
+  { id: 'GROUP', label: 'Groups' },
 ];
 
 export const MUB_BACKGROUND_OPTIONS: { id: string; label: string; css: string }[] = [
@@ -60,9 +62,11 @@ export const MUB_TEXT_COLORS: { id: string; label: string; css: string }[] = [
   { id: 'lime', label: 'Lime', css: '#84cc16' },
 ];
 
+/** Client answer #2 — URL open targets from PHP father app. */
 export const MUB_PAGE_OPEN_OPTIONS: { id: string; label: string }[] = [
-  { id: 'same_label', label: 'In the same label' },
+  { id: 'same_label', label: 'In the central frame of the same tab' },
   { id: 'new_tab', label: 'In a new tab' },
+  { id: 'popup', label: 'In a new popup window' },
 ];
 
 const BACKGROUND_CSS: Record<string, string> = Object.fromEntries(
@@ -81,10 +85,16 @@ export function mubTextColorCss(id: string): string {
   return TEXT_COLOR_CSS[id] ?? '#ffffff';
 }
 
-export function roleTemplateFromUserType(userType: string): MubRoleTemplate | null {
+/**
+ * Map account userType → staff MUB template (client answer #3).
+ * Athletes / single users use the SINGLE_USER template.
+ */
+export function roleTemplateFromUserType(userType: string): MubRoleTemplate {
   const normalized = userType.toUpperCase();
   if (normalized === 'TEAM_MANAGER' || normalized === 'TEAM') return 'TEAM';
-  if (normalized === 'COACH') return 'COACH';
+  if (normalized === 'COACH' || normalized === 'CLUB_TRAINER') return 'COACH';
   if (normalized === 'CLUB' || normalized === 'CLUB_ADMIN' || normalized === 'CLUB_MANAGER') return 'CLUB';
-  return null;
+  if (normalized === 'GROUP' || normalized === 'GROUP_ADMIN') return 'GROUP';
+  // ATHLETE, ADMIN, and any other single-user style account
+  return 'SINGLE_USER';
 }

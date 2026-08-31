@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prismaConnect } from '@/lib/prisma';
+import { verifyPassword } from '@/lib/auth';
+import { prisma, prismaConnect } from '@/lib/prisma';
 import {
   importStaffMubTemplate,
   parseRoleTemplate,
@@ -15,6 +16,24 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+async function requirePersonalPassword(userId: string, password: string | undefined) {
+  if (!password?.trim()) {
+    return { ok: false as const, status: 400, error: 'Personal password is required' };
+  }
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { password: true },
+  });
+  if (!user?.password) {
+    return { ok: false as const, status: 404, error: 'User not found' };
+  }
+  const valid = await verifyPassword(password.trim(), user.password);
+  if (!valid) {
+    return { ok: false as const, status: 403, error: 'Invalid password' };
+  }
+  return { ok: true as const };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const userId = getMubTokenUserId(request);
@@ -25,19 +44,35 @@ export async function POST(request: NextRequest) {
     await prismaConnect();
     const parsed = parseMubPageRequest(request);
     const query = resolveMubPageQuery(parsed, userId);
-    const body = (await request.json()) as { action?: string; roleTemplate?: string };
+    const body = (await request.json()) as {
+      action?: string;
+      roleTemplate?: string;
+      password?: string;
+    };
 
     switch (body.action) {
       case 'reset': {
+        // Client answer #4 — requires personal user password; removes ALL buttons.
+        const auth = await requirePersonalPassword(userId, body.password);
+        if (!auth.ok) {
+          return NextResponse.json({ error: auth.error }, { status: auth.status });
+        }
         const page = await resetMubPage(query, parsed.lang);
         return NextResponse.json({ page });
       }
       case 'remove_default': {
+        // Client answer #4 — requires personal user password; removes only imported buttons.
+        const auth = await requirePersonalPassword(userId, body.password);
+        if (!auth.ok) {
+          return NextResponse.json({ error: auth.error }, { status: auth.status });
+        }
         const page = await removeImportedMubButtons(query, parsed.lang);
         return NextResponse.json({ page });
       }
       case 'import': {
-        const roleTemplate = (parseRoleTemplate(String(body.roleTemplate ?? 'CLUB')) ?? 'CLUB') as MubRoleTemplate;
+        // Client answer #3 — template by usertype; language filtered in service via parsed.lang.
+        const roleTemplate = (parseRoleTemplate(String(body.roleTemplate ?? 'SINGLE_USER')) ??
+          'SINGLE_USER') as MubRoleTemplate;
         const result = await importStaffMubTemplate(query, roleTemplate, parsed.lang);
         return NextResponse.json({ page: result.page, importedCount: result.importedCount });
       }
