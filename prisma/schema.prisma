@@ -3122,14 +3122,14 @@ model Notification {
   submittedByUserId    String?
   /// Super Admin / staff account id when source is movesbook_staff
   submittedByAdminId   String?
-  /// JSON string[] of UserType values for staff broadcasts
-  audienceRolesJson    String              @default("[]") @db.Text
+  /// JSON string[] of UserType values for staff broadcasts (app sets "[]" on insert; no DB default — MySQL <8.0.13 rejects TEXT defaults)
+  audienceRolesJson     String              @db.Text
   /// JSON string[] of usernames (staff targeting per requirement)
-  audienceUsernamesJson String             @default("[]") @db.Text
+  audienceUsernamesJson String              @db.Text
   /// JSON string[] of resolved user ids from usernames
-  audienceUserIdsJson  String              @default("[]") @db.Text
+  audienceUserIdsJson   String              @db.Text
   /// JSON string[] of club ids (club_admin sends)
-  clubIdsJson          String              @default("[]") @db.Text
+  clubIdsJson           String              @db.Text
   /// members | staff — club audience kind
   audienceKind         String              @default("members")
   createdAt            DateTime            @default(now())
