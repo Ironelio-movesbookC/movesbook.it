@@ -13,7 +13,8 @@ import ProcedureFormSection, {
 import TaxDocumentModal, { type TaxDocumentFormValues } from '@/components/procedures/TaxDocumentModal';
 import { createProcedureClient } from '@/lib/club/procedureClient';
 import { fetchCompanies } from '@/lib/club/archives/clubArchiveClient';
-import { PAY_MODE_OPTIONS } from '@/lib/procedures/payModes';
+import PaymentModeSelect from '@/components/club/PaymentModeSelect';
+import { useClubDefaultPaymentMethods } from '@/hooks/useClubDefaultPaymentMethods';
 import { getProcedureDefinition } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import type { MembershipFormOptions } from '@/lib/procedures/membershipFormOptions';
@@ -22,6 +23,7 @@ export default function MembershipPurchaseForm() {
   const router = useRouter();
   const def = getProcedureDefinition(PROCEDURE_TYPE_CODES.MEMBERSHIP)!;
   const client = useMemo(() => createProcedureClient(PROCEDURE_TYPE_CODES.MEMBERSHIP), []);
+  const defaultPaymentMethods = useClubDefaultPaymentMethods();
 
   const [options, setOptions] = useState<MembershipFormOptions | null>(null);
   const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
@@ -180,11 +182,13 @@ export default function MembershipPurchaseForm() {
         <ProcedureFormSection title="Payment Method">
           <ProcedureFormGrid>
             <ProcedureFormCell label="Method">
-              <select className={procedureInputClass} value={payMode} onChange={(e) => setPayMode(e.target.value)}>
-                {PAY_MODE_OPTIONS.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
+              <PaymentModeSelect
+                className={procedureInputClass}
+                value={payMode}
+                onChange={setPayMode}
+                defaultPaymentMethods={defaultPaymentMethods}
+                allowEmpty={false}
+              />
             </ProcedureFormCell>
             <ProcedureFormCell label="Tax document">
               <div className="flex items-center gap-3 mt-1">

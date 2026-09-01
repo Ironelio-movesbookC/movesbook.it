@@ -13,8 +13,11 @@ export type Member = {
   // member list
   surname?: string;
   name?: string;
+  username?: string;
+  email?: string;
   gender?: string;
   dateOfBirth?: Date | string;
+  dateOfBirthDisplay?: string;
   memberType?: string;
   Localcity?: string;
   localCity?: string;
@@ -24,11 +27,18 @@ export type Member = {
   insertDateDisplay?: string;
   expirationDate?: Date | string;
   membershipEndDate?: Date | string;
+  /** ClubMember join-table id (for remove from club). */
+  clubMemberId?: string;
 
   // membership
   image?: string;
   typology?: string;
   course?: string;
+  /** Primary sport from member profile (for Athletes filter). */
+  sport?: string;
+  /** Group of training id/label from Other details. */
+  groupTrained?: string;
+  groupTrainedId?: string;
   dateStart?: Date | string;
   dateEnd?: Date | string;
   membershipEnd?: Date | string;
@@ -38,12 +48,10 @@ export type Member = {
   paid?: number;
 
   // subscription
-  localCity?: string;
   installment?: number;
   contract?: string;
   vendor?: string;
-  area?: string
-
+  area?: string;
   // deadline
   debt?: number;
   rest?: number;

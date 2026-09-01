@@ -42,6 +42,7 @@ model User {
   ownedTeams               Team[]                @relation("TeamOwner")
   mainSports               UserMainSport[]
   settings                 UserSettings?
+  profileExtras            UserProfileExtras?
   workoutDays              WorkoutDay[]
   workoutPlans             WorkoutPlan[]
   sections                 WorkoutSection[]
@@ -1787,18 +1788,77 @@ model ClubBachecaLabel {
 }
 
 model ClubMember {
-  id             String   @id @default(cuid())
+  id             String             @id @default(cuid())
   clubId         String
   memberId       String
   role           String?
   membershipType String?
-  joinedAt       DateTime @default(now())
-  club           Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  member         User     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  joinedAt       DateTime           @default(now())
+  club           Club               @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  member         User               @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  profile        ClubMemberProfile?
+  notes          ClubMemberNote[]
 
   @@unique([clubId, memberId])
   @@index([memberId], map: "club_members_new_memberId_fkey")
   @@map("club_members_new")
+}
+
+/** Shared (cross-club) extended profile fields for Owner profile / contacts / references. */
+model UserProfileExtras {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  disallowClubAdmins Boolean  @default(false)
+  qrCodeUrl          String?
+  ownerJson          String   @db.LongText
+  contactsJson       String   @db.LongText
+  activitiesJson     String   @db.LongText
+  referencesHtml     String?  @db.LongText
+  referencesLevel    String?  @default("1")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("user_profile_extras")
+}
+
+/** Club-scoped member dossier (other details, parents, settings, visibility, pay-for…). */
+model ClubMemberProfile {
+  id              String     @id @default(cuid())
+  clubMemberId    String     @unique
+  clubMember      ClubMember @relation(fields: [clubMemberId], references: [id], onDelete: Cascade)
+  profileJson     String     @db.LongText
+  medicalImageUrl String?
+  medicalPdfUrl   String?
+  signatureDataUrl String?   @db.LongText
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@map("club_member_profiles")
+}
+
+/** Staff messages & coach reflections for a club membership. */
+model ClubMemberNote {
+  id              String     @id @default(cuid())
+  clubMemberId    String
+  clubMember      ClubMember @relation(fields: [clubMemberId], references: [id], onDelete: Cascade)
+  kind            String
+  title           String     @default("")
+  body            String     @db.Text
+  authorId        String?
+  parentId        String?
+  visibleToMember Boolean    @default(false)
+  commentsEnabled Boolean    @default(false)
+  enableFrom      DateTime?
+  enableTo        DateTime?
+  showAtLogin     Boolean    @default(false)
+  showAtLogout    Boolean    @default(false)
+  imageUrlsJson   String?    @db.Text
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([clubMemberId, kind])
+  @@map("club_member_notes")
 }
 
 /// Named member lists created by club admin from Archive — Members.

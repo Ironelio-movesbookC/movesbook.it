@@ -20,13 +20,18 @@ type CreateClubBody = {
   username?: string;
   officialName?: string;
   category?: string;
+  sports?: string[];
   country?: string;
   region?: string;
+  province?: string;
   location?: string;
   zipCode?: string;
   address?: string;
   geo?: string;
   mail?: string;
+  phone?: string;
+  website?: string;
+  logoUrl?: string;
   directAccess?: string;
   directRegistrationCode?: string;
   clubPassword?: string;
@@ -42,17 +47,28 @@ function isExplicitClubCreate(body: CreateClubBody | null): boolean {
 }
 
 function buildClubDescription(body: CreateClubBody, clubPasswordHash?: string): string | null {
+  const sports =
+    Array.isArray(body.sports) && body.sports.length > 0
+      ? body.sports.map(String).filter(Boolean)
+      : body.category?.trim()
+        ? [body.category.trim()]
+        : undefined;
   const meta = {
     createdViaForm: true,
     subscriptionEnd: defaultClubSubscriptionEndDate(),
     username: body.username?.trim() || undefined,
-    category: body.category?.trim() || undefined,
+    category: (sports?.[0] || body.category?.trim()) || undefined,
+    sports,
     country: body.country?.trim() || undefined,
     region: body.region?.trim() || undefined,
+    province: body.province?.trim() || undefined,
     zipCode: body.zipCode?.trim() || undefined,
     address: body.address?.trim() || undefined,
     geo: body.geo?.trim() || undefined,
     mail: body.mail?.trim() || undefined,
+    phone: body.phone?.trim() || undefined,
+    website: body.website?.trim() || undefined,
+    logoUrl: body.logoUrl?.trim() || undefined,
     directAccess: body.directAccess?.trim() || undefined,
     directRegistrationCode: body.directRegistrationCode?.trim() || undefined,
     clubPasswordHash: clubPasswordHash || undefined,

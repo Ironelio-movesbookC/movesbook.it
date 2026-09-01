@@ -9,6 +9,7 @@ import {
 import { getProcedureTypology } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import type { ClubAuthContext } from '@/lib/procedures/types';
+import { fetchClubStaffOperators } from '@/lib/procedures/clubOperators';
 import { staffTypeLabel } from '@/lib/club/clubStaff.constants';
 import {
   type ArchiveQueryParams,
@@ -109,28 +110,51 @@ export async function listClubMembersArchive(
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? 25;
 
-  const [rows, staffRows] = await Promise.all([
-    prisma.clubMember.findMany({
-      where: { clubId: ctx.club.id },
-      include: {
-        member: {
-          select: {
-            id: true,
-            firstName: true,
-            surname: true,
-            name: true,
-            username: true,
-            image: true,
-            gender: true,
-            birthdate: true,
-            country: true,
-            createdAt: true,
-          },
+  const rows = await prisma.clubMember.findMany({
+    where: { clubId: ctx.club.id },
+    include: {
+      member: {
+        select: {
+          id: true,
+          firstName: true,
+          surname: true,
+          name: true,
+          username: true,
+          email: true,
+          image: true,
+          gender: true,
+          birthdate: true,
+          country: true,
+          createdAt: true,
         },
       },
-      orderBy: { joinedAt: 'desc' },
-    }),
-    prisma.clubStaff.findMany({
+      profile: { select: { profileJson: true } },
+    },
+    orderBy: { joinedAt: 'desc' },
+  });
+
+  type StaffRow = {
+    userId: string;
+    staffType: string;
+    role: string;
+    createdAt: Date;
+    user: {
+      id: string;
+      firstName: string | null;
+      surname: string | null;
+      name: string;
+      username: string;
+      image: string | null;
+      gender: string | null;
+      birthdate: Date | null;
+      country: string | null;
+      createdAt: Date;
+    };
+  };
+
+  let staffRows: StaffRow[] = [];
+  try {
+    staffRows = await prisma.clubStaff.findMany({
       where: { clubId: ctx.club.id },
       include: {
         user: {
@@ -149,18 +173,72 @@ export async function listClubMembersArchive(
         },
       },
       orderBy: { createdAt: 'desc' },
-    }),
-  ]);
+    });
+  } catch (error) {
+    // Main added ClubStaff model; local DB may not have `club_staff` yet.
+    console.warn('listClubMembersArchive: club_staff unavailable, continuing without staff rows', error);
+    staffRows = [];
+  }
 
-  const staffByUserId = new Map(staffRows.map((row) => [row.userId, row]));
+  const memberIds = rows.map((r) => r.memberId);
+  let extrasRows: Array<{ userId: string; ownerJson: string }> = [];
+  try {
+    extrasRows =
+      memberIds.length > 0
+        ? await prisma.userProfileExtras.findMany({
+            where: { userId: { in: memberIds } },
+            select: { userId: true, ownerJson: true },
+          })
+        : [];
+  } catch (error) {
+    console.warn('listClubMembersArchive: user_profile_extras unavailable', error);
+    extrasRows = [];
+  }
+  const ownerSportByUser = new Map<string, string>();
+  for (const ex of extrasRows) {
+    try {
+      const owner = JSON.parse(ex.ownerJson || '{}') as {
+        personal?: { mainSport?: string };
+      };
+      const sport = text(owner.personal?.mainSport);
+      if (sport) ownerSportByUser.set(ex.userId, sport);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const staffByUserId = new Map<string, StaffRow>(
+    staffRows.map((row) => [row.userId, row]),
+  );
   const memberUserIds = new Set(rows.map((row) => row.memberId));
 
-  const memberItems = rows.map((row) => {
+  const memberItems: Record<string, unknown>[] = rows.map((row) => {
     const staff = staffByUserId.get(row.memberId);
     const operatorLabel = staff
       ? staffTypeLabel(staff.staffType)
       : titleCaseRole(row.role);
-    return mapArchivePersonRow({
+
+    let scopedSafe: {
+      otherDetails?: { groupTrainedId?: string };
+      settings?: { football?: { teamNames?: string; category?: string }; teamSport?: string };
+    } = {};
+    try {
+      scopedSafe = row.profile?.profileJson
+        ? (JSON.parse(row.profile.profileJson) as typeof scopedSafe)
+        : {};
+    } catch {
+      scopedSafe = {};
+    }
+    const sport =
+      ownerSportByUser.get(row.memberId) ||
+      text(scopedSafe.settings?.football?.category) ||
+      text(scopedSafe.settings?.teamSport) ||
+      '-';
+    const groupTrainedId = text(scopedSafe.otherDetails?.groupTrainedId);
+    const groupTrained =
+      text(scopedSafe.settings?.football?.teamNames) || groupTrainedId || '-';
+
+    const base = mapArchivePersonRow({
       person: row.member,
       joinedAt: row.joinedAt,
       membershipType: row.membershipType,
@@ -168,29 +246,108 @@ export async function listClubMembersArchive(
       staffType: staff?.staffType ?? null,
       staffRole: staff?.role ?? null,
     });
+
+    return {
+      ...base,
+      email: text(row.member.email) || '',
+      clubMemberId: row.id,
+      sport,
+      groupTrained,
+      groupTrainedId: groupTrainedId || '',
+      casual: 'No',
+    };
   });
 
-  const staffOnlyItems = staffRows
+  const staffOnlyItems: Record<string, unknown>[] = staffRows
     .filter((row) => !memberUserIds.has(row.userId))
-    .map((row) =>
-      mapArchivePersonRow({
+    .map((row) => ({
+      ...mapArchivePersonRow({
         person: row.user,
         joinedAt: row.createdAt,
         membershipType: 'Staff',
         operatorLabel: staffTypeLabel(row.staffType),
         staffType: row.staffType,
         staffRole: row.role,
-      })
-    );
+      }),
+      sport: '-',
+      groupTrained: '-',
+      groupTrainedId: '',
+      casual: 'No',
+    }));
 
-  const items = [...memberItems, ...staffOnlyItems].sort((a, b) => {
-    const aDate = String(a.insertDate ?? '');
-    const bDate = String(b.insertDate ?? '');
-    return bDate.localeCompare(aDate);
-  });
+  const items: Record<string, unknown>[] = [...memberItems, ...staffOnlyItems].sort(
+    (a, b) => {
+      const aDate = String(a.insertDate ?? '');
+      const bDate = String(b.insertDate ?? '');
+      return bDate.localeCompare(aDate);
+    },
+  );
   items.forEach((item, i) => {
     item.number = i + 1;
   });
+
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+export async function listClubParentsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {},
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const members = await prisma.clubMember.findMany({
+    where: { clubId: ctx.club.id },
+    include: {
+      member: {
+        select: { id: true, firstName: true, surname: true, name: true, username: true },
+      },
+      profile: { select: { profileJson: true } },
+    },
+    orderBy: { joinedAt: 'desc' },
+  });
+
+  const items: Record<string, unknown>[] = [];
+  for (const row of members) {
+    const memberLabel =
+      formatName(row.member.firstName, row.member.surname, row.member.name) ||
+      text(row.member.username) ||
+      row.memberId;
+    let scoped: {
+      parents?: {
+        parent1?: Record<string, unknown>;
+        parent2?: Record<string, unknown>;
+      };
+    } = {};
+    try {
+      scoped = row.profile?.profileJson
+        ? (JSON.parse(row.profile.profileJson) as typeof scoped)
+        : {};
+    } catch {
+      scoped = {};
+    }
+    for (const slot of ['parent1', 'parent2'] as const) {
+      const p = scoped.parents?.[slot] || {};
+      const surname = text(p.surname);
+      const name = text(p.name);
+      const fiscalCode = text(p.fiscalCode);
+      const mail = text(p.mainEmail);
+      if (!surname && !name && !fiscalCode && !mail) continue;
+      items.push({
+        key: `${row.memberId}:${slot}`,
+        surname: surname || '-',
+        name: name || '-',
+        birthDate: text(p.birthDate) || '-',
+        fiscalCode: fiscalCode || '-',
+        mail: mail || '-',
+        phone: text(p.phone1) || '-',
+        country: text(p.country) || '-',
+        location: text(p.location) || text(p.residenceLocation) || '-',
+        province: text(p.province) || text(p.residenceProvince) || '-',
+        memberLabel,
+        slot,
+      });
+    }
+  }
 
   return paginate(applyFilters(items, params), page, pageSize);
 }
@@ -201,34 +358,24 @@ export async function listClubOperatorsArchive(
 ): Promise<PaginatedArchive<Record<string, unknown>>> {
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? 25;
-  const table = await findExistingTable(['club_operators', 'club_operator']);
   const items: Record<string, unknown>[] = [];
 
-  if (table) {
-    const operatorRows = await prisma.$queryRawUnsafe<
-      { id: bigint | number; user_id: bigint | number | null; clubadmin_id: bigint | number | null }[]
-    >(`SELECT id, user_id, clubadmin_id FROM \`${table}\` ORDER BY id DESC LIMIT 500`);
-
-    const userIds = operatorRows.map((r) => String(r.user_id ?? '')).filter(Boolean);
-    const users =
-      userIds.length > 0
-        ? await prisma.user.findMany({
-            where: { id: { in: userIds } },
-            select: { id: true, firstName: true, surname: true, name: true, username: true, image: true },
-          })
-        : [];
-    const userMap = new Map(users.map((u) => [u.id, u]));
-
-    for (const row of operatorRows) {
-      const user = userMap.get(String(row.user_id ?? ''));
-      if (!user) continue;
+  const staffOperators = await fetchClubStaffOperators(ctx.club.id);
+  if (staffOperators.length > 0) {
+    const userIds = staffOperators.map((s) => s.id);
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, image: true },
+    });
+    const imageMap = new Map(users.map((u) => [u.id, u.image]));
+    for (const row of staffOperators) {
       items.push({
-        id: String(row.id),
-        name: formatName(user.firstName, user.surname, user.name),
-        image: user.image,
+        id: row.id,
+        name: row.name,
+        image: imageMap.get(row.id) ?? null,
         insertDate: '-',
-        typology: 'Operator',
-        operator: user.username,
+        typology: row.occupation || 'Operator',
+        operator: row.username,
       });
     }
   } else {

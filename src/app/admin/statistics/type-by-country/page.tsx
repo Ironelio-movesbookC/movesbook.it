@@ -13,10 +13,7 @@ import type {
   StatsTypeKindFilter,
   StatsUserKind,
 } from '@/lib/admin/statisticsKinds';
-import {
-  STATS_KIND_COLORS,
-  STATS_USER_KINDS,
-} from '@/lib/admin/statisticsKinds';
+import { STATS_USER_KINDS } from '@/lib/admin/statisticsKinds';
 import type { StatsSlice } from '@/lib/admin/buildStatistics';
 
 export default function TypeByCountryPage() {
@@ -43,7 +40,6 @@ export default function TypeByCountryPage() {
     filters.typeKind && STATS_USER_KINDS.includes(filters.typeKind as StatsUserKind)
       ? (filters.typeKind as StatsUserKind)
       : null;
-  const typeAccent = singleKind ? STATS_KIND_COLORS[singleKind] : undefined;
 
   const drilldown = useMemo(() => {
     if (!data?.usersLite || !selectedCountry || !filters.typeKind) return null;
@@ -100,7 +96,7 @@ export default function TypeByCountryPage() {
           }
           slices={block?.countries ?? []}
           height={360}
-          titleSwatchColor={typeAccent}
+          titleSwatchKind={singleKind ?? undefined}
           onSelect={handleSelect}
         />
       </div>

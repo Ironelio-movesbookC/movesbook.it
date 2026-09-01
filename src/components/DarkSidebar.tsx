@@ -275,7 +275,7 @@ type ClubAdminArchiveItem =
 const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   [{ kind: 'icon', Icon: Server, label: '» Overview', path: '/clubs/archive_overview' }],
   [
-    { kind: 'icon', Icon: Users, label: 'Members', path: '/clubMembers/memberList'},
+    { kind: 'icon', Icon: Users, label: 'Archive of Members', path: '/clubMembers/memberList'},
     { kind: 'icon', Icon: UserCog, label: 'Operators', path: '/clubs/club_operatorlist' },
     { kind: 'icon', Icon: User, label: 'Employees', path: '/clubs/archive_employees' },
   ],
@@ -4405,6 +4405,11 @@ export default function DarkSidebar({
                                       Icon: LayoutGrid,
                                       label: 'Tables',
                                       path: '/club/settings/tables/areas',
+                                    },
+                                    {
+                                      Icon: List,
+                                      label: 'Customized fields',
+                                      path: '/club/settings/customized-fields',
                                     },
                                     {
                                       Icon: Volume2,

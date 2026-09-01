@@ -72,9 +72,10 @@ export default function ProcedureArchiveTable({
     else setInternalSort(next);
   }
 
-  const selectableRows = selectableAll
-    ? rows.filter((r) => r.id)
-    : rows.filter((r) => r.id && (r.rest ?? 0) > 0);
+  const rowIsCheckable = (r: Member) =>
+    Boolean(r.id) &&
+    (selectableAll || !selectOnlyOpenRest || (r.rest ?? 0) > 0);
+  const selectableRows = displayRows.filter(rowIsCheckable);
   const allSelectableChecked =
     selectableRows.length > 0 &&
     selectableRows.every((r) => r.id && selectedIds?.has(r.id));
@@ -214,42 +215,6 @@ export default function ProcedureArchiveTable({
               );
             })
           )}
-          {rows.map((row) => {
-            const isSelected = selectedId && row.id === selectedId;
-            const isChecked = Boolean(row.id && selectedIds?.has(row.id));
-            const canCheck = selectableAll ? Boolean(row.id) : (row.rest ?? 0) > 0;
-            return (
-              <tr
-                key={row.id ?? `${row.name}-${row.insertDate}`}
-                className={`border-t cursor-pointer ${
-                  row.isDuplicate
-                    ? 'bg-red-100 text-red-800 hover:bg-red-200'
-                    : `hover:bg-teal-50 ${isChecked ? 'bg-amber-50' : isSelected ? 'bg-amber-100' : 'bg-white'}`
-                }`}
-                onClick={() => onRowClick?.(row)}
-                onDoubleClick={() => onRowDoubleClick?.(row)}
-              >
-                {selectable && (
-                  <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      disabled={!canCheck}
-                      onChange={() => row.id && canCheck && onToggleSelect?.(row)}
-                      aria-label={`Select ${row.name ?? row.id}`}
-                    />
-                  </td>
-                )}
-                {columns.map((col) => (
-                  <td key={String(col.key)} className="px-3 py-2 text-gray-800 whitespace-nowrap">
-                    {col.render
-                      ? col.render(row[col.key], row)
-                      : (row[col.key] as React.ReactNode) ?? '-'}
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
         </tbody>
       </table>
     </div>

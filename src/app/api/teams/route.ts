@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
-import { findEntityByCompanyUsername } from '@/lib/entity/findEntityByUsername';
+import { findEntityIdByCompanyUsername } from '@/lib/entity/patchEntityProfile';
 import {
   buildEntityDescriptionFromBody,
+  buildTeamDescriptionFromBody,
   isExplicitEntityCreate,
   type CreateEntityBody,
 } from '@/lib/entity/createEntityFromFormBody';
 import type { EntityProfileFormPayload } from '@/lib/entity/entityForm';
+import { isTeamProfilePayload } from '@/lib/team/teamProfilePayload';
+import type { TeamProfileFormPayload } from '@/lib/team/teamProfileTypes';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +50,56 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const existing = await prisma.team.findMany({
+      where: { description: { not: null } },
+      select: { id: true, description: true },
+    });
+
+    if (isTeamProfilePayload(body as Record<string, unknown>)) {
+      const payload = body as TeamProfileFormPayload;
+      const teamUsername = String(payload.username ?? '').trim();
+      if (!teamUsername) {
+        return NextResponse.json({ error: 'Team username is required' }, { status: 400 });
+      }
+      const teamPassword = String(payload.teamPassword ?? '').trim();
+      if (!teamPassword) {
+        return NextResponse.json({ error: 'Team password is required' }, { status: 400 });
+      }
+
+      if (findEntityIdByCompanyUsername(existing, teamUsername)) {
+        return NextResponse.json(
+          { error: 'This team username is already in use' },
+          { status: 409 },
+        );
+      }
+
+      const name =
+        String(payload.officialName ?? '').trim() || teamUsername || 'New Team';
+      const description = await buildTeamDescriptionFromBody(payload);
+      const sport = String(payload.sport ?? '').trim() || null;
+
+      const created = await prisma.team.create({
+        data: {
+          adminId: userId,
+          name,
+          description,
+          sport,
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          sport: true,
+          createdAt: true,
+        },
+      });
+
+      return NextResponse.json({
+        team: created,
+        created: true,
+      });
+    }
+
     const payload = body as EntityProfileFormPayload;
     const teamUsername = String(payload.username ?? '').trim();
     if (!teamUsername) {
@@ -57,11 +110,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Team password is required' }, { status: 400 });
     }
 
-    const existing = await prisma.team.findMany({
-      where: { description: { not: null } },
-      select: { description: true },
-    });
-    if (findEntityByCompanyUsername(existing, teamUsername)) {
+    if (findEntityIdByCompanyUsername(existing, teamUsername)) {
       return NextResponse.json(
         { error: 'This team username is already in use' },
         { status: 409 },
