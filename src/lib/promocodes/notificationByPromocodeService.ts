@@ -325,10 +325,13 @@ export async function getNotificationByPromocodeDashboard(params: {
   };
 
   if (appliesTable && settingsTable) {
+    const emailNorm = email.trim().toLowerCase();
     const receivedRows = await prisma.$queryRawUnsafe<{ promocode_id: number | null }[]>(
       `SELECT DISTINCT promocode_id FROM \`${appliesTable}\`
-       WHERE receiver_id = ? AND receiver_id > 0 AND delete_status = 2`,
-      legacyUserId
+       WHERE receiver_id = ? AND receiver_id > 0 AND delete_status = 2
+         AND LOWER(TRIM(COALESCE(receiver_email, ''))) = ?`,
+      legacyUserId,
+      emailNorm
     );
     const promoIds = Array.from(
       new Set(receivedRows.map((r) => Number(r.promocode_id)).filter((id) => id > 0))
@@ -424,18 +427,23 @@ export async function getNotificationByPromocodeDashboard(params: {
 
   const invitationsData: InvitationRow[] = [];
   if (appliesTable && settingsTable) {
+    const emailNorm = email.trim().toLowerCase();
     const receivedInvitations = await prisma.$queryRawUnsafe<ApplyRow[]>(
       `SELECT * FROM \`${appliesTable}\`
        WHERE receiver_id = ? AND delete_status = 2
+         AND LOWER(TRIM(COALESCE(receiver_email, ''))) = ?
        ORDER BY created DESC`,
-      legacyUserId
+      legacyUserId,
+      emailNorm
     );
 
     const promoSelectSql = await buildPromocodeSettingsSelectSql(settingsTable);
+    const seenPromocodeIds = new Set<number>();
 
     for (const applyRecord of receivedInvitations) {
       const promocodeId = rowNum(applyRecord, 'promocode_id');
-      if (promocodeId <= 0) continue;
+      if (promocodeId <= 0 || seenPromocodeIds.has(promocodeId)) continue;
+      seenPromocodeIds.add(promocodeId);
 
       const promoRows = await prisma.$queryRawUnsafe<PromoRow[]>(
         `SELECT ${promoSelectSql} FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,

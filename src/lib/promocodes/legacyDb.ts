@@ -576,18 +576,19 @@ async function upsertLegacyIdMapping(modernUserId: string, legacyUserId: number)
   );
 }
 
-async function fetchLegacyUserIdByUsername(username: string): Promise<number | null> {
-  const usersTable = await getLegacyUsersTable();
-  if (!usersTable || !username.trim()) return null;
+function legacyEmailsMatch(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
 
-  const rows = await prisma.$queryRawUnsafe<{ id: number | bigint }[]>(
-    `SELECT id FROM \`${usersTable}\`
-     WHERE LOWER(username) = ? AND delete_status = 'N'
-     LIMIT 1`,
-    username.trim().toLowerCase()
-  );
-  const id = rows[0]?.id != null ? Number(rows[0].id) : 0;
-  return id > 0 ? id : null;
+/** Only accept a legacy user id when the row email matches the session email. */
+async function legacyUserIdIfEmailMatches(
+  legacyUserId: number,
+  email: string
+): Promise<number> {
+  if (legacyUserId <= 0) return 0;
+  const user = (await fetchLegacyUsersByIds([legacyUserId])).get(legacyUserId);
+  if (!user?.email) return 0;
+  return legacyEmailsMatch(user.email, email) ? legacyUserId : 0;
 }
 
 async function fetchLegacyRoleId(userId: number): Promise<number | null> {
@@ -632,10 +633,13 @@ export async function ensureLegacyUserForModernAccount(params: {
   }
 
   if (username) {
-    const byUsername = await fetchLegacyUserIdByUsername(username);
-    if (byUsername) {
-      await upsertLegacyIdMapping(params.modernUserId, byUsername);
-      return { legacyUserId: byUsername, roleId: await fetchLegacyRoleId(byUsername) };
+    const byUsernameUser = await fetchLegacyUserByUsername(username);
+    if (byUsernameUser?.id && legacyEmailsMatch(byUsernameUser.email, email)) {
+      await upsertLegacyIdMapping(params.modernUserId, byUsernameUser.id);
+      return {
+        legacyUserId: byUsernameUser.id,
+        roleId: await fetchLegacyRoleId(byUsernameUser.id),
+      };
     }
   }
 
@@ -708,12 +712,16 @@ export async function resolveLegacyUserForPromocodeSession(params: {
 
   if (legacyUserId === 0 && params.modernUserId) {
     const mapped = await lookupLegacyIdMapping(params.modernUserId);
-    if (mapped) legacyUserId = mapped;
+    if (mapped) {
+      legacyUserId = await legacyUserIdIfEmailMatches(mapped, email);
+    }
   }
 
   if (legacyUserId === 0 && resolvedUsername) {
-    const byUsername = await fetchLegacyUserIdByUsername(resolvedUsername);
-    if (byUsername) legacyUserId = byUsername;
+    const byUsernameUser = await fetchLegacyUserByUsername(resolvedUsername);
+    if (byUsernameUser?.id && legacyEmailsMatch(byUsernameUser.email, email)) {
+      legacyUserId = byUsernameUser.id;
+    }
   }
 
   if (legacyUserId === 0) {
@@ -726,7 +734,9 @@ export async function resolveLegacyUserForPromocodeSession(params: {
         email
       );
       const receiverId = applyRows[0]?.receiver_id != null ? Number(applyRows[0].receiver_id) : 0;
-      if (receiverId > 0) legacyUserId = receiverId;
+      if (receiverId > 0) {
+        legacyUserId = await legacyUserIdIfEmailMatches(receiverId, email);
+      }
     }
   }
 
