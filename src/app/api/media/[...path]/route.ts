@@ -1,7 +1,7 @@
 import { readFile, stat } from 'fs/promises';
 import { join, normalize, sep } from 'path';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerPublicDir } from '@/lib/serverPublicDir';
+import { getPublicDirCandidates } from '@/lib/serverPublicDir';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,20 +25,28 @@ function contentTypeForPath(filePath: string): string {
 
 const ALLOWED_ROOTS = ['uploads', 'img'] as const;
 
-function resolveFilePath(segments: string[]): string | null {
+async function resolveExistingFilePath(segments: string[]): Promise<string | null> {
   if (!segments.length) return null;
   if (segments.some((part) => part === '..' || part === '.' || !part)) return null;
   if (!ALLOWED_ROOTS.includes(segments[0] as never)) return null;
 
-  const publicRoot = normalize(getServerPublicDir());
-  const absolute = normalize(join(publicRoot, ...segments));
-  const rootDir = normalize(join(publicRoot, segments[0]));
+  for (const publicRoot of getPublicDirCandidates()) {
+    const absolute = normalize(join(publicRoot, ...segments));
+    const rootDir = normalize(join(publicRoot, segments[0]));
 
-  if (!absolute.startsWith(`${rootDir}${sep}`) && absolute !== rootDir) {
-    return null;
+    if (!absolute.startsWith(`${rootDir}${sep}`) && absolute !== rootDir) {
+      continue;
+    }
+
+    try {
+      const info = await stat(absolute);
+      if (info.isFile() && info.size > 0) return absolute;
+    } catch {
+      // try next public root
+    }
   }
 
-  return absolute;
+  return null;
 }
 
 export async function GET(
@@ -47,13 +55,8 @@ export async function GET(
 ) {
   try {
     const { path: segments } = await context.params;
-    const filePath = resolveFilePath(segments);
+    const filePath = await resolveExistingFilePath(segments);
     if (!filePath) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    }
-
-    const info = await stat(filePath);
-    if (!info.isFile() || info.size === 0) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
@@ -62,7 +65,7 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': contentTypeForPath(filePath),
-        'Content-Length': String(info.size),
+        'Content-Length': String(body.length),
         'Cache-Control': 'public, max-age=86400, immutable',
       },
     });

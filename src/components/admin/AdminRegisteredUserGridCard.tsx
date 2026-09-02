@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { User } from 'lucide-react';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
@@ -57,6 +58,8 @@ type AdminRegisteredUserGridCardProps = {
   onOpenUserPanel: (userId: string, entityId: string | null) => void;
 };
 
+const PLACEHOLDER_AVATAR = '/images/no_image.jpg';
+
 export default function AdminRegisteredUserGridCard({
   group,
   onOpenAdminProfile,
@@ -66,6 +69,14 @@ export default function AdminRegisteredUserGridCard({
   const { admin, entities } = group;
   const showOwnedList = gridCardShowsOwnedEntities(group);
   const adminAvatarSrc = resolvePublicImageUrl(admin.imageUrl);
+  const [avatarBroken, setAvatarBroken] = useState(false);
+
+  useEffect(() => {
+    setAvatarBroken(false);
+  }, [admin.imageUrl]);
+
+  const avatarDisplaySrc =
+    !adminAvatarSrc ? null : avatarBroken ? PLACEHOLDER_AVATAR : adminAvatarSrc;
 
   return (
     <div className="border border-gray-300 bg-white p-4 rounded shadow-sm text-sm">
@@ -112,18 +123,24 @@ export default function AdminRegisteredUserGridCard({
           <div className="text-gray-700">{admin.version}</div>
         </div>
         <div className="w-[4.5rem] h-[4.5rem] shrink-0 border-2 border-red-600 bg-gray-50 flex items-center justify-center overflow-hidden">
-          {adminAvatarSrc ? (
-            isDataUrl(adminAvatarSrc) ? (
+          {avatarDisplaySrc ? (
+            isDataUrl(avatarDisplaySrc) ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={adminAvatarSrc} alt="" className="w-full h-full object-cover" />
+              <img
+                src={avatarDisplaySrc}
+                alt=""
+                className="w-full h-full object-cover"
+                onError={() => setAvatarBroken(true)}
+              />
             ) : (
               <Image
-                src={adminAvatarSrc}
+                src={avatarDisplaySrc}
                 alt=""
                 width={72}
                 height={72}
                 className="object-cover w-full h-full"
                 unoptimized
+                onError={() => setAvatarBroken(true)}
               />
             )
           ) : (
