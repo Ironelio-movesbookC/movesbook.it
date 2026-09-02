@@ -13,6 +13,7 @@ import { findExistingTable, getTableColumns } from '@/lib/outcomeSettingsDb';
 import { COUNTRY_SELECT_OPTIONS } from '@/constants/countries.constants';
 import { countryCodeFromName } from '@/lib/admin/countryFlag';
 import { ensurePromocodeMetaTables } from '@/lib/promocodes/ensureMetaTables';
+import { ensureUserSettingsColumns } from '@/lib/userSettingsDb';
 import {
   buildPromocodeSettingsSelectSql,
   sanitizeLegacyDateString,
@@ -698,6 +699,8 @@ async function upsertQuickRegisterSubscriptionVersion(params: {
 }) {
   const versionName = params.versionName.trim();
   if (!versionName) return;
+
+  await ensureUserSettingsColumns();
 
   const existing = await prisma.userSettings.findUnique({
     where: { userId: params.userId },

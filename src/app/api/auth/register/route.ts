@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import { UserType } from '@prisma/client';
+import { SportType, UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { ensureUserSettingsColumns } from '@/lib/userSettingsDb';
 
 
 export async function POST(request: NextRequest) {
@@ -76,6 +77,8 @@ export async function POST(request: NextRequest) {
     const userLanguage =
       typeof language === 'string' && language.trim() ? language.trim().toLowerCase() : 'en';
     console.log(`Loading admin defaults for language: ${userLanguage}`);
+
+    await ensureUserSettingsColumns();
 
     const [colorDefaults, toolsDefaults, favouritesDefaults] = await Promise.all([
       prisma.colorDefaults.findUnique({ where: { language: userLanguage } }),
