@@ -51,3 +51,12 @@ export function formatDate(value: string | Date | null | undefined): string {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
 }
+
+/** `<input type="date">` only accepts yyyy-MM-dd, while the API returns full ISO timestamps. */
+export function toDateInputValue(value: string | Date | null | undefined): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return typeof value === 'string' ? value.slice(0, 10) : '';
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offset).toISOString().slice(0, 10);
+}

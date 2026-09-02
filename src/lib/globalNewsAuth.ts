@@ -35,6 +35,8 @@ export type GlobalNewsFeedItem =
       categoryName: string | null;
       method: string | null;
       image: string | null;
+      briefDesc: string | null;
+      internetLink: string | null;
       inGlobalNews: true;
     }
   | {
@@ -83,6 +85,8 @@ export async function fetchGlobalNewsFeedItems(): Promise<GlobalNewsFeedItem[]> 
       categoryName: n.category?.categoryName ?? null,
       method: n.method,
       image: n.image,
+      briefDesc: n.briefDesc,
+      internetLink: n.internetLink,
       inGlobalNews: true as const,
     })),
     ...ogpRows.map((a) => ({

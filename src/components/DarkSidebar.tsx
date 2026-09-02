@@ -119,6 +119,7 @@ import {
   isGroupAccountUserType,
   isManagedEntityAdminUserType,
   isTeamAccountUserType,
+  showSuggestMovesbookForTab,
   userOwnsMovesbookWebsite,
 } from '@/utils/dashboardRouting';
 import {
@@ -157,6 +158,11 @@ import {
 } from '@/lib/club/clubTopicsNavigation';
 import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
 import { getAuthToken } from '@/utils/auth.utils';
+import { withSelectedClubId } from '@/lib/club/servicePurchasesClient';
+import {
+  CLUB_STAFF_CHANGED_EVENT,
+  type ClubStaffListItem,
+} from '@/lib/club/clubStaff.constants';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
   return (
@@ -269,7 +275,7 @@ type ClubAdminArchiveItem =
 const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   [{ kind: 'icon', Icon: Server, label: '» Overview', path: '/clubs/archive_overview' }],
   [
-    { kind: 'icon', Icon: Users, label: 'Members', path: '/clubMembers/memberList'},
+    { kind: 'icon', Icon: Users, label: 'Archive of Members', path: '/clubMembers/memberList'},
     { kind: 'icon', Icon: UserCog, label: 'Operators', path: '/clubs/club_operatorlist' },
     { kind: 'icon', Icon: User, label: 'Employees', path: '/clubs/archive_employees' },
   ],
@@ -288,7 +294,6 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: ShoppingCart, label: 'Shop/Selling of products', path: '/ArchiveSeles/product_sale_list' },
     { kind: 'icon', Icon: Users2, label: 'Archive of Memberships', path: '/clubs/memberships/archive' },
     { kind: 'icon', Icon: BookOpen, label: 'Archive of Course Subs', path: '/clubs/courses/archive' },
-    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '/clubs/new_moment_cash' },
     { kind: 'icon', Icon: FileText, label: 'Archive of Services', path: '/clubs/archive_service_list' },
     { kind: 'icon', Icon: Receipt, label: 'Member expenses', path: '/clubs/new_expense' },
     { kind: 'icon', Icon: FileStack, label: 'Archive of Expenses', path: '/clubs/archive_expense_list' },
@@ -378,6 +383,12 @@ interface DarkSidebarProps {
   onClubOgpNewsSectionClick?: () => void;
   /** My Club → Club News → Club Global News (all shared) */
   onClubGlobalNewsSectionClick?: () => void;
+  /** My Page → News → Movesbook News (superadmin Global News, read-only) */
+  onMyPageMovesbookNewsClick?: () => void;
+  /** My Page → News → News (same as top-nav MB News / news-by-movesbook) */
+  onMyPageNewsClick?: () => void;
+  /** My Page → News → OGP News (same as top-nav News / ?open=news) */
+  onMyPageOgpNewsClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
@@ -430,6 +441,9 @@ export default function DarkSidebar({
   onClubMovesbookNewsSectionClick,
   onClubOgpNewsSectionClick,
   onClubGlobalNewsSectionClick,
+  onMyPageMovesbookNewsClick,
+  onMyPageNewsClick,
+  onMyPageOgpNewsClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
@@ -458,12 +472,15 @@ export default function DarkSidebar({
 
   const currentTab = onTabChange ? activeTab : internalActiveTab;
   const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
+  const showSuggestMovesbook = showSuggestMovesbookForTab(userType, currentTab);
 
   const [communitiesOpen, setCommunitiesOpen] = useState(false);
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [myDashboardOpen, setMyDashboardOpen] = useState(false);
   const [messagesOpen, setMessagesOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationCounts, setNotificationCounts] = useState({ movesbook: 0, clubs: 0, total: 0 });
   const [myFeedbackCount, setMyFeedbackCount] = useState(0);
   const [myClubsOpen, setMyClubsOpen] = useState(false);
   const [clubAdminInfoOpen, setClubAdminInfoOpen] = useState(false);
@@ -485,6 +502,29 @@ export default function DarkSidebar({
         if (!res.ok) return;
         const data = await res.json();
         if (typeof data.count === 'number') setMyFeedbackCount(data.count);
+      } catch {
+        /* optional */
+      }
+    })();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const token = getAuthToken();
+    if (!token) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/notifications?countsOnly=1', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setNotificationCounts({
+          movesbook: Number(data.movesbook) || 0,
+          clubs: Number(data.clubs) || 0,
+          total: Number(data.total) || 0,
+        });
       } catch {
         /* optional */
       }
@@ -703,6 +743,13 @@ export default function DarkSidebar({
   const [friendsFindOpen, setFriendsFindOpen] = useState(true);
   const [clubManagementOpen, setClubManagementOpen] = useState(false);
   const [clubCurrentOperatorsOpen, setClubCurrentOperatorsOpen] = useState(false);
+  /** Live club-admin profile for Current Operators → Administrator (from /api/user/profile). */
+  const [clubAdminOperatorProfile, setClubAdminOperatorProfile] = useState<{
+    name: string;
+    country: string | null;
+    image: string | null;
+  } | null>(null);
+  const [clubStaffItems, setClubStaffItems] = useState<ClubStaffListItem[]>([]);
   const [accountsAndDeviceOpen, setAccountsAndDeviceOpen] = useState(false);
   const [clubAccountsSectionOpen, setClubAccountsSectionOpen] = useState(false);
   const [clubIdDevicesSectionOpen, setClubIdDevicesSectionOpen] = useState(false);
@@ -722,6 +769,7 @@ export default function DarkSidebar({
   const [clubUserGuidesOpen, setClubUserGuidesOpen] = useState(false);
   const [clubPostsOpen, setClubPostsOpen] = useState(false);
   const [clubNewsOpen, setClubNewsOpen] = useState(false);
+  const [myPageNewsOpen, setMyPageNewsOpen] = useState(false);
   const [musicForClubOpen, setMusicForClubOpen] = useState(false);
   const [clubInternetLinksOpen, setClubInternetLinksOpen] = useState(false);
   const [clubInternetMyClubsOpen, setClubInternetMyClubsOpen] = useState(true);
@@ -735,10 +783,112 @@ export default function DarkSidebar({
   const sidebarProfileImageSrc = resolvePublicImageUrl(
     userImageOverride ?? profileImageFromDb ?? user?.image
   );
+  const clubAdminOperatorDisplayName =
+    clubAdminOperatorProfile?.name || user?.name || 'Admin';
+  const clubAdminOperatorCountry =
+    clubAdminOperatorProfile?.country || user?.country?.trim() || null;
+  const clubAdminOperatorImageSrc = resolvePublicImageUrl(
+    clubAdminOperatorProfile?.image ??
+      userImageOverride ??
+      profileImageFromDb ??
+      user?.image,
+  );
   /** When parent sends a new `users_new.image`, drop local override before paint so banner + sidebar stay in sync. */
   useLayoutEffect(() => {
     setUserImageOverride(undefined);
   }, [profileImageFromDb]);
+
+  useEffect(() => {
+    if (!clubCurrentOperatorsOpen || !user?.id) return;
+    const token = getAuthToken();
+    if (!token) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/user/profile', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          name?: string | null;
+          firstName?: string | null;
+          surname?: string | null;
+          country?: string | null;
+          image?: string | null;
+        };
+        const displayName =
+          [data.firstName, data.surname].filter(Boolean).join(' ').trim() ||
+          data.name?.trim() ||
+          user.name ||
+          'Admin';
+        if (cancelled) return;
+        setClubAdminOperatorProfile({
+          name: displayName,
+          country: data.country?.trim() || null,
+          image: data.image ?? null,
+        });
+      } catch {
+        /* optional — fall back to auth user */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clubCurrentOperatorsOpen, user?.id, user?.name]);
+
+  useEffect(() => {
+    if (!clubCurrentOperatorsOpen) return;
+    const token = getAuthToken();
+    if (!token) return;
+
+    let cancelled = false;
+    const loadStaff = async () => {
+      try {
+        const res = await fetch(withSelectedClubId('/api/club/staff'), {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { items?: ClubStaffListItem[] };
+        if (cancelled) return;
+        setClubStaffItems(Array.isArray(data.items) ? data.items : []);
+      } catch {
+        if (!cancelled) setClubStaffItems([]);
+      }
+    };
+    void loadStaff();
+    window.addEventListener(CLUB_STAFF_CHANGED_EVENT, loadStaff);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(CLUB_STAFF_CHANGED_EVENT, loadStaff);
+    };
+  }, [clubCurrentOperatorsOpen, selectedEntityId]);
+
+  const goToClubStaffList = (preset?: 'coadmin' | 'operator' | 'collaborator') => {
+    writeClubWorkspaceTab('my-entity');
+    const qs = preset ? `?preset=${preset}` : '';
+    router.push(`/club/staff${qs}`);
+  };
+
+  const removeClubStaff = async (staffId: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+    if (!window.confirm('Remove this club staff member?')) return;
+    try {
+      const res = await fetch(withSelectedClubId(`/api/club/staff/${staffId}`), {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      setClubStaffItems((prev) => prev.filter((item) => item.id !== staffId));
+      window.dispatchEvent(new Event(CLUB_STAFF_CHANGED_EVENT));
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     if (!clubManagementOpen) {
@@ -1414,13 +1564,15 @@ export default function DarkSidebar({
             </div>
 
             <div className="py-3 bg-gray-850 border-t border-gray-700">
-              <button
-                type="button"
-                onClick={handleSuggestMovesbookClick}
-                className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
-              >
-                Suggest Movesbook to your friends
-              </button>
+              {showSuggestMovesbook ? (
+                <button
+                  type="button"
+                  onClick={handleSuggestMovesbookClick}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                >
+                  Suggest Movesbook to your friends
+                </button>
+              ) : null}
             </div>
           </div>
         )}
@@ -2192,15 +2344,64 @@ export default function DarkSidebar({
               <ChevronDown className="w-4 h-4 opacity-80" />
             </button>
 
-            <button
-              className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
-            >
-              <div className="flex items-center gap-3">
-                <Mail className="w-5 h-5" />
-                <span>Notifications(0)</span>
+            <div className="border-b border-teal-700">
+              <div className="flex w-full items-stretch bg-teal-800 text-white">
+                <button
+                  type="button"
+                  onClick={() => setNotificationsOpen((v) => !v)}
+                  aria-expanded={notificationsOpen}
+                  className="flex flex-1 items-center gap-3 min-w-0 py-3 pl-4 pr-2 text-left hover:bg-teal-700 transition-colors"
+                >
+                  <Mail className="w-5 h-5 shrink-0" />
+                  <span className="truncate">Notifications({notificationCounts.total})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotificationsOpen((v) => !v)}
+                  aria-label={notificationsOpen ? t('collapse') : t('expand')}
+                  className="shrink-0 px-4 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 opacity-80 transition-transform duration-200 ${notificationsOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
               </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+              {notificationsOpen && (
+                <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40 px-3 py-2 space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => router.push('/users/notification/all/all/movesbook')}
+                    className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2.5 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                  >
+                    <Bell className="h-4 w-4 shrink-0 opacity-95" />
+                    <span className="leading-snug">
+                      By Movesbook ({notificationCounts.movesbook})
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isClubAccountUserType(userType)) {
+                        const qs = selectedEntityId
+                          ? `?clubId=${encodeURIComponent(selectedEntityId)}`
+                          : '';
+                        router.push(`/users/clubnotification${qs}`);
+                        return;
+                      }
+                      router.push('/users/notification/all/all/clubs');
+                    }}
+                    className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2.5 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                  >
+                    <MessageSquare className="h-4 w-4 shrink-0 opacity-95" />
+                    <span className="leading-snug">
+                      {isClubAccountUserType(userType)
+                        ? 'Send / Club notifies'
+                        : `By Club Staff (${notificationCounts.clubs})`}
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="border-b border-teal-700">
               <div className="flex w-full items-stretch bg-teal-800 text-white">
@@ -2268,13 +2469,52 @@ export default function DarkSidebar({
               <ChevronDown className="w-4 h-4 opacity-80" />
             </button>
 
-            <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
-              <div className="flex items-center gap-3">
-                <Newspaper className="w-5 h-5" />
-                <span>{t('sidebar_news')}</span>
-              </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+            <div className="w-full border-b border-teal-700">
+              <button
+                type="button"
+                onClick={() => setMyPageNewsOpen((v) => !v)}
+                aria-expanded={myPageNewsOpen}
+                className="flex w-full items-center justify-between bg-teal-800 py-3 px-4 text-white transition-colors hover:bg-teal-700"
+              >
+                <div className="flex items-center gap-3">
+                  <Newspaper className="h-5 w-5 shrink-0" />
+                  <span>{t('sidebar_my_news')}</span>
+                </div>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 opacity-80 transition-transform duration-200 ${
+                    myPageNewsOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {myPageNewsOpen && (
+                <div className="bg-[#4a4a4a] text-white">
+                  <button
+                    type="button"
+                    onClick={() => onMyPageMovesbookNewsClick?.()}
+                    className="mb-1.5 flex w-full items-center gap-2.5 border-b-2 border-gray-400/70 px-4 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                  >
+                    <BookOpen className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                    <span className="min-w-0 leading-snug">Movesbook News</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMyPageNewsClick?.()}
+                    className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-4 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                  >
+                    <Newspaper className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                    <span className="min-w-0 leading-snug">News</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMyPageOgpNewsClick?.()}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                  >
+                    <Link2 className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                    <span className="min-w-0 leading-snug">OGP News</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
               <div className="flex items-center gap-3">
@@ -2531,13 +2771,15 @@ export default function DarkSidebar({
                   </div>
 
                   <div className="py-3 bg-gray-850 border-t border-gray-700">
-                    <button
-                      type="button"
-                      onClick={handleSuggestMovesbookClick}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
-                    >
-                      Suggest Movesbook to your friends
-                    </button>
+                    {showSuggestMovesbook ? (
+                      <button
+                        type="button"
+                        onClick={handleSuggestMovesbookClick}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                      >
+                        Suggest Movesbook to your friends
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -2696,19 +2938,66 @@ export default function DarkSidebar({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Mail className="w-5 h-5 shrink-0" />
-                    <span className="font-semibold tracking-wide truncate">Notifications(0)</span>
+                <div className="border-b border-teal-700">
+                  <div className="flex w-full items-stretch bg-teal-800 text-white">
+                    <button
+                      type="button"
+                      onClick={() => setNotificationsOpen((v) => !v)}
+                      aria-expanded={notificationsOpen}
+                      className="flex flex-1 items-center gap-2.5 min-w-0 py-2.5 pl-3 pr-2 text-left hover:bg-teal-700 transition-colors"
+                    >
+                      <Mail className="w-5 h-5 shrink-0" />
+                      <span className="font-semibold tracking-wide truncate">
+                        Notifications({notificationCounts.total})
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotificationsOpen((v) => !v)}
+                      aria-label={notificationsOpen ? t('collapse') : t('expand')}
+                      className="shrink-0 px-3 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                    >
+                      <ChevronDown
+                        className={`w-4 h-4 opacity-90 transition-transform duration-200 ${notificationsOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <ChevronDown className="w-4 h-4 opacity-90" />
-                    <Settings className="w-4 h-4 opacity-90" />
-                  </div>
-                </button>
+                  {notificationsOpen && (
+                    <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40 px-3 py-2 space-y-1.5">
+                      <button
+                        type="button"
+                        onClick={() => router.push('/users/notification/all/all/movesbook')}
+                        className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                      >
+                        <Bell className="h-4 w-4 shrink-0 opacity-95" />
+                        <span className="leading-snug">
+                          By Movesbook ({notificationCounts.movesbook})
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isClubAccountUserType(userType)) {
+                            const qs = selectedEntityId
+                              ? `?clubId=${encodeURIComponent(selectedEntityId)}`
+                              : '';
+                            router.push(`/users/clubnotification${qs}`);
+                            return;
+                          }
+                          router.push('/users/notification/all/all/clubs');
+                        }}
+                        className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                      >
+                        <MessageSquare className="h-4 w-4 shrink-0 opacity-95" />
+                        <span className="leading-snug">
+                          {isClubAccountUserType(userType)
+                            ? 'Send / Club notifies'
+                            : `By Club Staff (${notificationCounts.clubs})`}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 <div className="border-b border-teal-700">
                   <div className="flex w-full items-stretch bg-teal-800 text-white">
@@ -2907,7 +3196,7 @@ export default function DarkSidebar({
                         <button
                           type="button"
                           onClick={() => onClubMovesbookNewsSectionClick?.()}
-                          className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                          className="mb-1.5 flex w-full items-center gap-2.5 border-b-2 border-gray-400/70 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                         >
                           <BookOpen className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
                           <span className="min-w-0 leading-snug">Movesbook News</span>
@@ -2934,7 +3223,7 @@ export default function DarkSidebar({
                           className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                         >
                           <Globe className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                          <span className="min-w-0 leading-snug">Club Global News</span>
+                          <span className="min-w-0 leading-snug">Club News &amp; OGP News</span>
                         </button>
                       </div>
                     )}
@@ -3282,8 +3571,18 @@ export default function DarkSidebar({
                                   Administrator
                                 </div>
                                 <div className="flex gap-2 border-b border-gray-700 px-2 py-2">
-                                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-sm bg-gray-600">
-                                    <UserCircle className="h-10 w-10 text-gray-400" />
+                                  <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-gray-600">
+                                    {clubAdminOperatorImageSrc ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        key={clubAdminOperatorImageSrc}
+                                        src={clubAdminOperatorImageSrc}
+                                        alt=""
+                                        className="absolute inset-0 h-full w-full object-cover"
+                                      />
+                                    ) : (
+                                      <UserCircle className="h-10 w-10 text-gray-400" />
+                                    )}
                                   </div>
                                   <div className="min-w-0 flex-1 text-[11px] leading-snug">
                                     <div className="flex items-center gap-1.5 text-white">
@@ -3291,9 +3590,13 @@ export default function DarkSidebar({
                                       <span>Online</span>
                                     </div>
                                     <div className="text-yellow-300">Admin</div>
-                                    <div className="font-bold text-white">Ironelio Buonocore</div>
+                                    <div className="truncate font-bold text-white">
+                                      {clubAdminOperatorDisplayName}
+                                    </div>
                                     <div className="text-yellow-300">Country</div>
-                                    <div className="text-white">-</div>
+                                    <div className="truncate text-white">
+                                      {clubAdminOperatorCountry || '-'}
+                                    </div>
                                   </div>
                                 </div>
 
@@ -3313,30 +3616,44 @@ export default function DarkSidebar({
                                     <span>Co-admins</span>
                                     <button
                                       type="button"
+                                      onClick={() => goToClubStaffList('coadmin')}
                                       className="flex items-center gap-0.5 font-semibold hover:underline"
                                     >
                                       <Plus className="h-3 w-3" />
                                       Add
                                     </button>
                                   </div>
-                                  <div className="flex items-center gap-2 px-2 py-2">
-                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
-                                      <UserCircle className="h-7 w-7 text-gray-400" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="text-[11px] font-medium text-yellow-300">
-                                        shrutika chaudhari
-                                      </div>
-                                      <div className="text-[11px] text-white">90 Members</div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
-                                      aria-label="Remove"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </button>
-                                  </div>
+                                  {clubStaffItems
+                                    .filter((item) => item.staffType === 'coadmin')
+                                    .map((item) => {
+                                      const src = resolvePublicImageUrl(item.image);
+                                      return (
+                                        <div key={item.id} className="flex items-center gap-2 px-2 py-2">
+                                          {src ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={src} alt="" className="h-9 w-9 shrink-0 rounded-sm object-cover" />
+                                          ) : (
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
+                                              <UserCircle className="h-7 w-7 text-gray-400" />
+                                            </div>
+                                          )}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[11px] font-medium text-yellow-300">
+                                              {item.name}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white">@{item.username}</div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => void removeClubStaff(item.id)}
+                                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
+                                            aria-label="Remove"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
                                 </div>
 
                                 <div className="border-b border-gray-700">
@@ -3347,34 +3664,92 @@ export default function DarkSidebar({
                                     </div>
                                     <button
                                       type="button"
+                                      onClick={() => goToClubStaffList('operator')}
                                       className="flex items-center gap-0.5 font-semibold hover:underline"
                                     >
                                       <Plus className="h-3 w-3" />
                                       Add
                                     </button>
                                   </div>
+                                  {clubStaffItems
+                                    .filter((item) => item.staffType === 'operator')
+                                    .map((item) => {
+                                      const src = resolvePublicImageUrl(item.image);
+                                      return (
+                                        <div key={item.id} className="flex items-center gap-2 px-2 py-2">
+                                          {src ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={src} alt="" className="h-9 w-9 shrink-0 rounded-sm object-cover" />
+                                          ) : (
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
+                                              <UserCircle className="h-7 w-7 text-gray-400" />
+                                            </div>
+                                          )}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[11px] font-medium text-yellow-300">
+                                              {item.name}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white">@{item.username}</div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => void removeClubStaff(item.id)}
+                                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
+                                            aria-label="Remove"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
                                 </div>
 
                                 <div>
-                                  <div className="flex items-center gap-2 border-b border-gray-700 bg-[#383838] px-2 py-1.5 text-[11px] font-semibold text-white">
-                                    <Contact2 className="h-4 w-4 shrink-0 opacity-95" />
-                                    <span>Staff & collaborators</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 px-2 py-2">
-                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
-                                      <UserCircle className="h-7 w-7 text-gray-400" />
-                                    </div>
-                                    <div className="min-w-0 flex-1 text-[11px] font-medium text-yellow-300">
-                                      shrutika chaudhari
+                                  <div className="flex items-center justify-between bg-[#c4c4c4] px-2 py-1.5 text-[11px] font-semibold text-gray-900">
+                                    <div className="flex items-center gap-2">
+                                      <UserCircle className="h-4 w-4 text-emerald-700" />
+                                      <span>Collaborators</span>
                                     </div>
                                     <button
                                       type="button"
-                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
-                                      aria-label="Remove"
+                                      onClick={() => goToClubStaffList('collaborator')}
+                                      className="flex items-center gap-0.5 font-semibold hover:underline"
                                     >
-                                      <X className="h-3 w-3" />
+                                      <Plus className="h-3 w-3" />
+                                      Add
                                     </button>
                                   </div>
+                                  {clubStaffItems
+                                    .filter((item) => item.staffType === 'collaborator')
+                                    .map((item) => {
+                                      const src = resolvePublicImageUrl(item.image);
+                                      return (
+                                        <div key={item.id} className="flex items-center gap-2 px-2 py-2">
+                                          {src ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={src} alt="" className="h-9 w-9 shrink-0 rounded-sm object-cover" />
+                                          ) : (
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gray-600">
+                                              <UserCircle className="h-7 w-7 text-gray-400" />
+                                            </div>
+                                          )}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[11px] font-medium text-yellow-300">
+                                              {item.name}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white">@{item.username}</div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => void removeClubStaff(item.id)}
+                                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 hover:bg-white/10"
+                                            aria-label="Remove"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
                                 </div>
                               </div>
                             )}
@@ -4153,6 +4528,11 @@ export default function DarkSidebar({
                                       path: '/club/settings/tables/areas',
                                     },
                                     {
+                                      Icon: List,
+                                      label: 'Customized fields',
+                                      path: '/club/settings/customized-fields',
+                                    },
+                                    {
                                       Icon: Volume2,
                                       label: 'Access of outcome settings',
                                       path: '/club/settings/outcome_settings',
@@ -4565,6 +4945,18 @@ export default function DarkSidebar({
                       </div>
                     </button>
                   </>
+                )}
+
+                {showSuggestMovesbook && (
+                  <div className="py-3 px-3 bg-gray-850 border-t border-gray-700">
+                    <button
+                      type="button"
+                      onClick={handleSuggestMovesbookClick}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
+                    >
+                      Suggest Movesbook to your friends
+                    </button>
+                  </div>
                 )}
               </>
             )}

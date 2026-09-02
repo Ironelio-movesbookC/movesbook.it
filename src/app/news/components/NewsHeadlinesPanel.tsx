@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, Flame, MoreHorizontal } from 'lucide-react';
 import type { ArticlePasted } from './NewsArticlesList';
 import { ogpDescriptionPlainText } from '@/components/shared/OgpRichDescription';
@@ -18,6 +18,9 @@ interface NewsHeadlinesPanelProps {
   getViewCount: (article: ArticlePasted) => number;
   onViewMore: () => void;
   onOpenArticle: (article: ArticlePasted) => void;
+  /** Same OGP News icon buttons as grid cards (Like, Share, Pencil, Eye, …). */
+  renderActions: (article: ArticlePasted, opts?: { dense?: boolean }) => ReactNode;
+  isArticleExpanded?: (articleId: string) => boolean;
 }
 
 function SourceMark({ article }: { article: ArticlePasted }) {
@@ -50,6 +53,8 @@ export default function NewsHeadlinesPanel({
   getViewCount,
   onViewMore,
   onOpenArticle,
+  renderActions,
+  isArticleExpanded,
 }: NewsHeadlinesPanelProps) {
   const ranked = useMemo(
     () => rankHeadlines(articles, getViewCount).slice(0, HEADLINES_COMPACT_LIMIT),
@@ -122,10 +127,16 @@ export default function NewsHeadlinesPanel({
         </div>
       </div>
 
-      <div className="relative flex-1 min-h-0 flex flex-col px-3 pb-2">
+      <div className="relative flex-1 min-h-0 flex flex-col px-3 pb-2 overflow-y-auto">
         <ul className="flex-1 min-h-0 flex flex-col justify-start divide-y divide-gray-100">
           {slice.map((a) => {
-            const title = a.title || ogpDescriptionPlainText(a.customDescription, a.description, a.url) || a.url || 'Untitled';
+            const title =
+              a.title ||
+              ogpDescriptionPlainText(a.customDescription, a.description, a.url) ||
+              a.url ||
+              'Untitled';
+            const expanded = isArticleExpanded?.(a.id) === true;
+            const description = ogpDescriptionPlainText(a.customDescription, a.description, '');
             return (
               <li key={a.id} className="py-2 first:pt-1">
                 <button
@@ -142,7 +153,13 @@ export default function NewsHeadlinesPanel({
                   <span className="mt-0.5 block text-[13px] font-bold text-gray-900 leading-snug line-clamp-2 group-hover/item:underline">
                     {title}
                   </span>
+                  {expanded && description ? (
+                    <span className="mt-1 block text-[11px] text-gray-600 leading-snug line-clamp-4">
+                      {description}
+                    </span>
+                  ) : null}
                 </button>
+                {renderActions(a, { dense: true })}
               </li>
             );
           })}

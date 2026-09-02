@@ -1,3 +1,5 @@
+import type { TeamProfileSections } from '@/lib/team/teamProfileTypes';
+
 export type ClubDescriptionMeta = {
   createdViaForm?: boolean;
   /** ISO date (YYYY-MM-DD) — current network subscription start for this club. */
@@ -13,6 +15,7 @@ export type ClubDescriptionMeta = {
   category?: string;
   country?: string;
   region?: string;
+  location?: string;
   zipCode?: string;
   address?: string;
   geo?: string;
@@ -23,8 +26,34 @@ export type ClubDescriptionMeta = {
   /** Rich-text references for the club (not the club admin user). */
   referencesHtml?: string;
   referencesLevel?: string;
-  /** Public path under `/uploads/entity_logos/` (or absolute URL). */
+  /** Club Rules / Privacy policy HTML (Documents Editor). */
+  legalDocuments?: {
+    rulesHtml?: string;
+    privacyPolicyHtml?: string;
+  };
+  /** Up to 5 payment method ids shown by default on payment forms. */
+  defaultPaymentMethods?: string[];
+  /** Public path under `/uploads/entity_logos/` (or data URL / absolute URL). */
   logoUrl?: string;
+  /** Phone for club/team account. */
+  phone?: string;
+  /** Province for club account (team uses legalSite.province). */
+  province?: string;
+  /** Website for club account (team uses contacts.website). */
+  website?: string;
+  /** Sports multicheck (primary also mirrored to category). */
+  sports?: string[];
+  /** Customized profile questions for members of this club. */
+  customQuestions?: Array<{
+    id: string;
+    question: string;
+    answerType: 'free' | 'checkbox' | 'yes_no' | 'list';
+    visibleInRegistration: boolean;
+    mandatory: boolean;
+    listOptions: string;
+  }>;
+  /** Extended team profile tabs (federal, admin sport, etc.). */
+  teamProfile?: TeamProfileSections;
 };
 
 export function parseClubDescriptionMeta(
@@ -117,14 +146,23 @@ export function getClubProfileDisplayRows(club: {
     { label: 'Official name', value: getClubMyPageDisplayName(club) },
     { label: 'Club username', value: meta.username?.trim() ?? '' },
     { label: 'Direct access', value: meta.directAccess?.trim() ?? '' },
-    { label: 'Category', value: meta.category?.trim() ?? '' },
+    {
+      label: 'Sports',
+      value:
+        Array.isArray(meta.sports) && meta.sports.length
+          ? meta.sports.join(', ')
+          : meta.category?.trim() ?? '',
+    },
     { label: 'Country', value: meta.country?.trim() ?? '' },
     { label: 'Region', value: meta.region?.trim() ?? '' },
+    { label: 'Province', value: meta.province?.trim() ?? '' },
     { label: 'Location', value: club.location?.trim() ?? '' },
-    { label: 'Zip Code', value: meta.zipCode?.trim() ?? '' },
+    { label: 'ZIP', value: meta.zipCode?.trim() ?? '' },
     { label: 'Address', value: meta.address?.trim() ?? '' },
     { label: 'Geographic coordinate', value: meta.geo?.trim() ?? '' },
-    { label: 'Club mail', value: meta.mail?.trim() ?? '' },
+    { label: 'Mail', value: meta.mail?.trim() ?? '' },
+    { label: 'Phone', value: meta.phone?.trim() ?? '' },
+    { label: 'Website', value: meta.website?.trim() ?? '' },
     { label: 'Subscription end', value: meta.subscriptionEnd?.trim() ?? '' },
     { label: 'Direct registration code', value: meta.directRegistrationCode?.trim() ?? '' },
   ];

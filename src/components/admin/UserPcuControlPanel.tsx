@@ -1275,7 +1275,7 @@ export default function UserPcuControlPanel({
       if (pcu) reloadPcuFromServerRef.current(pcu);
       return pcu;
     },
-    [user.userId],
+    [user.userId, pcuEntityId],
   );
 
   const saveExpirationNotifySection = useCallback(async () => {

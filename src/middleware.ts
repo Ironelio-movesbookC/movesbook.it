@@ -41,10 +41,14 @@ const publicApiRoutes = [
   '/api/auth/register',
   '/api/auth/reset-password',
   '/api/auth/reset-username',
+  /** Invite registration form — guests have no token yet */
+  '/api/users/quick-register',
   /** Super Admin bootstrap (exists check + first login/register; no token yet) */
   '/api/admin/super-admin/exists',
   '/api/admin/super-admin/login',
   '/api/admin/super-admin/register',
+  /** Promocode generator — PHP PromocodesController::changeCode (Auth allow) */
+  '/api/admin/promocodes/change-code',
   /** Outcome audio for <audio src> — no Authorization header on GET */
   '/api/outcome-messages',
   /** Public read APIs (editorial news, shared OGP groups, etc.) */

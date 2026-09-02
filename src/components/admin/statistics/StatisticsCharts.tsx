@@ -16,32 +16,13 @@ import {
   LabelList,
 } from 'recharts';
 import {
-  STATS_KIND_COLORS,
   STATS_KIND_LABELS,
   STATS_USER_KINDS,
-  STATS_VERSION_COLORS,
   type StatsUserKind,
   type StatsVersionBucket,
 } from '@/lib/admin/statisticsKinds';
 import type { StatsSlice } from '@/lib/admin/buildStatistics';
-
-const COUNTRY_PALETTE = [
-  '#058592',
-  '#941751',
-  '#ff8d00',
-  '#2f6b3a',
-  '#4a5d8c',
-  '#b45309',
-  '#0f766e',
-  '#7c2d12',
-  '#1d4ed8',
-  '#be123c',
-  '#365314',
-  '#6b21a8',
-  '#0369a1',
-  '#a16207',
-  '#334155',
-];
+import { useStatisticsGraphTheme } from '@/components/admin/statistics/StatisticsGraphTheme';
 
 type PieBlockProps = {
   title: string;
@@ -53,8 +34,12 @@ type PieBlockProps = {
   versionColors?: boolean;
   /** Paint every slice with one color (e.g. selected user-type accent). */
   uniformColor?: string;
+  /** Paint every slice with the active theme color for this user kind. */
+  uniformKind?: StatsUserKind;
   /** Color chip shown above the title (user-type accent without recoloring slices). */
   titleSwatchColor?: string;
+  /** Title swatch from the active theme for this user kind. */
+  titleSwatchKind?: StatsUserKind;
   height?: number;
   /** Extra classes on the outer card (e.g. h-full for equal-height grids). */
   className?: string;
@@ -74,15 +59,23 @@ function PieTooltip({
   active?: boolean;
   payload?: Array<{ name?: string; value?: number; payload?: StatsSlice }>;
 }) {
+  const theme = useStatisticsGraphTheme();
   if (!active || !payload?.[0]) return null;
   const row = payload[0].payload;
   const name = payload[0].name ?? row?.label ?? '';
   const value = payload[0].value ?? row?.count ?? 0;
   const percent = row?.percent;
   return (
-    <div className="bg-white border border-[#ccc] px-3 py-2 text-xs shadow-sm">
+    <div
+      className="border px-3 py-2 text-xs shadow-sm"
+      style={{
+        background: theme.background.panel,
+        borderColor: theme.background.border,
+        color: theme.background.text,
+      }}
+    >
       <div className="font-semibold">{name}</div>
-      <div>
+      <div style={{ color: theme.background.muted }}>
         {value}
         {percent != null ? ` (${percent}%)` : ''}
       </div>
@@ -135,12 +128,19 @@ export function StatisticsPieBlock({
   kindColors,
   versionColors,
   uniformColor,
+  uniformKind,
   titleSwatchColor,
+  titleSwatchKind,
   height = 280,
   className,
   onSelect,
   legendValueMode = 'percent',
 }: PieBlockProps) {
+  const theme = useStatisticsGraphTheme();
+  const resolvedUniform =
+    uniformColor ?? (uniformKind ? theme.kindColor(uniformKind) : undefined);
+  const resolvedSwatch =
+    titleSwatchColor ?? (titleSwatchKind ? theme.kindColor(titleSwatchKind) : undefined);
   const chartData = useMemo(() => slices.filter((s) => s.count > 0), [slices]);
   const legendData = useMemo(() => {
     const positive = slices.filter((s) => s.count > 0);
@@ -158,20 +158,16 @@ export function StatisticsPieBlock({
   const activeIndex = activeKey == null ? undefined : chartData.findIndex((s) => s.key === activeKey);
 
   const colorFor = (entry: StatsSlice, index: number) => {
-    if (uniformColor) return uniformColor;
+    if (resolvedUniform) return resolvedUniform;
     if (kindColors) {
-      return (
-        STATS_KIND_COLORS[entry.key as StatsUserKind] ??
-        COUNTRY_PALETTE[index % COUNTRY_PALETTE.length]
-      );
+      const kind = entry.key as StatsUserKind;
+      return theme.palette.kinds[kind] ?? theme.seriesColor(index);
     }
     if (versionColors) {
-      return (
-        STATS_VERSION_COLORS[entry.key as StatsVersionBucket] ??
-        COUNTRY_PALETTE[index % COUNTRY_PALETTE.length]
-      );
+      const version = entry.key as StatsVersionBucket;
+      return theme.palette.versions[version] ?? theme.seriesColor(index);
     }
-    return COUNTRY_PALETTE[index % COUNTRY_PALETTE.length];
+    return theme.seriesColor(index);
   };
 
   const toggleSelect = (key: string) => {
@@ -187,22 +183,32 @@ export function StatisticsPieBlock({
 
   return (
     <div
-      className={`bg-white border border-[#cfcfcf] p-3 flex flex-col overflow-hidden ${className ?? ''}`}
+      className={`border p-3 flex flex-col overflow-hidden ${className ?? ''}`}
+      style={theme.panelStyle}
     >
       <div className="mb-2 shrink-0">
-        {titleSwatchColor ? (
+        {resolvedSwatch ? (
           <span
             className="mb-1.5 inline-block h-3.5 w-8 rounded-sm border border-black/10"
-            style={{ backgroundColor: titleSwatchColor }}
+            style={{ backgroundColor: resolvedSwatch }}
             title="Type of user color"
             aria-hidden
           />
         ) : null}
-        <h3 className="font-bold text-[#222] text-lg">{title}</h3>
-        {subtitle ? <p className="text-base text-[#666] mt-0.5">{subtitle}</p> : null}
+        <h3 className="font-bold text-lg" style={{ color: theme.background.text }}>
+          {title}
+        </h3>
+        {subtitle ? (
+          <p className="text-base mt-0.5" style={{ color: theme.background.muted }}>
+            {subtitle}
+          </p>
+        ) : null}
       </div>
       {empty ? (
-        <div className="flex-1 flex items-center justify-center text-base text-[#888] min-h-[200px]">
+        <div
+          className="flex-1 flex items-center justify-center text-base min-h-[200px]"
+          style={{ color: theme.background.muted }}
+        >
           No data
         </div>
       ) : (
@@ -240,7 +246,7 @@ export function StatisticsPieBlock({
                       <Cell
                         key={entry.key}
                         fill={colorFor(entry, index)}
-                        stroke="#fff"
+                        stroke={theme.background.isDark ? theme.background.panel : '#fff'}
                         strokeWidth={isActive ? 2 : 1}
                         fillOpacity={dimmed ? 0.35 : 1}
                         style={{ cursor: 'pointer', outline: 'none', transition: 'fill-opacity 120ms ease' }}
@@ -252,7 +258,10 @@ export function StatisticsPieBlock({
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <ul className="mt-3 pt-3 border-t border-[#e8e8e8] grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-base text-[#333]">
+          <ul
+            className="mt-3 grid grid-cols-1 gap-x-4 gap-y-2 border-t pt-3 text-base sm:grid-cols-2"
+            style={{ borderColor: theme.background.border, color: theme.background.text }}
+          >
             {legendData.map((entry, index) => {
               const isActive = activeKey === entry.key;
               const dimmed = activeKey != null && !isActive;
@@ -262,35 +271,58 @@ export function StatisticsPieBlock({
                 <li key={entry.key}>
                   <button
                     type="button"
-                    className={`w-full flex items-center gap-2 min-w-0 rounded px-1.5 py-1.5 text-left transition ${
-                      isActive
-                        ? 'bg-[#e8f4f5] ring-1 ring-[#058592]'
-                        : 'hover:bg-[#f3f3f3]'
-                    } ${dimmed ? 'opacity-45' : ''} ${isRest ? 'font-semibold' : ''}`}
-                    onMouseEnter={() => setHoveredKey(entry.key)}
-                    onMouseLeave={() => setHoveredKey(null)}
+                    className={`flex w-full min-w-0 items-center gap-2 rounded px-1.5 py-1.5 text-left transition ${
+                      dimmed ? 'opacity-45' : ''
+                    } ${isRest ? 'font-semibold' : ''}`}
+                    style={{
+                      color: theme.background.text,
+                      background: isActive ? theme.background.activeSurface : 'transparent',
+                      boxShadow: isActive
+                        ? `inset 0 0 0 1px ${theme.background.accent}`
+                        : undefined,
+                    }}
+                    onMouseEnter={(e) => {
+                      setHoveredKey(entry.key);
+                      if (!isActive) e.currentTarget.style.background = theme.background.hoverSurface;
+                    }}
+                    onMouseLeave={(e) => {
+                      setHoveredKey(null);
+                      e.currentTarget.style.background = isActive
+                        ? theme.background.activeSurface
+                        : 'transparent';
+                    }}
                     onFocus={() => setHoveredKey(entry.key)}
                     onBlur={() => setHoveredKey(null)}
                     onClick={() => toggleSelect(entry.key)}
                   >
                     <span
-                      className="inline-block w-3 h-3 shrink-0 rounded-sm"
-                      style={{ backgroundColor: colorFor(entry, index) }}
+                      className="inline-block h-3 w-3 shrink-0 rounded-sm"
+                      style={{
+                        backgroundColor: colorFor(entry, index),
+                        boxShadow: theme.background.isDark
+                          ? 'inset 0 0 0 1px rgba(255,255,255,0.45)'
+                          : 'inset 0 0 0 1px rgba(0,0,0,0.15)',
+                      }}
                       aria-hidden
                     />
                     <span
                       className="truncate text-base"
+                      style={{ color: theme.background.text }}
                       title={`${entry.label}: ${entry.count} (${entry.percent}%)`}
                     >
                       {legendValueMode === 'count' ? (
                         <>
                           {entry.label}{' '}
-                          <span className="font-bold text-[#111]">{entry.count}</span>
+                          <span className="font-bold" style={{ color: theme.background.text }}>
+                            {entry.count}
+                          </span>
                         </>
                       ) : (
                         <>
                           {entry.label} ({entry.percent}%){' '}
-                          <span className="font-bold text-[#111]">{entry.count}</span>
+                          <span className="font-bold" style={{ color: theme.background.text }}>
+                            {entry.count}
+                          </span>
                         </>
                       )}
                     </span>
@@ -340,6 +372,7 @@ export function StatisticsVerticalCountryBars({
   onKindSelect,
   onOpenBarList,
 }: VerticalCountryBarsProps) {
+  const theme = useStatisticsGraphTheme();
   const kinds =
     onlyKind === 'all' || onlyKind === 'except_groups'
       ? onlyKind === 'except_groups'
@@ -348,7 +381,7 @@ export function StatisticsVerticalCountryBars({
       : STATS_USER_KINDS.filter((k) => k === onlyKind);
 
   const singleKindMode = kinds.length === 1;
-  const colorFor = (k: StatsUserKind) => STATS_KIND_COLORS[k];
+  const colorFor = (k: StatsUserKind) => theme.kindColor(k);
   const labelFor = (k: StatsUserKind) => SIDE_TABLE_LABELS[k];
 
   const [hovered, setHovered] = useState<BarFocus | null>(null);
@@ -426,17 +459,19 @@ export function StatisticsVerticalCountryBars({
 
   if (rows.length === 0) {
     return (
-      <div className="bg-white border border-[#cfcfcf] p-8 text-center text-[#888]">No data</div>
+      <div className="border p-8 text-center" style={{ ...theme.panelStyle, color: theme.background.muted }}>
+        No data
+      </div>
     );
   }
 
   return (
-    <div className="bg-white border border-[#cfcfcf] p-3 overflow-x-auto">
+    <div className="border p-3 overflow-x-auto" style={theme.panelStyle}>
       <div className="flex gap-3 items-start min-w-[720px]">
         <div className="flex-1 min-w-[420px]">
           <div
-            className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] font-semibold border-b border-[#eee] box-border"
-            style={{ height: headerH }}
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] font-semibold border-b box-border"
+            style={{ height: headerH, borderColor: theme.background.border }}
           >
             {kinds.map((k) => (
               <button
@@ -469,16 +504,20 @@ export function StatisticsVerticalCountryBars({
               return (
                 <div
                   key={row.country}
-                  className={`flex items-stretch border-b border-[#eee] box-border ${
-                    rowActive ? 'bg-[#e8f4f5]' : 'bg-white'
-                  }`}
-                  style={{ height: rowHeight }}
+                  className="flex items-stretch border-b box-border"
+                  style={{
+                    height: rowHeight,
+                    borderColor: theme.background.border,
+                    background: rowActive
+                      ? theme.background.activeSurface
+                      : 'transparent',
+                  }}
                   onMouseEnter={() => setHovered({ country: row.country })}
                   onMouseLeave={() => setHovered(null)}
                 >
                   <div
-                    className="shrink-0 flex items-center truncate text-[11px] text-[#333] px-1.5"
-                    style={{ width: labelColW }}
+                    className="shrink-0 flex items-center truncate text-[11px] px-1.5"
+                    style={{ width: labelColW, color: theme.background.text }}
                     title={row.country}
                   >
                     {row.country}
@@ -494,8 +533,11 @@ export function StatisticsVerticalCountryBars({
                       {axisTicks.map((t) => (
                         <div
                           key={`g-${row.country}-${t}`}
-                          className="absolute top-0 bottom-0 w-px bg-[#ececec]"
-                          style={{ left: `${(t / maxValue) * 100}%` }}
+                          className="absolute top-0 bottom-0 w-px"
+                          style={{
+                            left: `${(t / maxValue) * 100}%`,
+                            background: theme.background.border,
+                          }}
                         />
                       ))}
                     </div>
@@ -515,7 +557,14 @@ export function StatisticsVerticalCountryBars({
                           onMouseLeave={() => setHovered({ country: row.country })}
                           onClick={() => handleBarClick(row.country, k)}
                         >
-                          <div className="relative flex-1 h-full min-w-0 rounded-sm bg-[#ececec]">
+                          <div
+                            className="relative flex-1 h-full min-w-0 rounded-sm"
+                            style={{
+                              background: theme.background.isDark
+                                ? 'rgba(255,255,255,0.12)'
+                                : '#ececec',
+                            }}
+                          >
                             <div
                               className="h-full rounded-sm transition-[width,opacity] duration-150"
                               style={{
@@ -530,7 +579,10 @@ export function StatisticsVerticalCountryBars({
                             />
                           </div>
                           {singleKindMode ? (
-                            <span className="w-8 shrink-0 text-right text-xs font-bold tabular-nums text-[#222]">
+                            <span
+                              className="w-8 shrink-0 text-right text-xs font-bold tabular-nums"
+                              style={{ color: theme.background.text }}
+                            >
                               {value}
                             </span>
                           ) : null}
@@ -544,8 +596,12 @@ export function StatisticsVerticalCountryBars({
           </div>
 
           <div
-            className="flex border-t border-[#eee] text-[10px] text-[#666] tabular-nums"
-            style={{ height: axisBottomH }}
+            className="flex border-t text-[10px] tabular-nums"
+            style={{
+              height: axisBottomH,
+              borderColor: theme.background.border,
+              color: theme.background.muted,
+            }}
           >
             <div className="shrink-0" style={{ width: labelColW }} />
             <div className="relative flex-1 min-w-0 px-1">
@@ -564,22 +620,34 @@ export function StatisticsVerticalCountryBars({
         </div>
 
         <div
-          className="shrink-0 border border-[#ddd] bg-[#fafafa] overflow-hidden"
-          style={{ width: sideColWidth }}
+          className="shrink-0 border overflow-hidden"
+          style={{
+            width: sideColWidth,
+            borderColor: theme.background.border,
+            background: theme.background.isDark
+              ? 'rgba(255,255,255,0.04)'
+              : 'rgba(250,250,250,0.9)',
+          }}
         >
           <div
-            className="grid border-b border-[#ddd] bg-[#f0f0f0] text-[10px] font-semibold text-[#333] uppercase tracking-wide box-border"
+            className="grid border-b text-[10px] font-semibold uppercase tracking-wide box-border"
             style={{
               gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
               height: headerH,
+              borderColor: theme.background.border,
+              background: theme.background.isDark ? 'rgba(255,255,255,0.06)' : '#f0f0f0',
+              color: theme.background.text,
             }}
           >
             {kinds.map((k) => (
               <button
                 key={k}
                 type="button"
-                className="flex items-center justify-center px-0.5 text-center border-l border-[#e0e0e0] first:border-l-0 hover:bg-[#e8e8e8]"
-                style={{ color: colorFor(k) }}
+                className="flex items-center justify-center px-0.5 text-center border-l first:border-l-0"
+                style={{
+                  color: colorFor(k),
+                  borderColor: theme.background.border,
+                }}
                 title={singleKindMode ? labelFor(k) : `Show only ${labelFor(k)}`}
                 onClick={() => {
                   if (!singleKindMode) onKindSelect?.(k);
@@ -590,8 +658,8 @@ export function StatisticsVerticalCountryBars({
             ))}
             {showTotals ? (
               <div
-                className="flex items-center justify-center px-0.5 text-center border-l border-[#e0e0e0] font-bold"
-                style={{ color: '#dc2626' }}
+                className="flex items-center justify-center px-0.5 text-center border-l font-bold"
+                style={{ color: '#dc2626', borderColor: theme.background.border }}
                 title="Total users in country"
               >
                 Totals
@@ -605,12 +673,13 @@ export function StatisticsVerticalCountryBars({
               return (
                 <div
                   key={row.country}
-                  className={`grid shrink-0 border-b border-[#eee] text-xs box-border ${
-                    rowActive ? 'bg-[#e8f4f5]' : 'bg-white'
-                  }`}
+                  className="grid shrink-0 border-b text-xs box-border"
                   style={{
                     gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
                     height: rowHeight,
+                    borderColor: theme.background.border,
+                    background: rowActive ? theme.background.activeSurface : 'transparent',
+                    color: theme.background.text,
                   }}
                   onMouseEnter={() => setHovered({ country: row.country })}
                   onMouseLeave={() => setHovered(null)}
@@ -622,10 +691,15 @@ export function StatisticsVerticalCountryBars({
                       <button
                         key={k}
                         type="button"
-                        className={`flex items-center justify-center border-l border-[#f0f0f0] first:border-l-0 font-semibold tabular-nums ${
-                          cellActive ? 'ring-1 ring-inset ring-[#058592]' : ''
-                        } hover:bg-[#f3f3f3]`}
-                        style={{ color: value > 0 ? colorFor(k) : '#bbb' }}
+                        className="flex items-center justify-center border-l first:border-l-0 font-semibold tabular-nums"
+                        style={{
+                          color: value > 0 ? colorFor(k) : theme.background.muted,
+                          borderColor: theme.background.border,
+                          background: cellActive ? theme.background.activeSurface : undefined,
+                          boxShadow: cellActive
+                            ? `inset 0 0 0 1px ${theme.background.accent}`
+                            : undefined,
+                        }}
                         title={`${row.country} · ${labelFor(k)}: ${value}`}
                         onClick={() => handleBarClick(row.country, k)}
                       >
@@ -635,8 +709,8 @@ export function StatisticsVerticalCountryBars({
                   })}
                   {showTotals ? (
                     <div
-                      className="flex items-center justify-center border-l border-[#f0f0f0] font-bold tabular-nums"
-                      style={{ color: '#dc2626' }}
+                      className="flex items-center justify-center border-l font-bold tabular-nums"
+                      style={{ color: '#dc2626', borderColor: theme.background.border }}
                       title={`${row.country} · Total: ${total}`}
                     >
                       {total}
@@ -646,7 +720,13 @@ export function StatisticsVerticalCountryBars({
               );
             })}
           </div>
-          <div style={{ height: axisBottomH }} className="bg-[#fafafa] border-t border-[#eee]" />
+          <div
+            style={{
+              height: axisBottomH,
+              background: theme.background.isDark ? 'rgba(255,255,255,0.04)' : '#fafafa',
+              borderTop: `1px solid ${theme.background.border}`,
+            }}
+          />
         </div>
       </div>
     </div>
@@ -669,11 +749,15 @@ function VersionAxisTick({
   y = 0,
   payload,
   counts,
+  countColor,
+  labelColor,
 }: {
   x?: number | string;
   y?: number | string;
   payload?: { value?: string };
   counts: Record<string, number>;
+  countColor: string;
+  labelColor: string;
 }) {
   const version = String(payload?.value ?? '');
   const count = counts[version] ?? 0;
@@ -681,11 +765,11 @@ function VersionAxisTick({
   const ty = typeof y === 'number' ? y : Number(y) || 0;
   return (
     <g transform={`translate(${tx},${ty})`}>
-      <text dy={14} textAnchor="middle" fill="#333" fontSize={12} fontWeight={600}>
+      <text dy={14} textAnchor="middle" fill={labelColor} fontSize={12} fontWeight={600}>
         {version}
       </text>
       {/* Absolute user count (not %) — Base/Premium/Professional already include PFU variants */}
-      <text dy={34} textAnchor="middle" fill="#941751" fontSize={16} fontWeight={800}>
+      <text dy={34} textAnchor="middle" fill={countColor} fontSize={16} fontWeight={800}>
         {count}
       </text>
     </g>
@@ -700,6 +784,7 @@ export function StatisticsVersionsBars({
   className,
   fillColor,
 }: VersionsBarsProps) {
+  const theme = useStatisticsGraphTheme();
   const chartHeight = Math.max(height, 200);
   const hostRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
@@ -724,7 +809,7 @@ export function StatisticsVersionsBars({
   const data = rows.map((r) => ({
     version: r.version,
     count: r.count,
-    fill: fillColor ?? STATS_VERSION_COLORS[r.version],
+    fill: fillColor ?? theme.versionColor(r.version),
   }));
 
   const countsByVersion = useMemo(() => {
@@ -749,7 +834,8 @@ export function StatisticsVersionsBars({
   if (data.every((d) => d.count === 0)) {
     return (
       <div
-        className={`bg-white border border-[#cfcfcf] p-8 text-center text-[#888] ${className ?? ''}`}
+        className={`border p-8 text-center ${className ?? ''}`}
+        style={{ ...theme.panelStyle, color: theme.background.muted }}
       >
         No data
       </div>
@@ -757,7 +843,7 @@ export function StatisticsVersionsBars({
   }
 
   return (
-    <div className={`bg-white border border-[#cfcfcf] p-3 ${className ?? ''}`}>
+    <div className={`border p-3 ${className ?? ''}`} style={theme.panelStyle}>
       <div ref={hostRef} className="w-full overflow-hidden" style={{ height: chartHeight }}>
         <BarChart
           width={Math.max(width, 280)}
@@ -765,17 +851,36 @@ export function StatisticsVersionsBars({
           data={data}
           margin={{ top: 28, right: 24, left: 8, bottom: 56 }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke={theme.background.isDark ? 'rgba(148,163,184,0.25)' : '#e5e5e5'}
+          />
           <XAxis
             dataKey="version"
             interval={0}
-            tick={(props) => <VersionAxisTick {...props} counts={countsByVersion} />}
+            tick={(props) => (
+              <VersionAxisTick
+                {...props}
+                counts={countsByVersion}
+                countColor={theme.background.accentAlt}
+                labelColor={theme.background.text}
+              />
+            )}
             height={58}
           />
-          <YAxis allowDecimals={false} />
+          <YAxis
+            allowDecimals={false}
+            tick={{ fill: theme.background.muted, fontSize: 12 }}
+            stroke={theme.background.border}
+          />
           <Tooltip
             formatter={(value) => [value, 'Users']}
             labelFormatter={(label) => String(label)}
+            contentStyle={{
+              background: theme.background.panel,
+              borderColor: theme.background.border,
+              color: theme.background.text,
+            }}
           />
           <Bar
             dataKey="count"
@@ -795,7 +900,7 @@ export function StatisticsVersionsBars({
             <LabelList
               dataKey="count"
               position="top"
-              fill="#222"
+              fill={theme.background.text}
               fontSize={13}
               fontWeight={700}
             />

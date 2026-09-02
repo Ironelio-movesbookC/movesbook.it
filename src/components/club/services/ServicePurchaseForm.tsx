@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -11,7 +12,8 @@ import ProcedureFormSection, {
   procedureReadonlyInputClass,
 } from '@/components/procedures/ProcedureFormLayout';
 import TaxDocumentModal, { type TaxDocumentFormValues } from '@/components/procedures/TaxDocumentModal';
-import { PAY_MODE_OPTIONS } from '@/lib/procedures/payModes';
+import PaymentModeSelect from '@/components/club/PaymentModeSelect';
+import { useClubDefaultPaymentMethods } from '@/hooks/useClubDefaultPaymentMethods';
 import {
   createPurchase,
   fetchFormOptions,
@@ -85,9 +87,10 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
   const [pay, setPay] = useState('');
   const [movementDate, setMovementDate] = useState(todayDate);
   const [movementTime, setMovementTime] = useState(nowTime);
-  const [paydate, setPaydate] = useState(todayDate);
+  const [expireDate, setExpireDate] = useState('');
   const [causal, setCausal] = useState('');
   const [payMode, setPayMode] = useState('cash');
+  const defaultPaymentMethods = useClubDefaultPaymentMethods();
   const [taxDoc, setTaxDoc] = useState(true);
   const [taxDocument, setTaxDocument] = useState<TaxDocumentFormValues | null>(null);
   const [discountEnabled, setDiscountEnabled] = useState(true);
@@ -203,6 +206,9 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
     if (!serviceId) return setError('Please select a service.');
     if (!value || Number(value) < 0) return setError('Please enter a valid cost.');
     if (paid > total) return setError('Payment cannot exceed total cost.');
+    if (!expireDate) return setError('Please enter the expiration date of the service.');
+    if (expireDate < movementDate)
+      return setError('The expiration date cannot be earlier than the date of the movement.');
     if (!operatorId) return setError('Please select an operator.');
     if (isPasswordEnabled && !operatorPassword.trim()) return setError('Operator password is required.');
 
@@ -220,7 +226,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
         pay: paid,
         recordDate: movementDate,
         movementTime,
-        paydate,
+        expireDate,
         causal,
         payMode,
         operatorId,
@@ -334,10 +340,13 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
                   ))}
                 </select>
                 {selectedService?.imageUrl && (
-                  <img
+                  <Image
                     src={selectedService.imageUrl}
                     alt=""
                     className="h-10 w-14 flex-shrink-0 rounded border border-gray-200 bg-gray-50 object-cover"
+                    width={56}
+                    height={40}
+                    unoptimized
                   />
                 )}
               </div>
@@ -364,14 +373,15 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
                 placeholder="0"
               />
             </ProcedureFormCell>
-            <ProcedureFormCell label="Expiration Date">
+            <ProcedureFormCell label="Expiration Date *">
               <input
                 type="date"
-                min={todayDate()}
+                required
+                min={movementDate}
                 className={procedureHighlightInputClass}
                 style={{ backgroundColor: '#d3f07b' }}
-                value={paydate}
-                onChange={(e) => setPaydate(e.target.value)}
+                value={expireDate}
+                onChange={(e) => setExpireDate(e.target.value)}
               />
             </ProcedureFormCell>
             <ProcedureFormCell label="Causal">
@@ -393,15 +403,13 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
         <ProcedureFormSection title="Type of payment">
           <ProcedureFormGrid>
             <ProcedureFormCell label="Payment method">
-              <select
+              <PaymentModeSelect
                 className={procedureInputClass}
                 value={payMode}
-                onChange={(e) => setPayMode(e.target.value)}
-              >
-                {PAY_MODE_OPTIONS.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
+                onChange={setPayMode}
+                defaultPaymentMethods={defaultPaymentMethods}
+                allowEmpty={false}
+              />
             </ProcedureFormCell>
             <ProcedureFormCell label="Tax document">
               <div className="flex items-center gap-3 mt-1">

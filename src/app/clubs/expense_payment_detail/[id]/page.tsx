@@ -1,13 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import ServicePaymentForm, {
   type ServicePaymentSubmitValues,
 } from '@/components/club/services/ServicePaymentForm';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
+import { archiveScopeQuery } from '@/lib/club/archives/archiveScope';
 import { createProcedureClient } from '@/lib/club/procedureClient';
-import { getProcedureTabs } from '@/lib/procedures/registry';
+import { getProcedureDefinition, getProcedureTabs } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import type { ServiceSaleFormOptions, ServiceSalePayment, ServiceSalePurchase } from '@/lib/club/serviceSaleClient';
 import { fetchOtherSettings } from '@/lib/club/otherSettingsClient';
@@ -149,6 +150,17 @@ export default function ExpensePaymentDetailPage() {
     }
   }
 
+  // Payments must open on this member only — not the whole club list.
+  const tabs = useMemo(() => {
+    const memberId = purchase?.userId ?? null;
+    const paymentsPath = getProcedureDefinition(PROCEDURE_TYPE_CODES.EXPENSE)!.routes.payments;
+    return getProcedureTabs(PROCEDURE_TYPE_CODES.EXPENSE, 'deadlines', id, memberId).map((t) =>
+      t.id === 'payments' && memberId
+        ? { ...t, href: `${paymentsPath}${archiveScopeQuery(null, memberId)}` }
+        : t
+    );
+  }, [id, purchase?.userId]);
+
   if ((!purchase || !options) && !error) {
     return <div className="p-6 text-gray-500">Loading...</div>;
   }
@@ -157,8 +169,11 @@ export default function ExpensePaymentDetailPage() {
     <div className="p-4 max-w-4xl mx-auto">
       <ProcedureArchiveShell
         title="Payment — Expense"
+        member={
+          purchase ? { name: purchase.memberName, image: purchase.memberImage } : undefined
+        }
         activeTab="deadlines"
-        tabs={getProcedureTabs(PROCEDURE_TYPE_CODES.EXPENSE, 'deadlines', id)}
+        tabs={tabs}
         error={!purchase ? error : undefined}
       >
         {purchase && options && (

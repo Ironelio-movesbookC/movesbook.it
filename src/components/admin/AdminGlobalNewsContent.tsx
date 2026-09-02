@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Globe, Newspaper, ExternalLink, X } from 'lucide-react';
 import type { GlobalNewsFeedItem } from '@/lib/globalNewsAuth';
 import { resolveIsSuperAdminFromStorage } from '@/lib/panelSession';
+import NewsFeedMetaLine from '@/components/news/NewsFeedMetaLine';
 
 function formatDate(iso: string) {
   try {
@@ -179,13 +180,12 @@ export default function AdminGlobalNewsContent({
 
                   <h2 className="text-base font-semibold text-gray-900 line-clamp-2">{title}</h2>
 
-                  <p className="text-sm text-gray-600 mt-1 line-clamp-2">
-                    {item.kind === 'news'
-                      ? [item.categoryName, item.method, item.author].filter(Boolean).join(' · ')
-                      : [item.topic, item.creatorUsername ? `by ${item.creatorUsername}` : null]
-                          .filter(Boolean)
-                          .join(' · ')}
-                  </p>
+                  <NewsFeedMetaLine
+                    kind={item.kind}
+                    sector={item.kind === 'news' ? item.categoryName : item.topic}
+                    mode={item.kind === 'news' ? item.method : null}
+                    postedBy={item.kind === 'news' ? item.author : item.creatorUsername}
+                  />
 
                   <div className="flex flex-wrap items-center gap-3 mt-3">
                     <Link

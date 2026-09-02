@@ -2,7 +2,22 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import {
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Menu, Settings } from 'lucide-react';
 import MubPreviewModeToggle, { normalizeMubDisplayMode, type MubDisplayMode } from '@/components/mub/MubPreviewModeToggle';
 import MubButtonEditorForm, { emptyMubButtonForm, type MubButtonFormState } from '@/components/mub/MubButtonEditorForm';
@@ -50,7 +65,7 @@ function apiQuery(
 
 export default function MubPageClient({
   mode,
-  staffRoleTemplate = 'CLUB',
+  staffRoleTemplate = 'SINGLE_USER',
   initialPanel = null,
   initialCategory = 'CLUB_MANAGEMENT',
   hasCategoryInPath = false,
@@ -74,6 +89,13 @@ export default function MubPageClient({
   const [message, setMessage] = useState<string | null>(null);
   /** Client-only preview layout — toggles instantly, no save (PHP: "Select the preview"). */
   const [previewMode, setPreviewMode] = useState<MubDisplayMode>(1);
+  /** Client answer #4 — personal password gate for Reset / Remove MUB default. */
+  const [confirmAction, setConfirmAction] = useState<'reset' | 'remove_default' | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirmSaving, setConfirmSaving] = useState(false);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const isViewLanding = mode === 'view' && activePanel === null && !hasCategoryInPath;
   const isUserSettingsHub = activePanel === 'user' && !hasCategoryInPath;
@@ -256,7 +278,8 @@ export default function MubPageClient({
       if (!res.ok) throw new Error(data.error || 'verify_failed');
 
       if (data.access === 'staff') {
-        router.push('/users/mub_staff_page?role=CLUB');
+        const template = roleTemplateFromUserType(user?.userType ?? 'ATHLETE');
+        router.push(`/users/mub_staff_page?role=${template}`);
         return;
       }
       if (data.access === 'club') {
@@ -266,16 +289,80 @@ export default function MubPageClient({
         router.push(mubPageUrl({ setting: true }));
         return;
       }
-      setPasswordError('Invalid password.');
-    } catch {
-      setPasswordError('Invalid password.');
+      setPasswordError(data.error || 'Invalid password.');
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : 'Invalid password.');
     }
   };
 
   const handleImport = async () => {
-    const template = roleTemplateFromUserType(user?.userType ?? '') ?? staffRoleTemplate;
-    const data = await postAction({ action: 'import', roleTemplate: template });
-    setMessage(`${data.importedCount ?? 0} button(s) imported and added to your page.`);
+    const template = roleTemplateFromUserType(user?.userType ?? 'ATHLETE');
+    try {
+      const data = await postAction({ action: 'import', roleTemplate: template });
+      setMessage(
+        `${data.importedCount ?? 0} button(s) imported for language "${language}" and added to your page.`,
+      );
+    } catch {
+      setMessage('Could not import Movesbook MUB template.');
+    }
+  };
+
+  const reorderButtons = async (orderedIds: string[]) => {
+    if (!page) return;
+    const previous = page;
+    setPage({
+      ...page,
+      buttons: orderedIds
+        .map((id) => page.buttons.find((b) => b.id === id))
+        .filter((b): b is MubButtonDto => Boolean(b)),
+    });
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/mub/buttons?${queryString}&lang=${encodeURIComponent(language)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ orderedIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'reorder_failed');
+      if (data.page) setPage(data.page);
+    } catch {
+      setPage(previous);
+      setMessage('Could not reorder buttons.');
+    }
+  };
+
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || !page || active.id === over.id) return;
+    const ids = page.buttons.map((b) => b.id);
+    const oldIndex = ids.indexOf(String(active.id));
+    const newIndex = ids.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    void reorderButtons(arrayMove(ids, oldIndex, newIndex));
+  };
+
+  const runProtectedAction = async () => {
+    if (!confirmAction) return;
+    setConfirmSaving(true);
+    setConfirmError(null);
+    try {
+      await postAction({ action: confirmAction, password: confirmPassword });
+      setMessage(
+        confirmAction === 'reset'
+          ? 'All buttons on this page were removed.'
+          : 'Imported (default) buttons were removed.',
+      );
+      setConfirmAction(null);
+      setConfirmPassword('');
+    } catch (err) {
+      setConfirmError(err instanceof Error ? err.message : 'Action failed.');
+    } finally {
+      setConfirmSaving(false);
+    }
   };
 
   const saveBackground = async () => {
@@ -300,7 +387,7 @@ export default function MubPageClient({
       <div className="mx-auto max-w-md rounded-lg border border-gray-300 bg-white p-6 shadow-lg">
         <h2 className="mb-4 text-lg font-semibold text-gray-900">Enter admin password</h2>
         <p className="mb-4 text-sm text-gray-600">
-          Super Admin password opens staff templates. Club Admin password opens your MUB settings.
+          Super Admin password opens staff templates. Club Admin password (or your personal password) unlocks MUB settings.
         </p>
         <input
           type="password"
@@ -427,7 +514,11 @@ export default function MubPageClient({
                   </button>
                   <button
                     type="button"
-                    onClick={() => void postAction({ action: 'remove_default' })}
+                    onClick={() => {
+                      setConfirmError(null);
+                      setConfirmPassword('');
+                      setConfirmAction('remove_default');
+                    }}
                     className="rounded bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white"
                   >
                     Remove MUB default
@@ -437,9 +528,9 @@ export default function MubPageClient({
               <button
                 type="button"
                 onClick={() => {
-                  if (window.confirm('Reset this page? All buttons in this category will be removed.')) {
-                    void postAction({ action: 'reset' });
-                  }
+                  setConfirmError(null);
+                  setConfirmPassword('');
+                  setConfirmAction('reset');
                 }}
                 className="rounded bg-gray-900 px-4 py-1.5 text-sm font-semibold text-white hover:bg-gray-800"
               >
@@ -523,23 +614,122 @@ export default function MubPageClient({
                 <MubButtonLink key={btn.id} button={btn} compact />
               ))}
             </div>
+          ) : showCrud ? (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+              <SortableContext items={page.buttons.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-2">
+                  {page.buttons.map((btn) => (
+                    <SortableMubButtonRow
+                      key={btn.id}
+                      button={btn}
+                      onEdit={() => openEdit(btn)}
+                      onDelete={() => void deleteButton(btn.id)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           ) : (
             <div className="space-y-2">
               {page.buttons.map((btn) => (
                 <div key={btn.id} className="flex items-stretch gap-2 rounded border border-gray-300/80 bg-white/40 p-2">
-                  {showCrud ? <GripVertical className="mt-2 h-4 w-4 shrink-0 text-gray-500" /> : null}
                   <MubButtonLink button={btn} />
-                  {showCrud ? (
-                    <div className="flex shrink-0 flex-col gap-1">
-                      <button type="button" onClick={() => openEdit(btn)} className="rounded bg-gray-500 px-3 py-1 text-xs text-white">Edit</button>
-                      <button type="button" onClick={() => void deleteButton(btn.id)} className="rounded bg-amber-400 px-3 py-1 text-xs text-gray-900">Delete</button>
-                    </div>
-                  ) : null}
                 </div>
               ))}
             </div>
           )}
         </div>
+      </div>
+
+      {confirmAction ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded border border-gray-400 bg-white p-5 shadow-xl">
+            <h3 className="mb-2 text-base font-semibold text-gray-900">
+              {confirmAction === 'reset' ? 'Reset page' : 'Remove MUB default'}
+            </h3>
+            <p className="mb-3 text-sm text-gray-600">
+              {confirmAction === 'reset'
+                ? 'This removes ALL buttons on this category page (yours and imported). Enter your personal password to continue.'
+                : 'This removes only buttons imported from Movesbook MUB. Your manually created buttons stay. Enter your personal password to continue.'}
+            </p>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="mb-2 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              placeholder="Personal password"
+              autoFocus
+            />
+            {confirmError ? <p className="mb-2 text-sm text-red-600">{confirmError}</p> : null}
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmAction(null);
+                  setConfirmPassword('');
+                  setConfirmError(null);
+                }}
+                className="rounded border border-gray-400 px-4 py-1.5 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={confirmSaving || !confirmPassword.trim()}
+                onClick={() => void runProtectedAction()}
+                className="rounded bg-red-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50"
+              >
+                {confirmSaving ? 'Working…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SortableMubButtonRow({
+  button,
+  onEdit,
+  onDelete,
+}: {
+  button: MubButtonDto;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: button.id,
+  });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-stretch gap-2 rounded border border-gray-300/80 bg-white/40 p-2"
+    >
+      <button
+        type="button"
+        className="mt-2 shrink-0 cursor-grab text-gray-500 active:cursor-grabbing"
+        aria-label="Drag to reorder"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <MubButtonLink button={button} />
+      <div className="flex shrink-0 flex-col gap-1">
+        <button type="button" onClick={onEdit} className="rounded bg-gray-500 px-3 py-1 text-xs text-white">
+          Edit
+        </button>
+        <button type="button" onClick={onDelete} className="rounded bg-amber-400 px-3 py-1 text-xs text-gray-900">
+          Delete
+        </button>
       </div>
     </div>
   );
@@ -547,7 +737,6 @@ export default function MubPageClient({
 
 function MubButtonLink({ button, compact }: { button: MubButtonDto; compact?: boolean }) {
   const href = button.urlToOpen || '#';
-  const target = button.pageToOpen === 'new_tab' ? '_blank' : undefined;
   const inner = (
     <MubButtonPreview
       button={{
@@ -562,8 +751,33 @@ function MubButtonLink({ button, compact }: { button: MubButtonDto; compact?: bo
     />
   );
   if (!button.urlToOpen) return inner;
+
+  if (button.pageToOpen === 'popup') {
+    return (
+      <a
+        href={href}
+        className="block min-w-0"
+        onClick={(e) => {
+          e.preventDefault();
+          window.open(href, '_blank', 'noopener,noreferrer,width=1024,height=768');
+        }}
+      >
+        {inner}
+      </a>
+    );
+  }
+
+  if (button.pageToOpen === 'new_tab') {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="block min-w-0">
+        {inner}
+      </a>
+    );
+  }
+
+  // same_label — open in the central frame of the same tab
   return (
-    <a href={href} target={target} rel={target ? 'noopener noreferrer' : undefined} className="block min-w-0">
+    <a href={href} className="block min-w-0">
       {inner}
     </a>
   );

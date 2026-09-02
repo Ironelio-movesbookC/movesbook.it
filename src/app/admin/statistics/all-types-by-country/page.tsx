@@ -6,10 +6,7 @@ import { StatisticsPieBlock } from '@/components/admin/statistics/StatisticsChar
 import VersionDistributionDrilldown from '@/components/admin/statistics/VersionDistributionDrilldown';
 import { useAdminStatistics } from '@/components/admin/statistics/useAdminStatistics';
 import { aggregateVersionsForScope } from '@/lib/admin/statisticsDrilldown';
-import {
-  STATS_KIND_COLORS,
-  type StatsUserKind,
-} from '@/lib/admin/statisticsKinds';
+import type { StatsUserKind } from '@/lib/admin/statisticsKinds';
 
 import type { StatsSlice } from '@/lib/admin/buildStatistics';
 
@@ -28,7 +25,10 @@ export default function AllTypesByCountryPage() {
   });
   const [selection, setSelection] = useState<Selection | null>(null);
 
-  const blocks = data?.allTypesByCountry ?? [];
+  const blocks = useMemo(
+    () => data?.allTypesByCountry ?? [],
+    [data?.allTypesByCountry],
+  );
 
   const namedByKind = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -95,7 +95,7 @@ export default function AllTypesByCountryPage() {
                 }`}
                 slices={block.countries}
                 height={240}
-                uniformColor={STATS_KIND_COLORS[block.kind]}
+                uniformKind={block.kind}
                 onSelect={makeHandler(block.kind, block.label)}
               />
             );

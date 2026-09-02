@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -253,7 +254,7 @@ function SearchResultCard({
           <div className="flex gap-2">
             <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded border border-zinc-200 bg-zinc-100">
               {row.image ? (
-                <img src={row.image} alt="" className="h-full w-full object-cover" />
+                <Image src={row.image} alt="" className="h-full w-full object-cover" width={56} height={80} unoptimized />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-zinc-400">
                   —

@@ -8,11 +8,15 @@ export default function LegacyDeadlineDetailPage() {
   const params = useParams();
   const router = useRouter();
   const segments = params?.segments;
-  const segmentList = Array.isArray(segments) ? segments : segments ? [String(segments)] : [];
 
   const [error, setError] = useState('');
 
   useEffect(() => {
+    const segmentList = Array.isArray(segments)
+      ? segments
+      : segments
+        ? [String(segments)]
+        : [];
     if (segmentList.length === 0) {
       router.replace('/clubs/dead_line');
       return;
@@ -24,7 +28,7 @@ export default function LegacyDeadlineDetailPage() {
     )
       .then((res) => router.replace(`/clubs/payment_detail/${res.recordId}`))
       .catch((e) => setError(e instanceof Error ? e.message : 'Unable to open payment form'));
-  }, [router, segmentList]);
+  }, [router, segments]);
 
   if (error) {
     return (

@@ -1,18 +1,31 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Pencil, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import ArchiveListToolbar from '@/components/procedures/ArchiveListToolbar';
+import { useArchiveListFilters } from '@/components/procedures/useArchiveListFilters';
+import ArchiveScopeRadios, { useArchiveScope } from '@/components/procedures/ArchiveScopeRadios';
+import { archiveScopeQuery } from '@/lib/club/archives/archiveScope';
+import {
+  DeleteRowButton,
+  EditRowButton,
+  usePasswordGate,
+} from '@/components/procedures/ArchiveRowActions';
 import {
   SERVICE_SALE_PAGE_SIZE,
   serviceSaleDeadlineColumns,
 } from '@/components/procedures/configs/serviceSale';
+import EditRecordModal from '@/components/club/archives/EditRecordModal';
 import type { ProcedureTab } from '@/components/procedures/types';
 import { Member } from '@/types/clubTable';
-import { deleteDeadline, fetchDeadlines } from '@/lib/club/serviceSaleClient';
+import {
+  deleteDeadline,
+  fetchDeadlines,
+  type ServiceSalePurchase,
+} from '@/lib/club/serviceSaleClient';
 
 function sameMemberAndOpenRest(rows: Member[]): boolean {
   if (rows.length === 0) return false;
@@ -23,9 +36,8 @@ function sameMemberAndOpenRest(rows: Member[]): boolean {
 
 function DeadLinePageInner() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const memberId = searchParams?.get('memberId');
-  const [scope, setScope] = useState<'member' | 'all'>(memberId ? 'member' : 'all');
+  const scope = useArchiveScope();
+  const filters = useArchiveListFilters();
   const [data, setData] = useState<Member[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
@@ -33,8 +45,11 @@ function DeadLinePageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(SERVICE_SALE_PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [displayAlsoPaid, setDisplayAlsoPaid] = useState(false);
+  const [editTarget, setEditTarget] = useState<ServiceSalePurchase | null>(null);
+  const { request: requestPassword, modal: passwordModal } = usePasswordGate();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,9 +57,10 @@ function DeadLinePageInner() {
     try {
       const res = await fetchDeadlines({
         page,
-        pageSize: SERVICE_SALE_PAGE_SIZE,
+        pageSize,
         includePaid: displayAlsoPaid,
-        memberId: scope === 'member' && memberId ? memberId : undefined,
+        ...scope.filters,
+        ...filters.applied,
       });
       setTotal(res.total);
       setData(
@@ -57,7 +73,7 @@ function DeadLinePageInner() {
             service: p.serviceName,
             course: p.sectorName,
             insertDate: p.recordDate ?? undefined,
-            expirationDate: p.expireDate ?? p.paydate ?? undefined,
+            expirationDate: p.expireDate ?? undefined,
             value: p.value,
             paid: p.pay,
             rest: p.rest,
@@ -66,36 +82,21 @@ function DeadLinePageInner() {
             dateEnd: p.lastPaymentDate ?? undefined,
           };
 
-          row.edit = (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push(`/clubs/payment_detail/${p.id}`);
-              }}
-              className="text-blue-600 hover:text-blue-800"
-            >
-              <Pencil className="w-4 h-4" />
-            </button>
-          );
+          row.edit = <EditRowButton onClick={() => requestPassword(() => setEditTarget(p))} />;
 
           row.delete = (
-            <button
-              type="button"
-              onClick={async (e) => {
-                e.stopPropagation();
-                if (!confirm('Delete this deadline record?')) return;
-                try {
-                  await deleteDeadline(p.id);
-                  load();
-                } catch (err) {
-                  alert(err instanceof Error ? err.message : 'Delete failed');
-                }
-              }}
-              className="text-red-500 hover:text-red-700"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            <DeleteRowButton
+              onClick={() =>
+                requestPassword(async () => {
+                  try {
+                    await deleteDeadline(p.id);
+                    load();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Delete failed');
+                  }
+                })
+              }
+            />
           );
 
           return row;
@@ -107,11 +108,15 @@ function DeadLinePageInner() {
     } finally {
       setLoading(false);
     }
-  }, [page, displayAlsoPaid, scope, memberId, router]);
+  }, [page, pageSize, displayAlsoPaid, scope.filters, filters.applied, requestPassword]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filters.applied]);
 
   const checkedRows = useMemo(
     () => data.filter((r) => r.id && checkedIds.has(r.id)),
@@ -161,14 +166,38 @@ function DeadLinePageInner() {
     router.push(`/clubs/payment_detail/${primary}?ids=${ids.join(',')}`);
   }
 
-  const memberQuery = memberId ? `?memberId=${encodeURIComponent(memberId)}` : '';
+  function handleDeleteSelected() {
+    const ids = Array.from(checkedIds);
+    if (ids.length === 0) return;
+    requestPassword(async () => {
+      try {
+        for (const id of ids) {
+          await deleteDeadline(id);
+        }
+        setCheckedIds(new Set());
+        load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Delete failed');
+      }
+    });
+  }
+
+  // A row clicked here scopes the sibling archives; otherwise keep the scope we arrived with.
+  const selectedMemberId = useMemo(
+    () => (selectedId ? data.find((r) => r.id === selectedId)?.userId ?? null : null),
+    [data, selectedId]
+  );
+  const outgoingQuery = archiveScopeQuery(
+    selectedId ?? scope.recordId,
+    selectedMemberId ?? scope.memberId
+  );
 
   const tabs: ProcedureTab[] = [
-    { id: 'historical', label: 'Historical', href: `/clubs/archive_service_list${memberQuery}` },
+    { id: 'historical', label: 'Historical', href: `/clubs/archive_service_list${outgoingQuery}` },
     {
       id: 'deadline',
       label: 'Archive of Deadlines',
-      href: `/clubs/dead_line${memberQuery}`,
+      href: `/clubs/dead_line${outgoingQuery}`,
     },
     {
       id: 'pay-selected',
@@ -176,14 +205,8 @@ function DeadLinePageInner() {
       onClick: handlePaySelected,
       disabled: !canPaySelected,
     },
-    {
-      id: 'payments',
-      label: 'Payments',
-      href: selectedId
-        ? `/clubs/user_payment_list/${selectedId}`
-        : `/clubs/service_payments${memberQuery}`,
-    },
-    { id: 'receipts', label: 'Receipts', href: `/clubs/service_receipts${memberQuery}` },
+    { id: 'payments', label: 'Payments', href: `/clubs/service_payments${outgoingQuery}` },
+    { id: 'receipts', label: 'Receipts', href: `/clubs/service_receipts${outgoingQuery}` },
   ];
 
   return (
@@ -193,34 +216,7 @@ function DeadLinePageInner() {
       tabs={tabs}
       tabsTrailing={
         <div className="flex items-center gap-4">
-          {memberId && (
-            <div className="flex items-center gap-4 text-sm text-gray-700">
-              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="radio"
-                  name="deadlinesScope"
-                  checked={scope === 'member'}
-                  onChange={() => {
-                    setScope('member');
-                    setPage(1);
-                  }}
-                />
-                Member selected
-              </label>
-              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="radio"
-                  name="deadlinesScope"
-                  checked={scope === 'all'}
-                  onChange={() => {
-                    setScope('all');
-                    setPage(1);
-                  }}
-                />
-                All members
-              </label>
-            </div>
-          )}
+          <ArchiveScopeRadios state={scope} name="deadlinesScope" onChange={() => setPage(1)} />
           <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -240,18 +236,37 @@ function DeadLinePageInner() {
       error={error || selectionError}
       footerHint={
         displayAlsoPaid
-          ? 'SERVICES only — showing open and fully paid deadlines. Double-click a row with Rest > 0 to record a payment.'
-          : 'SERVICES only — shows service purchases with remaining balance. Check “Display also paid” to include Rest = 0. Double-click to record a payment.'
-      }
-      pagination={
-        <ProcedurePagination
-          page={page}
-          pageSize={SERVICE_SALE_PAGE_SIZE}
-          total={total}
-          onPageChange={setPage}
-        />
+          ? 'SERVICES only — showing open and fully paid deadlines. Double-click a row with Rest > 0 to record a payment. Edit and Delete ask for your password.'
+          : 'SERVICES only — shows service purchases with remaining balance. Check “Display also paid” to include Rest = 0. Double-click to record a payment. Edit and Delete ask for your password.'
       }
     >
+      <ArchiveListToolbar
+        title="Filter · Archive of Deadlines (Services)"
+        values={filters.draft}
+        onChange={filters.onChange}
+        onApply={() => {
+          if (filters.apply()) setPage(1);
+        }}
+        onClear={() => {
+          filters.clear();
+          setPage(1);
+        }}
+        dateRangeError={filters.dateRangeError}
+        selectedCount={checkedIds.size}
+        onDeleteSelected={handleDeleteSelected}
+        pagination={
+          <ProcedurePagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => {
+              setPageSize(n);
+              setPage(1);
+            }}
+          />
+        }
+      />
       <ProcedureArchiveTable
         columns={serviceSaleDeadlineColumns}
         rows={data}
@@ -271,6 +286,24 @@ function DeadLinePageInner() {
           router.push(`/clubs/payment_detail/${row.id}`);
         }}
       />
+
+      {passwordModal}
+
+      {editTarget && (
+        <EditRecordModal
+          isOpen
+          onClose={() => setEditTarget(null)}
+          onSaved={() => load()}
+          record={{
+            id: editTarget.id,
+            recordDate: editTarget.recordDate,
+            paydate: editTarget.paydate,
+            expireDate: editTarget.expireDate,
+            notes: editTarget.notes,
+            operatorId: editTarget.operatorId,
+          }}
+        />
+      )}
     </ProcedureArchiveShell>
   );
 }

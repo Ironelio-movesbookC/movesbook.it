@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import {
@@ -727,10 +728,13 @@ export default function ClubTablesSpecialServicesPage() {
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <div className="flex h-28 w-full items-center justify-center rounded-md border border-dashed border-gray-300 bg-white sm:w-40">
                     {draft.imagePreview || (draft.currentImageUrl && !draft.removeImage) ? (
-                      <img
+                      <Image
                         src={draft.imagePreview || draft.currentImageUrl || ''}
                         alt=""
                         className="h-full w-full rounded-md object-cover"
+                        width={200}
+                        height={120}
+                        unoptimized
                       />
                     ) : (
                       <span className="text-xs font-medium text-gray-400">No image</span>
@@ -838,10 +842,13 @@ function ServiceTableCells({
       </td>
       <td className="px-4 py-4">
         {item.imageUrl ? (
-          <img
+          <Image
             src={item.imageUrl}
             alt=""
             className="h-14 w-20 rounded-md border border-gray-200 bg-gray-50 object-cover"
+            width={80}
+            height={56}
+            unoptimized
           />
         ) : (
           <div className="flex h-14 w-20 items-center justify-center rounded-md border border-dashed border-gray-300 bg-gray-50 text-[11px] font-medium text-gray-400">

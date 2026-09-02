@@ -60,7 +60,7 @@ function parseSponsors(raw: unknown): {
       return { ok: false, error: `Sponsor ${i + 1}: a valid http(s) link is required` };
     }
     if (!isSponsorSize(item?.size)) {
-      return { ok: false, error: `Sponsor ${i + 1}: size must be single or double` };
+      return { ok: false, error: `Sponsor ${i + 1}: size must be single, double, triple, or quadruple` };
     }
     const linkTarget = isSponsorLinkTarget(item?.linkTarget) ? item.linkTarget : 'tab';
     const id = typeof item?.id === 'string' && item.id.trim() ? item.id.trim() : null;
@@ -106,6 +106,7 @@ export async function PUT(request: NextRequest) {
     const startRow = clampStartRow(body.startRow);
     const intervalRows = clampIntervalRows(body.intervalRows);
     const delayMs = clampDelayMs(body.delayMs ?? (Number(body.delaySeconds) || 0) * 1000);
+    const enabled = body.enabled !== false && body.enabled !== 0 && body.enabled !== '0';
 
     const missingImage = parsed.sponsors.filter((s) => !s.image);
     if (missingImage.length > 0) {
@@ -163,7 +164,7 @@ export async function PUT(request: NextRequest) {
     await prisma.$transaction(async (tx) => {
       await tx.ogpNewsSponsorSettings.update({
         where: { id: OGP_SPONSOR_SETTINGS_ID },
-        data: { startRow, intervalRows, delayMs },
+        data: { startRow, intervalRows, delayMs, enabled },
       });
       if (deleteIds.length > 0) {
         await tx.ogpNewsSponsor.deleteMany({ where: { id: { in: deleteIds } } });

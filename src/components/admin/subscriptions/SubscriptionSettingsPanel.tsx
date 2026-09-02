@@ -50,10 +50,10 @@ export default function SubscriptionSettingsPanel() {
     };
   }, []);
 
-  const rows = useMemo(
-    () => getSubscriptionRowsByUserType(userType),
-    [userType, rowsRevision],
-  );
+  const rows = useMemo(() => {
+    void rowsRevision; // re-read mock store when settings update events fire
+    return getSubscriptionRowsByUserType(userType);
+  }, [userType, rowsRevision]);
 
   return (
     <div className="h-full flex flex-col bg-gray-100">

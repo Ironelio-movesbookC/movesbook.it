@@ -107,6 +107,7 @@ export default function OgpSponsorsSettingsModal({
   const [startRow, setStartRow] = useState(2);
   const [intervalRows, setIntervalRows] = useState(12);
   const [delaySeconds, setDelaySeconds] = useState(5);
+  const [enabled, setEnabled] = useState(true);
   const [drafts, setDrafts] = useState<DraftSponsor[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +118,7 @@ export default function OgpSponsorsSettingsModal({
     setStartRow(clampStartRow(initial?.startRow ?? 2));
     setIntervalRows(clampIntervalRows(initial?.intervalRows ?? 12));
     setDelaySeconds(Math.round(clampDelayMs(initial?.delayMs ?? SPONSOR_DELAY_MS_DEFAULT) / 1000));
+    setEnabled(initial?.enabled !== false);
     setDrafts(toDrafts(initial?.sponsors ?? [], ogpArticles));
     setError(null);
     setSaving(false);
@@ -203,6 +205,7 @@ export default function OgpSponsorsSettingsModal({
           startRow: clampStartRow(startRow),
           intervalRows: clampIntervalRows(intervalRows),
           delayMs: clampDelayMs(delaySeconds * 1000),
+          enabled,
           sponsors,
         }),
       });
@@ -231,18 +234,28 @@ export default function OgpSponsorsSettingsModal({
         className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center p-4 border-b border-gray-200">
+        <div className="flex justify-between items-center p-4 border-b border-gray-200 gap-3">
           <h2 id="ogp-sponsors-title" className="text-lg font-semibold text-gray-900">
             Sponsored News
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-lg text-gray-500 hover:bg-gray-100"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+              />
+              Display all sponsors
+            </label>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 rounded-lg text-gray-500 hover:bg-gray-100"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
@@ -423,7 +436,7 @@ export default function OgpSponsorsSettingsModal({
                     <div className="flex-1 min-w-[12rem] space-y-2">
                       <fieldset className="text-sm">
                         <legend className="font-medium text-gray-700 mb-1">Size of the picture</legend>
-                        <div className="flex items-center gap-4">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                           <label className="inline-flex items-center gap-1.5 cursor-pointer">
                             <input
                               type="radio"
@@ -441,6 +454,24 @@ export default function OgpSponsorsSettingsModal({
                               onChange={() => updateDraft(draft.clientKey, { size: 'double' })}
                             />
                             Double size
+                          </label>
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`size-${draft.clientKey}`}
+                              checked={draft.size === 'triple'}
+                              onChange={() => updateDraft(draft.clientKey, { size: 'triple' })}
+                            />
+                            Triple size
+                          </label>
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`size-${draft.clientKey}`}
+                              checked={draft.size === 'quadruple'}
+                              onChange={() => updateDraft(draft.clientKey, { size: 'quadruple' })}
+                            />
+                            Quadruple size
                           </label>
                         </div>
                       </fieldset>

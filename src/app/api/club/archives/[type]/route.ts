@@ -9,6 +9,7 @@ import {
   listClubAffiliationsArchive,
   listClubMembersArchive,
   listClubOperatorsArchive,
+  listClubParentsArchive,
   listClubSubscriptionsArchive,
   listEventsArchive,
   listInsertCredits,
@@ -27,7 +28,9 @@ export const dynamic = 'force-dynamic';
 
 type RouteContext = { params: { type: string } };
 
-function parseArchiveParams(request: NextRequest): ArchiveQueryParams & { includePaid?: boolean } {
+function parseArchiveParams(
+  request: NextRequest
+): ArchiveQueryParams & { includePaid?: boolean; expandDeadlines?: boolean } {
   const sp = request.nextUrl.searchParams;
   return {
     page: Number(sp.get('page') ?? 1),
@@ -37,7 +40,11 @@ function parseArchiveParams(request: NextRequest): ArchiveQueryParams & { includ
     toDate: sp.get('toDate') ?? undefined,
     orderBy: (sp.get('orderBy') as 'recent' | 'old') ?? undefined,
     memberId: sp.get('memberId') ?? undefined,
+    recordId: sp.get('recordId') ?? undefined,
+    sport: sp.get('sport') ?? undefined,
+    groupTrained: sp.get('groupTrained') ?? undefined,
     includePaid: sp.get('includePaid') === '1' || sp.get('includePaid') === 'true',
+    expandDeadlines: sp.get('expandDeadlines') === '1' || sp.get('expandDeadlines') === 'true',
   };
 }
 
@@ -53,6 +60,9 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     switch (params.type) {
       case 'members':
         result = await listClubMembersArchive(auth.ctx, archiveParams);
+        break;
+      case 'parents':
+        result = await listClubParentsArchive(auth.ctx, archiveParams);
         break;
       case 'operators':
         result = await listClubOperatorsArchive(auth.ctx, archiveParams);

@@ -12,7 +12,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: session.error }, { status: session.status });
   }
 
-  let body: { receiverEmail?: string; promocodeId?: number | string };
+  let body: {
+    receiverEmail?: string;
+    promocodeId?: number | string;
+    introMessage?: string;
+    inviteMode?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -41,6 +46,8 @@ export async function POST(request: NextRequest) {
       senderUsername: session.user.username,
       receiverEmail,
       promocodeId,
+      introMessage: body.introMessage,
+      inviteMode: body.inviteMode,
       origin: resolvePublicOrigin(request),
       sendEmail: async ({ to, subject, html, replyTo }) => {
         await sendIonosEmail({

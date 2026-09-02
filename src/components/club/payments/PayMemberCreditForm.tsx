@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
@@ -35,7 +36,6 @@ export default function PayMemberCreditForm() {
   const router = useRouter();
   const def = getProcedureDefinition(PROCEDURE_TYPE_CODES.MEMBER_CREDIT)!;
   const client = useMemo(() => createProcedureClient(PROCEDURE_TYPE_CODES.MEMBER_CREDIT), []);
-  const todayYmd = new Date().toISOString().slice(0, 10);
 
   const [options, setOptions] = useState<MemberCreditFormOptions | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,7 +90,6 @@ export default function PayMemberCreditForm() {
     if (!memberId) return setError('Please select a member.');
     if (total <= 0) return setError('Please enter amount.');
     if (!creditDate) return setError('Please enter date.');
-    if (creditDate < todayYmd) return setError('Expiration date cannot be in the past.');
     if (!causal.trim()) return setError('Please enter causal.');
 
     setSaving(true);
@@ -98,8 +97,7 @@ export default function PayMemberCreditForm() {
       const result = await client.createRecord({
         memberId,
         totalAmount: total,
-        // `recordDate` is the creation/business date; `dueDate` is the credit expiration date.
-        recordDate: todayYmd,
+        recordDate: creditDate,
         dueDate: creditDate,
         causal: causal.trim(),
         operatorId: operatorId || null,
@@ -128,24 +126,8 @@ export default function PayMemberCreditForm() {
   return (
     <form onSubmit={handleSubmit} className="procedure-form text-gray-900">
       <div className="bg-[#f0f0f0] px-4 py-2 text-[14px] font-bold border-b border-gray-300">
-        <button
-          type="button"
-          className={`mr-4 px-3 py-1 rounded-t ${
-            typologyOfDeadline === '6' ? 'bg-black text-white' : 'text-gray-600 hover:text-gray-800'
-          }`}
-          onClick={() => setTypologyOfDeadline('6')}
-        >
-          Member
-        </button>
-        <button
-          type="button"
-          className={`px-3 py-1 rounded-t ${
-            typologyOfDeadline === '8' ? 'bg-black text-white' : 'text-gray-600 hover:text-gray-800'
-          }`}
-          onClick={() => setTypologyOfDeadline('8')}
-        >
-          Employee
-        </button>
+        <span className="mr-4 px-3 py-1 bg-black text-white rounded-t cursor-pointer">Member</span>
+        <span className="px-3 py-1 text-gray-600 cursor-pointer">Employee</span>
       </div>
 
       {error && (
@@ -176,10 +158,13 @@ export default function PayMemberCreditForm() {
           <div className="flex w-[120px] shrink-0 flex-col items-center">
             <div className="flex h-[72px] w-[72px] items-center justify-center overflow-hidden border border-gray-400 bg-white">
               {memberImageUrl ? (
-                <img
+                <Image
                   src={memberImageUrl}
                   alt={selectedMember?.name || 'Member'}
+                  width={72}
+                  height={72}
                   className="h-full w-full object-cover"
+                  unoptimized
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).style.display = 'none';
                     const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
@@ -227,8 +212,6 @@ export default function PayMemberCreditForm() {
             className={fieldInputClass}
             value={creditDate}
             onChange={(e) => setCreditDate(e.target.value)}
-            min={todayYmd}
-            style={{ backgroundColor: '#d3f07b' }} // Light green = expiration date
           />
         </FieldRow>
 

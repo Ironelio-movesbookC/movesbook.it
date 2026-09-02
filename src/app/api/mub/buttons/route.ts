@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prismaConnect } from '@/lib/prisma';
-import { deleteMubButton, saveMubButton } from '@/lib/mub/mubService';
+import { deleteMubButton, reorderMubButtons, saveMubButton } from '@/lib/mub/mubService';
 import type { SaveMubButtonInput } from '@/lib/mub/types';
 import {
   getMubTokenUserId,
@@ -20,7 +20,15 @@ export async function POST(request: NextRequest) {
     await prismaConnect();
     const parsed = parseMubPageRequest(request);
     const query = resolveMubPageQuery(parsed, userId);
-    const body = (await request.json()) as { button?: SaveMubButtonInput };
+    const body = (await request.json()) as {
+      button?: SaveMubButtonInput;
+      orderedIds?: string[];
+    };
+
+    if (Array.isArray(body.orderedIds)) {
+      const page = await reorderMubButtons(query, body.orderedIds, parsed.lang);
+      return NextResponse.json({ page });
+    }
 
     if (!body.button) {
       return NextResponse.json({ error: 'Button payload required' }, { status: 400 });

@@ -1,10 +1,17 @@
 'use client';
+import Image from 'next/image';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { UserPlus } from 'lucide-react';
-import ClubArchivePage from '@/components/club/archives/ClubArchivePage';
+import { useRouter } from 'next/navigation';
+import { CalendarClock, Pencil, Trash2, User, UserPlus } from 'lucide-react';
+import ClubMemberArchivePage, { memberTypeBadge } from '@/components/club/members/ClubMemberArchivePage';
 import AddMemberModal from '@/components/AddMemberModal';
 import ClubMemberArchiveHeader from './components/status';
+import MemberArchiveTopNav, {
+  type MemberArchiveSection,
+} from '@/components/club/memberArchive/MemberArchiveTopNav';
+import ArchiveEntityProfilePanel from '@/components/club/memberArchive/ArchiveEntityProfilePanel';
+import AthletesParentsArchive from '@/components/club/memberArchive/AthletesParentsArchive';
 import { clubApiFetch, getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesClient';
 import {
   computeClubMemberCapacity,
@@ -17,85 +24,35 @@ import {
 import { SUBSCRIPTION_SETTINGS_UPDATED_EVENT } from '@/lib/admin/subscriptionSettingsMock';
 import { useClubWorkspace } from '@/contexts/ClubWorkspaceContext';
 import type { Column, Member } from '@/types/clubTable';
-
-function memberTypeBadge(value: unknown) {
-  const label = String(value ?? 'Standard').trim() || 'Standard';
-  const lower = label.toLowerCase();
-  const className =
-    lower.includes('premium') || lower.includes('gold')
-      ? 'bg-violet-100 text-violet-800'
-      : lower.includes('vip')
-        ? 'bg-amber-100 text-amber-800'
-        : 'bg-gray-100 text-gray-700';
-  return (
-    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${className}`}>
-      {label}
-    </span>
-  );
-}
-
-const columns: Column[] = [
-  {
-    key: 'checked',
-    header: (
-      <span className="inline-flex w-4 justify-center" aria-hidden>
-        □
-      </span>
-    ),
-    render: () => (
-      <input type="checkbox" className="h-4 w-4 rounded border-gray-300" aria-label="Select member" />
-    ),
-  },
-  {
-    key: 'image',
-    header: 'Image',
-    render: (value) =>
-      value ? (
-        <img
-          src={String(value)}
-          alt=""
-          className="mx-auto h-10 w-10 rounded-full object-cover"
-        />
-      ) : (
-        <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-xs text-gray-400">
-          —
-        </span>
-      ),
-  },
-  { key: 'surname', header: 'Surname' },
-  { key: 'name', header: 'Name' },
-  { key: 'gender', header: 'Gender' },
-  { key: 'dateOfBirth', header: 'Date of Birth' },
-  { key: 'operator', header: 'Operator' },
-  {
-    key: 'memberType',
-    header: 'Member Type',
-    render: (value) => memberTypeBadge(value),
-  },
-  {
-    key: 'localCity',
-    header: 'Local City',
-    render: (value, row) => String(value || row.Localcity || '-'),
-  },
-  { key: 'phone', header: 'Phone' },
-  {
-    key: 'insertDate',
-    header: 'Insert Date',
-    render: (_value, row: Member) =>
-      String(row.insertDateDisplay || row.insertDate || '-'),
-  },
-];
+import { staffRowTextClass } from '@/lib/club/clubStaff.constants';
 
 type MemberCapacityResponse = {
   subscriptionSettingId: number | null;
   capacity: ClubMemberCapacityStats;
 };
 
+function formatDisplayDate(value: unknown) {
+  if (!value) return '-';
+  const raw = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      return `${dd}/${mm}/${d.getFullYear()}`;
+    }
+  }
+  return raw;
+}
+
 export default function MemberListPage() {
+  const router = useRouter();
   const { selectedClubId: contextClubId } = useClubWorkspace();
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [addError, setAddError] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [archiveSection, setArchiveSection] = useState<MemberArchiveSection>('athletes');
   const [capacityPayload, setCapacityPayload] = useState<MemberCapacityResponse | null>(null);
   const [settingsRevision, setSettingsRevision] = useState(0);
 
@@ -104,6 +61,172 @@ export default function MemberListPage() {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem('selectedClub');
   }, [contextClubId]);
+
+  const openMemberProfile = useCallback(
+    (member: Member, mode: 'view' | 'edit') => {
+      const id = member.memberId || member.id;
+      if (!id) return;
+      const q = new URLSearchParams();
+      if (clubId) q.set('clubId', clubId);
+      q.set('mode', mode);
+      router.push(`/clubMembers/memberProfile/${encodeURIComponent(id)}?${q.toString()}`);
+    },
+    [clubId, router],
+  );
+
+  const handleDeleteMember = useCallback(
+    async (member: Member) => {
+      const id = member.memberId || member.id;
+      const resolvedClubId =
+        clubId ||
+        (typeof window !== 'undefined' ? localStorage.getItem('selectedClub') : null);
+      if (!id || !resolvedClubId) {
+        window.alert('Select a club under My clubs before managing members.');
+        return;
+      }
+      const label =
+        [member.surname, member.name].filter(Boolean).join(' ') || member.username || id;
+      if (
+        !window.confirm(
+          `Remove ${label} from this club? Their Movesbook account will not be deleted.`,
+        )
+      ) {
+        return;
+      }
+      setBusyId(id);
+      setAddError('');
+      try {
+        const res = await fetch(
+          withSelectedClubId(
+            `/api/clubs/${encodeURIComponent(resolvedClubId)}/members/${encodeURIComponent(id)}`,
+          ),
+          { method: 'DELETE', headers: getAuthHeaders() },
+        );
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            typeof payload.error === 'string' ? payload.error : 'Failed to remove member',
+          );
+        }
+        setRefreshKey((k) => k + 1);
+      } catch (e: unknown) {
+        setAddError(e instanceof Error ? e.message : 'Failed to remove member');
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [clubId],
+  );
+
+  const columns: Column[] = useMemo(
+    () => [
+      {
+        key: 'image',
+        header: 'Image',
+        render: (value) =>
+          value ? (
+            <Image
+              src={String(value)}
+              alt=""
+              className="mx-auto h-10 w-10 rounded-full object-cover"
+              width={40}
+              height={40}
+              unoptimized
+            />
+          ) : (
+            <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-xs text-gray-400">
+              —
+            </span>
+          ),
+      },
+      { key: 'surname', header: 'Surname' },
+      { key: 'name', header: 'Name' },
+      { key: 'gender', header: 'Gender' },
+      {
+        key: 'dateOfBirth',
+        header: 'Date of Birth',
+        render: (value, row) =>
+          String(row.dateOfBirthDisplay || formatDisplayDate(value) || '-'),
+      },
+      {
+        key: 'operator',
+        header: 'Operator',
+        render: (value, row) => {
+          const label = String(value ?? 'Member');
+          const colorClass = staffRowTextClass({
+            staffType: String(row.staffType ?? ''),
+            role: String(row.staffRole ?? ''),
+          });
+          return <span className={colorClass}>{label}</span>;
+        },
+      },
+      {
+        key: 'memberType',
+        header: 'Member Type',
+        render: (value) => memberTypeBadge(value),
+      },
+      {
+        key: 'localCity',
+        header: 'Local City',
+        render: (value, row) => String(value || row.Localcity || '-'),
+      },
+      { key: 'phone', header: 'Phone' },
+      {
+        key: 'insertDate',
+        header: 'Insert Date',
+        render: (_value, row) =>
+          String(row.insertDateDisplay || formatDisplayDate(row.insertDate) || '-'),
+      },
+      {
+        key: 'options',
+        header: 'Options',
+        render: (_value, row) => {
+          const id = row.memberId || row.id || '';
+          const busy = busyId === id;
+          return (
+            <div className="flex items-center justify-center gap-2 text-gray-600">
+              <button
+                type="button"
+                title="Open member profile"
+                disabled={busy}
+                onClick={() => openMemberProfile(row, 'view')}
+                className="rounded p-1 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-40"
+              >
+                <User className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                title="Edit member profile"
+                disabled={busy}
+                onClick={() => openMemberProfile(row, 'edit')}
+                className="rounded p-1 hover:bg-teal-50 hover:text-teal-700 disabled:opacity-40"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                title="Membership calendar (soon)"
+                disabled
+                className="rounded p-1 opacity-40"
+              >
+                <CalendarClock className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                title="Remove from club"
+                disabled={busy}
+                onClick={() => void handleDeleteMember(row)}
+                className="rounded p-1 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          );
+        },
+      },
+    ],
+    [busyId, handleDeleteMember, openMemberProfile],
+  );
 
   const loadCapacity = useCallback(async () => {
     if (!clubId) {
@@ -190,54 +313,81 @@ export default function MemberListPage() {
 
   return (
     <div className="w-full h-full flex flex-col p-4 gap-4">
-      {capacity ? (
-        <ClubMemberArchiveHeader
-          capacity={capacity}
-          onPurchaseMembers={() => {
-            window.alert('Purchase members — additional slot packs will be added to Members purchased.');
-          }}
-          onStatusAccounts={() => {
-            window.alert('Status accounts — member account status overview.');
-          }}
-        />
-      ) : null}
+      <MemberArchiveTopNav active={archiveSection} onChange={setArchiveSection} />
 
-      {!capacity && clubId ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Loading member capacity from your subscription version…
+      {archiveSection === 'athletes' ? (
+        <>
+          <ArchiveEntityProfilePanel clubId={clubId} />
+
+          {capacity ? (
+            <ClubMemberArchiveHeader
+              capacity={capacity}
+              onPurchaseMembers={() => {
+                window.alert(
+                  'Purchase members — additional slot packs will be added to Members purchased.',
+                );
+              }}
+              onStatusAccounts={() => {
+                window.alert('Status accounts — member account status overview.');
+              }}
+            />
+          ) : null}
+
+          {!capacity && clubId ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Loading member capacity from your subscription version…
+            </div>
+          ) : null}
+
+          {!clubId ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Select a club workspace to view member capacity from your subscription version.
+            </div>
+          ) : null}
+
+          {addError ? <p className="text-sm text-red-600">{addError}</p> : null}
+          <ClubMemberArchivePage
+            columns={columns}
+            refreshKey={refreshKey}
+            footerHint="Live data from club members in the database."
+            addMemberAction={
+              <button
+                type="button"
+                onClick={() => {
+                  setAddError('');
+                  setShowAddMemberModal(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded bg-white px-3 py-1.5 text-sm font-semibold text-teal-800 hover:bg-teal-50"
+              >
+                <UserPlus className="h-4 w-4" />
+                Add a member
+              </button>
+            }
+          />
+        </>
+      ) : archiveSection === 'parents' && clubId ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <AthletesParentsArchive clubId={clubId} />
         </div>
-      ) : null}
-
-      {!clubId ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Select a club workspace to view member capacity from your subscription version.
-        </div>
-      ) : null}
-
-      {addError ? (
-        <p className="text-sm text-red-600">{addError}</p>
-      ) : null}
-
-      <ClubArchivePage
-        title="Archive — Members"
-        archiveType="members"
-        columns={columns}
-        refreshKey={refreshKey}
-        footerHint="Live data from club members in the database."
-        headerAction={
-          <button
-            type="button"
-            onClick={() => {
-              setAddError('');
-              setShowAddMemberModal(true);
-            }}
-            className="inline-flex items-center gap-1.5 rounded bg-white px-3 py-1.5 text-sm font-semibold text-teal-800 hover:bg-teal-50"
+      ) : archiveSection === 'staff' ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
+          <h2 className="mb-2 text-lg font-bold text-gray-900">Staff</h2>
+          <p className="mb-3">
+            Manage Operator / Collaborator / Coadmin staff for this club.
+          </p>
+          <a
+            href="/club/staff"
+            className="inline-flex rounded bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-800"
           >
-            <UserPlus className="h-4 w-4" />
-            Add a member
-          </button>
-        }
-      />
+            Open Staff archive
+          </a>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
+          <h2 className="mb-2 text-lg font-bold text-gray-900">Settings</h2>
+          <p>Archive settings for this club/team will appear here.</p>
+        </div>
+      )}
 
       <AddMemberModal
         isOpen={showAddMemberModal}

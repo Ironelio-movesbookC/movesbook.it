@@ -22,6 +22,8 @@ export type PromocodeApplyRow = {
   promocodeValidTo?: string | null;
   flagImage?: string | null;
   receiverCountryCode?: string | null;
+  inviteMode?: string | null;
+  inviteExpiresAt?: string | null;
 };
 
 export type LegacyUserSnippet = {
@@ -63,12 +65,29 @@ export type PromocodeSettingRow = {
   created: string | null;
   inviteCount: number;
   inviteEmails: string[];
+  inviteEntries: PromocodeInviteEntry[];
   creator: LegacyUserSnippet | null;
   creatorFlagImage: string | null;
   creatorCountryCode: string | null;
   inviteFlagImage?: string | null;
   inviteCountryCode?: string | null;
   versionCount: number;
+  lastInviteDate?: string | null;
+  lastRegistrationDate?: string | null;
+  allowChildPromocodes?: boolean;
+  childPromoLimit?: number | null;
+  childPromoUntil?: string | null;
+  childVersionIds?: string | null;
+  childDurationDays?: number | null;
+  parentPromocodeId?: number | null;
+};
+
+export type PromocodeInviteEntry = {
+  email: string;
+  username: string | null;
+  registered: boolean;
+  registrationDate: string | null;
+  subscriptionName: string | null;
 };
 
 export type PromocodeSettingFormData = {
@@ -92,6 +111,12 @@ export type PromocodeSettingFormData = {
   languageId: number | null;
   email: string;
   recipient: string;
+  allowChildPromocodes?: boolean;
+  childPromoLimit?: string;
+  childPromoUntil?: string;
+  childVersionIds?: number[];
+  childDurationDays?: string;
+  parentPromocodeId?: number | null;
 };
 
 export type PromocodeListFilters = {
@@ -102,6 +127,13 @@ export type PromocodeListFilters = {
   usableBy?: string;
   versionId?: number;
   available?: 'current' | 'expired';
+  /** Movesbook staff-created vs user-created promocodes. */
+  creatorSource?: 'movesbook' | 'other';
+  senderUsername?: string;
+  secondaryUsername?: string;
+  recipientUsername?: string;
+  fromDate?: string;
+  toDate?: string;
   page?: number;
   pageSize?: number;
 };
@@ -117,4 +149,25 @@ export type PromocodeMeta = {
   subscriptions: { id: number; name: string }[];
   helpHtmlPages: { id: number; title: string }[];
   languages: { id: number; name: string }[];
+};
+
+export type PromocodeUserRow = {
+  legacyUserId: number;
+  username: string;
+  wholeName: string;
+  country: string | null;
+  countryCode: string | null;
+  flagImage: string | null;
+  userType: string;
+  version: string | null;
+  expiration: string | null;
+  firstPromocode: string | null;
+  promocodesGenerated: number;
+  creditsEarned: number;
+  creditsUsed: number;
+  creditsRemain: number;
+  lastInviteDate: string | null;
+  daysSinceLastInvite: number | null;
+  lastRegistrationDate: string | null;
+  daysSinceLastRegistration: number | null;
 };

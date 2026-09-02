@@ -10,6 +10,12 @@ export type ArchiveQueryParams = {
   orderBy?: 'recent' | 'old';
   /** Scope to a single member (e.g. "Member selected" vs "All members" toggle). */
   memberId?: string;
+  /** Scope to the single record selected in the archive we came from ("Record selected"). */
+  recordId?: string;
+  /** Filter athletes by main sport. */
+  sport?: string;
+  /** Filter athletes by group of training / team name. */
+  groupTrained?: string;
 };
 
 export type PaginatedArchive<T> = { items: T[]; total: number; page: number; pageSize: number };
@@ -56,6 +62,16 @@ function applyFilters(
       const d = String(row.insertDate ?? row.dateStart ?? row.paydate ?? '');
       return !d || d <= params.toDate!;
     });
+  }
+  if (params.sport && params.sport !== 'all') {
+    const sport = params.sport.toLowerCase();
+    result = result.filter((row) => String(row.sport ?? '').toLowerCase() === sport);
+  }
+  if (params.groupTrained && params.groupTrained !== 'all') {
+    const group = params.groupTrained.toLowerCase();
+    result = result.filter(
+      (row) => String(row.groupTrained ?? row.groupTrainedId ?? '').toLowerCase() === group,
+    );
   }
   if (params.orderBy === 'old') {
     result.reverse();

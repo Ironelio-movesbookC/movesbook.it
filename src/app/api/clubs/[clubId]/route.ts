@@ -6,6 +6,11 @@ import {
   mergeClubDescriptionForSave,
   type ClubProfileFormPayload,
 } from '@/lib/club/clubProfilePayload';
+import {
+  isTeamProfilePayload,
+  mergeTeamDescriptionForSave,
+} from '@/lib/team/teamProfilePayload';
+import type { TeamProfileFormPayload } from '@/lib/team/teamProfileTypes';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,13 +19,18 @@ function isClubProfilePatch(body: Record<string, unknown>): boolean {
     'username',
     'officialName',
     'category',
+    'sports',
     'country',
     'region',
+    'province',
     'location',
     'zipCode',
     'address',
     'geo',
     'mail',
+    'phone',
+    'website',
+    'logoUrl',
     'directAccess',
     'directRegistrationCode',
     'clubPassword',
@@ -65,7 +75,65 @@ export async function PATCH(
       );
     }
 
-    if (isClubProfilePatch(body)) {
+    if (isTeamProfilePayload(body)) {
+      const payload = body as unknown as TeamProfileFormPayload;
+      const clubUsername = String(payload.username ?? '').trim();
+      const clubDirectAccess = String(payload.directAccess ?? '').trim();
+      if (!clubUsername || !clubDirectAccess) {
+        return NextResponse.json(
+          { error: 'Username and Direct Access are required' },
+          { status: 400 },
+        );
+      }
+
+      const existingClubs = await prisma.$queryRaw<
+        { id: string; adminId: string; description: string | null }[]
+      >`
+        SELECT id, adminId, description
+        FROM clubs_new
+        WHERE description IS NOT NULL
+      `;
+      const duplicate = findClubByCompanyUsername(existingClubs, clubUsername);
+      if (duplicate && duplicate.clubId !== clubId) {
+        return NextResponse.json(
+          { error: 'This club/team username is already in use' },
+          { status: 409 },
+        );
+      }
+
+      const currentRows = await prisma.$queryRaw<
+        { description: string | null; location: string | null }[]
+      >`
+        SELECT description, location FROM clubs_new WHERE id = ${clubId} LIMIT 1
+      `;
+      const current = currentRows[0];
+      if (!current) {
+        return NextResponse.json({ error: 'Club not found' }, { status: 404 });
+      }
+
+      let clubPasswordHash: string | undefined;
+      const newPassword = String(payload.teamPassword ?? '').trim();
+      if (newPassword) {
+        clubPasswordHash = await hashClubCompanyPassword(newPassword);
+      }
+
+      const clubName =
+        String(payload.officialName ?? '').trim() || clubUsername || 'Club';
+      const location =
+        String(payload.legalSite?.location ?? '').trim() || current.location || null;
+      const description = mergeTeamDescriptionForSave(current.description, payload, {
+        clubPasswordHash,
+      });
+
+      await prisma.$executeRaw`
+        UPDATE clubs_new
+        SET name = ${clubName},
+            description = ${description},
+            location = ${location},
+            updatedAt = NOW(3)
+        WHERE id = ${clubId} AND adminId = ${userId}
+      `;
+    } else if (isClubProfilePatch(body)) {
       const payload = body as unknown as ClubProfileFormPayload;
       const clubUsername = String(payload.username ?? '').trim();
       const clubDirectAccess = String(payload.directAccess ?? '').trim();
@@ -115,13 +183,22 @@ export async function PATCH(
       const description = mergeClubDescriptionForSave(current.description, {
         username: clubUsername,
         category: String(payload.category ?? ''),
+        sports: Array.isArray(payload.sports)
+          ? payload.sports.map((s: unknown) => String(s))
+          : String(payload.category ?? '')
+            ? [String(payload.category)]
+            : [],
         country: String(payload.country ?? ''),
         region: String(payload.region ?? ''),
+        province: String(payload.province ?? ''),
         location: String(payload.location ?? ''),
         zipCode: String(payload.zipCode ?? ''),
         address: String(payload.address ?? ''),
         geo: String(payload.geo ?? ''),
         mail: String(payload.mail ?? ''),
+        phone: String(payload.phone ?? ''),
+        website: String(payload.website ?? ''),
+        logoUrl: String(payload.logoUrl ?? ''),
         directAccess: clubDirectAccess,
         officialName: clubName,
         directRegistrationCode: String(payload.directRegistrationCode ?? ''),

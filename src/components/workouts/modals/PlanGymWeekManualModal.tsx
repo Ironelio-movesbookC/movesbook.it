@@ -1914,7 +1914,10 @@ export function SeriesDistDialog({
       : constantSectorIds;
   }, [dayIdx, getConstantSectorIdsForDay, constantSectorIds]);
 
-  const sectors     = days[dayIdx]?.sectors ?? [];
+  const sectors = useMemo(
+    () => days[dayIdx]?.sectors ?? [],
+    [days, dayIdx],
+  );
   const constantIdx = sectors.findIndex(
     (s) => constantIdSetForDay.has(s.sectorId) || constantIdSetForDay.has(s.sectorLabel)
   );
@@ -3403,7 +3406,7 @@ export default function PlanGymWeekManualModal({
     );
     const cp = Math.min(tp, Math.max(1, Math.floor(s.currentPeriod)));
     return { tp, cp };
-  }, [yearlyPeriodSettings.totalPeriods, yearlyPeriodSettings.currentPeriod]);
+  }, [yearlyPeriodSettings]);
 
   /** Interpolated reps + pauses + routine series total from `wp_goalParams` (level, period, sessions %). */
   const workoutParamsPeriodPreview = useMemo(() => {

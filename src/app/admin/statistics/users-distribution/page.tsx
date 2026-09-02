@@ -7,6 +7,7 @@ import StatisticsPageShell, {
   countryFilterOptions,
 } from '@/components/admin/statistics/StatisticsPageShell';
 import { StatisticsPieBlock } from '@/components/admin/statistics/StatisticsCharts';
+import { useStatisticsGraphTheme } from '@/components/admin/statistics/StatisticsGraphTheme';
 import VersionDistributionDrilldown from '@/components/admin/statistics/VersionDistributionDrilldown';
 import { useAdminStatistics } from '@/components/admin/statistics/useAdminStatistics';
 import { aggregateVersionsForScope } from '@/lib/admin/statisticsDrilldown';
@@ -15,6 +16,30 @@ import {
   type StatsUserKind,
 } from '@/lib/admin/statisticsKinds';
 import type { StatsSlice } from '@/lib/admin/buildStatistics';
+
+function WorldDistributionSummary({
+  total,
+  slices,
+}: {
+  total: number;
+  slices: StatsSlice[];
+}) {
+  const theme = useStatisticsGraphTheme();
+  return (
+    <div className="mt-4 border p-4 text-base" style={theme.panelStyle}>
+      <p className="mb-2 text-base font-semibold" style={{ color: theme.background.text }}>
+        Current users = {total}
+      </p>
+      <ul className="space-y-1.5 text-lg" style={{ color: theme.background.text }}>
+        {slices.map((s) => (
+          <li key={s.key}>
+            {s.label} {s.count} ({s.percent}%)
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export default function UsersDistributionPage() {
   const router = useRouter();
@@ -88,18 +113,10 @@ export default function UsersDistributionPage() {
         />
       </div>
       {data && data.worldDistribution.total > 0 ? (
-        <div className="mt-4 bg-white border border-[#cfcfcf] p-4 text-base">
-          <p className="font-semibold mb-2 text-base">
-            Current users = {data.worldDistribution.total}
-          </p>
-          <ul className="space-y-1.5 text-lg text-[#333]">
-            {data.worldDistribution.slices.map((s) => (
-              <li key={s.key}>
-                {s.label} {s.count} ({s.percent}%)
-              </li>
-            ))}
-          </ul>
-        </div>
+        <WorldDistributionSummary
+          total={data.worldDistribution.total}
+          slices={data.worldDistribution.slices}
+        />
       ) : null}
       {selectedKind && drilldown ? (
         <VersionDistributionDrilldown

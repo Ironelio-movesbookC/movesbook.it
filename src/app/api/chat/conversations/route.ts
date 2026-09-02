@@ -8,65 +8,93 @@ import {
   peerMatchesChatAudience,
   type ChatAudience,
 } from '@/lib/chat/chatAudience';
+import { clubBelongingWhere } from '@/lib/chat/clubBelonging';
+import { userBelongsToClub } from '@/lib/chat/userBelongsToClub';
 import { DEFAULT_CLUB_MEMBER_NAME_VISIBILITY } from '@/lib/chat/clubMemberNameVisibility';
 import {
   loadClubMemberNameVisibilityContext,
   loadClubMemberNameVisibilityMap,
   resolveClubMemberPublicName,
 } from '@/lib/chat/loadClubMemberNameVisibility';
+import {
+  DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY,
+  resolveMovesbookUserPublicName,
+} from '@/lib/chat/movesbookUserNameVisibility';
+import { loadMovesbookUserNameVisibilityMap } from '@/lib/chat/loadMovesbookUserNameVisibility';
 
 async function loadMyClubAdminIds(myId: string, clubId?: string | null): Promise<Set<string>> {
   const clubs = await prisma.club.findMany({
     where: {
-      members: { some: { memberId: myId } },
+      ...clubBelongingWhere(myId),
       ...(clubId ? { id: clubId } : {}),
     },
     select: { adminId: true },
   });
-  return new Set(clubs.map((c) => c.adminId));
+  return new Set(clubs.map((c) => c.adminId).filter((id) => id && id !== myId));
 }
 
-/** Other users who share at least one club membership with `myId` (ClubMember table). */
+/** Fellow ClubStaff userIds on clubs `myId` belongs to. */
+async function loadMyFellowClubStaffIds(
+  myId: string,
+  clubId?: string | null
+): Promise<Set<string>> {
+  const clubs = await prisma.club.findMany({
+    where: {
+      ...clubBelongingWhere(myId),
+      ...(clubId ? { id: clubId } : {}),
+    },
+    select: { id: true },
+  });
+  const clubIds = clubs.map((c) => c.id);
+  if (clubIds.length === 0) return new Set();
+
+  const staff = await prisma.clubStaff.findMany({
+    where: {
+      clubId: { in: clubIds },
+      userId: { not: myId },
+    },
+    select: { userId: true },
+  });
+  return new Set(staff.map((s) => s.userId));
+}
+
+/** Club members (not staff, not admin) on clubs `myId` belongs to. */
 async function loadMyFellowClubMemberIds(
   myId: string,
   clubId?: string | null
 ): Promise<Set<string>> {
-  if (clubId) {
-    const [club, fellows] = await Promise.all([
-      prisma.club.findUnique({
-        where: { id: clubId },
-        select: { adminId: true },
-      }),
-      prisma.clubMember.findMany({
-        where: {
-          clubId,
-          memberId: { not: myId },
-        },
-        select: { memberId: true },
-      }),
-    ]);
-    const ids = new Set(fellows.map((f) => f.memberId));
-    if (club?.adminId && club.adminId !== myId) {
-      ids.add(club.adminId);
-    }
-    return ids;
-  }
-
-  const myMemberships = await prisma.clubMember.findMany({
-    where: { memberId: myId },
-    select: { clubId: true },
+  const clubs = await prisma.club.findMany({
+    where: {
+      ...clubBelongingWhere(myId),
+      ...(clubId ? { id: clubId } : {}),
+    },
+    select: { id: true, adminId: true },
   });
-  const clubIds = myMemberships.map((m) => m.clubId);
+  const clubIds = clubs.map((c) => c.id);
   if (clubIds.length === 0) return new Set();
 
-  const fellows = await prisma.clubMember.findMany({
-    where: {
-      clubId: { in: clubIds },
-      memberId: { not: myId },
-    },
-    select: { memberId: true },
-  });
-  return new Set(fellows.map((f) => f.memberId));
+  const adminIds = new Set(clubs.map((c) => c.adminId).filter(Boolean));
+
+  const [members, staff] = await Promise.all([
+    prisma.clubMember.findMany({
+      where: {
+        clubId: { in: clubIds },
+        memberId: { not: myId },
+      },
+      select: { memberId: true },
+    }),
+    prisma.clubStaff.findMany({
+      where: { clubId: { in: clubIds } },
+      select: { userId: true },
+    }),
+  ]);
+
+  const staffIds = new Set(staff.map((s) => s.userId));
+  return new Set(
+    members
+      .map((m) => m.memberId)
+      .filter((id) => !staffIds.has(id) && !adminIds.has(id))
+  );
 }
 
 async function assertParticipantMatchesAudience(
@@ -80,12 +108,12 @@ async function assertParticipantMatchesAudience(
     return { ok: false, error: 'This chat type is not available yet', status: 400 };
   }
 
-  if (clubId && (audience === 'club-member' || audience === 'club-admin')) {
-    const membership = await prisma.clubMember.findUnique({
-      where: { clubId_memberId: { clubId, memberId: myId } },
-      select: { id: true },
-    });
-    if (!membership) {
+  if (
+    clubId &&
+    (audience === 'club-member' || audience === 'club-admin' || audience === 'club-staff')
+  ) {
+    const belongs = await userBelongsToClub(myId, clubId);
+    if (!belongs) {
       return { ok: false, error: 'Club membership required', status: 403 };
     }
   }
@@ -136,18 +164,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ conversations: [] });
     }
 
-    if (clubId && (audience === 'club-member' || audience === 'club-admin')) {
-      const membership = await prisma.clubMember.findUnique({
-        where: { clubId_memberId: { clubId, memberId: myId } },
-        select: { id: true },
-      });
-      if (!membership) {
+    if (
+      clubId &&
+      (audience === 'club-member' || audience === 'club-admin' || audience === 'club-staff')
+    ) {
+      const belongs = await userBelongsToClub(myId, clubId);
+      if (!belongs) {
         return NextResponse.json({ conversations: [] });
       }
     }
 
     const myClubAdminIds =
       audience === 'club-admin' ? await loadMyClubAdminIds(myId, clubId) : undefined;
+    const myFellowClubStaffIds =
+      audience === 'club-staff' ? await loadMyFellowClubStaffIds(myId, clubId) : undefined;
     const myFellowClubMemberIds =
       audience === 'club-member' ? await loadMyFellowClubMemberIds(myId, clubId) : undefined;
 
@@ -192,6 +222,7 @@ export async function GET(request: NextRequest) {
       if (!audience) return true;
       return peerMatchesChatAudience(audience, other, {
         myClubAdminIds,
+        myFellowClubStaffIds,
         myFellowClubMemberIds,
       });
     });
@@ -203,6 +234,13 @@ export async function GET(request: NextRequest) {
     const visibilityMap =
       audience === 'club-member'
         ? await loadClubMemberNameVisibilityMap(
+            filtered.map((c) => (c.user1Id === myId ? c.user2.id : c.user1.id))
+          )
+        : null;
+
+    const movesbookVisibilityMap =
+      audience === 'movesbook-user'
+        ? await loadMovesbookUserNameVisibilityMap(
             filtered.map((c) => (c.user1Id === myId ? c.user2.id : c.user1.id))
           )
         : null;
@@ -233,6 +271,14 @@ export async function GET(request: NextRequest) {
             target: other,
             visibility,
             ctx: visibilityCtx,
+          }).name;
+        } else if (audience === 'movesbook-user' && movesbookVisibilityMap) {
+          const visibility =
+            movesbookVisibilityMap.get(other.id) ?? DEFAULT_MOVESBOOK_USER_NAME_VISIBILITY;
+          displayName = resolveMovesbookUserPublicName({
+            viewerId: myId,
+            target: other,
+            visibility,
           }).name;
         }
 

@@ -27,6 +27,17 @@ export function getHeroBannerDisplayUrl(
   const seq = parseBannerSequenceJson(p.profileBannerSequence);
   const raw = (seq[0] ?? p.profileBanner)?.trim();
   if (!raw) return DEFAULT_HERO_BANNER_URL;
-  if (raw.startsWith('/') || raw.startsWith('http')) return raw;
+  // Legacy disk uploads often missing under `next start` — prefer default until re-uploaded as data URL.
+  if (raw.startsWith('/uploads/profile_banners/') || raw.startsWith('/uploads/profile_avatars/')) {
+    return DEFAULT_HERO_BANNER_URL;
+  }
+  if (
+    raw.startsWith('data:') ||
+    raw.startsWith('/') ||
+    raw.startsWith('http://') ||
+    raw.startsWith('https://')
+  ) {
+    return raw;
+  }
   return `/img/profile_images/${raw}`;
 }

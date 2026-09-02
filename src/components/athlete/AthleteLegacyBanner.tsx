@@ -32,6 +32,40 @@ type AthleteLegacyBannerProps = {
 
 const DEFAULT_BANNER = '/images/banner.jpg';
 
+/**
+ * Use plain <img> (not next/image) so missing `/uploads/...` files fall back
+ * instead of throwing ImageOptimizer errors under `next start`.
+ */
+function CoverImage({
+  src,
+  className,
+  priority,
+}: {
+  src: string;
+  className: string;
+  priority?: boolean;
+}) {
+  const [current, setCurrent] = useState(src);
+
+  useEffect(() => {
+    setCurrent(src);
+  }, [src]);
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={current}
+      alt=""
+      className={`absolute inset-0 h-full w-full ${className}`}
+      onError={() => {
+        if (current !== DEFAULT_BANNER) setCurrent(DEFAULT_BANNER);
+      }}
+      loading={priority ? 'eager' : 'lazy'}
+      decoding="async"
+    />
+  );
+}
+
 function SequenceCoverImages({
   sequencePaths,
   coverObjectClass,
@@ -51,18 +85,14 @@ function SequenceCoverImages({
   return (
     <div className="absolute inset-0">
       {resolved.map((src, i) => (
-        <Image
-          key={`${src}-${i}`}
-          src={src}
-          alt=""
-          fill
-          className={`absolute inset-0 ${coverObjectClass} transition-opacity duration-[900ms] ${
+        <div
+          key={`${src.slice(0, 64)}-${i}`}
+          className={`absolute inset-0 transition-opacity duration-[900ms] ${
             i === idx ? 'opacity-90 z-[1]' : 'opacity-0 z-0 pointer-events-none'
           }`}
-          sizes="(max-width: 640px) 100vw, 75vw"
-          priority={i === 0}
-          unoptimized={src.startsWith('data:')}
-        />
+        >
+          <CoverImage src={src} className={coverObjectClass} priority={i === 0} />
+        </div>
       ))}
     </div>
   );
@@ -111,20 +141,16 @@ export default function AthleteLegacyBanner({
           />
         ) : useSequence ? (
           <SequenceCoverImages
-            key={sequencePaths.join('|')}
+            key={sequencePaths.map((p) => p.slice(0, 48)).join('|')}
             sequencePaths={sequencePaths}
             coverObjectClass={coverObjectClass}
           />
         ) : (
-          <Image
-            key={bannerSrc}
+          <CoverImage
+            key={bannerSrc.startsWith('data:') ? 'banner-data' : bannerSrc}
             src={bannerSrc}
-            alt=""
-            fill
             className={`${coverObjectClass} opacity-90`}
-            sizes="(max-width: 640px) 100vw, 75vw"
             priority
-            unoptimized={bannerSrc.startsWith('data:')}
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/20 to-transparent pointer-events-none" />
@@ -155,7 +181,7 @@ export default function AthleteLegacyBanner({
                 {avatarSrc ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    key={avatarSrc}
+                    key={avatarSrc.startsWith('data:') ? 'avatar-data' : avatarSrc}
                     src={avatarSrc}
                     alt=""
                     className="w-full h-full object-cover"

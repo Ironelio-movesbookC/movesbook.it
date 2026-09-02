@@ -17,9 +17,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (auth instanceof NextResponse) return auth;
 
     const { id: ogpArticleId } = await context.params;
-    const body = (await request.json()) as { clubId?: string; password?: string };
+    const body = (await request.json()) as {
+      clubId?: string;
+      password?: string;
+      inClubGlobalNews?: boolean;
+    };
     const clubId = body.clubId?.trim();
     const password = body.password?.trim();
+    const hasGlobalFlag = typeof body.inClubGlobalNews === 'boolean';
 
     if (!clubId) {
       return NextResponse.json({ error: 'clubId is required' }, { status: 400 });
@@ -48,15 +53,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const share = await prisma.clubSharedOgpArticle.upsert({
       where: { clubId_ogpArticleId: { clubId, ogpArticleId } },
-      create: { clubId, ogpArticleId, sharedById: auth.userId },
-      update: { sharedById: auth.userId },
-      select: { id: true, clubId: true, ogpArticleId: true, createdAt: true },
+      create: {
+        clubId,
+        ogpArticleId,
+        sharedById: auth.userId,
+        ...(hasGlobalFlag ? { inClubGlobalNews: body.inClubGlobalNews } : {}),
+      },
+      update: {
+        sharedById: auth.userId,
+        ...(hasGlobalFlag ? { inClubGlobalNews: body.inClubGlobalNews } : {}),
+      },
+      select: {
+        id: true,
+        clubId: true,
+        ogpArticleId: true,
+        inClubGlobalNews: true,
+        createdAt: true,
+      },
     });
 
     return NextResponse.json({
       shareId: share.id,
       clubId: share.clubId,
       ogpArticleId: share.ogpArticleId,
+      inClubGlobalNews: share.inClubGlobalNews,
       sharedAt: share.createdAt.toISOString(),
     });
   } catch (error) {

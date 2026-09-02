@@ -1,4 +1,5 @@
 "use client";
+import Image from 'next/image';
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -179,13 +180,16 @@ export default function BannerToursPage() {
           <div className="h-[170px] w-[260px] overflow-hidden">
             {currentSettings.carouselEnabled &&
             activePictures.length > 0 ? (
-              <img
+              <Image
                 src={activePictures[currentSlide]}
                 alt="Banner"
                 className="h-full w-full object-cover"
+                width={260}
+                height={170}
+                unoptimized
               />
             ) : (
-              <img/> 
+              <Image src="" alt="" width={260} height={170} unoptimized />
             )}
           </div>
         </div>
@@ -208,10 +212,13 @@ export default function BannerToursPage() {
             <BannerHeader />
 
             <div className="relative h-[76px] bg-black">
-              <img
+              <Image
                 src="/assets/move-yourself.png"
                 alt=""
                 className="h-full w-full object-contain"
+                width={320}
+                height={76}
+                unoptimized
               />
 
               <ShareIcon />
@@ -241,10 +248,13 @@ export default function BannerToursPage() {
             <BannerHeader />
 
             <div className="relative h-[75px] bg-black">
-              <img
+              <Image
                 src="/assets/move-yourself.png"
                 alt=""
                 className="h-full w-full object-contain"
+                width={320}
+                height={76}
+                unoptimized
               />
 
               <ShareIcon />
@@ -477,13 +487,15 @@ export default function BannerToursPage() {
                   </div>
 
                   <div className="relative min-h-[185px] overflow-hidden bg-white">
-                    <img
+                    <Image
                       src={picture}
                       alt={`Picture ${index + 1}`}
+                      width={320}
+                      height={180}
                       className="block h-[180px] w-full object-contain"
+                      unoptimized
                       onError={(event) => {
-                        event.currentTarget.style.display =
-                          "none";
+                        event.currentTarget.style.display = "none";
                       }}
                     />
 

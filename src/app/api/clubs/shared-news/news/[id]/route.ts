@@ -5,6 +5,7 @@ import {
   verifyClubAdminPassword,
   verifyClubOwnership,
 } from '@/lib/clubNewsShareAuth';
+import { isClubOgpAudienceMode } from '@/lib/clubOgpAudience';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,9 +17,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (auth instanceof NextResponse) return auth;
 
     const { id: newsId } = await context.params;
-    const body = (await request.json()) as { clubId?: string; password?: string };
+    const body = (await request.json()) as {
+      clubId?: string;
+      password?: string;
+      inClubGlobalNews?: boolean;
+    };
     const clubId = body.clubId?.trim();
     const password = body.password?.trim();
+    const hasGlobalFlag = typeof body.inClubGlobalNews === 'boolean';
 
     if (!clubId) {
       return NextResponse.json({ error: 'clubId is required' }, { status: 400 });
@@ -47,15 +53,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const share = await prisma.clubSharedNews.upsert({
       where: { clubId_newsId: { clubId, newsId } },
-      create: { clubId, newsId, sharedById: auth.userId },
-      update: { sharedById: auth.userId },
-      select: { id: true, clubId: true, newsId: true, createdAt: true },
+      create: {
+        clubId,
+        newsId,
+        sharedById: auth.userId,
+        ...(hasGlobalFlag ? { inClubGlobalNews: body.inClubGlobalNews } : {}),
+      },
+      update: {
+        sharedById: auth.userId,
+        ...(hasGlobalFlag ? { inClubGlobalNews: body.inClubGlobalNews } : {}),
+      },
+      select: {
+        id: true,
+        clubId: true,
+        newsId: true,
+        inClubGlobalNews: true,
+        createdAt: true,
+      },
     });
 
     return NextResponse.json({
       shareId: share.id,
       clubId: share.clubId,
       newsId: share.newsId,
+      inClubGlobalNews: share.inClubGlobalNews,
       sharedAt: share.createdAt.toISOString(),
     });
   } catch (error) {
@@ -91,7 +112,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   }
 }
 
-/** PATCH — toggle Club Global News for a News article already shared into a club. */
+/** PATCH — toggle Club Global News and/or Club News audience mode. */
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const auth = await requireClubAdmin(request);
@@ -101,14 +122,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const body = (await request.json().catch(() => ({}))) as {
       clubId?: string;
       inClubGlobalNews?: boolean;
+      audienceMode?: string;
     };
     const clubId = body.clubId?.trim();
     if (!clubId) {
       return NextResponse.json({ error: 'clubId is required' }, { status: 400 });
     }
-    if (typeof body.inClubGlobalNews !== 'boolean') {
+
+    const hasGlobalFlag = typeof body.inClubGlobalNews === 'boolean';
+    const audienceMode = isClubOgpAudienceMode(body.audienceMode) ? body.audienceMode : null;
+    if (!hasGlobalFlag && !audienceMode) {
       return NextResponse.json(
-        { error: 'inClubGlobalNews (boolean) is required' },
+        { error: 'inClubGlobalNews (boolean) and/or audienceMode is required' },
         { status: 400 },
       );
     }
@@ -131,13 +156,22 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const updated = await prisma.clubSharedNews.update({
       where: { clubId_newsId: { clubId, newsId } },
-      data: { inClubGlobalNews: body.inClubGlobalNews },
-      select: { id: true, clubId: true, newsId: true, inClubGlobalNews: true },
+      data: {
+        ...(hasGlobalFlag ? { inClubGlobalNews: body.inClubGlobalNews } : {}),
+        ...(audienceMode ? { audienceMode } : {}),
+      },
+      select: {
+        id: true,
+        clubId: true,
+        newsId: true,
+        inClubGlobalNews: true,
+        audienceMode: true,
+      },
     });
 
     return NextResponse.json(updated);
   } catch (error) {
-    console.error('PATCH club global news:', error);
+    console.error('PATCH club shared news:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

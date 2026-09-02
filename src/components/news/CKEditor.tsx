@@ -156,7 +156,7 @@ export default function CKEditorComponent({
         document.head.removeChild(style);
       }
     };
-  }, []);
+  }, [minHeightPx]);
 
   return (
     <div className="ckeditor-wrapper">

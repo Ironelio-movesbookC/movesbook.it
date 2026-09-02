@@ -131,32 +131,51 @@ export default function MubButtonEditorForm({
 
         <div className={rowClass()}>
           <span className="font-medium text-gray-800">Button Icon</span>
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="inline-flex cursor-pointer items-center gap-2">
-              <span className="rounded border border-gray-400 bg-[#eef3fb] px-3 py-1 text-sm text-gray-800 hover:bg-[#dfe8f6]">
-                Choose file
-              </span>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="inline-flex items-center gap-1 text-sm">
+                <input type="radio" name="mub-icon-source" checked={form.iconSource === 'INTERNAL'} onChange={() => setForm((f) => ({ ...f, iconSource: 'INTERNAL' }))} />
+                Internal
+              </label>
+              <label className="inline-flex items-center gap-1 text-sm">
+                <input type="radio" name="mub-icon-source" checked={form.iconSource === 'EXTERNAL'} onChange={() => setForm((f) => ({ ...f, iconSource: 'EXTERNAL' }))} />
+                External
+              </label>
+            </div>
+            {form.iconSource === 'INTERNAL' ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="inline-flex cursor-pointer items-center gap-2">
+                  <span className="rounded border border-gray-400 bg-[#eef3fb] px-3 py-1 text-sm text-gray-800 hover:bg-[#dfe8f6]">
+                    Choose file
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) onIconUpload(file);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                <span className="text-xs text-gray-600">{form.iconFileName || 'No file selected'}</span>
+                {uploadingIcon ? <span className="text-xs text-gray-500">Uploading…</span> : null}
+              </div>
+            ) : (
               <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) onIconUpload(file);
-                  e.target.value = '';
-                }}
+                value={form.iconPath}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    iconPath: e.target.value,
+                    iconFileName: e.target.value ? e.target.value.split('/').pop() ?? '' : '',
+                  }))
+                }
+                placeholder="https://… or /path/to/icon.png"
+                className="w-full rounded border border-gray-300 px-2 py-1"
               />
-            </label>
-            <span className="text-xs text-gray-600">{form.iconFileName || 'No file selected'}</span>
-            <label className="inline-flex items-center gap-1 text-sm">
-              <input type="radio" name="mub-icon-source" checked={form.iconSource === 'INTERNAL'} onChange={() => setForm((f) => ({ ...f, iconSource: 'INTERNAL' }))} />
-              Internal
-            </label>
-            <label className="inline-flex items-center gap-1 text-sm">
-              <input type="radio" name="mub-icon-source" checked={form.iconSource === 'EXTERNAL'} onChange={() => setForm((f) => ({ ...f, iconSource: 'EXTERNAL' }))} />
-              External
-            </label>
-            {uploadingIcon ? <span className="text-xs text-gray-500">Uploading…</span> : null}
+            )}
           </div>
         </div>
 

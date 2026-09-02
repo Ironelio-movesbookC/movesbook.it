@@ -235,7 +235,8 @@ export async function PATCH(request: NextRequest) {
         const paths = arr
           .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
           .map((x) => x.trim())
-          .filter((x) => x.length <= 512)
+          // Allow data URLs (banner-upload); keep legacy short paths too.
+          .filter((x) => x.startsWith('data:') || x.length <= 2048)
           .slice(0, 30);
         data.profileBannerSequence = JSON.stringify(paths);
         if (paths.length > 0) {
@@ -252,7 +253,13 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (image !== undefined) {
-      data.image = image === null || image === '' ? null : String(image).trim().slice(0, 512);
+      if (image === null || image === '') {
+        data.image = null;
+      } else {
+        const trimmed = String(image).trim();
+        // Paths/URLs stay short; data URLs (operator-style avatar) need LongText capacity.
+        data.image = trimmed.startsWith('data:') ? trimmed : trimmed.slice(0, 512);
+      }
     }
 
     if (name !== undefined) {

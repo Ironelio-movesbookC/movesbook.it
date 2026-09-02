@@ -8,6 +8,11 @@ import PromocodesPagination, {
 } from '@/components/promocodes/PromocodeAppliesTable';
 import { promocodesFetch, usePromocodesAdminAuth } from '@/components/promocodes/usePromocodesAdminAuth';
 import { usePromocodeDialogs } from '@/components/promocodes/usePromocodeDialogs';
+import PromocodeSendMessageModal from '@/components/promocodes/PromocodeSendMessageModal';
+import {
+  promocodeApplyRecipientEmail,
+  promocodeRecipientLabel,
+} from '@/lib/promocodes/promocodeApplyDisplay';
 import type { PaginatedResult, PromocodeApplyRow } from '@/lib/promocodes/types';
 
 export default function PromocodesIndexPage() {
@@ -17,10 +22,18 @@ export default function PromocodesIndexPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [orderBy, setOrderBy] = useState('');
+  const [orderBy, setOrderBy] = useState('created_desc');
   const [registeredOnly, setRegisteredOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [senderUsername, setSenderUsername] = useState('');
+  const [secondaryUsername, setSecondaryUsername] = useState('');
+  const [recipientUsername, setRecipientUsername] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [sendMessageOpen, setSendMessageOpen] = useState(false);
+  const [sendMessageEmail, setSendMessageEmail] = useState('');
+  const [sendMessageLabel, setSendMessageLabel] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -32,6 +45,11 @@ export default function PromocodesIndexPage() {
       });
       if (search.trim()) params.set('search', search.trim());
       if (orderBy) params.set('orderBy', orderBy);
+      if (fromDate) params.set('fromDate', fromDate);
+      if (toDate) params.set('toDate', toDate);
+      if (senderUsername) params.set('senderUsername', senderUsername);
+      if (secondaryUsername) params.set('secondaryUsername', secondaryUsername);
+      if (recipientUsername) params.set('recipientUsername', recipientUsername);
       const res = await promocodesFetch(`/api/admin/promocodes/applies?${params}`);
       const json = await res.json();
       setData(json);
@@ -40,11 +58,43 @@ export default function PromocodesIndexPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, orderBy, registeredOnly]);
+  }, [page, search, orderBy, registeredOnly, fromDate, toDate, senderUsername, secondaryUsername, recipientUsername]);
 
   useEffect(() => {
     if (ready) void load();
   }, [ready, load]);
+
+  const openSendMessage = () => {
+    if (!selectedId) {
+      showAlert('Please select a row first.');
+      return;
+    }
+    const row = data?.items.find((item) => item.id === selectedId);
+    if (!row) {
+      showAlert('Selected row is no longer available. Refresh the list and try again.');
+      return;
+    }
+    const email = promocodeApplyRecipientEmail(row);
+    if (!email) {
+      showAlert('No valid email address found for the selected recipient.');
+      return;
+    }
+    setSendMessageEmail(email);
+    setSendMessageLabel(promocodeRecipientLabel(row).text || email);
+    setSendMessageOpen(true);
+  };
+
+  const handleSendMessage = async (payload: { to: string; subject: string; html: string }) => {
+    const res = await promocodesFetch('/api/admin/promocodes/send-message', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || 'Failed to send message');
+    }
+    showAlert(json.message || 'Message sent successfully.');
+  };
 
   const deleteSelected = () => {
     if (!selectedId) {
@@ -85,11 +135,7 @@ export default function PromocodesIndexPage() {
         <button type="button" onClick={() => window.print()} className="text-sm text-blue-800 underline">
           Print
         </button>
-        <button
-          type="button"
-          onClick={() => showAlert('Send message flow not yet connected.')}
-          className="text-sm text-blue-800 underline"
-        >
+        <button type="button" onClick={openSendMessage} className="text-sm text-blue-800 underline">
           Send Msg
         </button>
         <button type="button" onClick={deleteSelected} className="text-sm text-red-700 underline">
@@ -137,10 +183,28 @@ export default function PromocodesIndexPage() {
             <option value="created_desc">By date (newest first)</option>
             <option value="created_asc">By date (oldest first)</option>
           </select>
+          <label className="text-sm">
+            From
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="ml-2 px-2 py-2 border text-sm"
+            />
+          </label>
+          <label className="text-sm">
+            To
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="ml-2 px-2 py-2 border text-sm"
+            />
+          </label>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Username or email"
+            placeholder="Username, email or promocode"
             className="px-3 py-2 border text-sm min-w-[220px]"
           />
           <button
@@ -169,10 +233,31 @@ export default function PromocodesIndexPage() {
           variant="index"
           selectedId={selectedId}
           onSelect={setSelectedId}
+          onSenderClick={(name) => {
+            setSenderUsername(name);
+            setPage(1);
+          }}
+          onSecondaryClick={(name) => {
+            setSecondaryUsername(name);
+            setPage(1);
+          }}
+          onRecipientClick={(name) => {
+            setRecipientUsername(name);
+            setPage(1);
+          }}
         />
       )}
 
       <PromocodesPagination page={page} totalPages={totalPages} onPageChange={setPage} />
+
+      <PromocodeSendMessageModal
+        open={sendMessageOpen}
+        toEmail={sendMessageEmail}
+        recipientLabel={sendMessageLabel}
+        onClose={() => setSendMessageOpen(false)}
+        onSend={handleSendMessage}
+      />
+
       {dialogs}
     </div>
   );

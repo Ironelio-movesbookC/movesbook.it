@@ -362,6 +362,16 @@ async function getAuthorizedContext(request: NextRequest) {
   return { userId, legacyUserId, club, userIds };
 }
 
+/** Member profile settings: any authenticated user may read the full type list (PHP parity). */
+async function getProfileReadContext(request: NextRequest) {
+  const decoded = getTokenPayload(request);
+  if (!decoded?.userId) {
+    return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+
+  return { userId: String(decoded.userId) };
+}
+
 function parsePayload(body: unknown): MemberTypePayload {
   const data = body && typeof body === 'object' ? body as Record<string, unknown> : {};
   const header = text(data.header).toUpperCase() === 'B' ? 'B' : 'A';
@@ -491,11 +501,38 @@ function normalizeMemberType(row: MemberTypeRow) {
 
 export async function GET(request: NextRequest) {
   try {
+    const scope = request.nextUrl.searchParams.get('scope');
+    const modelTable = await ensureMemberTypeModelTable();
+    const tableName = await ensureMemberTypeTable();
+
+    if (scope === 'profile') {
+      const context = await getProfileReadContext(request);
+      if ('error' in context) return context.error;
+
+      const rows = await prisma.$queryRawUnsafe<MemberTypeRow[]>(
+        `SELECT membertypes.id, membertypes.user_id, membertypes.club_id,
+                membertypes.member_type_name, membertypes.discount_subscription,
+                membertypes.discount_services, membertypes.discount_rest,
+                membertypes.discount_suppl, membertypes.discount_clothing,
+                membertypes.discount_outfit, membertypes.affiliate_cost,
+                membertypes.debt_max, membertypes.discount_status,
+                membertypes.header, membertypes.membertyp_id,
+                membertypes.created, membertypes.modified,
+                models.name AS model_name
+         FROM \`${tableName}\` membertypes
+         LEFT JOIN \`${modelTable}\` models
+           ON CAST(models.id AS CHAR) = CAST(membertypes.membertyp_id AS CHAR)
+         ORDER BY membertypes.member_type_name ASC`,
+      );
+
+      return NextResponse.json({
+        items: rows.map(normalizeMemberType),
+      });
+    }
+
     const context = await getAuthorizedContext(request);
     if ('error' in context) return context.error;
 
-    const modelTable = await ensureMemberTypeModelTable();
-    const tableName = await ensureMemberTypeTable();
     const userPlaceholders = context.userIds.map(() => '?').join(',');
 
     const models = await prisma.$queryRawUnsafe<MemberTypeModelRow[]>(

@@ -29,6 +29,7 @@ import ChatSettingsUsersModal, {
   defaultChatUserFilterSettings,
   type ChatUserFilterSettings,
 } from './ChatSettingsUsersModal';
+import ChatMemberGroupSelectModal from './ChatMemberGroupSelectModal';
 import AdminChatUsersPanel from './AdminChatUsersPanel';
 
 type BroadcastMode = 'all' | 'group' | 'subscribers' | 'favourites';
@@ -81,6 +82,21 @@ function formatTelegramId(telegramAccount: string | null | undefined): string {
   return raw.startsWith('@') ? raw : `@${raw}`;
 }
 
+function formatSubscriberPrimaryLabel(
+  name: string,
+  telegramAccount: string | null | undefined
+): string {
+  const memberName = (name || '').trim();
+  const tg = formatTelegramId(telegramAccount);
+  if (memberName && tg) {
+    const nameNorm = memberName.toLowerCase().replace(/^@+/, '');
+    const tgNorm = tg.toLowerCase().replace(/^@+/, '');
+    if (nameNorm === tgNorm) return tg;
+    return `${memberName} · ${tg}`;
+  }
+  return tg || memberName || 'Member';
+}
+
 function formatJoinedAt(iso: string | null | undefined): string {
   if (!iso) return 'joined recently';
   const d = new Date(iso);
@@ -97,6 +113,8 @@ type OptionsPayload = {
 };
 
 const SETTINGS_KEY = 'adminChatUserSettings';
+const MEMBER_GROUP_KEY = 'selectedMemberGroupId';
+const MEMBER_GROUP_NAME_KEY = 'selectedMemberGroupName';
 const HISTORY_KEY = 'adminChatBroadcastHistory';
 const MUTE_KEY = 'adminChatMute';
 const PHOTO_KEY = 'adminChatChannelPhoto';
@@ -177,6 +195,44 @@ function loadAdminIds(clubId?: string | null): string[] {
 
 function saveAdminIds(ids: string[], clubId?: string | null) {
   saveIdList(storageKey(ADMINS_KEY, clubId), ids);
+}
+
+function loadSelectedMemberGroupId(clubId?: string | null): string | null {
+  try {
+    return localStorage.getItem(storageKey(MEMBER_GROUP_KEY, clubId));
+  } catch {
+    return null;
+  }
+}
+
+function saveSelectedMemberGroupId(groupId: string | null, clubId?: string | null) {
+  try {
+    const idKey = storageKey(MEMBER_GROUP_KEY, clubId);
+    const nameKey = storageKey(MEMBER_GROUP_NAME_KEY, clubId);
+    if (groupId) localStorage.setItem(idKey, groupId);
+    else localStorage.removeItem(idKey);
+    if (!groupId) localStorage.removeItem(nameKey);
+  } catch {
+    /* ignore */
+  }
+}
+
+function saveSelectedMemberGroupName(name: string | null, clubId?: string | null) {
+  try {
+    const nameKey = storageKey(MEMBER_GROUP_NAME_KEY, clubId);
+    if (name?.trim()) localStorage.setItem(nameKey, name.trim());
+    else localStorage.removeItem(nameKey);
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadSelectedMemberGroupName(clubId?: string | null): string {
+  try {
+    return localStorage.getItem(storageKey(MEMBER_GROUP_NAME_KEY, clubId)) ?? '';
+  } catch {
+    return '';
+  }
 }
 
 function loadUserSettingsFromStorage(clubId?: string | null): ChatUserFilterSettings {
@@ -310,6 +366,13 @@ export default function AdminChatExperience({
   });
 
   const [showSettingsUsers, setShowSettingsUsers] = useState(false);
+  const [showMemberGroupSelect, setShowMemberGroupSelect] = useState(false);
+  const [selectedMemberGroupId, setSelectedMemberGroupId] = useState<string | null>(() =>
+    isClubChannel ? loadSelectedMemberGroupId(clubId) : null
+  );
+  const [selectedMemberGroupName, setSelectedMemberGroupName] = useState(() =>
+    isClubChannel ? loadSelectedMemberGroupName(clubId) : ''
+  );
   const [userSettings, setUserSettings] = useState<ChatUserFilterSettings>(() =>
     loadUserSettingsFromStorage(clubId)
   );
@@ -569,9 +632,12 @@ export default function AdminChatExperience({
         body: JSON.stringify({
           subscriberIds: subIds,
           adminIds: admIds,
-          sports: userSettings.sports,
-          userTypes: userSettings.userTypes,
-          countries: userSettings.countries,
+          sports: isClubChannel ? [] : userSettings.sports,
+          userTypes: isClubChannel ? [] : userSettings.userTypes,
+          countries: isClubChannel ? [] : userSettings.countries,
+          ...(isClubChannel && selectedMemberGroupId
+            ? { memberGroupId: selectedMemberGroupId }
+            : {}),
           ...(clubId ? { clubId } : {}),
         }),
       });
@@ -597,7 +663,7 @@ export default function AdminChatExperience({
     } catch {
       /* ignore */
     }
-  }, [getAuthHeaders, userSettings, clubId]);
+  }, [getAuthHeaders, userSettings, clubId, isClubChannel, selectedMemberGroupId]);
 
   const loadRepliersCount = useCallback(async () => {
     try {
@@ -686,6 +752,12 @@ export default function AdminChatExperience({
   };
 
   useEffect(() => {
+    if (!isClubChannel) return;
+    setSelectedMemberGroupId(loadSelectedMemberGroupId(clubId));
+    setSelectedMemberGroupName(loadSelectedMemberGroupName(clubId));
+  }, [clubId, isClubChannel]);
+
+  useEffect(() => {
     pingPresence();
     loadStats();
     void loadRepliersCount();
@@ -749,6 +821,16 @@ export default function AdminChatExperience({
       document.removeEventListener('scroll', close, true);
     };
   }, [contextMenu]);
+
+  const saveMemberGroupSelection = (group: { id: string; name: string } | null) => {
+    const nextId = group?.id ?? null;
+    const nextName = group?.name ?? '';
+    setSelectedMemberGroupId(nextId);
+    setSelectedMemberGroupName(nextName);
+    saveSelectedMemberGroupId(nextId, clubId);
+    saveSelectedMemberGroupName(nextName || null, clubId);
+    void loadStats();
+  };
 
   const saveUserSettings = (settings: ChatUserFilterSettings) => {
     setUserSettings(settings);
@@ -867,44 +949,56 @@ export default function AdminChatExperience({
 
   const onChannelPhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') return;
-      const dataUrl = reader.result;
-      setChannelPhoto(dataUrl);
-      try {
-        localStorage.setItem(photoKey, dataUrl);
-      } catch {
-        /* ignore quota */
-      }
-      void (async () => {
-        try {
-          const res = await fetch('/api/chat/channel-settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({
-              photoDataUrl: dataUrl,
-              ...(clubId ? { clubId } : {}),
-            }),
-          });
-          if (!res.ok) return;
-          const data = await res.json();
-          if (typeof data.channelPhoto === 'string' && data.channelPhoto.trim()) {
-            setChannelPhoto(data.channelPhoto);
-            try {
-              localStorage.setItem(photoKey, data.channelPhoto);
-            } catch {
-              /* ignore */
-            }
-          }
-        } catch {
-          /* ignore */
-        }
-      })();
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Only image files are allowed.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image is too large (max 5MB).');
+      return;
+    }
+
+    void (async () => {
+      try {
+        // Same pattern as operator / athlete avatar: multipart file → server stores data URL.
+        const form = new FormData();
+        form.append('file', file);
+        if (clubId) form.append('clubId', clubId);
+
+        const res = await fetch('/api/chat/channel-settings', {
+          method: 'POST',
+          headers: { ...getAuthHeaders() },
+          body: form,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert(
+            typeof (data as { error?: string }).error === 'string'
+              ? (data as { error: string }).error
+              : 'Failed to upload channel photo'
+          );
+          return;
+        }
+        const photo =
+          typeof (data as { channelPhoto?: string }).channelPhoto === 'string'
+            ? (data as { channelPhoto: string }).channelPhoto.trim()
+            : '';
+        if (!photo) {
+          alert('Failed to upload channel photo');
+          return;
+        }
+        setChannelPhoto(photo);
+        try {
+          localStorage.setItem(photoKey, photo);
+        } catch {
+          /* ignore quota */
+        }
+      } catch {
+        alert('Failed to upload channel photo');
+      }
+    })();
   };
 
   const filteredSubscribers =
@@ -919,6 +1013,10 @@ export default function AdminChatExperience({
   const sendBroadcast = async (rawContent?: string) => {
     const content = (rawContent ?? message).trim();
     if (!content) return;
+    if (isClubChannel && mode === 'group' && !selectedMemberGroupId) {
+      window.alert('Select a member group using the settings button first.');
+      return;
+    }
     try {
       const res = await fetch('/api/chat/broadcast', {
         method: 'POST',
@@ -928,9 +1026,12 @@ export default function AdminChatExperience({
           mode,
           senderName: ownerName || defaultSenderName,
           subscriberIds: mode === 'subscribers' ? loadSubscriberIds(clubId) : [],
-          sports: mode === 'group' ? userSettings.sports : [],
-          userTypes: mode === 'group' ? userSettings.userTypes : [],
-          countries: mode === 'group' ? userSettings.countries : [],
+          sports: !isClubChannel && mode === 'group' ? userSettings.sports : [],
+          userTypes: !isClubChannel && mode === 'group' ? userSettings.userTypes : [],
+          countries: !isClubChannel && mode === 'group' ? userSettings.countries : [],
+          ...(isClubChannel && mode === 'group' && selectedMemberGroupId
+            ? { memberGroupId: selectedMemberGroupId }
+            : {}),
           ...(clubId ? { clubId } : {}),
         }),
       });
@@ -1384,7 +1485,9 @@ export default function AdminChatExperience({
                       <p className="px-4 py-6 text-center text-[13px] text-[#8a94a0]">No subscribers found</p>
                     ) : (
                       filteredSubscribers.map((s) => {
-                        const label = formatTelegramId(s.telegramAccount) || s.name;
+                        const memberName = (s.name || '').trim();
+                        const telegramId = formatTelegramId(s.telegramAccount);
+                        const label = formatSubscriberPrimaryLabel(s.name, s.telegramAccount);
                         return (
                           <div
                             key={String(s.id)}
@@ -1400,19 +1503,29 @@ export default function AdminChatExperience({
                             ) : (
                               <span
                                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
-                                style={{ backgroundColor: subscriberAvatarColor(label) }}
+                                style={{
+                                  backgroundColor: subscriberAvatarColor(memberName || label),
+                                }}
                               >
-                                {subscriberInitials(label)}
+                                {subscriberInitials(memberName || label)}
                               </span>
                             )}
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[16px] text-white">{label}</span>
+                              <span className="block truncate text-[16px] text-white">
+                                {memberName && telegramId && memberName.toLowerCase().replace(/^@+/, '') !== telegramId.toLowerCase().replace(/^@+/, '')
+                                  ? memberName
+                                  : label}
+                              </span>
                               <span
-                                className={`block text-[13px] ${
+                                className={`block truncate text-[13px] ${
                                   s.isOnline ? 'text-[#64b5f6]' : 'text-[#8a94a0]'
                                 }`}
                               >
-                                {s.isOnline ? 'online' : 'last seen recently'}
+                                {telegramId && memberName && memberName.toLowerCase().replace(/^@+/, '') !== telegramId.toLowerCase().replace(/^@+/, '')
+                                  ? `${telegramId} · ${s.isOnline ? 'online' : 'last seen recently'}`
+                                  : s.isOnline
+                                    ? 'online'
+                                    : 'last seen recently'}
                               </span>
                             </span>
                             <button
@@ -1451,7 +1564,7 @@ export default function AdminChatExperience({
                     <input
                       value={addSearch}
                       onChange={(e) => setAddSearch(e.target.value)}
-                      placeholder="Search Telegram ID"
+                      placeholder="Search name or Telegram ID"
                       autoFocus
                       className="min-w-0 flex-1 border-0 bg-transparent px-1 text-[16px] text-white outline-none placeholder:text-white/40"
                     />
@@ -1481,7 +1594,14 @@ export default function AdminChatExperience({
                       </p>
                     ) : (
                       addCandidates.map((s) => {
+                        const memberName = (s.name || '').trim();
                         const telegramId = formatTelegramId(s.telegramAccount);
+                        const label = formatSubscriberPrimaryLabel(s.name, s.telegramAccount);
+                        const showNameAndTg =
+                          Boolean(memberName) &&
+                          Boolean(telegramId) &&
+                          memberName.toLowerCase().replace(/^@+/, '') !==
+                            telegramId.toLowerCase().replace(/^@+/, '');
                         return (
                           <button
                             key={String(s.id)}
@@ -1491,18 +1611,26 @@ export default function AdminChatExperience({
                           >
                             <span
                               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
-                              style={{ backgroundColor: subscriberAvatarColor(telegramId || s.name) }}
+                              style={{
+                                backgroundColor: subscriberAvatarColor(memberName || label),
+                              }}
                             >
-                              {subscriberInitials(telegramId || s.name)}
+                              {subscriberInitials(memberName || label)}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[16px] text-white">{telegramId}</span>
+                              <span className="block truncate text-[16px] text-white">
+                                {showNameAndTg ? memberName : label}
+                              </span>
                               <span
-                                className={`block text-[13px] ${
+                                className={`block truncate text-[13px] ${
                                   s.isOnline ? 'text-[#64b5f6]' : 'text-[#8a94a0]'
                                 }`}
                               >
-                                {s.isOnline ? 'online' : 'last seen recently'}
+                                {showNameAndTg
+                                  ? `${telegramId} · ${s.isOnline ? 'online' : 'last seen recently'}`
+                                  : s.isOnline
+                                    ? 'online'
+                                    : 'last seen recently'}
                               </span>
                             </span>
                             <UserPlus className="h-4 w-4 shrink-0 text-[#64b5f6]" />
@@ -1568,7 +1696,14 @@ export default function AdminChatExperience({
                       </div>
 
                       {channelAdmins.map((a) => {
-                        const label = formatTelegramId(a.telegramAccount) || a.name;
+                        const memberName = (a.name || '').trim();
+                        const telegramId = formatTelegramId(a.telegramAccount);
+                        const label = formatSubscriberPrimaryLabel(a.name, a.telegramAccount);
+                        const showNameAndTg =
+                          Boolean(memberName) &&
+                          Boolean(telegramId) &&
+                          memberName.toLowerCase().replace(/^@+/, '') !==
+                            telegramId.toLowerCase().replace(/^@+/, '');
                         return (
                           <div
                             key={String(a.id)}
@@ -1576,13 +1711,19 @@ export default function AdminChatExperience({
                           >
                             <span
                               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
-                              style={{ backgroundColor: subscriberAvatarColor(label) }}
+                              style={{
+                                backgroundColor: subscriberAvatarColor(memberName || label),
+                              }}
                             >
-                              {subscriberInitials(label)}
+                              {subscriberInitials(memberName || label)}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[16px] text-white">{label}</span>
-                              <span className="block text-[13px] text-[#8a94a0]">Admin</span>
+                              <span className="block truncate text-[16px] text-white">
+                                {showNameAndTg ? memberName : label}
+                              </span>
+                              <span className="block truncate text-[13px] text-[#8a94a0]">
+                                {showNameAndTg ? `${telegramId} · Admin` : 'Admin'}
+                              </span>
                             </span>
                             <button
                               type="button"
@@ -1726,7 +1867,14 @@ export default function AdminChatExperience({
                       </p>
                     ) : (
                       addCandidates.map((s) => {
+                        const memberName = (s.name || '').trim();
                         const telegramId = formatTelegramId(s.telegramAccount);
+                        const label = formatSubscriberPrimaryLabel(s.name, s.telegramAccount);
+                        const showNameAndTg =
+                          Boolean(memberName) &&
+                          Boolean(telegramId) &&
+                          memberName.toLowerCase().replace(/^@+/, '') !==
+                            telegramId.toLowerCase().replace(/^@+/, '');
                         return (
                           <button
                             key={String(s.id)}
@@ -1734,16 +1882,31 @@ export default function AdminChatExperience({
                             className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-white/5"
                             onClick={() => addChannelAdmin(s)}
                           >
-                            <span
-                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
-                              style={{ backgroundColor: subscriberAvatarColor(telegramId || s.name) }}
-                            >
-                              {subscriberInitials(telegramId || s.name)}
-                            </span>
+                            {s.image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={s.image}
+                                alt=""
+                                className="h-11 w-11 shrink-0 rounded-full object-cover"
+                              />
+                            ) : (
+                              <span
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
+                                style={{
+                                  backgroundColor: subscriberAvatarColor(memberName || label),
+                                }}
+                              >
+                                {subscriberInitials(memberName || label)}
+                              </span>
+                            )}
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[16px] text-white">{telegramId}</span>
-                              <span className="block text-[13px] text-[#8a94a0]">
-                                {formatJoinedAt(s.createdAt)}
+                              <span className="block truncate text-[16px] text-white">
+                                {showNameAndTg ? memberName : label}
+                              </span>
+                              <span className="block truncate text-[13px] text-[#8a94a0]">
+                                {showNameAndTg
+                                  ? `${telegramId} · ${formatJoinedAt(s.createdAt)}`
+                                  : formatJoinedAt(s.createdAt)}
                               </span>
                             </span>
                           </button>
@@ -1909,9 +2072,17 @@ export default function AdminChatExperience({
                 {key === 'group' && (
                   <button
                     type="button"
-                    onClick={() => setShowSettingsUsers(true)}
+                    onClick={() =>
+                      isClubChannel ? setShowMemberGroupSelect(true) : setShowSettingsUsers(true)
+                    }
                     className="mr-2 rounded p-1 text-[#666] hover:bg-[#e8e8e8]"
-                    title="Settings users"
+                    title={
+                      isClubChannel
+                        ? selectedMemberGroupName
+                          ? `Selected group: ${selectedMemberGroupName}`
+                          : 'Select member group'
+                        : 'Settings users'
+                    }
                   >
                     <Settings className="h-3.5 w-3.5" />
                   </button>
@@ -2142,14 +2313,23 @@ export default function AdminChatExperience({
         </div>
       </div>
 
-      <ChatSettingsUsersModal
-        isOpen={showSettingsUsers}
-        onClose={() => setShowSettingsUsers(false)}
-        initialSettings={userSettings}
-        onSave={saveUserSettings}
-        onDeleteSettings={deleteUserSettings}
-        options={options}
-      />
+      {!isClubChannel ? (
+        <ChatSettingsUsersModal
+          isOpen={showSettingsUsers}
+          onClose={() => setShowSettingsUsers(false)}
+          initialSettings={userSettings}
+          onSave={saveUserSettings}
+          onDeleteSettings={deleteUserSettings}
+          options={options}
+        />
+      ) : (
+        <ChatMemberGroupSelectModal
+          isOpen={showMemberGroupSelect}
+          onClose={() => setShowMemberGroupSelect(false)}
+          selectedGroupId={selectedMemberGroupId}
+          onSelect={saveMemberGroupSelection}
+        />
+      )}
 
       {showInviteLink && (
         <div
