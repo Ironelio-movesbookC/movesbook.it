@@ -564,7 +564,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
               <div className="bg-[#2b2b2b] mt-1 space-y-1">
                 <Link href="/admin/relationships/notifies" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
                    <MessageCircle className="w-4 h-4 text-white" />
-                   <span>Notifies for the club staff</span>
+                   <span>Notifies from Movesbook Staff</span>
                 </Link>
     
                 <Link href="/admin/relationships/reviews" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">

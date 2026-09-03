@@ -1,48 +1,65 @@
-import { Resend } from "resend";
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyToken } from '@/lib/auth';
+import { sendIonosEmail } from '@/lib/ionosEmail';
 
-export async function POST(req: Request) {
-const resend = new Resend(process.env.RESEND_API_KEY);
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+function getUserId(request: NextRequest): string | null {
+  const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+  if (!token) return null;
+  return verifyToken(token)?.userId ?? null;
+}
+
+export async function POST(req: NextRequest) {
+  const userId = getUserId(req);
+  if (!userId) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
 
   try {
-    const { email, message, tableHtml} = await req.json();
+    const body = await req.json();
+    const email = String(body?.email || '').trim();
+    const message = String(body?.message || '').trim();
+    const tableHtml = typeof body?.tableHtml === 'string' ? body.tableHtml : '';
+
     if (!email) {
-      return Response.json({ success: false, error: "Email is required" });
+      return NextResponse.json({ success: false, error: 'Email is required' }, { status: 400 });
     }
 
     const htmlContent = `
-      <div style="font-family: Arial; padding:20px;">
-        <h2>📩 New Message</h2>
-        ${message ? `<p>${message}</p>` : ""}
+      <div style="font-family: Arial, sans-serif; padding:20px; color:#222;">
+        <h2 style="margin:0 0 12px;">Message from Movesbook</h2>
+        ${message ? `<p style="white-space:pre-wrap;">${message.replace(/</g, '&lt;')}</p>` : ''}
         ${
           tableHtml
             ? `<div style="margin-top:20px;">
-                 <h3>📊 Table Data</h3>
+                 <h3 style="margin:0 0 8px;">Table data</h3>
                  ${tableHtml}
                </div>`
-            : ""
+            : ''
         }
-
         <p style="margin-top:20px; font-size:12px; color:#999;">
-          Sent from your dashboard
+          Sent from Movesbook
         </p>
       </div>
     `;
 
-    const response = await resend.emails.send({
-      from: "onboarding@resend.dev", // test sender
+    await sendIonosEmail({
       to: email,
-      subject: "New Message",
+      subject: 'Message from Movesbook',
       html: htmlContent,
     });
 
-    return Response.json({ success: true, data: response });
-
-  } catch (error: any) {
-    console.error("EMAIL ERROR:", error);
-
-    return Response.json({
-      success: false,
-      error: error.message,
-    });
+    return NextResponse.json({ success: true });
+  } catch (error: unknown) {
+    console.error('EMAIL ERROR:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to send email',
+      },
+      { status: 500 },
+    );
   }
 }

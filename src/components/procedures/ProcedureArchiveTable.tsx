@@ -72,9 +72,9 @@ export default function ProcedureArchiveTable({
     else setInternalSort(next);
   }
 
-  const onlyOpenRest = selectableAll ? false : selectOnlyOpenRest;
   const rowIsCheckable = (r: Member) =>
-    Boolean(r.id) && (!onlyOpenRest || (r.rest ?? 0) > 0);
+    Boolean(r.id) &&
+    (selectableAll || !selectOnlyOpenRest || (r.rest ?? 0) > 0);
   const selectableRows = displayRows.filter(rowIsCheckable);
   const allSelectableChecked =
     selectableRows.length > 0 &&

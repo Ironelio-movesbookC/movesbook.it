@@ -20,7 +20,7 @@ const LABELS: Record<ManagedEntityKind, EntityProfileLabels> = {
     createTitle: (u) => `Create a new club for the Club Admin <${u}>`,
     logoLabel: 'Club Logo',
     usernameLabel: 'Club username',
-    categoryLabel: 'Category',
+    categoryLabel: 'Sport',
     mailLabel: 'Club mail',
     passwordSectionTitle: 'My Club password',
     passwordHintCreate:
@@ -35,7 +35,7 @@ const LABELS: Record<ManagedEntityKind, EntityProfileLabels> = {
     createTitle: (u) => `Create a new trained group for the Coach <${u}>`,
     logoLabel: 'Group Logo',
     usernameLabel: 'Group username',
-    categoryLabel: 'Sport / category',
+    categoryLabel: 'Sport',
     mailLabel: 'Group mail',
     passwordSectionTitle: 'My Group password',
     passwordHintCreate:
@@ -65,7 +65,7 @@ const LABELS: Record<ManagedEntityKind, EntityProfileLabels> = {
     createTitle: (u) => `Create a new group for the Group Admin <${u}>`,
     logoLabel: 'Group Logo',
     usernameLabel: 'Group username',
-    categoryLabel: 'Group type',
+    categoryLabel: 'Sport',
     mailLabel: 'Group mail',
     passwordSectionTitle: 'My Group password',
     passwordHintCreate:

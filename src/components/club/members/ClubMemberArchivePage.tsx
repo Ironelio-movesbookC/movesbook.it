@@ -73,6 +73,8 @@ export default function ClubMemberArchivePage({
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [orderBy, setOrderBy] = useState<'recent' | 'old'>('recent');
+  const [sportFilter, setSportFilter] = useState('all');
+  const [groupFilter, setGroupFilter] = useState('all');
   const [appliedFilters, setAppliedFilters] = useState<ArchiveFetchParams>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [viewSelectedOnly, setViewSelectedOnly] = useState(false);
@@ -110,7 +112,11 @@ export default function ClubMemberArchivePage({
             (appliedFilters.search ? `&search=${encodeURIComponent(appliedFilters.search)}` : '') +
             (appliedFilters.fromDate ? `&fromDate=${appliedFilters.fromDate}` : '') +
             (appliedFilters.toDate ? `&toDate=${appliedFilters.toDate}` : '') +
-            (appliedFilters.orderBy ? `&orderBy=${appliedFilters.orderBy}` : '')
+            (appliedFilters.orderBy ? `&orderBy=${appliedFilters.orderBy}` : '') +
+            (appliedFilters.sport ? `&sport=${encodeURIComponent(appliedFilters.sport)}` : '') +
+            (appliedFilters.groupTrained
+              ? `&groupTrained=${encodeURIComponent(appliedFilters.groupTrained)}`
+              : '')
         );
         const fetchRes = await fetch(url, { headers: getAuthHeaders() });
         const payload = await fetchRes.json().catch(() => ({}));
@@ -124,7 +130,11 @@ export default function ClubMemberArchivePage({
             (appliedFilters.search ? `&search=${encodeURIComponent(appliedFilters.search)}` : '') +
             (appliedFilters.fromDate ? `&fromDate=${appliedFilters.fromDate}` : '') +
             (appliedFilters.toDate ? `&toDate=${appliedFilters.toDate}` : '') +
-            (appliedFilters.orderBy ? `&orderBy=${appliedFilters.orderBy}` : '')
+            (appliedFilters.orderBy ? `&orderBy=${appliedFilters.orderBy}` : '') +
+            (appliedFilters.sport ? `&sport=${encodeURIComponent(appliedFilters.sport)}` : '') +
+            (appliedFilters.groupTrained
+              ? `&groupTrained=${encodeURIComponent(appliedFilters.groupTrained)}`
+              : '')
         );
         const fetchRes = await fetch(url, { headers: getAuthHeaders() });
         const payload = await fetchRes.json().catch(() => ({}));
@@ -181,6 +191,8 @@ export default function ClubMemberArchivePage({
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
       orderBy,
+      sport: sportFilter !== 'all' ? sportFilter : undefined,
+      groupTrained: groupFilter !== 'all' ? groupFilter : undefined,
     });
   }
 
@@ -189,6 +201,8 @@ export default function ClubMemberArchivePage({
     setFromDate('');
     setToDate('');
     setOrderBy('recent');
+    setSportFilter('all');
+    setGroupFilter('all');
     setPage(1);
     setAppliedFilters({});
     setViewSelectedOnly(false);
@@ -427,6 +441,52 @@ export default function ClubMemberArchivePage({
               >
                 <option value="recent">Most recent</option>
                 <option value="old">Oldest first</option>
+              </select>
+            </label>
+            <label className="shrink-0">
+              <span className="text-xs text-gray-600">Sport</span>
+              <select
+                className="mt-1 block min-w-[8rem] rounded border border-gray-300 px-2 py-1.5"
+                value={sportFilter}
+                onChange={(e) => setSportFilter(e.target.value)}
+              >
+                <option value="all">All</option>
+                {Array.from(
+                  new Set(
+                    data
+                      .map((row) => String(row.sport ?? '').trim())
+                      .filter((v) => v && v !== '-'),
+                  ),
+                )
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((sport) => (
+                    <option key={sport} value={sport}>
+                      {sport}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="shrink-0">
+              <span className="text-xs text-gray-600">Group of training</span>
+              <select
+                className="mt-1 block min-w-[9rem] rounded border border-gray-300 px-2 py-1.5"
+                value={groupFilter}
+                onChange={(e) => setGroupFilter(e.target.value)}
+              >
+                <option value="all">All</option>
+                {Array.from(
+                  new Set(
+                    data
+                      .map((row) => String(row.groupTrained ?? '').trim())
+                      .filter((v) => v && v !== '-'),
+                  ),
+                )
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((group) => (
+                    <option key={group} value={group}>
+                      {group}
+                    </option>
+                  ))}
               </select>
             </label>
             <button

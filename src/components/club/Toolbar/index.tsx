@@ -168,10 +168,15 @@
       }
 
       try {
+        const token =
+          typeof window !== "undefined"
+            ? localStorage.getItem("token") || localStorage.getItem("adminToken")
+            : null;
         const res = await fetch("/api/send-email", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
             email: targetEmail,
@@ -206,10 +211,15 @@
       if (!tableData) return alert("Table not found");
 
       try {
+        const token =
+          typeof window !== "undefined"
+            ? localStorage.getItem("token") || localStorage.getItem("adminToken")
+            : null;
         const res = await fetch("/api/send-email", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
             email,

@@ -275,7 +275,7 @@ type ClubAdminArchiveItem =
 const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   [{ kind: 'icon', Icon: Server, label: '» Overview', path: '/clubs/archive_overview' }],
   [
-    { kind: 'icon', Icon: Users, label: 'Members', path: '/clubMembers/memberList'},
+    { kind: 'icon', Icon: Users, label: 'Archive of Members', path: '/clubMembers/memberList'},
     { kind: 'icon', Icon: UserCog, label: 'Operators', path: '/clubs/club_operatorlist' },
     { kind: 'icon', Icon: User, label: 'Employees', path: '/clubs/archive_employees' },
   ],
@@ -479,6 +479,8 @@ export default function DarkSidebar({
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [myDashboardOpen, setMyDashboardOpen] = useState(false);
   const [messagesOpen, setMessagesOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationCounts, setNotificationCounts] = useState({ movesbook: 0, clubs: 0, total: 0 });
   const [myFeedbackCount, setMyFeedbackCount] = useState(0);
   const [myClubsOpen, setMyClubsOpen] = useState(false);
   const [clubAdminInfoOpen, setClubAdminInfoOpen] = useState(false);
@@ -500,6 +502,29 @@ export default function DarkSidebar({
         if (!res.ok) return;
         const data = await res.json();
         if (typeof data.count === 'number') setMyFeedbackCount(data.count);
+      } catch {
+        /* optional */
+      }
+    })();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const token = getAuthToken();
+    if (!token) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/notifications?countsOnly=1', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setNotificationCounts({
+          movesbook: Number(data.movesbook) || 0,
+          clubs: Number(data.clubs) || 0,
+          total: Number(data.total) || 0,
+        });
       } catch {
         /* optional */
       }
@@ -2319,15 +2344,64 @@ export default function DarkSidebar({
               <ChevronDown className="w-4 h-4 opacity-80" />
             </button>
 
-            <button
-              className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
-            >
-              <div className="flex items-center gap-3">
-                <Mail className="w-5 h-5" />
-                <span>Notifications(0)</span>
+            <div className="border-b border-teal-700">
+              <div className="flex w-full items-stretch bg-teal-800 text-white">
+                <button
+                  type="button"
+                  onClick={() => setNotificationsOpen((v) => !v)}
+                  aria-expanded={notificationsOpen}
+                  className="flex flex-1 items-center gap-3 min-w-0 py-3 pl-4 pr-2 text-left hover:bg-teal-700 transition-colors"
+                >
+                  <Mail className="w-5 h-5 shrink-0" />
+                  <span className="truncate">Notifications({notificationCounts.total})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotificationsOpen((v) => !v)}
+                  aria-label={notificationsOpen ? t('collapse') : t('expand')}
+                  className="shrink-0 px-4 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 opacity-80 transition-transform duration-200 ${notificationsOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
               </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+              {notificationsOpen && (
+                <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40 px-3 py-2 space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => router.push('/users/notification/all/all/movesbook')}
+                    className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2.5 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                  >
+                    <Bell className="h-4 w-4 shrink-0 opacity-95" />
+                    <span className="leading-snug">
+                      By Movesbook ({notificationCounts.movesbook})
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isClubAccountUserType(userType)) {
+                        const qs = selectedEntityId
+                          ? `?clubId=${encodeURIComponent(selectedEntityId)}`
+                          : '';
+                        router.push(`/users/clubnotification${qs}`);
+                        return;
+                      }
+                      router.push('/users/notification/all/all/clubs');
+                    }}
+                    className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2.5 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                  >
+                    <MessageSquare className="h-4 w-4 shrink-0 opacity-95" />
+                    <span className="leading-snug">
+                      {isClubAccountUserType(userType)
+                        ? 'Send / Club notifies'
+                        : `By Club Staff (${notificationCounts.clubs})`}
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="border-b border-teal-700">
               <div className="flex w-full items-stretch bg-teal-800 text-white">
@@ -2864,19 +2938,66 @@ export default function DarkSidebar({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Mail className="w-5 h-5 shrink-0" />
-                    <span className="font-semibold tracking-wide truncate">Notifications(0)</span>
+                <div className="border-b border-teal-700">
+                  <div className="flex w-full items-stretch bg-teal-800 text-white">
+                    <button
+                      type="button"
+                      onClick={() => setNotificationsOpen((v) => !v)}
+                      aria-expanded={notificationsOpen}
+                      className="flex flex-1 items-center gap-2.5 min-w-0 py-2.5 pl-3 pr-2 text-left hover:bg-teal-700 transition-colors"
+                    >
+                      <Mail className="w-5 h-5 shrink-0" />
+                      <span className="font-semibold tracking-wide truncate">
+                        Notifications({notificationCounts.total})
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotificationsOpen((v) => !v)}
+                      aria-label={notificationsOpen ? t('collapse') : t('expand')}
+                      className="shrink-0 px-3 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                    >
+                      <ChevronDown
+                        className={`w-4 h-4 opacity-90 transition-transform duration-200 ${notificationsOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <ChevronDown className="w-4 h-4 opacity-90" />
-                    <Settings className="w-4 h-4 opacity-90" />
-                  </div>
-                </button>
+                  {notificationsOpen && (
+                    <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40 px-3 py-2 space-y-1.5">
+                      <button
+                        type="button"
+                        onClick={() => router.push('/users/notification/all/all/movesbook')}
+                        className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                      >
+                        <Bell className="h-4 w-4 shrink-0 opacity-95" />
+                        <span className="leading-snug">
+                          By Movesbook ({notificationCounts.movesbook})
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isClubAccountUserType(userType)) {
+                            const qs = selectedEntityId
+                              ? `?clubId=${encodeURIComponent(selectedEntityId)}`
+                              : '';
+                            router.push(`/users/clubnotification${qs}`);
+                            return;
+                          }
+                          router.push('/users/notification/all/all/clubs');
+                        }}
+                        className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                      >
+                        <MessageSquare className="h-4 w-4 shrink-0 opacity-95" />
+                        <span className="leading-snug">
+                          {isClubAccountUserType(userType)
+                            ? 'Send / Club notifies'
+                            : `By Club Staff (${notificationCounts.clubs})`}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 <div className="border-b border-teal-700">
                   <div className="flex w-full items-stretch bg-teal-800 text-white">
@@ -4405,6 +4526,11 @@ export default function DarkSidebar({
                                       Icon: LayoutGrid,
                                       label: 'Tables',
                                       path: '/club/settings/tables/areas',
+                                    },
+                                    {
+                                      Icon: List,
+                                      label: 'Customized fields',
+                                      path: '/club/settings/customized-fields',
                                     },
                                     {
                                       Icon: Volume2,

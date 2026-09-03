@@ -9,6 +9,10 @@ import {
   type StatsUserKind,
 } from '@/lib/admin/statisticsKinds';
 import { formatCount, formatEuro } from '@/components/admin/statistics/useAdminStatistics';
+import {
+  StatisticsGraphThemeProvider,
+  useStatisticsGraphTheme,
+} from '@/components/admin/statistics/StatisticsGraphTheme';
 
 type StatisticsPageShellProps = {
   title: string;
@@ -21,7 +25,7 @@ type StatisticsPageShellProps = {
   children: ReactNode;
 };
 
-export default function StatisticsPageShell({
+function StatisticsPageShellInner({
   title,
   description,
   totalUsers,
@@ -31,28 +35,76 @@ export default function StatisticsPageShell({
   filters,
   children,
 }: StatisticsPageShellProps) {
+  const theme = useStatisticsGraphTheme();
+  const { background, palette, cyclePalette, cycleBackground, rootStyle, panelStyle } = theme;
+
   return (
-    <div className="h-full min-h-0 overflow-y-auto bg-[#ececec] p-3 md:p-4">
+    <div className="h-full min-h-0 overflow-y-auto p-3 md:p-4" style={rootStyle}>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#058592]">
+          <p
+            className="text-xs font-semibold uppercase tracking-wide"
+            style={{ color: background.accent }}
+          >
             General graphs
           </p>
-          <h1 className="mt-0.5 text-xl font-bold text-[#222]">{title}</h1>
+          <h1 className="mt-0.5 text-xl font-bold" style={{ color: background.text }}>
+            {title}
+          </h1>
           {description ? (
-            <p className="mt-0.5 max-w-3xl text-sm text-[#555]">{description}</p>
+            <p className="mt-0.5 max-w-3xl text-sm" style={{ color: background.muted }}>
+              {description}
+            </p>
           ) : null}
         </div>
-        <div className="flex shrink-0 gap-2">
-          <div className="min-w-[7.5rem] border border-[#cfcfcf] bg-white px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wide text-[#666]">Users</div>
-            <div className="mt-0.5 text-xl font-bold text-[#058592]">
+
+        <div className="flex shrink-0 flex-wrap items-stretch justify-end gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={cyclePalette}
+              className="flex min-w-[8.5rem] flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left text-sm font-semibold transition hover:-translate-y-0.5 hover:shadow-md"
+              style={panelStyle}
+              title="Cycle chart color palette"
+            >
+              Change colors
+              <span className="text-xs font-medium" style={{ color: background.muted }}>
+                {palette.label}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={cycleBackground}
+              className="flex min-w-[8.5rem] flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left text-sm font-semibold transition hover:-translate-y-0.5 hover:shadow-md"
+              style={panelStyle}
+              title="Cycle page background"
+            >
+              Change background
+              <span className="text-xs font-medium" style={{ color: background.muted }}>
+                {background.label}
+              </span>
+            </button>
+          </div>
+
+          <div
+            className="min-w-[7.5rem] border px-3 py-2"
+            style={panelStyle}
+          >
+            <div className="text-[10px] uppercase tracking-wide" style={{ color: background.muted }}>
+              Users
+            </div>
+            <div className="mt-0.5 text-xl font-bold" style={{ color: background.accent }}>
               {loading ? '…' : formatCount(totalUsers)}
             </div>
           </div>
-          <div className="min-w-[7.5rem] border border-[#cfcfcf] bg-white px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wide text-[#666]">Income (€)</div>
-            <div className="mt-0.5 text-xl font-bold text-[#941751]">
+          <div
+            className="min-w-[7.5rem] border px-3 py-2"
+            style={panelStyle}
+          >
+            <div className="text-[10px] uppercase tracking-wide" style={{ color: background.muted }}>
+              Income (€)
+            </div>
+            <div className="mt-0.5 text-xl font-bold" style={{ color: background.accentAlt }}>
               {loading ? '…' : formatEuro(incomeEuro)}
             </div>
           </div>
@@ -60,7 +112,7 @@ export default function StatisticsPageShell({
       </div>
 
       {filters ? (
-        <div className="mb-3 flex flex-wrap items-end gap-3 border border-[#cfcfcf] bg-white p-2.5">
+        <div className="mb-3 flex flex-wrap items-end gap-3 border p-2.5" style={panelStyle}>
           {filters}
         </div>
       ) : null}
@@ -72,13 +124,21 @@ export default function StatisticsPageShell({
       ) : null}
 
       {loading && !error ? (
-        <div className="border border-[#cfcfcf] bg-white p-8 text-center text-[#666]">
+        <div className="border p-8 text-center" style={{ ...panelStyle, color: background.muted }}>
           Loading statistics…
         </div>
       ) : (
         children
       )}
     </div>
+  );
+}
+
+export default function StatisticsPageShell(props: StatisticsPageShellProps) {
+  return (
+    <StatisticsGraphThemeProvider>
+      <StatisticsPageShellInner {...props} />
+    </StatisticsGraphThemeProvider>
   );
 }
 
@@ -91,14 +151,22 @@ type SelectProps = {
 };
 
 export function StatisticsSelect({ id, label, value, onChange, options }: SelectProps) {
+  const theme = useStatisticsGraphTheme();
   return (
-    <label htmlFor={id} className="flex flex-col gap-1 text-sm min-w-[180px]">
-      <span className="font-semibold text-[#333]">{label}</span>
+    <label htmlFor={id} className="flex min-w-[180px] flex-col gap-1 text-sm">
+      <span className="font-semibold" style={{ color: theme.background.text }}>
+        {label}
+      </span>
       <select
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="border border-[#bbb] bg-white px-2 py-1.5 text-sm"
+        className="border px-2 py-1.5 text-sm"
+        style={{
+          background: theme.background.panel,
+          borderColor: theme.background.border,
+          color: theme.background.text,
+        }}
       >
         {options.map((opt) => (
           <option key={opt.value || 'all'} value={opt.value}>

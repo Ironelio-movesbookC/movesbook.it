@@ -239,10 +239,9 @@ async function copyStaffButtonsToPage(
   let imported = 0;
 
   for (const btn of staffButtons) {
-    const tr =
-      btn.translations.find((t) => normalizeLang(t.languageCode) === lang) ??
-      btn.translations.find((t) => normalizeLang(t.languageCode) === 'en') ??
-      btn.translations[0];
+    // Client answer #3: import ONLY the translation matching the current user's language.
+    const tr = btn.translations.find((t) => normalizeLang(t.languageCode) === lang);
+    if (!tr) continue;
 
     await prisma.mubButtonItem.create({
       data: {
@@ -257,15 +256,13 @@ async function copyStaffButtonsToPage(
         pageToOpen: btn.pageToOpen,
         isImported: true,
         translations: {
-          create: tr
-            ? [
-                {
-                  languageCode: lang,
-                  shortText: tr.shortText,
-                  extendedText: tr.extendedText,
-                },
-              ]
-            : [{ languageCode: lang, shortText: '', extendedText: '' }],
+          create: [
+            {
+              languageCode: lang,
+              shortText: tr.shortText,
+              extendedText: tr.extendedText,
+            },
+          ],
         },
       },
     });
@@ -309,9 +306,11 @@ export function parseMubScope(raw: string | null): MubScope {
 export function parseRoleTemplate(raw: string | null): MubRoleTemplate | null {
   if (!raw) return null;
   const value = raw.toUpperCase();
+  if (value === 'SINGLE_USER' || value === 'ATHLETE' || value === '5') return 'SINGLE_USER';
   if (value === 'TEAM' || value === '7') return 'TEAM';
   if (value === 'COACH' || value === '6') return 'COACH';
   if (value === 'CLUB' || value === '8') return 'CLUB';
+  if (value === 'GROUP' || value === '9') return 'GROUP';
   return null;
 }
 

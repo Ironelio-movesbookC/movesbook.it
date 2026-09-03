@@ -20,6 +20,8 @@ function parseArchiveParams(request: NextRequest): ArchiveQueryParams {
     fromDate: sp.get('fromDate') ?? undefined,
     toDate: sp.get('toDate') ?? undefined,
     orderBy: (sp.get('orderBy') as 'recent' | 'old') ?? undefined,
+    sport: sp.get('sport') ?? undefined,
+    groupTrained: sp.get('groupTrained') ?? undefined,
   };
 }
 

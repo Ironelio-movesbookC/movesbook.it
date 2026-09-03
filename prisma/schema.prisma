@@ -42,6 +42,7 @@ model User {
   ownedTeams               Team[]                @relation("TeamOwner")
   mainSports               UserMainSport[]
   settings                 UserSettings?
+  profileExtras            UserProfileExtras?
   workoutDays              WorkoutDay[]
   workoutPlans             WorkoutPlan[]
   sections                 WorkoutSection[]
@@ -110,6 +111,8 @@ model User {
   clubSharedOgpGroups          ClubSharedOgpGroup[]   @relation("ClubSharedOgpGroupBy")
   clubSharedNews               ClubSharedNews[]       @relation("ClubSharedNewsBy")
   clubStaffRoles               ClubStaff[]
+  notificationsSubmitted       Notification[]         @relation("NotificationSubmittedBy")
+  notificationVisits           NotificationVisit[]
 
   @@map("users_new")
 }
@@ -1787,18 +1790,77 @@ model ClubBachecaLabel {
 }
 
 model ClubMember {
-  id             String   @id @default(cuid())
+  id             String             @id @default(cuid())
   clubId         String
   memberId       String
   role           String?
   membershipType String?
-  joinedAt       DateTime @default(now())
-  club           Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  member         User     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  joinedAt       DateTime           @default(now())
+  club           Club               @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  member         User               @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  profile        ClubMemberProfile?
+  notes          ClubMemberNote[]
 
   @@unique([clubId, memberId])
   @@index([memberId], map: "club_members_new_memberId_fkey")
   @@map("club_members_new")
+}
+
+/** Shared (cross-club) extended profile fields for Owner profile / contacts / references. */
+model UserProfileExtras {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  disallowClubAdmins Boolean  @default(false)
+  qrCodeUrl          String?
+  ownerJson          String   @db.LongText
+  contactsJson       String   @db.LongText
+  activitiesJson     String   @db.LongText
+  referencesHtml     String?  @db.LongText
+  referencesLevel    String?  @default("1")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("user_profile_extras")
+}
+
+/** Club-scoped member dossier (other details, parents, settings, visibility, pay-for…). */
+model ClubMemberProfile {
+  id              String     @id @default(cuid())
+  clubMemberId    String     @unique
+  clubMember      ClubMember @relation(fields: [clubMemberId], references: [id], onDelete: Cascade)
+  profileJson     String     @db.LongText
+  medicalImageUrl String?
+  medicalPdfUrl   String?
+  signatureDataUrl String?   @db.LongText
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@map("club_member_profiles")
+}
+
+/** Staff messages & coach reflections for a club membership. */
+model ClubMemberNote {
+  id              String     @id @default(cuid())
+  clubMemberId    String
+  clubMember      ClubMember @relation(fields: [clubMemberId], references: [id], onDelete: Cascade)
+  kind            String
+  title           String     @default("")
+  body            String     @db.Text
+  authorId        String?
+  parentId        String?
+  visibleToMember Boolean    @default(false)
+  commentsEnabled Boolean    @default(false)
+  enableFrom      DateTime?
+  enableTo        DateTime?
+  showAtLogin     Boolean    @default(false)
+  showAtLogout    Boolean    @default(false)
+  imageUrlsJson   String?    @db.Text
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([clubMemberId, kind])
+  @@map("club_member_notes")
 }
 
 /// Named member lists created by club admin from Archive — Members.
@@ -2981,9 +3043,11 @@ enum MubCategory {
 }
 
 enum MubRoleTemplate {
-  CLUB
-  TEAM
+  SINGLE_USER
   COACH
+  TEAM
+  CLUB
+  GROUP
 }
 
 enum MubIconSource {
@@ -3039,4 +3103,55 @@ model MubButtonTranslation {
 
   @@unique([buttonId, languageCode])
   @@map("mub_button_translations")
+}
+
+/// Broadcast notifications from Movesbook Staff or Club Admin (not 1:1 messages).
+model Notification {
+  id                   String              @id @default(cuid())
+  /// movesbook_staff | club_admin
+  source               String
+  title                String
+  description          String              @db.LongText
+  path                 String?             @db.Text
+  untilDate            DateTime            @db.Date
+  /// Empty / "0" / null = all languages
+  langId               String?
+  prioritary           Boolean             @default(false)
+  isShow               Boolean             @default(true)
+  /// Club admin / user who submitted (users_new.id)
+  submittedByUserId    String?
+  /// Super Admin / staff account id when source is movesbook_staff
+  submittedByAdminId   String?
+  /// JSON string[] of UserType values for staff broadcasts (app sets "[]" on insert; no DB default — MySQL <8.0.13 rejects TEXT defaults)
+  audienceRolesJson     String              @db.Text
+  /// JSON string[] of usernames (staff targeting per requirement)
+  audienceUsernamesJson String              @db.Text
+  /// JSON string[] of resolved user ids from usernames
+  audienceUserIdsJson   String              @db.Text
+  /// JSON string[] of club ids (club_admin sends)
+  clubIdsJson           String              @db.Text
+  /// members | staff — club audience kind
+  audienceKind         String              @default("members")
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  submittedByUser      User?               @relation("NotificationSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: SetNull)
+  visits               NotificationVisit[]
+
+  @@index([source, isShow, untilDate])
+  @@index([submittedByUserId])
+  @@index([createdAt])
+  @@map("app_notifications")
+}
+
+model NotificationVisit {
+  id             String       @id @default(cuid())
+  notificationId String
+  userId         String
+  createdAt      DateTime     @default(now())
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId])
+  @@map("app_notification_visits")
 }
