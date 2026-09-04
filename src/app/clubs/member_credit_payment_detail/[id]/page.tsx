@@ -231,6 +231,15 @@ export default function MemberCreditPaymentDetailPage() {
       );
   }, [id, purchase?.userId]);
 
+  async function handleAddToRecordTotal(additionalAmount: number): Promise<void> {
+    if (!purchase) return;
+    const newTotal = purchase.value + additionalAmount;
+    await client.updateRecord(id, { totalAmount: newTotal });
+    setPurchases((prev) =>
+      prev.map((p, i) => (i === 0 ? { ...p, value: newTotal, rest: p.rest + additionalAmount } : p))
+    );
+  }
+
   async function handleSubmit(values: ServicePaymentSubmitValues) {
     setError('');
     setSuccess('');
@@ -259,7 +268,7 @@ export default function MemberCreditPaymentDetailPage() {
             debtExpire: values.debtExpire,
             payWith: values.payWith,
             taxDocument: values.taxDocument,
-            createReceipt: false,
+            createReceipt: values.createReceipt && dist.installmentId === id,
             receiptNumber: values.receiptNumber,
             receiptAnnotations: values.description,
             serviceName: purchases.find((p) => p.id === dist.installmentId)?.serviceName,
@@ -279,7 +288,7 @@ export default function MemberCreditPaymentDetailPage() {
           debtExpire: values.debtExpire,
           payWith: values.payWith,
           taxDocument: values.taxDocument,
-          createReceipt: false,
+          createReceipt: values.createReceipt,
           receiptNumber: values.receiptNumber,
           receiptAnnotations: values.description,
           serviceName: purchase?.serviceName,
@@ -323,7 +332,7 @@ export default function MemberCreditPaymentDetailPage() {
             onSubmit={handleSubmit}
             onCancel={() => router.push('/clubs/member_credit_dead_line')}
             operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
-            disableReceipt
+            onAddToRecordTotal={extraPurchases.length > 0 ? undefined : handleAddToRecordTotal}
           />
         )}
       </ProcedureArchiveShell>

@@ -20,7 +20,7 @@ type Props = {
   emptyMessage?: string;
   /** Multi-select checkboxes (Archive of Deadlines → pay more). */
   selectable?: boolean;
-  /** When true, all rows with an id can be selected (default: only rows with rest > 0). */
+  /** When true, all rows with an id can be selected (alias for selectOnlyOpenRest=false). */
   selectableAll?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (row: Member) => void;
@@ -106,7 +106,7 @@ export default function ProcedureArchiveTable({
                   disabled={loading || selectableRows.length === 0}
                   onChange={(e) => onToggleSelectAll?.(e.target.checked)}
                   aria-label={
-                    selectOnlyOpenRest ? 'Select all with Rest > 0' : 'Select all'
+                    onlyOpenRest ? 'Select all with Rest > 0' : 'Select all'
                   }
                   onClick={(e) => e.stopPropagation()}
                 />
