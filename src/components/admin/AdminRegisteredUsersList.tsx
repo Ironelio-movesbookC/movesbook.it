@@ -24,6 +24,7 @@ import AdminClubUserPanelModal, {
 import AdminRegisteredUserGridCard from '@/components/admin/AdminRegisteredUserGridCard';
 import AdminUserPanelButton from '@/components/admin/AdminUserPanelButton';
 import { groupRowsForAdminGrid } from '@/lib/admin/groupRegisteredUserGridCards';
+import { buildPcuHistoryUserUrl } from '@/lib/admin/pcuHistoryUserUrl';
 import { getDefaultMembershipSortOrder } from '@/lib/admin/networkSubscriptionHistory';
 import {
   parseStatsKindParam,
@@ -31,6 +32,7 @@ import {
   STATS_KIND_TO_USER_TYPE_CATEGORY,
 } from '@/lib/admin/statsBarListHref';
 import { STATS_KIND_LABELS, type StatsTypeKindFilter, type StatsUserKind, type StatsVersionBucket } from '@/lib/admin/statisticsKinds';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 export type AdminUserSegment = 'all' | 'single-user' | 'coaches' | 'groups' | 'teams' | 'clubs';
 
@@ -1085,7 +1087,7 @@ export default function AdminRegisteredUsersList({
   }, []);
 
   const openClubUserPanel = useCallback(
-    async (userId: string, clubId?: string | null) => {
+    async (userId: string, clubId?: string | null, userType?: string | null) => {
       setClubPanelUserId(userId);
       setClubPanelOpen(true);
       setClubPanelLoading(true);
@@ -1098,7 +1100,13 @@ export default function AdminRegisteredUsersList({
           setClubPanelLoading(false);
           return;
         }
-        const qs = new URLSearchParams({ segment: 'clubs' });
+        const profileSegment =
+          userType && isClubAccountUserType(userType)
+            ? 'clubs'
+            : segment === 'all'
+              ? 'all'
+              : segment;
+        const qs = new URLSearchParams({ segment: profileSegment });
         if (clubId?.trim()) qs.set('clubId', clubId.trim());
         if (searchApplied.trim()) qs.set('q', searchApplied.trim());
         const res = await fetch(
@@ -1142,7 +1150,37 @@ export default function AdminRegisteredUsersList({
         setClubPanelLoading(false);
       }
     },
-    [searchApplied],
+    [searchApplied, segment],
+  );
+
+  const openAdminProfileFromGrid = useCallback(
+    (userId: string, _userType: string, clubId?: string | null) => {
+      router.push(
+        buildPcuHistoryUserUrl(userId, {
+          segment,
+          q: searchApplied.trim() || null,
+          tab: 'profile',
+          profileSubTab: 'admin',
+          clubId: clubId ?? null,
+        }),
+      );
+    },
+    [router, segment, searchApplied],
+  );
+
+  const openEntityProfileFromGrid = useCallback(
+    (userId: string, _userType: string, entityId: string | null) => {
+      router.push(
+        buildPcuHistoryUserUrl(userId, {
+          segment,
+          q: searchApplied.trim() || null,
+          tab: 'profile',
+          profileSubTab: 'entity',
+          clubId: entityId,
+        }),
+      );
+    },
+    [router, segment, searchApplied],
   );
 
   const handleClubPanelControlPanel = useCallback(() => {
@@ -1971,10 +2009,11 @@ export default function AdminRegisteredUsersList({
             <AdminRegisteredUserGridCard
               key={group.userId}
               group={group}
-              isAllSegment={isAllSegment}
-              isClubsSegment={isClubsSegment}
-              onOpenClubPanel={(userId, clubId) => void openClubUserPanel(userId, clubId)}
-              onOpenUserProfile={(userId, entityId) => void openUserProfile(userId, entityId)}
+              onOpenUserPanel={(userId, entityId) =>
+                void openClubUserPanel(userId, entityId, group.admin.userType)
+              }
+              onOpenAdminProfile={openAdminProfileFromGrid}
+              onOpenEntityProfile={openEntityProfileFromGrid}
             />
           ))}
         </div>

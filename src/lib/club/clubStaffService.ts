@@ -1,6 +1,7 @@
 import { SportType, UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { hashPassword, verifyPassword } from '@/lib/auth';
+import { ensureUserSettingsColumns } from '@/lib/userSettingsDb';
 import { normalizeTelegramAccount, isValidSportType } from '@/lib/profileSports';
 import {
   mergeProfilePanelIntoAdminSettings,
@@ -345,6 +346,8 @@ export async function createClubStaff(ctx: ClubAuthContext, input: ClubStaffWrit
     referencesLevel: String(input.referencesLevel ?? '1').trim() || '1',
   });
   const socialSettings = socialSettingsForAdminInfo('{}', input.adminInfo);
+
+  await ensureUserSettingsColumns();
 
   const created = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({

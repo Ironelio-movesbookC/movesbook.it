@@ -8,6 +8,14 @@ const USER_SETTINGS_COLUMN_DEFS: [string, string][] = [
   ['yearlyPlanStartDate', 'DATETIME NULL'],
   ['templateWeeksStartDate', 'DATETIME NULL'],
   ['newsTopicOrder', 'TEXT NULL'],
+  ['newsHiddenTopics', 'TEXT NULL'],
+  ['musicTopicOrder', 'TEXT NULL'],
+  ['musicTopicGenreOrder', 'TEXT NULL'],
+  ['musicHiddenTopics', 'TEXT NULL'],
+  ['musicHiddenGenres', 'TEXT NULL'],
+  ['exerciseTopicOrder', 'TEXT NULL'],
+  ['exerciseHiddenTopics', 'TEXT NULL'],
+  ['musicGenres', 'TEXT NULL'],
   ['weeklyStructureV1', 'LONGTEXT NULL'],
 ];
 
