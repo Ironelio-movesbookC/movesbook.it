@@ -161,20 +161,40 @@ export default function MubButtonEditorForm({
                 </label>
                 <span className="text-xs text-gray-600">{form.iconFileName || 'No file selected'}</span>
                 {uploadingIcon ? <span className="text-xs text-gray-500">Uploading…</span> : null}
+                {form.iconPath ? (
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, iconPath: '', iconFileName: '' }))}
+                    className="text-sm font-semibold text-red-700 underline hover:text-red-800"
+                  >
+                    Remove icon
+                  </button>
+                ) : null}
               </div>
             ) : (
-              <input
-                value={form.iconPath}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    iconPath: e.target.value,
-                    iconFileName: e.target.value ? e.target.value.split('/').pop() ?? '' : '',
-                  }))
-                }
-                placeholder="https://… or /path/to/icon.png"
-                className="w-full rounded border border-gray-300 px-2 py-1"
-              />
+              <div className="space-y-1">
+                <input
+                  value={form.iconPath}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      iconPath: e.target.value,
+                      iconFileName: e.target.value ? e.target.value.split('/').pop() ?? '' : '',
+                    }))
+                  }
+                  placeholder="https://… or /path/to/icon.png"
+                  className="w-full rounded border border-gray-300 px-2 py-1"
+                />
+                {form.iconPath ? (
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, iconPath: '', iconFileName: '' }))}
+                    className="text-sm font-semibold text-red-700 underline hover:text-red-800"
+                  >
+                    Remove icon
+                  </button>
+                ) : null}
+              </div>
             )}
           </div>
         </div>
@@ -241,6 +261,7 @@ export default function MubButtonEditorForm({
             textFont: form.textFont,
             textColor: form.textColor,
             iconPath: form.iconPath,
+            iconSource: form.iconSource,
             shortText: currentTranslation.shortText,
             extendedText: currentTranslation.extendedText,
           }}

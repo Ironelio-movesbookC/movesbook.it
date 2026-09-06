@@ -19,7 +19,13 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Menu, Settings } from 'lucide-react';
-import MubPreviewModeToggle, { normalizeMubDisplayMode, type MubDisplayMode } from '@/components/mub/MubPreviewModeToggle';
+import MubPreviewModeToggle, {
+  MUB_SIZE_COUNTS,
+  normalizeMubButtonSize,
+  normalizeMubDisplayMode,
+  type MubButtonSize,
+  type MubDisplayMode,
+} from '@/components/mub/MubPreviewModeToggle';
 import MubButtonEditorForm, { emptyMubButtonForm, type MubButtonFormState } from '@/components/mub/MubButtonEditorForm';
 import MubButtonPreview from '@/components/mub/MubButtonPreview';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -32,9 +38,10 @@ import {
   roleTemplateFromUserType,
 } from '@/lib/mub/constants';
 import type { MubButtonDto, MubCategory, MubPageDto, MubRoleTemplate } from '@/lib/mub/types';
-import { mubPageUrl } from '@/lib/mub/routes';
+import { mubPageUrl, mubStaffPageUrl } from '@/lib/mub/routes';
 
 type MubPageMode = 'view' | 'edit' | 'staff';
+type MubLoadSource = 'user' | 'movesbook';
 
 type MubPageClientProps = {
   mode: MubPageMode;
@@ -44,6 +51,8 @@ type MubPageClientProps = {
   initialCategory?: MubCategory;
   /** True when URL includes /club|workout|social segment. */
   hasCategoryInPath?: boolean;
+  /** Reading-mode source from ?load=user|movesbook */
+  initialLoadSource?: MubLoadSource | null;
 };
 
 function apiQuery(
@@ -51,9 +60,10 @@ function apiQuery(
   category: MubCategory,
   userId: string | undefined,
   staffRoleTemplate?: MubRoleTemplate,
+  loadSource?: MubLoadSource | null,
 ) {
   const params = new URLSearchParams({ category });
-  if (mode === 'staff') {
+  if (mode === 'staff' || loadSource === 'movesbook') {
     params.set('scope', 'STAFF');
     if (staffRoleTemplate) params.set('roleTemplate', staffRoleTemplate);
   } else {
@@ -69,10 +79,12 @@ export default function MubPageClient({
   initialPanel = null,
   initialCategory = 'CLUB_MANAGEMENT',
   hasCategoryInPath = false,
+  initialLoadSource = null,
 }: MubPageClientProps) {
   const router = useRouter();
-  const { t, currentLanguage: language } = useLanguage();
+  const { currentLanguage: language } = useLanguage();
   const { user } = useAuth();
+  const userRoleTemplate = roleTemplateFromUserType(user?.userType ?? 'ATHLETE');
   const [editUnlocked, setEditUnlocked] = useState(mode === 'staff');
   const [passwordOpen, setPasswordOpen] = useState(mode === 'edit');
   const [password, setPassword] = useState('');
@@ -87,9 +99,13 @@ export default function MubPageClient({
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [selectedBg, setSelectedBg] = useState('white');
   const [message, setMessage] = useState<string | null>(null);
-  /** Client-only preview layout — toggles instantly, no save (PHP: "Select the preview"). */
   const [previewMode, setPreviewMode] = useState<MubDisplayMode>(1);
-  /** Client answer #4 — personal password gate for Reset / Remove MUB default. */
+  const [buttonSize, setButtonSize] = useState<MubButtonSize>(2);
+  const [readingPageIndex, setReadingPageIndex] = useState(0);
+  const [loadSource, setLoadSource] = useState<MubLoadSource | null>(initialLoadSource);
+  const [loadPickerOpen, setLoadPickerOpen] = useState(false);
+  /** Reading-mode drag order — discarded when leaving MUB session (not persisted). */
+  const [sessionOrderIds, setSessionOrderIds] = useState<string[] | null>(null);
   const [confirmAction, setConfirmAction] = useState<'reset' | 'remove_default' | null>(null);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -100,19 +116,33 @@ export default function MubPageClient({
   const isViewLanding = mode === 'view' && activePanel === null && !hasCategoryInPath;
   const isUserSettingsHub = activePanel === 'user' && !hasCategoryInPath;
   const canEdit = mode === 'staff' || mode === 'view' || (mode === 'edit' && editUnlocked);
-  const showCategoryTabs = (activePanel === 'user' && canEdit) || mode === 'staff';
-  const showCrud = canEdit && activePanel === 'user' && hasCategoryInPath;
+  /** Staff builder always edits templates; user CRUD only on category routes (?setting + /club|workout|social). */
+  const showCrud = mode === 'staff' || (canEdit && activePanel === 'user' && hasCategoryInPath);
+  const isReadingSession = Boolean(loadSource) && !showCrud && activePanel !== 'background';
+  const showCategoryTabs =
+    (activePanel === 'user' && canEdit) || mode === 'staff' || isReadingSession;
   const showBackgroundPanel = canEdit && activePanel === 'background';
+  const showLoadPickerButton = (isViewLanding || isUserSettingsHub) && !isReadingSession;
   const pageTitle =
     mode === 'staff'
       ? `Setting page of the 'Most used buttons' by Movesbook staff`
-      : isViewLanding
+      : isReadingSession || isViewLanding
         ? `'Most used buttons of..'`
         : `Setting page of the 'Most used buttons'`;
 
+  const effectiveStaffRole =
+    mode === 'staff' ? staffRoleTemplate : loadSource === 'movesbook' ? userRoleTemplate : staffRoleTemplate;
+
   const queryString = useMemo(
-    () => apiQuery(mode === 'staff' ? 'staff' : 'edit', category, user?.id, staffRoleTemplate),
-    [mode, category, user?.id, staffRoleTemplate],
+    () =>
+      apiQuery(
+        mode === 'staff' ? 'staff' : 'edit',
+        category,
+        user?.id,
+        effectiveStaffRole,
+        mode === 'staff' ? null : loadSource,
+      ),
+    [mode, category, user?.id, effectiveStaffRole, loadSource],
   );
 
   useEffect(() => {
@@ -123,10 +153,36 @@ export default function MubPageClient({
     setCategory(initialCategory);
   }, [initialCategory]);
 
+  useEffect(() => {
+    setLoadSource(initialLoadSource);
+  }, [initialLoadSource]);
+
   const goUserSettings = () => router.push(mubPageUrl({ setting: true }));
   const goBackgroundSetting = () => router.push(mubPageUrl({ panel: 'background' }));
-  const goCategory = (cat: MubCategory) => router.push(mubPageUrl({ category: cat, setting: true }));
+  const goCategory = (cat: MubCategory) => {
+    if (mode === 'staff') {
+      // Stay on STAFF scope — never navigate to user MUB (would load personal buttons).
+      router.push(mubStaffPageUrl({ role: staffRoleTemplate, category: cat }));
+      return;
+    }
+    if (isReadingSession) {
+      setCategory(cat);
+      setReadingPageIndex(0);
+      setSessionOrderIds(null);
+      return;
+    }
+    router.push(mubPageUrl({ category: cat, setting: true }));
+  };
   const goViewLanding = () => router.push(mubPageUrl());
+
+  const chooseLoadSource = (source: MubLoadSource) => {
+    setLoadPickerOpen(false);
+    setSessionOrderIds(null);
+    setReadingPageIndex(0);
+    setLoadSource(source);
+    // Reading session lives on /users/mub_page?load=… (temp drag discarded when leaving).
+    router.push(`/users/mub_page?load=${source}`);
+  };
 
   const loadPage = useCallback(async () => {
     const token = localStorage.getItem('token');
@@ -140,6 +196,8 @@ export default function MubPageClient({
         setPage(data.page);
         setSelectedBg(data.page.backgroundColor);
         setPreviewMode(normalizeMubDisplayMode(data.page.displayMode));
+        setSessionOrderIds(null);
+        setReadingPageIndex(0);
       }
     } finally {
       setLoading(false);
@@ -147,12 +205,13 @@ export default function MubPageClient({
   }, [queryString, language]);
 
   useEffect(() => {
-    if (mode === 'staff' || hasCategoryInPath) {
+    if (mode === 'staff' || hasCategoryInPath || isReadingSession) {
       void loadPage();
     } else {
       setLoading(false);
+      setPage(null);
     }
-  }, [loadPage, mode, hasCategoryInPath]);
+  }, [loadPage, mode, hasCategoryInPath, isReadingSession]);
 
   const postAction = async (body: Record<string, unknown>) => {
     const token = localStorage.getItem('token');
@@ -335,14 +394,61 @@ export default function MubPageClient({
     }
   };
 
+  const orderedButtons = useMemo(() => {
+    if (!page) return [] as MubButtonDto[];
+    if (!sessionOrderIds?.length) return page.buttons;
+    const byId = new Map(page.buttons.map((b) => [b.id, b]));
+    const ordered = sessionOrderIds.map((id) => byId.get(id)).filter((b): b is MubButtonDto => Boolean(b));
+    const missing = page.buttons.filter((b) => !sessionOrderIds.includes(b.id));
+    return [...ordered, ...missing];
+  }, [page, sessionOrderIds]);
+
+  const sizeCount = MUB_SIZE_COUNTS[buttonSize];
+  const readingPageCount =
+    previewMode === 1 ? Math.max(1, Math.ceil(orderedButtons.length / sizeCount)) : 1;
+  const visibleButtons = useMemo(() => {
+    if (!isReadingSession && !showCrud) return orderedButtons;
+    if (previewMode === 1 && isReadingSession) {
+      const start = readingPageIndex * sizeCount;
+      return orderedButtons.slice(start, start + sizeCount);
+    }
+    return orderedButtons;
+  }, [orderedButtons, previewMode, isReadingSession, showCrud, readingPageIndex, sizeCount]);
+
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || !page || active.id === over.id) return;
-    const ids = page.buttons.map((b) => b.id);
-    const oldIndex = ids.indexOf(String(active.id));
-    const newIndex = ids.indexOf(String(over.id));
+    const fullIds = sessionOrderIds?.length ? [...sessionOrderIds] : page.buttons.map((b) => b.id);
+    const oldIndex = fullIds.indexOf(String(active.id));
+    const newIndex = fullIds.indexOf(String(over.id));
     if (oldIndex < 0 || newIndex < 0) return;
-    void reorderButtons(arrayMove(ids, oldIndex, newIndex));
+    const next = arrayMove(fullIds, oldIndex, newIndex);
+    if (showCrud) {
+      setSessionOrderIds(null);
+      void reorderButtons(next);
+      return;
+    }
+    // Reading mode — temporary only (not saved when leaving MUB session).
+    setSessionOrderIds(next);
+  };
+
+  const persistPreviewMode = async (next: MubDisplayMode) => {
+    setPreviewMode(next);
+    setReadingPageIndex(0);
+    if (!showCrud || loadSource === 'movesbook') return;
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`/api/mub/page?${queryString}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ displayMode: next }),
+      });
+    } catch {
+      /* preview still updates client-side */
+    }
   };
 
   const runProtectedAction = async () => {
@@ -450,7 +556,12 @@ export default function MubPageClient({
           <span>{pageTitle}</span>
           <MubPreviewModeToggle
             value={previewMode}
-            onChange={setPreviewMode}
+            onChange={(mode) => void persistPreviewMode(mode)}
+            size={buttonSize}
+            onSizeChange={(size) => {
+              setButtonSize(normalizeMubButtonSize(size));
+              setReadingPageIndex(0);
+            }}
             disabled={loading}
           />
         </div>
@@ -460,7 +571,7 @@ export default function MubPageClient({
             {MUB_STAFF_ROLE_TEMPLATES.map((role) => (
               <Link
                 key={role.id}
-                href={`/users/mub_staff_page?role=${role.id}`}
+                href={mubStaffPageUrl({ role: role.id, category })}
                 className={`rounded px-3 py-1 text-xs font-semibold ${
                   staffRoleTemplate === role.id ? 'bg-red-700 text-white' : 'bg-gray-800 text-white'
                 }`}
@@ -474,18 +585,22 @@ export default function MubPageClient({
         {showCategoryTabs ? (
         <div className="flex items-center justify-between border-b border-amber-200 bg-[#fff6bf] px-2 py-2">
           <div className="flex flex-wrap gap-2">
-            {MUB_CATEGORIES.map((cat) => (
+            {MUB_CATEGORIES.map((cat) => {
+              const categoryActive =
+                category === cat.id && (mode === 'staff' || hasCategoryInPath || isReadingSession);
+              return (
               <button
                 key={cat.id}
                 type="button"
                 onClick={() => goCategory(cat.id)}
                 className={`rounded px-4 py-1.5 text-sm font-semibold ${
-                  hasCategoryInPath && category === cat.id ? 'bg-red-700 text-white' : 'bg-gray-900 text-white'
+                  categoryActive ? 'bg-red-700 text-white' : 'bg-gray-900 text-white'
                 }`}
               >
                 {cat.legacyLabel}
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
         ) : null}
@@ -596,42 +711,86 @@ export default function MubPageClient({
         >
           {loading ? (
             <p className="text-sm text-gray-600">Loading…</p>
-          ) : isViewLanding || isUserSettingsHub ? (
+          ) : showLoadPickerButton ? (
             <div className="flex min-h-[8rem] items-start">
               <button
                 type="button"
-                disabled
-                className="rounded bg-gray-800 px-6 py-2 text-sm font-semibold text-white opacity-90"
+                onClick={() => setLoadPickerOpen(true)}
+                className="rounded bg-gray-800 px-6 py-2 text-sm font-semibold text-white hover:bg-gray-700"
               >
                 Mub to Load
               </button>
             </div>
-          ) : !page?.buttons.length ? (
+          ) : !orderedButtons.length ? (
             <p className="text-sm text-gray-600">No buttons configured yet.</p>
-          ) : previewMode === 2 ? (
-            <div className="flex flex-wrap items-stretch gap-3">
-              {page.buttons.map((btn) => (
-                <MubButtonLink key={btn.id} button={btn} compact />
-              ))}
-            </div>
-          ) : showCrud ? (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-              <SortableContext items={page.buttons.map((b) => b.id)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-2">
-                  {page.buttons.map((btn) => (
-                    <SortableMubButtonRow
-                      key={btn.id}
-                      button={btn}
-                      onEdit={() => openEdit(btn)}
-                      onDelete={() => void deleteButton(btn.id)}
-                    />
-                  ))}
+          ) : showCrud || isReadingSession ? (
+            <div className="space-y-3">
+              {isReadingSession && loadSource ? (
+                <p className="text-xs text-gray-600">
+                  Loaded: {loadSource === 'movesbook' ? `Movesbook MUB (${userRoleTemplate}, ${language})` : 'Your User MUB'}
+                  {sessionOrderIds ? ' — temporary order (not saved)' : ''}
+                </p>
+              ) : null}
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                <SortableContext items={visibleButtons.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+                  {previewMode === 2 ? (
+                    <div
+                      className="grid gap-3"
+                      style={{ gridTemplateColumns: `repeat(${sizeCount}, minmax(0, 1fr))` }}
+                    >
+                      {visibleButtons.map((btn) => (
+                        <SortableMubButtonRow
+                          key={btn.id}
+                          button={btn}
+                          compact
+                          showActions={showCrud}
+                          onEdit={showCrud ? () => openEdit(btn) : undefined}
+                          onDelete={showCrud ? () => void deleteButton(btn.id) : undefined}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {visibleButtons.map((btn) => (
+                        <SortableMubButtonRow
+                          key={btn.id}
+                          button={btn}
+                          showActions={showCrud}
+                          onEdit={showCrud ? () => openEdit(btn) : undefined}
+                          onDelete={showCrud ? () => void deleteButton(btn.id) : undefined}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </SortableContext>
+              </DndContext>
+              {isReadingSession && previewMode === 1 && readingPageCount > 1 ? (
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={readingPageIndex <= 0}
+                    onClick={() => setReadingPageIndex((p) => Math.max(0, p - 1))}
+                    className="rounded border px-3 py-1 text-xs disabled:opacity-40"
+                  >
+                    Prev
+                  </button>
+                  <span className="text-xs text-gray-700">
+                    Page {readingPageIndex + 1} / {readingPageCount}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={readingPageIndex >= readingPageCount - 1}
+                    onClick={() => setReadingPageIndex((p) => Math.min(readingPageCount - 1, p + 1))}
+                    className="rounded border px-3 py-1 text-xs disabled:opacity-40"
+                  >
+                    Next
+                  </button>
                 </div>
-              </SortableContext>
-            </DndContext>
+              ) : null}
+            </div>
           ) : (
             <div className="space-y-2">
-              {page.buttons.map((btn) => (
+              {orderedButtons.map((btn) => (
                 <div key={btn.id} className="flex items-stretch gap-2 rounded border border-gray-300/80 bg-white/40 p-2">
                   <MubButtonLink button={btn} />
                 </div>
@@ -685,6 +844,44 @@ export default function MubPageClient({
           </div>
         </div>
       ) : null}
+
+      {loadPickerOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded border border-gray-400 bg-white p-5 shadow-xl">
+            <h3 className="mb-2 text-base font-semibold text-gray-900">Mub to Load</h3>
+            <p className="mb-4 text-sm text-gray-600">Choose which MUB page to open in reading mode.</p>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => chooseLoadSource('movesbook')}
+                className="rounded bg-gray-900 px-4 py-2 text-left text-sm font-semibold text-white hover:bg-gray-800"
+              >
+                A — Movesbook MUB
+                <span className="mt-0.5 block text-xs font-normal text-gray-300">
+                  Template for {userRoleTemplate}, language {language}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => chooseLoadSource('user')}
+                className="rounded bg-gray-900 px-4 py-2 text-left text-sm font-semibold text-white hover:bg-gray-800"
+              >
+                B — User MUB page
+                <span className="mt-0.5 block text-xs font-normal text-gray-300">Your personal Most used buttons</span>
+              </button>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setLoadPickerOpen(false)}
+                className="rounded border border-gray-400 px-4 py-1.5 text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -693,10 +890,14 @@ function SortableMubButtonRow({
   button,
   onEdit,
   onDelete,
+  compact,
+  showActions = true,
 }: {
   button: MubButtonDto;
-  onEdit: () => void;
-  onDelete: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  compact?: boolean;
+  showActions?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: button.id,
@@ -711,7 +912,7 @@ function SortableMubButtonRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-stretch gap-2 rounded border border-gray-300/80 bg-white/40 p-2"
+      className={`flex items-stretch gap-2 rounded border border-gray-300/80 bg-white/40 p-2 ${compact ? 'min-w-0' : ''}`}
     >
       <button
         type="button"
@@ -722,21 +923,24 @@ function SortableMubButtonRow({
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <MubButtonLink button={button} />
-      <div className="flex shrink-0 flex-col gap-1">
-        <button type="button" onClick={onEdit} className="rounded bg-gray-500 px-3 py-1 text-xs text-white">
-          Edit
-        </button>
-        <button type="button" onClick={onDelete} className="rounded bg-amber-400 px-3 py-1 text-xs text-gray-900">
-          Delete
-        </button>
-      </div>
+      <MubButtonLink button={button} compact={compact} />
+      {showActions ? (
+        <div className="flex shrink-0 flex-col gap-1">
+          <button type="button" onClick={onEdit} className="rounded bg-gray-500 px-3 py-1 text-xs text-white">
+            Edit
+          </button>
+          <button type="button" onClick={onDelete} className="rounded bg-amber-400 px-3 py-1 text-xs text-gray-900">
+            Delete
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function MubButtonLink({ button, compact }: { button: MubButtonDto; compact?: boolean }) {
   const href = button.urlToOpen || '#';
+  const hoverTitle = compact ? button.extendedText || button.shortText : undefined;
   const inner = (
     <MubButtonPreview
       button={{
@@ -744,19 +948,27 @@ function MubButtonLink({ button, compact }: { button: MubButtonDto; compact?: bo
         textFont: button.textFont,
         textColor: button.textColor,
         iconPath: button.iconPath ?? '',
+        iconSource: button.iconSource,
         shortText: button.shortText,
         extendedText: compact ? '' : button.extendedText,
       }}
       compact={compact}
     />
   );
-  if (!button.urlToOpen) return inner;
+  if (!button.urlToOpen) {
+    return (
+      <div className="block min-w-0" title={hoverTitle}>
+        {inner}
+      </div>
+    );
+  }
 
   if (button.pageToOpen === 'popup') {
     return (
       <a
         href={href}
         className="block min-w-0"
+        title={hoverTitle}
         onClick={(e) => {
           e.preventDefault();
           window.open(href, '_blank', 'noopener,noreferrer,width=1024,height=768');
@@ -769,7 +981,7 @@ function MubButtonLink({ button, compact }: { button: MubButtonDto; compact?: bo
 
   if (button.pageToOpen === 'new_tab') {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="block min-w-0">
+      <a href={href} target="_blank" rel="noopener noreferrer" className="block min-w-0" title={hoverTitle}>
         {inner}
       </a>
     );
@@ -777,7 +989,7 @@ function MubButtonLink({ button, compact }: { button: MubButtonDto; compact?: bo
 
   // same_label — open in the central frame of the same tab
   return (
-    <a href={href} className="block min-w-0">
+    <a href={href} className="block min-w-0" title={hoverTitle}>
       {inner}
     </a>
   );
