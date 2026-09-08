@@ -37,11 +37,43 @@ import {
   mubBackgroundCss,
   roleTemplateFromUserType,
 } from '@/lib/mub/constants';
+import { sanitizeMubIconPath, sanitizeMubUrl } from '@/lib/mub/mubSanitize';
 import type { MubButtonDto, MubCategory, MubPageDto, MubRoleTemplate } from '@/lib/mub/types';
 import { mubPageUrl, mubStaffPageUrl } from '@/lib/mub/routes';
 
 type MubPageMode = 'view' | 'edit' | 'staff';
 type MubLoadSource = 'user' | 'movesbook';
+
+/**
+ * Where the gear-password unlock is remembered for the rest of the browser session.
+ *
+ * Navigating between MUB categories drops the `edit=1` flag from the URL, which used
+ * to lose the unlock — the old code compensated by treating plain `view` mode as
+ * editable, which meant the password gate could be skipped entirely. Keeping the
+ * unlock here instead lets the gate stay closed. It is a convenience only: every
+ * route re-checks permission server-side.
+ */
+const MUB_UNLOCK_KEYS: Record<'edit' | 'staff', string> = {
+  edit: 'mub:unlocked:user',
+  staff: 'mub:unlocked:staff',
+};
+
+function readUnlockFlag(mode: MubPageMode): boolean {
+  if (mode !== 'edit' && mode !== 'staff') return false;
+  try {
+    return window.sessionStorage.getItem(MUB_UNLOCK_KEYS[mode]) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeUnlockFlag(mode: 'edit' | 'staff') {
+  try {
+    window.sessionStorage.setItem(MUB_UNLOCK_KEYS[mode], '1');
+  } catch {
+    /* private mode — the user re-enters the password on the next page */
+  }
+}
 
 type MubPageClientProps = {
   mode: MubPageMode;
@@ -85,8 +117,9 @@ export default function MubPageClient({
   const { currentLanguage: language } = useLanguage();
   const { user } = useAuth();
   const userRoleTemplate = roleTemplateFromUserType(user?.userType ?? 'ATHLETE');
-  const [editUnlocked, setEditUnlocked] = useState(mode === 'staff');
-  const [passwordOpen, setPasswordOpen] = useState(mode === 'edit');
+  const [editUnlocked, setEditUnlocked] = useState(false);
+  /** sessionStorage is only readable after hydration; avoids flashing the gate. */
+  const [unlockChecked, setUnlockChecked] = useState(false);
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<'user' | 'background' | null>(initialPanel);
@@ -115,9 +148,12 @@ export default function MubPageClient({
 
   const isViewLanding = mode === 'view' && activePanel === null && !hasCategoryInPath;
   const isUserSettingsHub = activePanel === 'user' && !hasCategoryInPath;
-  const canEdit = mode === 'staff' || mode === 'view' || (mode === 'edit' && editUnlocked);
-  /** Staff builder always edits templates; user CRUD only on category routes (?setting + /club|workout|social). */
-  const showCrud = mode === 'staff' || (canEdit && activePanel === 'user' && hasCategoryInPath);
+  /** Both editing modes are behind the gear password — plain `view` is read-only. */
+  const requiresUnlock = mode === 'staff' || mode === 'edit';
+  const canEdit = requiresUnlock && editUnlocked;
+  /** Staff builder edits templates; user CRUD only on category routes (?setting + /club|workout|social). */
+  const showCrud =
+    mode === 'staff' ? canEdit : canEdit && activePanel === 'user' && hasCategoryInPath;
   const isReadingSession = Boolean(loadSource) && !showCrud && activePanel !== 'background';
   const showCategoryTabs =
     (activePanel === 'user' && canEdit) || mode === 'staff' || isReadingSession;
@@ -146,6 +182,11 @@ export default function MubPageClient({
   );
 
   useEffect(() => {
+    setEditUnlocked(readUnlockFlag(mode));
+    setUnlockChecked(true);
+  }, [mode]);
+
+  useEffect(() => {
     setActivePanel(initialPanel);
   }, [initialPanel]);
 
@@ -157,8 +198,11 @@ export default function MubPageClient({
     setLoadSource(initialLoadSource);
   }, [initialLoadSource]);
 
-  const goUserSettings = () => router.push(mubPageUrl({ setting: true }));
-  const goBackgroundSetting = () => router.push(mubPageUrl({ panel: 'background' }));
+  /** Keep `edit=1` on internal navigation so the unlocked session stays in edit mode. */
+  const keepEdit = mode === 'edit';
+  const goUserSettings = () => router.push(mubPageUrl({ setting: true, edit: keepEdit }));
+  const goBackgroundSetting = () =>
+    router.push(mubPageUrl({ panel: 'background', edit: keepEdit }));
   const goCategory = (cat: MubCategory) => {
     if (mode === 'staff') {
       // Stay on STAFF scope — never navigate to user MUB (would load personal buttons).
@@ -171,7 +215,7 @@ export default function MubPageClient({
       setSessionOrderIds(null);
       return;
     }
-    router.push(mubPageUrl({ category: cat, setting: true }));
+    router.push(mubPageUrl({ category: cat, setting: true, edit: keepEdit }));
   };
   const goViewLanding = () => router.push(mubPageUrl());
 
@@ -191,27 +235,40 @@ export default function MubPageClient({
       const res = await fetch(`/api/mub/page?${queryString}&lang=${encodeURIComponent(language)}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      const data = (await res.json()) as { page?: MubPageDto };
+      const data = (await res.json()) as { page?: MubPageDto; error?: string };
+      if (!res.ok) {
+        setPage(null);
+        setMessage(data.error || 'Could not load this MUB page.');
+        return;
+      }
       if (data.page) {
         setPage(data.page);
         setSelectedBg(data.page.backgroundColor);
         setPreviewMode(normalizeMubDisplayMode(data.page.displayMode));
         setSessionOrderIds(null);
         setReadingPageIndex(0);
+        setMessage(null);
       }
+    } catch {
+      setPage(null);
+      setMessage('Could not load this MUB page.');
     } finally {
       setLoading(false);
     }
   }, [queryString, language]);
 
   useEffect(() => {
-    if (mode === 'staff' || hasCategoryInPath || isReadingSession) {
+    // Staff templates are only fetched once the gate is open, so a locked page
+    // does not fire a request the API will reject anyway.
+    const shouldLoad =
+      mode === 'staff' ? editUnlocked : hasCategoryInPath || isReadingSession;
+    if (shouldLoad) {
       void loadPage();
     } else {
       setLoading(false);
       setPage(null);
     }
-  }, [loadPage, mode, hasCategoryInPath, isReadingSession]);
+  }, [loadPage, mode, hasCategoryInPath, isReadingSession, editUnlocked]);
 
   const postAction = async (body: Record<string, unknown>) => {
     const token = localStorage.getItem('token');
@@ -318,6 +375,10 @@ export default function MubPageClient({
       },
     );
     const data = await res.json();
+    if (!res.ok) {
+      setMessage(data.error || 'Could not delete this button.');
+      return;
+    }
     if (data.page) setPage(data.page);
   };
 
@@ -337,15 +398,17 @@ export default function MubPageClient({
       if (!res.ok) throw new Error(data.error || 'verify_failed');
 
       if (data.access === 'staff') {
+        writeUnlockFlag('staff');
         const template = roleTemplateFromUserType(user?.userType ?? 'ATHLETE');
-        router.push(`/users/mub_staff_page?role=${template}`);
+        setPassword('');
+        router.push(mubStaffPageUrl({ role: template }));
         return;
       }
-      if (data.access === 'club') {
+      if (data.access === 'club' || data.access === 'user') {
+        writeUnlockFlag('edit');
         setEditUnlocked(true);
-        setPasswordOpen(false);
         setPassword('');
-        router.push(mubPageUrl({ setting: true }));
+        router.push(mubPageUrl({ setting: true, edit: true }));
         return;
       }
       setPasswordError(data.error || 'Invalid password.');
@@ -355,11 +418,12 @@ export default function MubPageClient({
   };
 
   const handleImport = async () => {
-    const template = roleTemplateFromUserType(user?.userType ?? 'ATHLETE');
     try {
-      const data = await postAction({ action: 'import', roleTemplate: template });
+      // The template is chosen server-side from the account's userType.
+      const data = await postAction({ action: 'import' });
       setMessage(
-        `${data.importedCount ?? 0} button(s) imported for language "${language}" and added to your page.`,
+        `${data.importedCount ?? 0} button(s) imported for language "${language}". ` +
+          'Previously imported buttons were replaced; your own buttons were kept.',
       );
     } catch {
       setMessage('Could not import Movesbook MUB template.');
@@ -488,7 +552,10 @@ export default function MubPageClient({
     }
   };
 
-  if (passwordOpen && !editUnlocked) {
+  if (requiresUnlock && !editUnlocked) {
+    if (!unlockChecked) {
+      return <p className="px-4 py-6 text-sm text-gray-600">Loading…</p>;
+    }
     return (
       <div className="mx-auto max-w-md rounded-lg border border-gray-300 bg-white p-6 shadow-lg">
         <h2 className="mb-4 text-lg font-semibold text-gray-900">Enter admin password</h2>
@@ -939,7 +1006,10 @@ function SortableMubButtonRow({
 }
 
 function MubButtonLink({ button, compact }: { button: MubButtonDto; compact?: boolean }) {
-  const href = button.urlToOpen || '#';
+  // Re-checked at render: a `javascript:` href stored before sanitising existed
+  // (or written straight to the database) must still never become a live link.
+  const safeHref = sanitizeMubUrl(button.urlToOpen);
+  const href = safeHref ?? '#';
   const hoverTitle = compact ? button.extendedText || button.shortText : undefined;
   const inner = (
     <MubButtonPreview
@@ -947,7 +1017,7 @@ function MubButtonLink({ button, compact }: { button: MubButtonDto; compact?: bo
         buttonColor: button.buttonColor,
         textFont: button.textFont,
         textColor: button.textColor,
-        iconPath: button.iconPath ?? '',
+        iconPath: sanitizeMubIconPath(button.iconPath) ?? '',
         iconSource: button.iconSource,
         shortText: button.shortText,
         extendedText: compact ? '' : button.extendedText,
@@ -955,7 +1025,7 @@ function MubButtonLink({ button, compact }: { button: MubButtonDto; compact?: bo
       compact={compact}
     />
   );
-  if (!button.urlToOpen) {
+  if (!safeHref) {
     return (
       <div className="block min-w-0" title={hoverTitle}>
         {inner}

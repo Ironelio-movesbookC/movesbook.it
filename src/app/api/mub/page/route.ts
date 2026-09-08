@@ -1,48 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken } from '@/lib/auth';
 import { prismaConnect } from '@/lib/prisma';
+import { getMubPage, updateMubPageSettings } from '@/lib/mub/mubService';
 import {
-  getMubPage,
-  parseMubCategory,
-  parseMubScope,
-  parseRoleTemplate,
-  updateMubPageSettings,
-} from '@/lib/mub/mubService';
+  getMubTokenUserId,
+  parseMubPageRequest,
+  resolveMubPageQuery,
+} from '@/lib/mub/mubApiHelpers';
 
 export const dynamic = 'force-dynamic';
 
-function getTokenUserId(request: NextRequest): string | null {
-  const token = request.headers.get('authorization')?.replace('Bearer ', '');
-  if (!token) return null;
-  const decoded = verifyToken(token);
-  return decoded?.userId ? String(decoded.userId) : null;
-}
-
-function parsePageQuery(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const scope = parseMubScope(searchParams.get('scope'));
-  const category = parseMubCategory(searchParams.get('category'));
-  const roleTemplate = parseRoleTemplate(searchParams.get('roleTemplate'));
-  const ownerId = searchParams.get('ownerId') ?? null;
-  const lang = searchParams.get('lang') ?? 'en';
-  return { scope, category, roleTemplate, ownerId, lang };
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const userId = getTokenUserId(request);
+    const userId = getMubTokenUserId(request);
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     await prismaConnect();
-    const { scope, category, roleTemplate, ownerId, lang } = parsePageQuery(request);
-    const effectiveOwnerId = scope === 'USER' ? ownerId ?? userId : ownerId;
+    const parsed = parseMubPageRequest(request);
+    const resolved = await resolveMubPageQuery(parsed, userId, 'read');
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    }
 
-    const page = await getMubPage(
-      { scope, category, roleTemplate, ownerId: effectiveOwnerId },
-      lang,
-    );
+    const page = await getMubPage(resolved.query, parsed.lang);
     return NextResponse.json({ page });
   } catch (error) {
     console.error('GET /api/mub/page failed:', error);
@@ -52,27 +33,26 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const userId = getTokenUserId(request);
+    const userId = getMubTokenUserId(request);
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     await prismaConnect();
-    const { scope, category, roleTemplate, ownerId, lang } = parsePageQuery(request);
-    const body = (await request.json()) as { backgroundColor?: string; displayMode?: number };
-    const effectiveOwnerId = scope === 'USER' ? ownerId ?? userId : ownerId;
+    const parsed = parseMubPageRequest(request);
+    const resolved = await resolveMubPageQuery(parsed, userId, 'write');
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    }
 
-    await updateMubPageSettings(
-      { scope, category, roleTemplate, ownerId: effectiveOwnerId },
+    const body = (await request.json()) as { backgroundColor?: string; displayMode?: number };
+    const page = await updateMubPageSettings(
+      resolved.query,
       {
         ...(body.backgroundColor != null ? { backgroundColor: body.backgroundColor } : {}),
         ...(body.displayMode != null ? { displayMode: body.displayMode === 2 ? 2 : 1 } : {}),
       },
-    );
-
-    const page = await getMubPage(
-      { scope, category, roleTemplate, ownerId: effectiveOwnerId },
-      lang,
+      parsed.lang,
     );
     return NextResponse.json({ page });
   } catch (error) {

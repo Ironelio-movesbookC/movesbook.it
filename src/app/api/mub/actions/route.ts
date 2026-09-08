@@ -3,11 +3,10 @@ import { verifyPassword } from '@/lib/auth';
 import { prisma, prismaConnect } from '@/lib/prisma';
 import {
   importStaffMubTemplate,
-  parseRoleTemplate,
   removeImportedMubButtons,
   resetMubPage,
+  resolveImportRoleTemplate,
 } from '@/lib/mub/mubService';
-import type { MubRoleTemplate } from '@/lib/mub/types';
 import {
   getMubTokenUserId,
   parseMubPageRequest,
@@ -43,10 +42,14 @@ export async function POST(request: NextRequest) {
 
     await prismaConnect();
     const parsed = parseMubPageRequest(request);
-    const query = resolveMubPageQuery(parsed, userId);
+    const resolved = await resolveMubPageQuery(parsed, userId, 'write');
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    }
+    const query = resolved.query;
+
     const body = (await request.json()) as {
       action?: string;
-      roleTemplate?: string;
       password?: string;
     };
 
@@ -70,11 +73,15 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ page });
       }
       case 'import': {
-        // Client answer #3 — template by usertype; language filtered in service via parsed.lang.
-        const roleTemplate = (parseRoleTemplate(String(body.roleTemplate ?? 'SINGLE_USER')) ??
-          'SINGLE_USER') as MubRoleTemplate;
+        // Client answer #3 — template chosen from the account's stored userType,
+        // never from the request body; language filtered in the service.
+        const roleTemplate = await resolveImportRoleTemplate(userId);
         const result = await importStaffMubTemplate(query, roleTemplate, parsed.lang);
-        return NextResponse.json({ page: result.page, importedCount: result.importedCount });
+        return NextResponse.json({
+          page: result.page,
+          importedCount: result.importedCount,
+          roleTemplate,
+        });
       }
       default:
         return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
