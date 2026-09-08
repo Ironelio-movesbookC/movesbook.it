@@ -3,7 +3,7 @@ import type { CreateProcedureRecordInput } from '../types';
 
 export const MEMBER_CREDIT_TYPOLOGY_OPTIONS = [
   { value: '6', label: 'Member credits' },
-  { value: '8', label: 'Employ to pay' },
+  { value: '7', label: 'Employee debt' },
 ] as const;
 
 const typologyValues = MEMBER_CREDIT_TYPOLOGY_OPTIONS.map((o) => o.value) as [string, ...string[]];
@@ -15,6 +15,8 @@ export const createMemberCreditRecordSchema = z.object({
   dueDate: z.string().optional().nullable(),
   causal: z.string().min(1),
   operatorId: z.string().optional().nullable(),
+  /** PHP: member → type_cat 6, employee → type_cat 7 (Next.js uses 8 to keep Employ to pay distinct from Employee debt). */
+  payTarget: z.enum(['member', 'employee']).default('member'),
   typologyOfDeadline: z.enum(typologyValues).default('6'),
   companyId: z.string().optional().nullable(),
   companyName: z.string().optional().nullable(),
@@ -32,9 +34,11 @@ export function mapMemberCreditCreateToInput(
   data: CreateMemberCreditRecordPayload
 ): CreateProcedureRecordInput {
   const causal = data.causal.trim();
-  const typologyCode = data.typologyOfDeadline ?? '6';
+  const payTarget = data.payTarget ?? 'member';
+  const typologyCode = data.typologyOfDeadline ?? (payTarget === 'employee' ? '7' : '6');
   const typologyName = typologyLabel(typologyCode);
   const dueDate = data.dueDate ?? data.recordDate;
+  const creditKind = payTarget === 'employee' ? 'Payment Employee' : 'Member Credit';
 
   return {
     memberId: data.memberId,
@@ -45,15 +49,17 @@ export function mapMemberCreditCreateToInput(
     paymentDate: dueDate,
     notes: causal,
     metadata: {
-      creditLabel: causal || 'Member credit',
+      creditLabel: causal || creditKind,
       typologyOfDeadline: typologyCode,
       typologyName,
       causal,
+      payTarget,
+      creditKind,
       companyId: data.companyId ?? null,
       companyName: data.companyName ?? null,
       openPaymentAfterSave: data.openPaymentAfterSave ?? false,
     },
     operatorId: data.operatorId,
-    serviceName: causal || 'Member credit',
+    serviceName: causal || creditKind,
   };
 }

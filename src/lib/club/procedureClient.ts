@@ -205,6 +205,7 @@ export function createProcedureClient(code: ProcedureTypeCode) {
         clubId: res.clubId,
       };
     },
+    //------------------------------------------------------------------------------------------------
 
     async fetchDeadlines(params?: ListParams): Promise<PaginatedResult<ProcedureRecordView>> {
       const res = await clubApiFetch<PaginatedResult<ProcedureRecordDto>>(

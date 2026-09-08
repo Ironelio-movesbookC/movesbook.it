@@ -29,6 +29,9 @@ export default function MubPageRouteClient({ categorySlug }: MubPageRouteClientP
   const panel = searchParams?.get('panel') === 'background' ? 'background' : setting ? 'user' : null;
   const categoryFromPath = mubCategoryFromPath(categorySlug);
   const initialCategory: MubCategory = categoryFromPath ?? 'CLUB_MANAGEMENT';
+  const loadParam = searchParams?.get('load');
+  const initialLoadSource =
+    loadParam === 'movesbook' || loadParam === 'user' ? loadParam : null;
 
   return (
     <div className="px-4 py-6">
@@ -37,6 +40,7 @@ export default function MubPageRouteClient({ categorySlug }: MubPageRouteClientP
         initialPanel={panel}
         initialCategory={initialCategory}
         hasCategoryInPath={Boolean(categoryFromPath)}
+        initialLoadSource={initialLoadSource}
       />
     </div>
   );
