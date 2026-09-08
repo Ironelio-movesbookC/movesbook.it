@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prismaConnect } from '@/lib/prisma';
-import { deleteMubButton, reorderMubButtons, saveMubButton } from '@/lib/mub/mubService';
+import {
+  MubButtonNotFoundError,
+  deleteMubButton,
+  reorderMubButtons,
+  saveMubButton,
+} from '@/lib/mub/mubService';
 import type { SaveMubButtonInput } from '@/lib/mub/types';
 import {
   getMubTokenUserId,
@@ -19,14 +24,18 @@ export async function POST(request: NextRequest) {
 
     await prismaConnect();
     const parsed = parseMubPageRequest(request);
-    const query = resolveMubPageQuery(parsed, userId);
+    const resolved = await resolveMubPageQuery(parsed, userId, 'write');
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    }
+
     const body = (await request.json()) as {
       button?: SaveMubButtonInput;
-      orderedIds?: string[];
+      orderedIds?: unknown[];
     };
 
     if (Array.isArray(body.orderedIds)) {
-      const page = await reorderMubButtons(query, body.orderedIds, parsed.lang);
+      const page = await reorderMubButtons(resolved.query, body.orderedIds, parsed.lang);
       return NextResponse.json({ page });
     }
 
@@ -34,9 +43,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Button payload required' }, { status: 400 });
     }
 
-    const page = await saveMubButton(query, body.button, parsed.lang);
+    const page = await saveMubButton(resolved.query, body.button, parsed.lang);
     return NextResponse.json({ page });
   } catch (error) {
+    if (error instanceof MubButtonNotFoundError) {
+      return NextResponse.json({ error: 'Button not found on this page' }, { status: 404 });
+    }
     console.error('POST /api/mub/buttons failed:', error);
     return NextResponse.json({ error: 'Failed to save button' }, { status: 500 });
   }
@@ -51,16 +63,22 @@ export async function DELETE(request: NextRequest) {
 
     await prismaConnect();
     const parsed = parseMubPageRequest(request);
-    const query = resolveMubPageQuery(parsed, userId);
-    const buttonId = new URL(request.url).searchParams.get('id');
+    const resolved = await resolveMubPageQuery(parsed, userId, 'write');
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    }
 
+    const buttonId = new URL(request.url).searchParams.get('id');
     if (!buttonId) {
       return NextResponse.json({ error: 'Button id required' }, { status: 400 });
     }
 
-    const page = await deleteMubButton(query, buttonId, parsed.lang);
+    const page = await deleteMubButton(resolved.query, buttonId, parsed.lang);
     return NextResponse.json({ page });
   } catch (error) {
+    if (error instanceof MubButtonNotFoundError) {
+      return NextResponse.json({ error: 'Button not found on this page' }, { status: 404 });
+    }
     console.error('DELETE /api/mub/buttons failed:', error);
     return NextResponse.json({ error: 'Failed to delete button' }, { status: 500 });
   }

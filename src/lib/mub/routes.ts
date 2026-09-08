@@ -37,3 +37,13 @@ export function mubPageUrl(opts: MubPageUrlOptions = {}): string {
   const query = params.toString();
   return query ? `${base}?${query}` : base;
 }
+
+/** Super Admin / staff template builder — stays on STAFF scope (never user MUB URLs). */
+export function mubStaffPageUrl(opts: {
+  role: string;
+  category?: MubCategory | null;
+}): string {
+  const params = new URLSearchParams({ role: opts.role });
+  if (opts.category) params.set('category', MUB_CATEGORY_PATH[opts.category]);
+  return `/users/mub_staff_page?${params.toString()}`;
+}

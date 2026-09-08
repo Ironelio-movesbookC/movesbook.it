@@ -1,6 +1,7 @@
 'use client';
 
 import { Camera, Home, Menu, Settings, ChevronRight } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { DEFAULT_HERO_BANNER_URL } from '@/lib/profileBannerSequence';
 import SafeCoverImage from '@/components/media/SafeCoverImage';
@@ -35,6 +36,7 @@ export default function ClubDashboardMyPageBanner({
   showSuggestMovesbook = false,
   showSponsored = true,
 }: ClubDashboardMyPageBannerProps) {
+  const router = useRouter();
   const { t } = useLanguage();
   const displayName = clubName?.trim() || 'Club Magia Avollino Club';
 
@@ -176,13 +178,24 @@ export default function ClubDashboardMyPageBanner({
                   Suggest Movesbook
                 </button>
               ) : null}
-              <button
-                type="button"
-                className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800 flex items-center gap-1.5"
-              >
-                Most used buttons
-                <Settings className="w-4 h-4 text-gray-400 shrink-0" />
-              </button>
+              <div className="inline-flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => router.push('/users/mub_page')}
+                  className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                >
+                  Most used buttons
+                </button>
+                <button
+                  type="button"
+                  onClick={() => router.push('/users/mub_page?edit=1')}
+                  className="bg-transparent border-0 text-gray-400 hover:text-gray-200 cursor-pointer rounded p-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70"
+                  aria-label="Most used buttons settings"
+                  title="Most used buttons settings"
+                >
+                  <Settings className="w-4 h-4 shrink-0" />
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 overflow-hidden justify-center flex-1">
