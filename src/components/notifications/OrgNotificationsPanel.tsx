@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Eye, EyeOff, MapPin, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { NotificationDto } from '@/lib/notifications/notificationService';
+import type { OrgEntityKind } from '@/lib/notifications/notificationService';
 
 const CKEditor = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
 
@@ -15,22 +16,39 @@ function userToken(): string | null {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-type StatusFilter = 'all' | 'active' | 'expired';
-
-type Props = {
-  /** When set = MY CLUB (one club). When omitted = MY PAGE (all owned clubs). */
-  clubId?: string | null;
+const KIND_LABEL: Record<OrgEntityKind, { title: string; entity: string; inboxHint: string }> = {
+  coach: {
+    title: 'Posted by Coach',
+    entity: 'coaching groups',
+    inboxHint: 'Athletes trained by you',
+  },
+  team: {
+    title: 'Posted by Team',
+    entity: 'teams',
+    inboxHint: "Team's athletes",
+  },
+  group: {
+    title: 'Posted by Group',
+    entity: 'groups',
+    inboxHint: 'Group members',
+  },
 };
 
-export default function ClubNotificationsPanel({ clubId }: Props) {
+type Props = {
+  kind: OrgEntityKind;
+  /** Pre-selected entity (optional). */
+  entityId?: string | null;
+};
+
+export default function OrgNotificationsPanel({ kind, entityId }: Props) {
+  const labels = KIND_LABEL[kind];
   const [items, setItems] = useState<NotificationDto[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [ownedClubs, setOwnedClubs] = useState<{ id: string; name: string }[]>([]);
+  const [entities, setEntities] = useState<{ id: string; name: string }[]>([]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [rangeOpen, setRangeOpen] = useState(false);
@@ -42,8 +60,7 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
   const [path, setPath] = useState('');
   const [untilDate, setUntilDate] = useState(today());
   const [prioritary, setPrioritary] = useState(false);
-  const [audienceKind, setAudienceKind] = useState<'members' | 'staff'>('members');
-  const [selectedClubIds, setSelectedClubIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [rangeFrom, setRangeFrom] = useState(today());
   const [rangeTo, setRangeTo] = useState(today());
 
@@ -57,13 +74,9 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
     setLoading(true);
     setError('');
     try {
-      const qs = new URLSearchParams({
-        page: String(page),
-        pageSize: '10',
-        status: statusFilter,
-      });
-      if (clubId) qs.set('clubId', clubId);
-      const res = await fetch(`/api/notifications/club?${qs}`, {
+      const qs = new URLSearchParams({ kind, page: String(page), pageSize: '10' });
+      if (entityId) qs.set('entityId', entityId);
+      const res = await fetch(`/api/notifications/org?${qs}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: 'no-store',
       });
@@ -76,32 +89,27 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [clubId, page, statusFilter]);
+  }, [kind, entityId, page]);
 
-  const loadOwnedClubs = useCallback(async () => {
+  const loadEntities = useCallback(async () => {
     const token = userToken();
     if (!token) return;
-    const res = await fetch('/api/notifications/club?ownedClubs=1', {
+    const res = await fetch(`/api/notifications/org?kind=${kind}&entities=1`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
     });
     if (!res.ok) return;
     const data = await res.json();
-    setOwnedClubs(data.clubs || []);
-  }, []);
+    setEntities(data.entities || []);
+  }, [kind]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    void loadOwnedClubs();
-  }, [loadOwnedClubs]);
-
-  function changeStatus(next: StatusFilter) {
-    setStatusFilter(next);
-    setPage(1);
-  }
+    void loadEntities();
+  }, [loadEntities]);
 
   function resetForm() {
     setEditId(null);
@@ -110,8 +118,7 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
     setPath('');
     setUntilDate(today());
     setPrioritary(false);
-    setAudienceKind('members');
-    setSelectedClubIds(clubId ? [clubId] : []);
+    setSelectedIds(entityId ? [entityId] : []);
     setFormError('');
   }
 
@@ -127,8 +134,7 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
     setPath(item.path || '');
     setUntilDate(item.untilDate);
     setPrioritary(item.prioritary);
-    setAudienceKind(item.audienceKind === 'staff' ? 'staff' : 'members');
-    setSelectedClubIds(item.clubIds.length ? item.clubIds : clubId ? [clubId] : []);
+    setSelectedIds(item.clubIds);
     setFormError('');
     setModalOpen(true);
   }
@@ -139,23 +145,22 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
     setSaving(true);
     setFormError('');
     try {
-      const body: Record<string, unknown> = {
-        title,
-        description,
-        path,
-        untilDate,
-        prioritary,
-        audienceKind,
-        editId: editId || undefined,
-        clubIds: clubId ? [clubId] : selectedClubIds,
-      };
-      const res = await fetch('/api/notifications/club', {
+      const res = await fetch('/api/notifications/org', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          kind,
+          title,
+          description,
+          path,
+          untilDate,
+          prioritary,
+          editId: editId || undefined,
+          entityIds: entityId ? [entityId] : selectedIds,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
@@ -172,13 +177,13 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
   async function toggleShow(item: NotificationDto) {
     const token = userToken();
     if (!token) return;
-    await fetch('/api/notifications/club', {
+    await fetch('/api/notifications/org', {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ id: item.id, isShow: !item.isShow }),
+      body: JSON.stringify({ kind, id: item.id, isShow: !item.isShow }),
     });
     await load();
   }
@@ -187,10 +192,10 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
     if (!confirm('Delete this notification?')) return;
     const token = userToken();
     if (!token) return;
-    await fetch(`/api/notifications/club?id=${encodeURIComponent(item.id)}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await fetch(
+      `/api/notifications/org?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(item.id)}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+    );
     await load();
   }
 
@@ -200,17 +205,18 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
     if (!confirm(`Delete notifications from ${rangeFrom} to ${rangeTo}?`)) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/notifications/club', {
+      const res = await fetch('/api/notifications/org', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          kind,
           action: 'delete_range',
           fromDate: rangeFrom,
           toDate: rangeTo,
-          clubId: clubId || undefined,
+          entityId: entityId || undefined,
         }),
       });
       const data = await res.json();
@@ -225,37 +231,24 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
     }
   }
 
-  const scopeLabel = clubId
-    ? 'Members of the selected club (MY CLUB)'
-    : 'Members of all clubs you own (MY PAGE)';
-
-  const statusTabs: { id: StatusFilter; label: string }[] = [
-    { id: 'all', label: 'All' },
-    { id: 'active', label: 'Active' },
-    { id: 'expired', label: 'Expired' },
-  ];
-
   return (
     <div className="w-full p-4 md:p-6 text-gray-900">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Posted by Club staff</h1>
-          <p className="text-sm text-gray-600 mt-1">{scopeLabel}</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Single-user targeting is not available here — use Messages or Chat.
-          </p>
+          <h1 className="text-xl font-bold text-gray-900">{labels.title}</h1>
+          <p className="text-sm text-gray-600 mt-1">{labels.inboxHint}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
             href="/users/notification/all/all/movesbook"
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm bg-white text-gray-900 hover:bg-gray-50"
+            className="rounded border border-gray-300 px-3 py-1.5 text-sm bg-white text-gray-900"
           >
             By Movesbook
           </Link>
           <button
             type="button"
             onClick={() => setRangeOpen(true)}
-            className="rounded border border-gray-400 bg-white px-3 py-1.5 text-sm text-gray-900"
+            className="rounded border border-gray-400 bg-white px-3 py-1.5 text-sm"
           >
             Delete from..to..
           </button>
@@ -270,29 +263,12 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-1 border-b border-gray-300 pb-0">
-        {statusTabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => changeStatus(tab.id)}
-            className={`px-4 py-1.5 text-sm border border-b-0 rounded-t ${
-              statusFilter === tab.id
-                ? 'bg-gray-800 text-white border-gray-800'
-                : 'bg-gray-100 text-gray-800 border-gray-300 hover:bg-gray-200'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
       {loading ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : error ? (
         <p className="text-sm text-red-700">{error}</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-gray-500">No club notifications sent yet.</p>
+        <p className="text-sm text-gray-500">No notifications sent yet.</p>
       ) : (
         <ul className="space-y-2">
           {items.map((item) => (
@@ -311,14 +287,14 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
                     <span className="font-semibold">{item.title}</span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {item.createdAt.slice(0, 10)} · until {item.untilDate} · {item.audienceKind} ·{' '}
-                    {item.clubIds.length} club(s)
+                    {item.createdAt.slice(0, 10)} · until {item.untilDate} · {item.clubIds.length || 'all'}{' '}
+                    {labels.entity}
                   </p>
                 </button>
-                <button type="button" onClick={() => void toggleShow(item)} title="Toggle visibility">
+                <button type="button" onClick={() => void toggleShow(item)}>
                   {item.isShow ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-gray-400" />}
                 </button>
-                <button type="button" onClick={() => openEdit(item)} title="Edit" className="text-gray-800">
+                <button type="button" onClick={() => openEdit(item)} title="Edit">
                   <Pencil className="h-4 w-4" />
                 </button>
               </div>
@@ -333,123 +309,85 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
         </ul>
       )}
 
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <p className="text-xs text-gray-500">{total} total</p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={page <= 1 || loading}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="rounded border border-gray-300 px-2 py-1 text-xs disabled:opacity-40"
-          >
-            Prev
-          </button>
-          <button
-            type="button"
-            disabled={page * 10 >= total || loading}
-            onClick={() => setPage((p) => p + 1)}
-            className="rounded border border-gray-300 px-2 py-1 text-xs disabled:opacity-40"
-          >
-            Next
-          </button>
-        </div>
-      </div>
+      <p className="mt-3 text-xs text-gray-500">{total} total</p>
 
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
           <div className="my-8 w-full max-w-2xl rounded bg-white shadow-lg text-gray-900">
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-              <h2 className="font-semibold text-gray-900">
-                {editId ? 'Edit notification' : 'Send to the recipients'}
-              </h2>
-              <button type="button" onClick={() => setModalOpen(false)} className="text-gray-700">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <h2 className="font-semibold">{editId ? 'Edit notification' : 'Send to the recipients'}</h2>
+              <button type="button" onClick={() => setModalOpen(false)}>
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="space-y-3 p-4 text-gray-900">
+            <div className="space-y-3 p-4">
               {formError ? <p className="text-sm text-red-700">{formError}</p> : null}
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-900">Displayed until</span>
+                <span className="text-sm font-medium">Displayed until</span>
                 <input
                   type="date"
                   value={untilDate}
                   onChange={(e) => setUntilDate(e.target.value)}
-                  className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 bg-white"
+                  className="border rounded px-2 py-1 text-sm"
                 />
               </div>
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Object"
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-900 bg-white"
+                className="w-full border rounded px-2 py-1.5 text-sm"
               />
               <input
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 placeholder="Path (optional)"
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-900 bg-white"
+                className="w-full border rounded px-2 py-1.5 text-sm"
               />
               <div>
                 <p className="text-sm font-medium mb-1">Message (HTML)</p>
-                <div className="border border-gray-300 rounded overflow-hidden bg-white">
+                <div className="border rounded overflow-hidden">
                   <CKEditor
                     value={description}
                     onChange={setDescription}
-                    instanceId="club-notify-body"
-                    placeholder="Paste HTML, images, links…"
+                    instanceId={`org-notify-${kind}`}
                     minHeightPx={160}
                   />
                 </div>
               </div>
-              <div className="text-sm space-y-2 text-gray-900">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    checked={audienceKind === 'members'}
-                    onChange={() => setAudienceKind('members')}
-                  />
-                  For Members
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    checked={audienceKind === 'staff'}
-                    onChange={() => setAudienceKind('staff')}
-                  />
-                  For Club Staff
-                </label>
-              </div>
-              {!clubId ? (
+              {!entityId ? (
                 <div>
-                  <p className="text-sm font-medium mb-1">Clubs that receive this notification</p>
-                  <div className="max-h-36 overflow-auto border border-gray-200 rounded p-2 bg-gray-50 space-y-1">
-                    {ownedClubs.length === 0 ? (
-                      <p className="text-xs text-gray-500">No owned clubs.</p>
+                  <p className="text-sm font-medium mb-1">
+                    Select {labels.entity} that receive this notification
+                    {kind === 'coach' ? ' (empty = all trained athletes)' : ''}
+                  </p>
+                  <div className="max-h-36 overflow-auto border rounded p-2 bg-gray-50 space-y-1">
+                    {entities.length === 0 ? (
+                      <p className="text-xs text-gray-500">
+                        {kind === 'coach'
+                          ? 'No coaching groups — will notify all trained athletes.'
+                          : `No ${labels.entity} found.`}
+                      </p>
                     ) : (
-                      ownedClubs.map((c) => (
-                        <label key={c.id} className="flex items-center gap-2 text-sm">
+                      entities.map((e) => (
+                        <label key={e.id} className="flex items-center gap-2 text-sm">
                           <input
                             type="checkbox"
-                            checked={selectedClubIds.includes(c.id)}
-                            onChange={(e) => {
-                              setSelectedClubIds((prev) =>
-                                e.target.checked ? [...prev, c.id] : prev.filter((id) => id !== c.id),
+                            checked={selectedIds.includes(e.id)}
+                            onChange={(ev) => {
+                              setSelectedIds((prev) =>
+                                ev.target.checked ? [...prev, e.id] : prev.filter((id) => id !== e.id),
                               );
                             }}
                           />
-                          <span>{c.name}</span>
+                          <span>{e.name}</span>
                         </label>
                       ))
                     )}
                   </div>
                 </div>
               ) : null}
-              <label className="inline-flex items-center gap-2 text-sm text-gray-900">
-                <input
-                  type="checkbox"
-                  checked={prioritary}
-                  onChange={(e) => setPrioritary(e.target.checked)}
-                />
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={prioritary} onChange={(e) => setPrioritary(e.target.checked)} />
                 Put prioritary
               </label>
               <div className="flex justify-center gap-2 pt-2">
@@ -461,11 +399,7 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
                 >
                   {saving ? 'Saving…' : 'Post'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="rounded bg-gray-200 px-4 py-2 text-sm font-medium text-gray-900"
-                >
+                <button type="button" onClick={() => setModalOpen(false)} className="rounded bg-gray-200 px-4 py-2 text-sm">
                   Cancel
                 </button>
               </div>
@@ -476,7 +410,7 @@ export default function ClubNotificationsPanel({ clubId }: Props) {
 
       {rangeOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded bg-white p-4 shadow-lg text-gray-900 space-y-3">
+          <div className="w-full max-w-md rounded bg-white p-4 shadow-lg space-y-3">
             <h3 className="font-semibold">Delete from..to..</h3>
             <div className="flex gap-2 items-center text-sm">
               <input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} className="border rounded px-2 py-1" />
