@@ -79,8 +79,10 @@ function EditClubProfileContent() {
 
     setSaving(true);
     try {
+      let logoUrl = String(payload.logoUrl ?? '').trim();
       if (payload.logoFile || payload.removeLogo) {
-        await applyEntityLogoOnSave('club', clubId, payload);
+        const uploaded = await applyEntityLogoOnSave('club', clubId, payload);
+        logoUrl = payload.removeLogo ? '' : (uploaded ?? logoUrl);
       }
       const res = await fetch(`/api/clubs/${clubId}`, {
         method: 'PATCH',
@@ -88,7 +90,14 @@ function EditClubProfileContent() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(clubProfilePayloadForApi(payload)),
+        body: JSON.stringify(
+          clubProfilePayloadForApi({
+            ...payload,
+            logoUrl,
+            logoFile: undefined,
+            removeLogo: false,
+          }),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

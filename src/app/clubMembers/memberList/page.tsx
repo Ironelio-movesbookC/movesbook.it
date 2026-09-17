@@ -1,8 +1,8 @@
 'use client';
 import Image from 'next/image';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { CalendarClock, Pencil, Trash2, User, UserPlus } from 'lucide-react';
 import ClubMemberArchivePage, { memberTypeBadge } from '@/components/club/members/ClubMemberArchivePage';
 import AddMemberModal from '@/components/AddMemberModal';
@@ -23,6 +23,11 @@ import {
 } from '@/lib/admin/subscriptionManageableUsers';
 import { SUBSCRIPTION_SETTINGS_UPDATED_EVENT } from '@/lib/admin/subscriptionSettingsMock';
 import { useClubWorkspace } from '@/contexts/ClubWorkspaceContext';
+import { useAuth } from '@/hooks/useAuth';
+import {
+  getArchiveEntityProfileSectionLabel,
+  managedEntityKindFromUserType,
+} from '@/lib/entity/entityProfileLabels';
 import type { Column, Member } from '@/types/clubTable';
 import { staffRowTextClass } from '@/lib/club/clubStaff.constants';
 
@@ -30,6 +35,20 @@ type MemberCapacityResponse = {
   subscriptionSettingId: number | null;
   capacity: ClubMemberCapacityStats;
 };
+
+const MEMBER_ARCHIVE_SECTIONS: MemberArchiveSection[] = [
+  'athletes',
+  'pending',
+  'not-members',
+  'parents',
+  'staff',
+  'club-profile',
+  'settings',
+];
+
+function parseArchiveSection(value: string | null): MemberArchiveSection | null {
+  return MEMBER_ARCHIVE_SECTIONS.find((section) => section === value) ?? null;
+}
 
 function formatDisplayDate(value: unknown) {
   if (!value) return '-';
@@ -45,16 +64,40 @@ function formatDisplayDate(value: unknown) {
   return raw;
 }
 
-export default function MemberListPage() {
+function MemberListPageContent() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { user } = useAuth();
   const { selectedClubId: contextClubId } = useClubWorkspace();
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [addError, setAddError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [archiveSection, setArchiveSection] = useState<MemberArchiveSection>('athletes');
   const [capacityPayload, setCapacityPayload] = useState<MemberCapacityResponse | null>(null);
   const [settingsRevision, setSettingsRevision] = useState(0);
+
+  const profileSectionLabel = useMemo(
+    () =>
+      getArchiveEntityProfileSectionLabel(
+        managedEntityKindFromUserType(user?.userType),
+      ),
+    [user?.userType],
+  );
+
+  // ?section= is the source of truth so the sidebar (Archives → User archives) and the
+  // top nav can never disagree about which section is open.
+  const archiveSection =
+    parseArchiveSection(searchParams?.get('section') ?? null) ?? 'athletes';
+
+  const setArchiveSection = useCallback(
+    (section: MemberArchiveSection) => {
+      const params = new URLSearchParams(searchParams?.toString() ?? '');
+      params.set('section', section);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
   const clubId = useMemo(() => {
     if (contextClubId) return contextClubId;
@@ -313,12 +356,14 @@ export default function MemberListPage() {
 
   return (
     <div className="w-full h-full flex flex-col p-4 gap-4">
-      <MemberArchiveTopNav active={archiveSection} onChange={setArchiveSection} />
+      <MemberArchiveTopNav
+        active={archiveSection}
+        onChange={setArchiveSection}
+        profileSectionLabel={profileSectionLabel}
+      />
 
       {archiveSection === 'athletes' ? (
         <>
-          <ArchiveEntityProfilePanel clubId={clubId} />
-
           {capacity ? (
             <ClubMemberArchiveHeader
               capacity={capacity}
@@ -365,13 +410,34 @@ export default function MemberListPage() {
             }
           />
         </>
-      ) : archiveSection === 'parents' && clubId ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <AthletesParentsArchive clubId={clubId} />
+      ) : archiveSection === 'pending' ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
+          <h2 className="mb-2 text-lg font-bold text-gray-900">Members in pending</h2>
+          <p>
+            Athletes who asked to join this club and are still waiting for approval will
+            appear here.
+          </p>
         </div>
+      ) : archiveSection === 'not-members' ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
+          <h2 className="mb-2 text-lg font-bold text-gray-900">Athletes not members</h2>
+          <p>
+            Athletes linked to this club without an active membership will appear here.
+          </p>
+        </div>
+      ) : archiveSection === 'parents' ? (
+        clubId ? (
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <AthletesParentsArchive clubId={clubId} />
+          </div>
+        ) : (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Select a club workspace to view parents &amp; tutors.
+          </div>
+        )
       ) : archiveSection === 'staff' ? (
         <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
-          <h2 className="mb-2 text-lg font-bold text-gray-900">Staff</h2>
+          <h2 className="mb-2 text-lg font-bold text-gray-900">Club Staff</h2>
           <p className="mb-3">
             Manage Operator / Collaborator / Coadmin staff for this club.
           </p>
@@ -382,6 +448,8 @@ export default function MemberListPage() {
             Open Staff archive
           </a>
         </div>
+      ) : archiveSection === 'club-profile' ? (
+        <ArchiveEntityProfilePanel clubId={clubId} />
       ) : (
         <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
           <h2 className="mb-2 text-lg font-bold text-gray-900">Settings</h2>
@@ -396,5 +464,13 @@ export default function MemberListPage() {
         onAddExistingUser={handleAddExistingUser}
       />
     </div>
+  );
+}
+
+export default function MemberListPage() {
+  return (
+    <Suspense fallback={<p className="p-4 text-sm text-gray-500">Loading…</p>}>
+      <MemberListPageContent />
+    </Suspense>
   );
 }

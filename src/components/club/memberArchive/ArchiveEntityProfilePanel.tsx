@@ -16,6 +16,10 @@ import {
 import { applyEntityLogoOnSave } from '@/lib/entity/applyEntityLogoOnSave';
 import { getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesClient';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  managedEntityKindFromUserType,
+  type ManagedEntityKind,
+} from '@/lib/entity/entityProfileLabels';
 
 type EntityRecord = {
   id: string;
@@ -38,9 +42,9 @@ function isTeamEntity(description?: string | null): boolean {
 }
 
 /**
- * Athletes\Members profile panel.
- * Clubs → ClubProfileEditor (same as Create Club / My Club edit on profile_002).
- * Teams → TeamProfileEditor (same as Create Team / My Team edit).
+ * Entity profile panel for Archive → Club / Team / Coach / Group Profile.
+ * Clubs / coaches / groups → ClubProfileEditor.
+ * Teams (teamProfile meta or TEAM user) → TeamProfileEditor.
  */
 export default function ArchiveEntityProfilePanel({ clubId }: Props) {
   const { user } = useAuth();
@@ -50,10 +54,21 @@ export default function ArchiveEntityProfilePanel({ clubId }: Props) {
   const [error, setError] = useState('');
   const [savedMsg, setSavedMsg] = useState('');
 
-  const useTeamEditor = useMemo(
-    () => (entity ? isTeamEntity(entity.description) : false),
-    [entity],
+  const kindFromUser = useMemo(
+    () => managedEntityKindFromUserType(user?.userType),
+    [user?.userType],
   );
+
+  const useTeamEditor = useMemo(() => {
+    if (kindFromUser === 'team') return true;
+    return entity ? isTeamEntity(entity.description) : false;
+  }, [entity, kindFromUser]);
+
+  const editorKind: ManagedEntityKind = useTeamEditor
+    ? 'team'
+    : kindFromUser === 'team'
+      ? 'club'
+      : kindFromUser;
 
   const load = useCallback(async () => {
     if (!clubId) {
@@ -103,15 +118,24 @@ export default function ArchiveEntityProfilePanel({ clubId }: Props) {
     setSaving(true);
     setSavedMsg('');
     try {
+      let logoUrl = String(payload.logoUrl ?? '').trim();
       if (payload.logoFile || payload.removeLogo) {
-        await applyEntityLogoOnSave('club', clubId, payload);
+        const uploaded = await applyEntityLogoOnSave(editorKind, clubId, payload);
+        logoUrl = payload.removeLogo ? '' : uploaded || logoUrl;
       }
       const res = await fetch(
         withSelectedClubId(`/api/clubs/${encodeURIComponent(clubId)}`),
         {
           method: 'PATCH',
           headers: getAuthHeaders(),
-          body: JSON.stringify(clubProfilePayloadForApi(payload)),
+          body: JSON.stringify(
+            clubProfilePayloadForApi({
+              ...payload,
+              logoUrl,
+              logoFile: undefined,
+              removeLogo: false,
+            }),
+          ),
         },
       );
       const json = await res.json().catch(() => ({}));
@@ -120,7 +144,15 @@ export default function ArchiveEntityProfilePanel({ clubId }: Props) {
           typeof json.error === 'string' ? json.error : 'Failed to save profile',
         );
       }
-      setSavedMsg('Club profile saved.');
+      setSavedMsg(
+        useTeamEditor
+          ? 'Team profile saved.'
+          : editorKind === 'coaching-group'
+            ? 'Coach profile saved.'
+            : editorKind === 'group'
+              ? 'Group profile saved.'
+              : 'Club profile saved.',
+      );
       await load();
     } finally {
       setSaving(false);
@@ -157,7 +189,7 @@ export default function ArchiveEntityProfilePanel({ clubId }: Props) {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600">
         <Loader2 className="h-5 w-5 animate-spin" />
-        Loading Club / Team profile…
+        Loading profile…
       </div>
     );
   }
@@ -171,7 +203,7 @@ export default function ArchiveEntityProfilePanel({ clubId }: Props) {
   }
 
   return (
-    <div className="space-y-3" key={`${entity.id}-${useTeamEditor ? 'team' : 'club'}`}>
+    <div className="space-y-3" key={`${entity.id}-${useTeamEditor ? 'team' : editorKind}`}>
       {savedMsg ? (
         <p className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           {savedMsg}
@@ -193,7 +225,7 @@ export default function ArchiveEntityProfilePanel({ clubId }: Props) {
       ) : (
         <ClubProfileEditor
           mode="edit"
-          entityKind="club"
+          entityKind={editorKind}
           adminUsername={user?.username || 'admin'}
           initialClub={{
             name: entity.name,

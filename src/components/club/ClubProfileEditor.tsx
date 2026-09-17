@@ -63,7 +63,8 @@ export default function ClubProfileEditor({
   const [clubLogoFile, setClubLogoFile] = useState<File | null>(null);
   const [logoRemoved, setLogoRemoved] = useState(false);
   const [clubUsername, setClubUsername] = useState('');
-  const [clubSports, setClubSports] = useState<string[]>([DEFAULT_ENTITY_SPORT]);
+  const [clubMainSport, setClubMainSport] = useState(DEFAULT_ENTITY_SPORT);
+  const [clubOtherSports, setClubOtherSports] = useState<string[]>([]);
   const [clubCountry, setClubCountry] = useState('Italy');
   const [clubRegion, setClubRegion] = useState('');
   const [clubProvince, setClubProvince] = useState('');
@@ -134,7 +135,8 @@ export default function ClubProfileEditor({
       setClubLogoFile(null);
       setLogoRemoved(false);
       setClubUsername('');
-      setClubSports([DEFAULT_ENTITY_SPORT]);
+      setClubMainSport(DEFAULT_ENTITY_SPORT);
+      setClubOtherSports([]);
       setClubCountry('Italy');
       setClubRegion('');
       setClubProvince('');
@@ -164,7 +166,10 @@ export default function ClubProfileEditor({
       setClubLogoFile(null);
       setLogoRemoved(false);
       setClubUsername(payload.username);
-      setClubSports(payload.sports.length ? payload.sports : [DEFAULT_ENTITY_SPORT]);
+      setClubMainSport(payload.category || DEFAULT_ENTITY_SPORT);
+      setClubOtherSports(
+        payload.sports.filter((s) => s && s !== (payload.category || DEFAULT_ENTITY_SPORT)),
+      );
       setClubCountry(payload.country || 'Italy');
       setClubRegion(payload.region);
       setClubProvince(payload.province);
@@ -238,10 +243,12 @@ export default function ClubProfileEditor({
     }
     setError(null);
     try {
-      const sports = clubSports.length ? clubSports : [DEFAULT_ENTITY_SPORT];
+      const mainSport = clubMainSport || DEFAULT_ENTITY_SPORT;
+      const otherSports = clubOtherSports.filter((s) => s && s !== mainSport);
+      const sports = [mainSport, ...otherSports];
       await onSave({
         username: clubUsername.trim(),
-        category: sports[0],
+        category: mainSport,
         sports,
         country: clubCountry,
         region: clubRegion,
@@ -314,24 +321,40 @@ export default function ClubProfileEditor({
           </div>
 
           <div className="flex-1 space-y-2 text-sm">
+            <div className="grid grid-cols-[160px_1fr] items-center gap-2">
+              <label className="text-gray-800">Main sport</label>
+              <select
+                value={clubMainSport}
+                onChange={(e) => {
+                  const next = e.target.value || DEFAULT_ENTITY_SPORT;
+                  setClubMainSport(next);
+                  setClubOtherSports((prev) => prev.filter((s) => s !== next));
+                }}
+                className="w-full max-w-md rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
+              >
+                {ENTITY_SPORT_OPTIONS.map((sport) => (
+                  <option key={sport} value={sport}>
+                    {sport}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="grid grid-cols-[160px_1fr] items-start gap-2">
-              <label className="pt-1 text-gray-800">Sports</label>
+              <label className="pt-1 text-gray-800">Other sports</label>
               <div className="flex max-w-xl flex-wrap gap-x-4 gap-y-2 rounded border border-gray-400 bg-gray-100 px-2 py-2">
-                {ENTITY_SPORT_OPTIONS.map((sport) => {
-                  const checked = clubSports.includes(sport);
+                {ENTITY_SPORT_OPTIONS.filter((sport) => sport !== clubMainSport).map((sport) => {
+                  const checked = clubOtherSports.includes(sport);
                   return (
                     <label key={sport} className="inline-flex items-center gap-1.5 text-sm text-gray-800">
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() =>
-                          setClubSports((prev) => {
-                            if (prev.includes(sport)) {
-                              const next = prev.filter((s) => s !== sport);
-                              return next.length ? next : [DEFAULT_ENTITY_SPORT];
-                            }
-                            return [...prev, sport];
-                          })
+                          setClubOtherSports((prev) =>
+                            prev.includes(sport)
+                              ? prev.filter((s) => s !== sport)
+                              : [...prev, sport],
+                          )
                         }
                       />
                       {sport}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
   BookOpen,
@@ -37,6 +37,7 @@ import {
   MAIN_SPORTS,
   PARENTS_TAB_LABEL,
   THEME_OPTIONS,
+  getThemeColorById,
   type MemberProfileBundle,
 } from '@/lib/club/memberProfileTypes';
 import { PAYMENT_TYPE_OPTIONS } from '@/lib/procedures/payModes';
@@ -62,6 +63,10 @@ import MemberProfileSettingsTab from '@/components/club/memberProfile/MemberProf
 import CoachNotesPanel from '@/components/club/memberProfile/CoachNotesPanel';
 import { getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesClient';
 import { renewMembershipDates } from '@/lib/club/memberMembershipDates';
+import { COUNTRIES } from '@/lib/news/countries';
+import { resolveRegionsForCountryName } from '@/lib/countries/countrySettingsStorage';
+import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
+import { getWorldTimezones } from '@/lib/timezones';
 
 const CKEditor = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
 const MovesbookEditor = dynamic(() => import('@/components/club/Editor'), { ssr: false });
@@ -132,10 +137,28 @@ export default function ClubMemberProfileEditor({
     return age != null && age < 18;
   }, [data.owner.personal.dateOfBirth]);
 
+  const [origin, setOrigin] = useState('');
+  useEffect(() => {
+    setOrigin(typeof window !== 'undefined' ? window.location.origin : '');
+  }, []);
+
+  /** View-only club member profile — default payload encoded in the user QR. */
+  const defaultProfileViewUrl = useMemo(() => {
+    if (!origin || !data.memberId || !data.clubId) return '';
+    return `${origin}/clubMembers/memberProfile/${encodeURIComponent(data.memberId)}?clubId=${encodeURIComponent(data.clubId)}&mode=view`;
+  }, [origin, data.memberId, data.clubId]);
+
+  const residenceRegionOptions = useMemo(
+    () => resolveRegionsForCountryName(data.owner.address.country || ''),
+    [data.owner.address.country],
+  );
+
+  const worldTimezones = useMemo(() => getWorldTimezones(), []);
+
   const saveClubSection = (signatureField?: 'parents' | 'otherDetails') => {
     let clubToSave = clubRef.current;
-    const sig = signaturePadRef.current?.getValue();
-    if (sig !== undefined && signatureField) {
+    const sig = signaturePadRef.current?.getValue()?.trim() ?? '';
+    if (signatureField) {
       if (signatureField === 'parents') {
         clubToSave = {
           ...clubToSave,
@@ -148,6 +171,7 @@ export default function ClubMemberProfileEditor({
         };
       }
       clubRef.current = clubToSave;
+      onChange({ ...data, club: clubToSave });
     }
     void saveSection('club', { club: clubToSave });
   };
@@ -356,8 +380,23 @@ export default function ClubMemberProfileEditor({
       setMessage('Enter a message.');
       return;
     }
+
+    const sessionAuthor = (() => {
+      if (typeof window === 'undefined') return { label: 'You' };
+      try {
+        const raw = localStorage.getItem('user');
+        if (!raw) return { label: 'You' };
+        const u = JSON.parse(raw) as { username?: string; name?: string };
+        return { label: String(u.username || u.name || 'You').trim() || 'You' };
+      } catch {
+        return { label: 'You' };
+      }
+    })();
+
     setSaving(true);
     try {
+      const clubSnapshot = clubRef.current;
+
       if (kind === 'staff' && !parentId && data.viewer.canEditClubScoped) {
         const saveRes = await fetch(
           withSelectedClubId(
@@ -366,7 +405,7 @@ export default function ClubMemberProfileEditor({
           {
             method: 'PATCH',
             headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ club: data.club }),
+            body: JSON.stringify({ club: clubSnapshot }),
           },
         );
         if (!saveRes.ok) {
@@ -389,13 +428,15 @@ export default function ClubMemberProfileEditor({
             parentId,
             visibleToMember:
               kind === 'coach'
-                ? data.club.visibility.notesCoach
-                : data.club.visibility.messagesStaff,
-            commentsEnabled: data.club.visibility.notesCoachComments,
-            enableFrom: data.club.staffMessage.enableFrom || null,
-            enableTo: data.club.staffMessage.enableTo || null,
-            showAtLogin: data.club.staffMessage.showAtLogin,
-            showAtLogout: data.club.staffMessage.showAtLogout,
+                ? clubSnapshot.visibility.notesCoach
+                : clubSnapshot.visibility.messagesStaff,
+            commentsEnabled: clubSnapshot.visibility.notesCoachComments,
+            // Root staff posts inherit Messages schedule (Show at Login/Logout + dates).
+            // Replies never become login/logout notices.
+            enableFrom: parentId ? null : clubSnapshot.staffMessage.enableFrom || null,
+            enableTo: parentId ? null : clubSnapshot.staffMessage.enableTo || null,
+            showAtLogin: parentId ? false : Boolean(clubSnapshot.staffMessage.showAtLogin),
+            showAtLogout: parentId ? false : Boolean(clubSnapshot.staffMessage.showAtLogout),
           }),
         },
       );
@@ -404,7 +445,53 @@ export default function ClubMemberProfileEditor({
       setNoteDraft({ title: '', body: '' });
       if (parentId) setReplyDrafts((d) => ({ ...d, [parentId]: '' }));
       setMessage('Posted.');
-      onReload();
+
+      // Member replies / new root notes: update threads in place (no full profile reload).
+      if (parentId) {
+        const replyId = String(json.note?.id || `local-${Date.now()}`);
+        const reply = {
+          id: replyId,
+          body: body.trim(),
+          createdAt: new Date().toISOString(),
+          authorLabel: sessionAuthor.label,
+        };
+        if (kind === 'staff') {
+          onChange({
+            ...data,
+            staffNotes: data.staffNotes.map((n) =>
+              n.id === parentId ? { ...n, replies: [reply, ...n.replies] } : n,
+            ),
+          });
+        } else {
+          onChange({
+            ...data,
+            coachNotes: data.coachNotes.map((n) =>
+              n.id === parentId ? { ...n, replies: [reply, ...n.replies] } : n,
+            ),
+          });
+        }
+      } else if (kind === 'staff') {
+        const noteId = String(json.note?.id || `local-${Date.now()}`);
+        onChange({
+          ...data,
+          staffNotes: [
+            {
+              id: noteId,
+              title: title.trim(),
+              body: body.trim(),
+              createdAt: new Date().toISOString(),
+              authorLabel: sessionAuthor.label,
+              // Mirrors the schedule the API just inherited for this root post.
+              showAtLogin: Boolean(clubSnapshot.staffMessage.showAtLogin),
+              showAtLogout: Boolean(clubSnapshot.staffMessage.showAtLogout),
+              replies: [],
+            },
+            ...data.staffNotes,
+          ],
+        });
+      } else {
+        onReload();
+      }
     } catch (e: unknown) {
       setMessage(e instanceof Error ? e.message : 'Failed to post');
     } finally {
@@ -457,6 +544,10 @@ export default function ClubMemberProfileEditor({
 
   if (activeTab === 'owner-profile') {
     const o = data.owner;
+    const qrPayloadUrl = defaultProfileViewUrl;
+    const qrImageSrc = qrPayloadUrl
+      ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrPayloadUrl)}`
+      : '';
     return (
       <div>
         <SectionCard title="Private settings" tone="red">
@@ -508,10 +599,32 @@ export default function ClubMemberProfileEditor({
             </Field>
             <Field label="QR code URL">
               <TextInput
-                disabled={readOnlyOwner}
-                value={o.qrCodeUrl}
-                onChange={(e) => patchOwner((p) => ({ ...p, qrCodeUrl: e.target.value }))}
+                disabled
+                value={defaultProfileViewUrl}
+                placeholder="View-only profile URL"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Auto-generated link encoded in the QR. Scanning it opens this member&apos;s
+                profile in view-only mode. It is not an editable free-text field.
+              </p>
+              <div className="mt-3 flex flex-col items-start gap-2">
+                <p className="text-sm font-medium text-gray-700">Dynamic User QR code</p>
+                <div className="flex h-[220px] w-[220px] items-center justify-center border border-gray-300 bg-white">
+                  {qrImageSrc ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={qrImageSrc}
+                      alt={`QR code for ${data.user.username || 'member'}`}
+                      width={220}
+                      height={220}
+                    />
+                  ) : (
+                    <span className="px-3 text-center text-xs text-gray-400">
+                      QR unavailable (missing club or member)
+                    </span>
+                  )}
+                </div>
+              </div>
             </Field>
           </Row2>
         </SectionCard>
@@ -596,9 +709,133 @@ export default function ClubMemberProfileEditor({
                 ['city', 'Location'],
                 ['zipCode', 'ZIP'],
                 ['province', 'Province'],
-                ['country', 'Country'],
-                ['region', 'Region'],
-                ['geoCoordinates', 'Geographical coordinates'],
+              ] as const
+            ).map(([key, label]) => (
+              <Field key={key} label={label}>
+                <TextInput
+                  disabled={readOnlyOwner}
+                  value={o.address[key]}
+                  onChange={(e) =>
+                    patchOwner((p) => ({
+                      ...p,
+                      address: { ...p.address, [key]: e.target.value },
+                    }))
+                  }
+                />
+              </Field>
+            ))}
+            <Field label="Country">
+              <TextSelect
+                disabled={readOnlyOwner}
+                value={o.address.country}
+                onChange={(e) => {
+                  const nextCountry = e.target.value;
+                  patchOwner((p) => {
+                    const nextRegions = resolveRegionsForCountryName(nextCountry);
+                    const keepRegion = nextRegions.includes(p.address.region)
+                      ? p.address.region
+                      : '';
+                    return {
+                      ...p,
+                      address: {
+                        ...p.address,
+                        country: nextCountry,
+                        region: keepRegion,
+                      },
+                    };
+                  });
+                }}
+              >
+                <option value="">Select country</option>
+                {COUNTRIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+                {o.address.country &&
+                !COUNTRIES.includes(o.address.country as (typeof COUNTRIES)[number]) ? (
+                  <option value={o.address.country}>{o.address.country}</option>
+                ) : null}
+              </TextSelect>
+            </Field>
+            <Field label="Region">
+              <TextSelect
+                disabled={readOnlyOwner || !o.address.country.trim()}
+                value={o.address.region}
+                onChange={(e) =>
+                  patchOwner((p) => ({
+                    ...p,
+                    address: { ...p.address, region: e.target.value },
+                  }))
+                }
+              >
+                <option value="">
+                  {o.address.country.trim() ? 'Select region' : 'Select country first'}
+                </option>
+                {residenceRegionOptions.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+                {o.address.region && !residenceRegionOptions.includes(o.address.region) ? (
+                  <option value={o.address.region}>{o.address.region}</option>
+                ) : null}
+              </TextSelect>
+            </Field>
+            <Field
+              label="Geographical coordinates"
+              action={
+                (() => {
+                  const parts = o.address.geoCoordinates.trim().split(/[,;\s]+/).filter(Boolean);
+                  const lat = parts.length >= 2 ? Number.parseFloat(parts[0]) : NaN;
+                  const lng = parts.length >= 2 ? Number.parseFloat(parts[1]) : NaN;
+                  const valid =
+                    Number.isFinite(lat) &&
+                    Number.isFinite(lng) &&
+                    lat >= -90 &&
+                    lat <= 90 &&
+                    lng >= -180 &&
+                    lng <= 180;
+                  const openMap = () => {
+                    if (!valid) return;
+                    const href = `https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}`;
+                    window.open(href, '_blank', 'noopener,noreferrer');
+                  };
+                  return (
+                    <button
+                      type="button"
+                      disabled={!valid}
+                      onClick={openMap}
+                      title={
+                        valid
+                          ? 'Open this position in Google Maps (new tab)'
+                          : 'Enter valid lat, lng first'
+                      }
+                      className={`text-sm font-medium underline disabled:cursor-not-allowed disabled:no-underline ${
+                        valid
+                          ? 'text-red-700 hover:text-red-900'
+                          : 'text-gray-400'
+                      }`}
+                    >
+                      Open on Map
+                    </button>
+                  );
+                })()
+              }
+            >
+              <TextInput
+                disabled={readOnlyOwner}
+                value={o.address.geoCoordinates}
+                onChange={(e) =>
+                  patchOwner((p) => ({
+                    ...p,
+                    address: { ...p.address, geoCoordinates: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+            {(
+              [
                 ['alternativeMail', 'Alternative mail'],
                 ['whatsappGroupName', 'Whatsapp group name'],
                 ['telegramGroupName', 'Telegram group name'],
@@ -620,6 +857,7 @@ export default function ClubMemberProfileEditor({
           </Row2>
           <p className="mb-2 text-xs text-gray-500">
             Citizenship is under Administrative data. Phone 1 / Phone 2 below.
+            Region options follow the selected country (same list as Countries admin).
           </p>
           {(
             [
@@ -830,8 +1068,6 @@ export default function ClubMemberProfileEditor({
               [
                 ['fiscalCode', 'Fiscal code'],
                 ['documentId', 'Document ID'],
-                ['citizenship', 'Citizenship'],
-                ['carDrivingLicense', 'Car driving license'],
               ] as const
             ).map(([key, label]) => (
               <Field key={key} label={label}>
@@ -847,6 +1083,51 @@ export default function ClubMemberProfileEditor({
                 />
               </Field>
             ))}
+            <Field label="Citizenship">
+              {(() => {
+                const raw = o.administrative.citizenship || '';
+                const canonical =
+                  COUNTRIES.find((c) => c.toLowerCase() === raw.trim().toLowerCase()) || raw;
+                return (
+                  <TextSelect
+                    disabled={readOnlyOwner}
+                    value={canonical}
+                    onChange={(e) =>
+                      patchOwner((p) => ({
+                        ...p,
+                        administrative: { ...p.administrative, citizenship: e.target.value },
+                      }))
+                    }
+                  >
+                    <option value="">Select country</option>
+                    {COUNTRIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                    {canonical &&
+                    !COUNTRIES.some((c) => c.toLowerCase() === canonical.toLowerCase()) ? (
+                      <option value={canonical}>{canonical}</option>
+                    ) : null}
+                  </TextSelect>
+                );
+              })()}
+            </Field>
+            <Field label="Car driving license">
+              <TextInput
+                disabled={readOnlyOwner}
+                value={o.administrative.carDrivingLicense}
+                onChange={(e) =>
+                  patchOwner((p) => ({
+                    ...p,
+                    administrative: {
+                      ...p.administrative,
+                      carDrivingLicense: e.target.value,
+                    },
+                  }))
+                }
+              />
+            </Field>
           </Row2>
           <ForeignerAndIbanFields
             owner={o}
@@ -899,7 +1180,27 @@ export default function ClubMemberProfileEditor({
                 }
               />
             </Field>
-            <Field label="Medical certificate expiring date">
+            <Field
+              label="Medical certificate expiring date"
+              hint={
+                o.medical.alert30gg && o.medical.expirationDate
+                  ? (() => {
+                      const exp = new Date(`${o.medical.expirationDate}T12:00:00`);
+                      if (Number.isNaN(exp.getTime())) {
+                        return 'Set a valid expiring date for Alert -30gg.';
+                      }
+                      const alertAt = new Date(exp);
+                      alertAt.setDate(alertAt.getDate() - 30);
+                      const y = alertAt.getFullYear();
+                      const m = String(alertAt.getMonth() + 1).padStart(2, '0');
+                      const d = String(alertAt.getDate()).padStart(2, '0');
+                      return `Alert -30gg: reminder from ${d}/${m}/${y} until expiry.`;
+                    })()
+                  : o.medical.alert30gg
+                    ? 'Set the expiring date — Alert -30gg warns 30 days before that date.'
+                    : 'Check Alert -30gg to warn 30 days before this expiry date.'
+              }
+            >
               <TextInput
                 type="date"
                 disabled={readOnlyOwner}
@@ -910,7 +1211,23 @@ export default function ClubMemberProfileEditor({
                     medical: { ...p.medical, expirationDate: e.target.value },
                   }))
                 }
+                className={
+                  o.medical.alert30gg ? 'ring-2 ring-sky-400 border-sky-500' : undefined
+                }
               />
+              <div className="mt-2">
+                <CheckRow
+                  label="Alert -30gg"
+                  disabled={readOnlyOwner}
+                  checked={o.medical.alert30gg}
+                  onChange={(v) =>
+                    patchOwner((p) => ({
+                      ...p,
+                      medical: { ...p.medical, alert30gg: v },
+                    }))
+                  }
+                />
+              </div>
             </Field>
             <Field label="Outcome">
               <TextInput
@@ -961,14 +1278,6 @@ export default function ClubMemberProfileEditor({
               />
             </Field>
           </Row2>
-          <CheckRow
-            label="Alert -30gg"
-            disabled={readOnlyOwner}
-            checked={o.medical.alert30gg}
-            onChange={(v) =>
-              patchOwner((p) => ({ ...p, medical: { ...p.medical, alert30gg: v } }))
-            }
-          />
           <MedicalCertExtraFields
             owner={o}
             readOnly={readOnlyOwner}
@@ -1104,7 +1413,7 @@ export default function ClubMemberProfileEditor({
         <SectionCard title="Other references">
           <Row2>
             <Field label="Language">
-              <TextInput
+              <TextSelect
                 disabled={readOnlyOwner}
                 value={o.otherReferences.language}
                 onChange={(e) =>
@@ -1113,10 +1422,23 @@ export default function ClubMemberProfileEditor({
                     otherReferences: { ...p.otherReferences, language: e.target.value },
                   }))
                 }
-              />
+              >
+                <option value="">Select language</option>
+                {SUPPORTED_LANGUAGES.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.name} ({lang.code})
+                  </option>
+                ))}
+                {o.otherReferences.language &&
+                !SUPPORTED_LANGUAGES.some((l) => l.code === o.otherReferences.language) ? (
+                  <option value={o.otherReferences.language}>
+                    {o.otherReferences.language}
+                  </option>
+                ) : null}
+              </TextSelect>
             </Field>
             <Field label="Timezone">
-              <TextInput
+              <TextSelect
                 disabled={readOnlyOwner}
                 value={o.otherReferences.timezone}
                 onChange={(e) =>
@@ -1125,7 +1447,20 @@ export default function ClubMemberProfileEditor({
                     otherReferences: { ...p.otherReferences, timezone: e.target.value },
                   }))
                 }
-              />
+              >
+                <option value="">Select timezone</option>
+                {worldTimezones.map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz}
+                  </option>
+                ))}
+                {o.otherReferences.timezone &&
+                !worldTimezones.includes(o.otherReferences.timezone) ? (
+                  <option value={o.otherReferences.timezone}>
+                    {o.otherReferences.timezone}
+                  </option>
+                ) : null}
+              </TextSelect>
             </Field>
             <Field label="Unit of measure">
               <TextSelect
@@ -1142,23 +1477,47 @@ export default function ClubMemberProfileEditor({
                 <option value="imperial">Imperial</option>
               </TextSelect>
             </Field>
-            <Field label="Theme">
-              <TextSelect
-                disabled={readOnlyOwner}
-                value={o.otherReferences.theme}
-                onChange={(e) =>
-                  patchOwner((p) => ({
-                    ...p,
-                    otherReferences: { ...p.otherReferences, theme: e.target.value },
-                  }))
-                }
-              >
-                {THEME_OPTIONS.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label} ({t.color})
-                  </option>
-                ))}
-              </TextSelect>
+            <Field
+              label="Theme"
+              hint="Selected color is applied as the background of this user's My Page."
+            >
+              <div className="flex items-center gap-2">
+                <TextSelect
+                  disabled={readOnlyOwner}
+                  value={o.otherReferences.theme}
+                  onChange={(e) => {
+                    const nextTheme = e.target.value;
+                    patchOwner((p) => ({
+                      ...p,
+                      otherReferences: { ...p.otherReferences, theme: nextTheme },
+                    }));
+                    if (typeof window !== 'undefined' && data.viewer.isSelf) {
+                      try {
+                        localStorage.setItem(
+                          'movesbook_mypage_theme_color',
+                          getThemeColorById(nextTheme),
+                        );
+                        localStorage.setItem('movesbook_mypage_theme_id', nextTheme);
+                      } catch {
+                        /* ignore */
+                      }
+                    }
+                  }}
+                  className="flex-1"
+                >
+                  {THEME_OPTIONS.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label} ({t.color})
+                    </option>
+                  ))}
+                </TextSelect>
+                <span
+                  title={getThemeColorById(o.otherReferences.theme)}
+                  className="inline-block h-9 w-9 shrink-0 rounded border border-gray-400"
+                  style={{ backgroundColor: getThemeColorById(o.otherReferences.theme) }}
+                  aria-label={`Theme color ${getThemeColorById(o.otherReferences.theme)}`}
+                />
+              </div>
             </Field>
           </Row2>
           <Field label="Notes about the user">
@@ -1681,13 +2040,11 @@ export default function ClubMemberProfileEditor({
                   disabled={readOnlyClub}
                   checked={od.athleteStatus === status}
                   onChange={() =>
+                    // Club\Gym membership status only — the TEAM athlete status uses a
+                    // different vocabulary (Active / Inactive / Injured / Suspended).
                     setClub((c) => ({
                       ...c,
                       otherDetails: { ...c.otherDetails, athleteStatus: status },
-                      settings: {
-                        ...c.settings,
-                        football: { ...c.settings.football, athleteStatus: status },
-                      },
                     }))
                   }
                   className="border-gray-400"
@@ -2158,14 +2515,19 @@ export default function ClubMemberProfileEditor({
                   setClub((c) => ({ ...c, otherDetails: { ...c.otherDetails, acceptanceRules: v } }))
                 }
               />
-              <a
-                href={`/club/legal-documents/rules?clubId=${encodeURIComponent(data.clubId)}`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() =>
+                  window.open(
+                    `/club/legal-documents/rules?clubId=${encodeURIComponent(data.clubId)}`,
+                    '_blank',
+                    'noopener,noreferrer',
+                  )
+                }
                 className="text-sm font-semibold text-red-700 underline hover:text-red-900"
               >
                 Rules
-              </a>
+              </button>
             </div>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <CheckRow
@@ -2179,14 +2541,19 @@ export default function ClubMemberProfileEditor({
                   }))
                 }
               />
-              <a
-                href={`/club/legal-documents/privacy-policy?clubId=${encodeURIComponent(data.clubId)}`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() =>
+                  window.open(
+                    `/club/legal-documents/privacy-policy?clubId=${encodeURIComponent(data.clubId)}`,
+                    '_blank',
+                    'noopener,noreferrer',
+                  )
+                }
                 className="text-sm font-semibold text-red-700 underline hover:text-red-900"
               >
-                Private policy
-              </a>
+                Privacy policy
+              </button>
             </div>
             <Field label="Signature">
               <SignaturePad
@@ -2313,31 +2680,33 @@ export default function ClubMemberProfileEditor({
                 }
               />
             </Field>
-            <Field label="Consent date">
-              <TextInput
-                type="date"
+            <div className="space-y-2">
+              <Field label="Consent date">
+                <TextInput
+                  type="date"
+                  disabled={readOnlyClub}
+                  value={od.consentDate}
+                  onChange={(e) =>
+                    setClub((c) => ({
+                      ...c,
+                      otherDetails: { ...c.otherDetails, consentDate: e.target.value },
+                    }))
+                  }
+                />
+              </Field>
+              <CheckRow
+                label="Photo/video processing approval"
                 disabled={readOnlyClub}
-                value={od.consentDate}
-                onChange={(e) =>
+                checked={od.photoVideoApproval}
+                onChange={(v) =>
                   setClub((c) => ({
                     ...c,
-                    otherDetails: { ...c.otherDetails, consentDate: e.target.value },
+                    otherDetails: { ...c.otherDetails, photoVideoApproval: v },
                   }))
                 }
               />
-            </Field>
+            </div>
           </Row2>
-          <CheckRow
-            label="Photo/video processing approval"
-            disabled={readOnlyClub}
-            checked={od.photoVideoApproval}
-            onChange={(v) =>
-              setClub((c) => ({
-                ...c,
-                otherDetails: { ...c.otherDetails, photoVideoApproval: v },
-              }))
-            }
-          />
         </SectionCard>
 
         <SectionCard title="Answers to personalized questions">
@@ -2939,32 +3308,42 @@ export default function ClubMemberProfileEditor({
                 setClub((c) => ({ ...c, parents: { ...c.parents, acceptanceRules: v } }))
               }
             />
-            <a
-              href={`/club/legal-documents/rules?clubId=${encodeURIComponent(data.clubId)}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() =>
+                window.open(
+                  `/club/legal-documents/rules?clubId=${encodeURIComponent(data.clubId)}`,
+                  '_blank',
+                  'noopener,noreferrer',
+                )
+              }
               className="text-sm font-semibold text-red-700 underline hover:text-red-900"
             >
               Rules
-            </a>
+            </button>
           </div>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <CheckRow
-              label="I have readed 'Privacy policy'"
+              label="I have read Privacy policy"
               disabled={readOnlyClub}
               checked={pr.privacyPolicyRead}
               onChange={(v) =>
                 setClub((c) => ({ ...c, parents: { ...c.parents, privacyPolicyRead: v } }))
               }
             />
-            <a
-              href={`/club/legal-documents/privacy-policy?clubId=${encodeURIComponent(data.clubId)}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() =>
+                window.open(
+                  `/club/legal-documents/privacy-policy?clubId=${encodeURIComponent(data.clubId)}`,
+                  '_blank',
+                  'noopener,noreferrer',
+                )
+              }
               className="text-sm font-semibold text-red-700 underline hover:text-red-900"
             >
-              Private policy
-            </a>
+              Privacy policy
+            </button>
           </div>
           <Field label="Signature">
             <SignaturePad
@@ -3132,6 +3511,10 @@ export default function ClubMemberProfileEditor({
         </SectionCard>
 
         <SectionCard title="Comments">
+          <p className="mb-3 text-xs text-gray-600">
+            Root staff posts use the Enable From / To and Show at Login / Logout settings above.
+            Save those checkboxes, then post — the member sees matching posts at login/logout.
+          </p>
           {data.staffNotes.length === 0 ? (
             <p className="text-sm text-gray-500">No comments found.</p>
           ) : (
@@ -3142,6 +3525,20 @@ export default function ClubMemberProfileEditor({
                   <p className="whitespace-pre-wrap">{n.body}</p>
                   <p className="mt-1 text-xs text-gray-500">
                     {n.authorLabel} · {new Date(n.createdAt).toLocaleString()}
+                    {n.showAtLogin || n.showAtLogout || club.staffMessage.showAtLogin || club.staffMessage.showAtLogout ? (
+                      <span className="ml-2 text-sky-700">
+                        {[
+                          (n.showAtLogin || (!n.showAtLogin && !n.showAtLogout && club.staffMessage.showAtLogin))
+                            ? 'Login'
+                            : null,
+                          (n.showAtLogout || (!n.showAtLogin && !n.showAtLogout && club.staffMessage.showAtLogout))
+                            ? 'Logout'
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                    ) : null}
                   </p>
                   {n.replies.map((r) => (
                     <div key={r.id} className="mt-2 ml-4 border-l pl-3 text-gray-700">
@@ -3155,11 +3552,19 @@ export default function ClubMemberProfileEditor({
                     <div className="mt-2">
                       <TextArea
                         rows={2}
-                        placeholder="Your comment…"
+                        placeholder="Your comment… (Ctrl+Enter to send)"
                         value={replyDrafts[n.id] || ''}
                         onChange={(e) =>
                           setReplyDrafts((d) => ({ ...d, [n.id]: e.target.value }))
                         }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                            if (!saving && (replyDrafts[n.id] || '').trim()) {
+                              void postNote('staff', n.id);
+                            }
+                          }
+                        }}
                       />
                       <button
                         type="button"
@@ -3192,6 +3597,7 @@ export default function ClubMemberProfileEditor({
         saving={saving}
         message={message}
         setMessage={setMessage}
+        onChange={onChange}
         onReload={onReload}
         onSaveVisibility={() => void saveSection('club')}
       />

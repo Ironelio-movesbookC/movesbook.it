@@ -13,11 +13,11 @@ import {
 import PaymentModeSelect from '@/components/club/PaymentModeSelect';
 import type { ClubMemberScopedData } from '@/lib/club/memberProfileTypes';
 import {
-  ATHLETE_STATUS_OPTIONS,
   ATHLETIC_LEVEL_OPTIONS,
   FOLLOW_UP_NOTIFICATION_OPTIONS,
   MAIN_SPORTS,
   SHARING_DEFAULT_OPTIONS,
+  TEAM_ATHLETE_STATUS_OPTIONS,
 } from '@/lib/club/memberProfileTypes';
 import { getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesClient';
 import {
@@ -81,12 +81,19 @@ export default function MemberProfileSettingsTab({
   const [defaultsMessage, setDefaultsMessage] = useState('');
 
   useEffect(() => {
+    if (!clubId) {
+      setMemberTypes([]);
+      setMemberTypesLoading(false);
+      return;
+    }
     let cancelled = false;
     async function loadMemberTypes() {
       setMemberTypesLoading(true);
       try {
         const res = await fetch(
-          withSelectedClubId('/api/club/settings/tables/member-types?scope=profile'),
+          withSelectedClubId(
+            `/api/club/settings/tables/member-types?scope=profile&clubId=${encodeURIComponent(clubId)}`,
+          ),
           {
             headers: getAuthHeaders(),
           },
@@ -129,7 +136,7 @@ export default function MemberProfileSettingsTab({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [clubId]);
 
   useEffect(() => {
     if (!clubId) return;
@@ -269,7 +276,13 @@ export default function MemberProfileSettingsTab({
             value={s.memberTypeId}
             onChange={(e) => applyMemberType(e.target.value)}
           >
-            <option value="">{memberTypesLoading ? 'Loading…' : 'Select'}</option>
+            <option value="">
+              {memberTypesLoading
+                ? 'Loading…'
+                : memberTypes.length === 0
+                  ? 'No member types yet'
+                  : 'Select'}
+            </option>
             {memberTypes.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name}
@@ -279,6 +292,20 @@ export default function MemberProfileSettingsTab({
               <option value={s.memberTypeId}>Saved type #{s.memberTypeId}</option>
             ) : null}
           </TextSelect>
+          {!memberTypesLoading && memberTypes.length === 0 ? (
+            <p className="mt-1 text-xs text-gray-500">
+              Add types under{' '}
+              <a
+                href="/club/settings/tables/member_type"
+                className="text-blue-800 underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Club management → Administration → General settings → Tables → Member type
+              </a>
+              . Choosing a type fills Discount % automatically.
+            </p>
+          ) : null}
         </Field>
         <p className="mb-2 mt-3 text-sm font-semibold text-gray-800">Discount %</p>
         <div className="overflow-x-auto">
@@ -294,8 +321,8 @@ export default function MemberProfileSettingsTab({
                     ['clothing', 'Clothing'],
                     ['outfit', 'Outfit'],
                   ] as const
-                ).map(([, label]) => (
-                  <th key={label} className="border border-gray-300 px-2 py-1.5 text-left">
+                ).map(([key, label]) => (
+                  <th key={key} className="border border-gray-300 px-2 py-1.5 text-left">
                     {label}
                   </th>
                 ))}
@@ -331,10 +358,21 @@ export default function MemberProfileSettingsTab({
         <Field label="Debt purchases">
           <TextInput
             disabled={readOnlyClub}
+            inputMode="numeric"
+            maxLength={4}
             value={s.debtPurchases}
-            onChange={(e) =>
-              patchSettings((prev) => ({ ...prev, debtPurchases: e.target.value }))
-            }
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
+              if (digits === '') {
+                patchSettings((prev) => ({ ...prev, debtPurchases: '' }));
+                return;
+              }
+              const n = Math.min(9999, Math.max(0, Number.parseInt(digits, 10)));
+              patchSettings((prev) => ({
+                ...prev,
+                debtPurchases: Number.isFinite(n) ? String(n) : '',
+              }));
+            }}
           />
         </Field>
       </SectionCard>
@@ -344,11 +382,39 @@ export default function MemberProfileSettingsTab({
           <Field label="Heart rate">
             <TextInput
               disabled={readOnlyClub}
+              inputMode="numeric"
+              maxLength={3}
               value={s.heartRate}
               placeholder="heart rate min"
-              onChange={(e) =>
-                patchSettings((prev) => ({ ...prev, heartRate: e.target.value }))
-              }
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, '').slice(0, 3);
+                if (digits === '') {
+                  patchSettings((prev) => ({ ...prev, heartRate: '' }));
+                  return;
+                }
+                let n = Number.parseInt(digits, 10);
+                if (!Number.isFinite(n)) {
+                  patchSettings((prev) => ({ ...prev, heartRate: '' }));
+                  return;
+                }
+                if (n > 199) n = 199;
+                // Allow typing below 30 until the value is complete (3 digits).
+                if (digits.length >= 3 && n < 30) n = 30;
+                patchSettings((prev) => ({
+                  ...prev,
+                  heartRate: String(n),
+                }));
+              }}
+              onBlur={() => {
+                const raw = String(s.heartRate || '').replace(/\D/g, '');
+                if (!raw) return;
+                let n = Number.parseInt(raw, 10);
+                if (!Number.isFinite(n)) return;
+                n = Math.min(199, Math.max(30, n));
+                if (String(n) !== s.heartRate) {
+                  patchSettings((prev) => ({ ...prev, heartRate: String(n) }));
+                }
+              }}
             />
           </Field>
           <Field label="Athletic level">
@@ -484,6 +550,8 @@ export default function MemberProfileSettingsTab({
         </div>
       </SectionCard>
 
+      {memberSettingKind === 'club' ? (
+        <>
       <SectionCard title="Access & display functions">
         <CheckRow
           label="Enable Access control, debt at access, and secondary screen functions"
@@ -495,7 +563,7 @@ export default function MemberProfileSettingsTab({
         />
         {!accessFunctionsEnabled ? (
           <p className="mt-2 text-xs text-gray-500">
-            These sections stay visible for Club and Team. Uncheck to disable the functions.
+            Uncheck to disable access control, debt-at-access, and secondary screen for this club member.
           </p>
         ) : null}
       </SectionCard>
@@ -673,6 +741,8 @@ export default function MemberProfileSettingsTab({
               ))}
             </div>
           </SectionCard>
+        </>
+      ) : null}
 
       <SectionCard title="Type of payments — method default" tone="red">
         <p className="mb-3 text-xs text-gray-600">
@@ -783,7 +853,7 @@ export default function MemberProfileSettingsTab({
           <div className="mt-4">
             <Field label="Athlete status">
               <div className="flex flex-wrap gap-4">
-                {ATHLETE_STATUS_OPTIONS.map((status) => (
+                {TEAM_ATHLETE_STATUS_OPTIONS.map((status) => (
                   <label
                     key={status}
                     className="inline-flex items-center gap-2 text-sm text-gray-800"
@@ -794,13 +864,9 @@ export default function MemberProfileSettingsTab({
                       disabled={readOnlyClub}
                       checked={s.football.athleteStatus === status}
                       onChange={() =>
-                        setClub((c) => ({
-                          ...c,
-                          otherDetails: { ...c.otherDetails, athleteStatus: status },
-                          settings: {
-                            ...c.settings,
-                            football: { ...c.settings.football, athleteStatus: status },
-                          },
+                        patchSettings((prev) => ({
+                          ...prev,
+                          football: { ...prev.football, athleteStatus: status },
                         }))
                       }
                       className="border-gray-400"
@@ -965,10 +1031,12 @@ export default function MemberProfileSettingsTab({
                 }
               />
             </Field>
-            <Field label="Jersey size (max 5)">
+            <Field label="Jersey size (alphanumeric, max 5)">
               <TextInput
                 disabled={readOnlyClub}
                 maxLength={5}
+                inputMode="text"
+                autoComplete="off"
                 value={s.football.jerseySize}
                 onChange={(e) =>
                   patchSettings((prev) => ({
@@ -981,10 +1049,12 @@ export default function MemberProfileSettingsTab({
                 }
               />
             </Field>
-            <Field label="Shorts size (max 5)">
+            <Field label="Shorts size (alphanumeric, max 5)">
               <TextInput
                 disabled={readOnlyClub}
                 maxLength={5}
+                inputMode="text"
+                autoComplete="off"
                 value={s.football.shortsSize}
                 onChange={(e) =>
                   patchSettings((prev) => ({
@@ -997,20 +1067,24 @@ export default function MemberProfileSettingsTab({
                 }
               />
             </Field>
-            <Field label="Shoe size (max 5)">
+            <Field label="Shoe size (00.0)">
               <TextInput
                 disabled={readOnlyClub}
-                maxLength={5}
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="00.0"
                 value={s.football.shoeSize}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const cleaned = e.target.value.replace(/[^\d.]/g, '');
+                  const parts = cleaned.split('.');
+                  const whole = (parts[0] || '').slice(0, 2);
+                  const frac = (parts[1] || '').slice(0, 1);
+                  const shoeSize = parts.length > 1 ? `${whole}.${frac}` : whole;
                   patchSettings((prev) => ({
                     ...prev,
-                    football: {
-                      ...prev.football,
-                      shoeSize: e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 5),
-                    },
-                  }))
-                }
+                    football: { ...prev.football, shoeSize },
+                  }));
+                }}
               />
             </Field>
           </Row2>

@@ -1,7 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Star, Trash2, Users } from 'lucide-react';
+import {
+  ArrowRight,
+  Calendar,
+  Filter,
+  RotateCcw,
+  Search,
+  Star,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
@@ -50,6 +59,18 @@ function formatGroupDate(iso: string): string {
   const yyyy = d.getFullYear();
   return `${dd}/${mm}/${yyyy}`;
 }
+
+const filterLabelClass = 'mb-1 block text-sm font-medium text-gray-700';
+/** Shared control height — also kills global `form select { margin-bottom: 10px }`. */
+const filterSelectClass =
+  '!mb-0 box-border h-[38px] min-h-[38px] max-h-[38px] w-full rounded-lg border border-gray-300 bg-white px-3 text-sm leading-[38px] text-gray-900 outline-none focus:border-gray-400';
+const filterCalendarShellClass =
+  'box-border flex h-[38px] min-h-[38px] max-h-[38px] w-full items-center gap-2 overflow-hidden rounded-lg border border-gray-300 bg-white px-3';
+const filterActionClass =
+  'inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50';
+/** Hide the native date glyph so only the Lucide calendar icon shows (reference chrome). */
+const filterDateInputClass =
+  'h-full min-h-0 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-none text-gray-900 outline-none [color-scheme:light] [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-datetime-edit]:p-0 [&::-webkit-datetime-edit]:m-0';
 
 export default function ClubMemberArchivePage({
   columns,
@@ -367,11 +388,7 @@ export default function ClubMemberArchivePage({
         }
         error={error || undefined}
         footerHint={footerHint}
-        pagination={
-          viewMode !== 'groups' && total > pageSize ? (
-            <ProcedurePagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
-          ) : undefined
-        }
+        pagination={undefined}
       >
         {actionMessage ? (
           <p className="mb-2 text-sm text-teal-700">{actionMessage}</p>
@@ -400,141 +417,163 @@ export default function ClubMemberArchivePage({
         ) : null}
 
         {showMemberFilters && (
-          <form
-            onSubmit={applyFilterForm}
-            className="flex flex-nowrap items-end gap-2 overflow-x-auto border-b border-gray-200 bg-gray-50 p-3 text-sm"
-          >
-            <label className="shrink-0">
-              <span className="text-xs text-gray-600">Search</span>
-              <input
-                type="text"
-                className="mt-1 block w-36 rounded border border-gray-300 px-2 py-1.5"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Name, code, notes..."
-              />
-            </label>
-            <label className="shrink-0">
-              <span className="text-xs text-gray-600">From</span>
-              <input
-                type="date"
-                className="mt-1 block rounded border border-gray-300 px-2 py-1.5"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-              />
-            </label>
-            <label className="shrink-0">
-              <span className="text-xs text-gray-600">To</span>
-              <input
-                type="date"
-                className="mt-1 block rounded border border-gray-300 px-2 py-1.5"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-              />
-            </label>
-            <label className="shrink-0">
-              <span className="text-xs text-gray-600">Order</span>
-              <select
-                className="mt-1 block rounded border border-gray-300 px-2 py-1.5"
-                value={orderBy}
-                onChange={(e) => setOrderBy(e.target.value as 'recent' | 'old')}
-              >
-                <option value="recent">Most recent</option>
-                <option value="old">Oldest first</option>
-              </select>
-            </label>
-            <label className="shrink-0">
-              <span className="text-xs text-gray-600">Sport</span>
-              <select
-                className="mt-1 block min-w-[8rem] rounded border border-gray-300 px-2 py-1.5"
-                value={sportFilter}
-                onChange={(e) => setSportFilter(e.target.value)}
-              >
-                <option value="all">All</option>
-                {Array.from(
-                  new Set(
-                    data
-                      .map((row) => String(row.sport ?? '').trim())
-                      .filter((v) => v && v !== '-'),
-                  ),
-                )
-                  .sort((a, b) => a.localeCompare(b))
-                  .map((sport) => (
-                    <option key={sport} value={sport}>
-                      {sport}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label className="shrink-0">
-              <span className="text-xs text-gray-600">Group of training</span>
-              <select
-                className="mt-1 block min-w-[9rem] rounded border border-gray-300 px-2 py-1.5"
-                value={groupFilter}
-                onChange={(e) => setGroupFilter(e.target.value)}
-              >
-                <option value="all">All</option>
-                {Array.from(
-                  new Set(
-                    data
-                      .map((row) => String(row.groupTrained ?? '').trim())
-                      .filter((v) => v && v !== '-'),
-                  ),
-                )
-                  .sort((a, b) => a.localeCompare(b))
-                  .map((group) => (
-                    <option key={group} value={group}>
-                      {group}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <button
-              type="submit"
-              className="shrink-0 rounded bg-teal-700 px-3 py-1.5 text-white hover:bg-teal-800"
-            >
-              Filter
-            </button>
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="shrink-0 rounded bg-gray-200 px-3 py-1.5 text-gray-800 hover:bg-gray-300"
-            >
-              Clear
-            </button>
-            {showBulkActions && selectedIds.size > 0 ? (
-              <label className="mb-0.5 flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-gray-800">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300"
-                  checked={viewSelectedOnly}
-                  onChange={(e) => setViewSelectedOnly(e.target.checked)}
-                />
-                View selected
+          <form onSubmit={applyFilterForm} className="member-archive-filters no-print mb-4 space-y-3">
+            <div className="w-full overflow-x-auto">
+              <div className="grid min-w-[56rem] grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,1.7fr)] items-end gap-3">
+              <label className="block min-w-0 text-sm">
+                <span className={filterLabelClass}>Order</span>
+                <select
+                  className={filterSelectClass}
+                  value={orderBy}
+                  onChange={(e) => setOrderBy(e.target.value as 'recent' | 'old')}
+                >
+                  <option value="recent">Most recent</option>
+                  <option value="old">Oldest first</option>
+                </select>
               </label>
-            ) : null}
-            {showBulkActions ? (
-              <>
-                <button
-                  type="button"
-                  disabled={saving || selectedIds.size === 0}
-                  onClick={handleSaveAsGroup}
-                  className="shrink-0 whitespace-nowrap rounded border border-teal-700 px-3 py-1.5 text-teal-800 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
+              <label className="block min-w-0 text-sm">
+                <span className={filterLabelClass}>Sport</span>
+                <select
+                  className={filterSelectClass}
+                  value={sportFilter}
+                  onChange={(e) => setSportFilter(e.target.value)}
                 >
-                  Save as a group
-                </button>
-                <button
-                  type="button"
-                  disabled={saving || selectedIds.size === 0}
-                  onClick={handleSaveAsFavourites}
-                  className="shrink-0 whitespace-nowrap rounded border border-amber-600 px-3 py-1.5 text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  <option value="all">All</option>
+                  {Array.from(
+                    new Set(
+                      data
+                        .map((row) => String(row.sport ?? '').trim())
+                        .filter((v) => v && v !== '-'),
+                    ),
+                  )
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((sport) => (
+                      <option key={sport} value={sport}>
+                        {sport}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="block min-w-0 text-sm">
+                <span className={filterLabelClass}>Group of training</span>
+                <select
+                  className={filterSelectClass}
+                  value={groupFilter}
+                  onChange={(e) => setGroupFilter(e.target.value)}
                 >
-                  Save as favourites
+                  <option value="all">All</option>
+                  {Array.from(
+                    new Set(
+                      data
+                        .map((row) => String(row.groupTrained ?? '').trim())
+                        .filter((v) => v && v !== '-'),
+                    ),
+                  )
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((group) => (
+                      <option key={group} value={group}>
+                        {group}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <div className="block min-w-0 text-sm">
+                <span className={filterLabelClass}>Calendar</span>
+                <div className={filterCalendarShellClass}>
+                  <label className="relative flex h-full min-w-0 flex-1 items-center gap-1.5">
+                    <span className="sr-only">From</span>
+                    <input
+                      type="date"
+                      className={filterDateInputClass}
+                      value={fromDate}
+                      onChange={(e) => setFromDate(e.target.value)}
+                    />
+                    <Calendar size={16} className="pointer-events-none shrink-0 text-gray-500" />
+                  </label>
+                  <ArrowRight size={16} className="shrink-0 text-gray-400" aria-hidden />
+                  <label className="relative flex h-full min-w-0 flex-1 items-center gap-1.5">
+                    <span className="sr-only">To</span>
+                    <input
+                      type="date"
+                      className={filterDateInputClass}
+                      value={toDate}
+                      onChange={(e) => setToDate(e.target.value)}
+                    />
+                    <Calendar size={16} className="pointer-events-none shrink-0 text-gray-500" />
+                  </label>
+                </div>
+              </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="relative min-w-[16rem] flex-1">
+                <span className="sr-only">Search</span>
+                <Search
+                  size={16}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  aria-hidden
+                />
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-gray-400"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="search...."
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button type="submit" className={filterActionClass}>
+                  <Filter size={16} />
+                  Filter
                 </button>
-              </>
-            ) : null}
+                <button type="button" onClick={clearFilters} className={filterActionClass}>
+                  <RotateCcw size={16} />
+                  Clear
+                </button>
+                {showBulkActions && selectedIds.size > 0 ? (
+                  <label className={`${filterActionClass} cursor-pointer`}>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300"
+                      checked={viewSelectedOnly}
+                      onChange={(e) => setViewSelectedOnly(e.target.checked)}
+                    />
+                    View selected
+                  </label>
+                ) : null}
+                {showBulkActions ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={saving || selectedIds.size === 0}
+                      onClick={handleSaveAsGroup}
+                      className={filterActionClass}
+                    >
+                      <Users size={16} />
+                      Save as a group
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving || selectedIds.size === 0}
+                      onClick={handleSaveAsFavourites}
+                      className={filterActionClass}
+                    >
+                      <Star size={16} />
+                      Save as favourites
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            </div>
           </form>
         )}
+
+        {viewMode !== 'groups' && total > 0 ? (
+          <div className="no-print mb-3">
+            <ProcedurePagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
+          </div>
+        ) : null}
 
         {viewMode === 'groups' ? (
           groupsLoading ? (

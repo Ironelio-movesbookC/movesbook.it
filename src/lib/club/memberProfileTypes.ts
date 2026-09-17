@@ -407,6 +407,9 @@ export type MemberProfileBundle = {
     body: string;
     createdAt: string;
     authorLabel: string;
+    /** Inherited from the Messages document schedule when the post was created. */
+    showAtLogin: boolean;
+    showAtLogout: boolean;
     replies: Array<{ id: string; body: string; createdAt: string; authorLabel: string }>;
   }>;
   coachNotes: Array<{
@@ -441,11 +444,20 @@ export const MAIN_SPORTS = [
   'Dance',
 ] as const;
 
+/** Club\Gym membership status (Other details → Athlete status). */
 export const ATHLETE_STATUS_OPTIONS = [
   'Member',
   'Not a member',
   'On probation',
   'Non-member Associate',
+] as const;
+
+/** Athlete status when the member belongs to a TEAM instead of a Club\Gym. */
+export const TEAM_ATHLETE_STATUS_OPTIONS = [
+  'Active',
+  'Inactive',
+  'Injured',
+  'Suspended',
 ] as const;
 
 export const INSURANCE_COMPANY_OPTIONS = [
@@ -546,3 +558,9 @@ export const THEME_OPTIONS = [
   { id: 'forest', label: 'Forest', color: '#15803d' },
   { id: 'slate', label: 'Slate', color: '#334155' },
 ] as const;
+
+export function getThemeColorById(themeId: string | null | undefined): string {
+  const id = String(themeId || '').trim();
+  const found = THEME_OPTIONS.find((t) => t.id === id);
+  return found?.color || THEME_OPTIONS[0].color;
+}

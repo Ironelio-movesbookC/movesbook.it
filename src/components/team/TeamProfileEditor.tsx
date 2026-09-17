@@ -19,7 +19,7 @@ import {
   TeamProfileMainTab,
   TeamSubteamsTab,
 } from '@/components/team/TeamProfileTabPanels';
-import { Field } from '@/components/club/memberProfile/FormBits';
+import { Field, TextSelect } from '@/components/club/memberProfile/FormBits';
 
 export type { TeamProfileFormPayload };
 
@@ -168,6 +168,29 @@ export default function TeamProfileEditor({
         <div className="space-y-4 p-4">
           {activeTab === 'team-profile' ? (
             <div className="space-y-4">
+              <Field label="Sport">
+                <TextSelect
+                  value={form.sport}
+                  onChange={(e) => {
+                    const picked = e.target.value;
+                    setForm((f) => {
+                      const current = f.sports?.length ? f.sports : [f.sport];
+                      // Primary sport leads the list; keep any extra sports selected.
+                      const sports = [picked, ...current.filter((s) => s !== picked)];
+                      return { ...f, sports, sport: picked };
+                    });
+                  }}
+                >
+                  {ENTITY_SPORT_OPTIONS.map((sport) => (
+                    <option key={sport} value={sport}>
+                      {sport}
+                    </option>
+                  ))}
+                  {form.sport && !(ENTITY_SPORT_OPTIONS as readonly string[]).includes(form.sport) ? (
+                    <option value={form.sport}>{form.sport}</option>
+                  ) : null}
+                </TextSelect>
+              </Field>
               <Field label="Sports (multicheck)">
                 <div className="flex flex-wrap gap-x-4 gap-y-2 rounded border border-gray-300 bg-white px-3 py-2">
                   {ENTITY_SPORT_OPTIONS.map((sport) => {
