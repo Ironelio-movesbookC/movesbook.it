@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { COUNTRIES } from '@/lib/news/countries';
+import { getRegionsForCountry } from '@/constants/countryRegions.constants';
 import type { TeamProfileFormPayload } from '@/lib/team/teamProfileTypes';
 import {
   CheckRow,
@@ -66,6 +67,10 @@ export function TeamProfileMainTab({ form, setForm, readOnly }: PanelProps) {
   const patchLegal = (patch: Partial<TeamProfileFormPayload['legalSite']>) =>
     setForm((f) => ({ ...f, legalSite: { ...f.legalSite, ...patch } }));
 
+  const regionOptions = form.legalSite.country.trim()
+    ? getRegionsForCountry(form.legalSite.country)
+    : [];
+
   return (
     <div className="space-y-4">
       <SectionCard title="Main data" tone="red">
@@ -81,13 +86,6 @@ export function TeamProfileMainTab({ form, setForm, readOnly }: PanelProps) {
             value={form.mainData.shortName}
             disabled={readOnly}
             onChange={(e) => patchMain({ shortName: e.target.value })}
-          />
-        </Field>
-        <Field label="Official team name">
-          <TextInput
-            value={form.officialName}
-            disabled={readOnly}
-            onChange={(e) => setForm((f) => ({ ...f, officialName: e.target.value }))}
           />
         </Field>
         <SportParamSelect
@@ -212,6 +210,33 @@ export function TeamProfileMainTab({ form, setForm, readOnly }: PanelProps) {
             ))}
           </TextSelect>
         </Field>
+        <Field label="Region">
+          <TextSelect
+            value={form.legalSite.region}
+            disabled={readOnly}
+            onChange={(e) => patchLegal({ region: e.target.value })}
+          >
+            <option value="">
+              {form.legalSite.country.trim() ? 'Select region' : 'Select country first'}
+            </option>
+            {regionOptions.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+            {form.legalSite.region && !regionOptions.includes(form.legalSite.region) ? (
+              <option value={form.legalSite.region}>{form.legalSite.region}</option>
+            ) : null}
+          </TextSelect>
+        </Field>
+        <Field label="Geographic coordinate">
+          <TextInput
+            placeholder="45.4642, 9.1900"
+            value={form.legalSite.geo ?? ''}
+            disabled={readOnly}
+            onChange={(e) => patchLegal({ geo: e.target.value })}
+          />
+        </Field>
         <Field label="Main playing field">
           <TextInput
             value={form.legalSite.mainPlayingField}
@@ -314,6 +339,16 @@ export function TeamPasswordsTab({
             value={form.directAccess}
             disabled={readOnly}
             onChange={(e) => setForm((f) => ({ ...f, directAccess: e.target.value }))}
+          />
+        </Field>
+      </SectionCard>
+
+      <SectionCard title="Official team name">
+        <Field label="Official team name">
+          <TextInput
+            value={form.officialName}
+            disabled={readOnly}
+            onChange={(e) => setForm((f) => ({ ...f, officialName: e.target.value }))}
           />
         </Field>
       </SectionCard>

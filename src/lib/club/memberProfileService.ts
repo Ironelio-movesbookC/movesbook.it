@@ -36,12 +36,38 @@ function cuid() {
   return `c${randomBytes(12).toString('hex')}`;
 }
 
-function resolveSignatureDataUrl(clubData: ClubMemberScopedData): string | null {
-  const parent = clubData.parents.signatureDataUrl?.trim();
-  if (parent) return parent;
-  const overage = clubData.otherDetails.signatureDataUrl?.trim();
-  if (overage) return overage;
-  return null;
+/** Only keep real http(s) links; ignore junk like "2" left in older saves. */
+function normalizeStoredQrCodeUrl(raw: string | null | undefined): string {
+  const value = String(raw || '').trim();
+  if (/^https?:\/\//i.test(value)) return value;
+  return '';
+}
+
+function resolveSignatureDataUrl(
+  clubData: ClubMemberScopedData,
+  underage: boolean,
+): string | null {
+  if (underage) {
+    return (
+      clubData.parents.signatureDataUrl?.trim() ||
+      clubData.otherDetails.signatureDataUrl?.trim() ||
+      null
+    );
+  }
+  return (
+    clubData.otherDetails.signatureDataUrl?.trim() ||
+    clubData.parents.signatureDataUrl?.trim() ||
+    null
+  );
+}
+
+/** Keep the PNG data-URL only in signatureDataUrl column — not duplicated in profileJson. */
+function clubScopedForProfileJson(clubData: ClubMemberScopedData): ClubMemberScopedData {
+  return {
+    ...clubData,
+    otherDetails: { ...clubData.otherDetails, signatureDataUrl: '' },
+    parents: { ...clubData.parents, signatureDataUrl: '' },
+  };
 }
 
 function syncSignatureFromColumn(
@@ -51,13 +77,7 @@ function syncSignatureFromColumn(
 ) {
   if (!signatureDataUrl?.trim()) return;
   const sig = signatureDataUrl.trim();
-  const hadParent = Boolean(clubScoped.parents.signatureDataUrl?.trim());
-  const hadOther = Boolean(clubScoped.otherDetails.signatureDataUrl?.trim());
-  if (hadParent) {
-    clubScoped.parents.signatureDataUrl = sig;
-  } else if (hadOther) {
-    clubScoped.otherDetails.signatureDataUrl = sig;
-  } else if (underage) {
+  if (underage) {
     clubScoped.parents.signatureDataUrl = sig;
   } else {
     clubScoped.otherDetails.signatureDataUrl = sig;
@@ -336,7 +356,7 @@ export async function loadMemberProfileBundle(opts: {
       disallowClubAdmins: Boolean(extras?.disallowClubAdmins),
     },
     photoUrl: clubMember.member.image || ownerStored.photoUrl || '',
-    qrCodeUrl: extras?.qrCodeUrl || ownerStored.qrCodeUrl || '',
+    qrCodeUrl: normalizeStoredQrCodeUrl(extras?.qrCodeUrl || ownerStored.qrCodeUrl || ''),
     login: {
       ...emptyOwnerProfile().login,
       ...ownerStored.login,
@@ -619,6 +639,8 @@ export async function loadMemberProfileBundle(opts: {
       body: n.body,
       createdAt: new Date(n.createdAt).toISOString(),
       authorLabel: (n.authorId && authorMap.get(n.authorId)) || 'Staff',
+      showAtLogin: Boolean(n.showAtLogin),
+      showAtLogout: Boolean(n.showAtLogout),
       replies: repliesOf(n.id),
     })),
     coachNotes: (isClubAdmin || visibility.notesCoach ? coachRoots : [])
@@ -757,7 +779,7 @@ export async function saveMemberProfileBundle(opts: {
       disallowClubAdmins: loaded.viewer.isSelf
         ? Boolean(owner.privateSettings.disallowClubAdmins)
         : loaded.owner.privateSettings.disallowClubAdmins,
-      qrCodeUrl: owner.qrCodeUrl || null,
+      qrCodeUrl: normalizeStoredQrCodeUrl(owner.qrCodeUrl) || null,
       ownerJson: JSON.stringify({
         ...ownerToStore,
         privateSettings: {
@@ -822,7 +844,7 @@ export async function saveMemberProfileBundle(opts: {
     await upsertExtras({
       userId: opts.memberUserId,
       disallowClubAdmins: loaded.owner.privateSettings.disallowClubAdmins,
-      qrCodeUrl: loaded.owner.qrCodeUrl || null,
+      qrCodeUrl: normalizeStoredQrCodeUrl(loaded.owner.qrCodeUrl) || null,
       ownerJson: JSON.stringify(loaded.owner),
       contactsJson: JSON.stringify(contacts),
       activitiesJson: JSON.stringify(activities),
@@ -840,14 +862,16 @@ export async function saveMemberProfileBundle(opts: {
         clubData = mergeMemberSelfClubSave(loaded.club, clubData);
       }
       const age = calcAge(loaded.owner.personal.dateOfBirth);
-      clubData.otherDetails.userUnderage = age != null && age < 18;
-      const signatureDataUrl = resolveSignatureDataUrl(clubData);
+      const underage = age != null && age < 18;
+      clubData.otherDetails.userUnderage = underage;
+      const signatureDataUrl = resolveSignatureDataUrl(clubData, underage);
+      const profileJson = JSON.stringify(clubScopedForProfileJson(clubData));
       const now = new Date();
       const existing = await getClubProfile(clubMember.id);
       if (existing) {
         await prisma.$executeRawUnsafe(
           `UPDATE club_member_profiles SET profileJson=?, signatureDataUrl=?, updatedAt=? WHERE clubMemberId=?`,
-          JSON.stringify(clubData),
+          profileJson,
           signatureDataUrl,
           now,
           clubMember.id,
@@ -857,7 +881,7 @@ export async function saveMemberProfileBundle(opts: {
           `INSERT INTO club_member_profiles (id, clubMemberId, profileJson, medicalImageUrl, medicalPdfUrl, signatureDataUrl, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)`,
           cuid(),
           clubMember.id,
-          JSON.stringify(clubData),
+          profileJson,
           loaded.owner.medical.imageUrl || null,
           loaded.owner.medical.pdfUrl || null,
           signatureDataUrl,
@@ -921,7 +945,7 @@ export async function loadSelfMemberProfileBundle(opts: {
       disallowClubAdmins: Boolean(extras?.disallowClubAdmins),
     },
     photoUrl: user.image || ownerStored.photoUrl || '',
-    qrCodeUrl: extras?.qrCodeUrl || ownerStored.qrCodeUrl || '',
+    qrCodeUrl: normalizeStoredQrCodeUrl(extras?.qrCodeUrl || ownerStored.qrCodeUrl || ''),
     login: {
       ...emptyOwnerProfile().login,
       ...ownerStored.login,
@@ -1089,7 +1113,7 @@ export async function saveSelfMemberProfileBundle(opts: {
     await upsertExtras({
       userId: opts.userId,
       disallowClubAdmins: Boolean(owner.privateSettings.disallowClubAdmins),
-      qrCodeUrl: owner.qrCodeUrl || null,
+      qrCodeUrl: normalizeStoredQrCodeUrl(owner.qrCodeUrl) || null,
       ownerJson: JSON.stringify(ownerToStore),
       contactsJson: JSON.stringify(loaded.contacts),
       activitiesJson: JSON.stringify(loaded.activities),
@@ -1118,7 +1142,7 @@ export async function saveSelfMemberProfileBundle(opts: {
     await upsertExtras({
       userId: opts.userId,
       disallowClubAdmins: loaded.owner.privateSettings.disallowClubAdmins,
-      qrCodeUrl: loaded.owner.qrCodeUrl || null,
+      qrCodeUrl: normalizeStoredQrCodeUrl(loaded.owner.qrCodeUrl) || null,
       ownerJson: JSON.stringify(loaded.owner),
       contactsJson: JSON.stringify(contacts),
       activitiesJson: JSON.stringify(activities),

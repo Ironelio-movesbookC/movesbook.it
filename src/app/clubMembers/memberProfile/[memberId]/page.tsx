@@ -16,7 +16,7 @@ type TabMeta = { id: ProfileTabId; label: string; clubScoped: boolean };
 
 const SHARED_TABS: TabMeta[] = [
   { id: 'owner-profile', label: 'Owner profile', clubScoped: false },
-  { id: 'contacts', label: 'Contacts', clubScoped: false },
+  { id: 'contacts', label: 'My Contacts', clubScoped: false },
   { id: 'activities', label: 'My Activities', clubScoped: false },
   { id: 'references', label: 'References', clubScoped: false },
 ];

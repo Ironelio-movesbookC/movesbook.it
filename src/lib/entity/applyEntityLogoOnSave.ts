@@ -8,17 +8,22 @@ import {
 } from '@/lib/entity/uploadEntityLogoClient';
 import type { ClubProfileSavePayload } from '@/lib/club/clubProfilePayload';
 
+/**
+ * Upload or remove entity logo.
+ * @returns New public logo path, `null` when removed, `undefined` when unchanged.
+ */
 export async function applyEntityLogoOnSave(
   kind: ManagedEntityKind,
   entityId: string,
   payload: ClubProfileSavePayload,
-): Promise<void> {
+): Promise<string | null | undefined> {
   const logoKind = managedEntityKindToLogoKind(kind);
   if (payload.removeLogo) {
     await removeEntityLogo(logoKind, entityId);
-    return;
+    return null;
   }
   if (payload.logoFile) {
-    await uploadEntityLogo(logoKind, entityId, payload.logoFile);
+    return uploadEntityLogo(logoKind, entityId, payload.logoFile);
   }
+  return undefined;
 }

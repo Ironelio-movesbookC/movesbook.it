@@ -28,7 +28,7 @@ export type TeamLegalSite = {
   capacity: string;
   sportsScoreboards: string;
   basketsAndNets: string;
-  /** @deprecated kept for older saved profiles */
+  /** Geographic coordinate of the team site (latitude, longitude). */
   geo?: string;
 };
 

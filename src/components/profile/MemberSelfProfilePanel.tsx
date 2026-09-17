@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, X } from 'lucide-react';
 import ClubMemberProfileEditor, {
   type ProfileTabId,
@@ -16,7 +17,7 @@ type TabMeta = { id: ProfileTabId; label: string; clubScoped: boolean };
 
 const SHARED_TABS: TabMeta[] = [
   { id: 'owner-profile', label: 'Owner profile', clubScoped: false },
-  { id: 'contacts', label: 'Contacts', clubScoped: false },
+  { id: 'contacts', label: 'My Contacts', clubScoped: false },
   { id: 'activities', label: 'My Activities', clubScoped: false },
   { id: 'references', label: 'References', clubScoped: false },
 ];
@@ -370,57 +371,60 @@ export default function MemberSelfProfilePanel({ userId, clubs }: Props) {
         )}
       </div>
 
-      {pickerOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="club-picker-title"
-            className="w-full max-w-md rounded-lg bg-white shadow-xl"
-          >
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-              <h3 id="club-picker-title" className="text-base font-bold text-gray-900">
-                Select which club
-              </h3>
-              <button
-                type="button"
-                aria-label="Close"
-                className="rounded p-1 text-gray-500 hover:bg-gray-100"
-                onClick={() => {
-                  setPickerOpen(false);
-                  setPendingClubTab(null);
-                }}
+      {pickerOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="club-picker-title"
+                className="relative z-[10000] w-full max-w-md rounded-lg bg-white shadow-xl"
               >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="px-4 py-3">
-              <p className="mb-3 text-sm text-gray-600">
-                This section is stored in the club database. Choose which club you want to open
-                (same clubs as under My clubs).
-              </p>
-              <ul className="space-y-2">
-                {clubs.map((c) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => confirmClub(c.id)}
-                      className={`flex w-full items-center gap-2 rounded border px-3 py-2.5 text-left text-sm font-medium hover:border-sky-500 hover:bg-sky-50 ${
-                        c.id === selectedClubId
-                          ? 'border-sky-600 bg-sky-50 text-sky-900'
-                          : 'border-gray-300 text-gray-800'
-                      }`}
-                    >
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-green-500" />
-                      {c.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      ) : null}
+                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                  <h3 id="club-picker-title" className="text-base font-bold text-gray-900">
+                    Select which club
+                  </h3>
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                    onClick={() => {
+                      setPickerOpen(false);
+                      setPendingClubTab(null);
+                    }}
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="mb-3 text-sm text-gray-600">
+                    This section is stored in the club database. Choose which club you want to open
+                    (same clubs as under My clubs).
+                  </p>
+                  <ul className="space-y-2">
+                    {clubs.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          onClick={() => confirmClub(c.id)}
+                          className={`flex w-full items-center gap-2 rounded border px-3 py-2.5 text-left text-sm font-medium hover:border-sky-500 hover:bg-sky-50 ${
+                            c.id === selectedClubId
+                              ? 'border-sky-600 bg-sky-50 text-sky-900'
+                              : 'border-gray-300 text-gray-800'
+                          }`}
+                        >
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-green-500" />
+                          {c.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

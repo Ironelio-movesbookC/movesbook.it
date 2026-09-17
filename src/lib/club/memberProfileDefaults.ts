@@ -5,6 +5,7 @@ import type {
   OwnerProfileData,
   ParentData,
 } from '@/lib/club/memberProfileTypes';
+import { TEAM_ATHLETE_STATUS_OPTIONS } from '@/lib/club/memberProfileTypes';
 
 function emptyParent(): ParentData {
   return {
@@ -387,6 +388,7 @@ export function emptyClubScoped(): ClubMemberScopedData {
       badges: [
         { name: '', number: '', deadline: '' },
         { name: '', number: '', deadline: '' },
+        { name: '', number: '', deadline: '' },
       ],
       badgeFederationType: '',
       sportSeason: String(new Date().getFullYear()),
@@ -463,7 +465,7 @@ export function emptyClubScoped(): ClubMemberScopedData {
         receiptIssued: false,
         imageRelease: false,
         travelAuthorization: false,
-        athleteStatus: 'Member',
+        athleteStatus: 'Active',
         sportsPlayed: [],
         teamNames: '',
         previousClub: '',
@@ -536,14 +538,20 @@ export function mergeClubScoped(partial?: Partial<ClubMemberScopedData> | null):
     otherDetails: {
       ...base.otherDetails,
       ...(partial.otherDetails || {}),
-      badges:
-        Array.isArray(partial.otherDetails?.badges) && partial.otherDetails!.badges.length
-          ? partial.otherDetails!.badges.map((b) => ({
-              name: b?.name ?? '',
-              number: (b as { number?: string })?.number ?? '',
-              deadline: b?.deadline ?? '',
-            }))
-          : base.otherDetails.badges,
+      badges: (() => {
+        const emptyBadge = { name: '', number: '', deadline: '' };
+        const mapped =
+          Array.isArray(partial.otherDetails?.badges) && partial.otherDetails!.badges.length
+            ? partial.otherDetails!.badges.map((b) => ({
+                name: b?.name ?? '',
+                number: (b as { number?: string })?.number ?? '',
+                deadline: b?.deadline ?? '',
+              }))
+            : base.otherDetails.badges;
+        const padded = [...mapped];
+        while (padded.length < 3) padded.push({ ...emptyBadge });
+        return padded.slice(0, Math.max(3, mapped.length));
+      })(),
       vendors: Array.isArray(partial.otherDetails?.vendors)
         ? partial.otherDetails!.vendors
         : base.otherDetails.vendors,
@@ -579,6 +587,22 @@ export function mergeClubScoped(partial?: Partial<ClubMemberScopedData> | null):
     settings: {
       ...base.settings,
       ...(partial.settings || {}),
+      debtPurchases: (() => {
+        const raw = String(
+          partial.settings?.debtPurchases ?? base.settings.debtPurchases ?? '',
+        ).replace(/\D/g, '');
+        if (!raw) return '';
+        const n = Math.min(9999, Math.max(0, Number.parseInt(raw, 10)));
+        return Number.isFinite(n) ? String(n) : '';
+      })(),
+      heartRate: (() => {
+        const raw = String(
+          partial.settings?.heartRate ?? base.settings.heartRate ?? '',
+        ).replace(/\D/g, '');
+        if (!raw) return '';
+        const n = Math.min(199, Math.max(30, Number.parseInt(raw, 10)));
+        return Number.isFinite(n) ? String(n) : '';
+      })(),
       clubGymEnabled:
         partial.settings?.memberSettingKind === 'club'
           ? true
@@ -664,8 +688,17 @@ export function mergeClubScoped(partial?: Partial<ClubMemberScopedData> | null):
             status: String(incoming.paymentStatus ?? ''),
           };
         };
+        // Older records mirrored the Club\Gym membership status in here
+        // ('Member', 'On probation', ...). Those are not TEAM statuses.
+        const athleteStatus = (
+          TEAM_ATHLETE_STATUS_OPTIONS as readonly string[]
+        ).includes(String(merged.athleteStatus))
+          ? String(merged.athleteStatus)
+          : 'Active';
+
         return {
           ...merged,
+          athleteStatus,
           firstPayment: migrateInstallment('firstPayment', 'firstPaymentDate'),
           secondPayment: migrateInstallment('secondPayment', 'secondPaymentDate'),
           thirdPayment: migrateInstallment('thirdPayment', 'thirdPaymentDate'),

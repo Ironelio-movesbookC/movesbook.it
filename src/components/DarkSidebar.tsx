@@ -270,18 +270,82 @@ function renderClubAdminInsertItemLeading(item: ClubAdminInsertItem): ReactNode 
 type ClubAdminArchiveItem =
   | { kind: 'icon'; Icon: LucideIcon; label: string; path: string }
   | { kind: 'affiliate'; label: string; path: string }
-  | { kind: 'overview'; label: string };
+  | { kind: 'overview'; label: string }
+  /** Non-clickable heading that owns the `child` rows below it. */
+  | { kind: 'group'; Icon: LucideIcon; label: string }
+  /** Indented row under the closest preceding `group` heading. */
+  | { kind: 'child'; label: string; path: string };
 
 const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   [{ kind: 'icon', Icon: Server, label: '» Overview', path: '/clubs/archive_overview' }],
   [
-    { kind: 'icon', Icon: Users, label: 'Archive of Members', path: '/clubMembers/memberList'},
-    { kind: 'icon', Icon: UserCog, label: 'Operators', path: '/clubs/club_operatorlist' },
-    { kind: 'icon', Icon: User, label: 'Employees', path: '/clubs/archive_employees' },
+    { kind: 'group', Icon: Users, label: 'User archives' },
+    { kind: 'child', label: 'All the users profiles', path: '/clubMembers/memberList' },
+    {
+      kind: 'child',
+      label: 'Athletes\\members',
+      path: '/clubMembers/memberList?section=athletes',
+    },
+    {
+      kind: 'child',
+      label: 'Members in pending',
+      path: '/clubMembers/memberList?section=pending',
+    },
+    {
+      kind: 'child',
+      label: 'Athletes not members',
+      path: '/clubMembers/memberList?section=not-members',
+    },
+    {
+      kind: 'child',
+      label: "Athletes' parents & tutors",
+      path: '/clubMembers/memberList?section=parents',
+    },
+    {
+      kind: 'child',
+      label: 'Club\\Team Staff',
+      path: '/clubMembers/memberList?section=staff',
+    },
+    {
+      kind: 'child',
+      label: 'Club\\team profile',
+      path: '/clubMembers/memberList?section=club-profile',
+    },
+  ],
+  [
+    { kind: 'group', Icon: ClipboardCheck, label: 'Certification deadlines' },
+    {
+      kind: 'child',
+      label: 'Medical certificates',
+      path: '/clubs/archive_deadlines?kind=medical',
+    },
+    { kind: 'child', label: 'Insurances', path: '/clubs/archive_deadlines?kind=insurance' },
+    {
+      kind: 'child',
+      label: 'Affiliations\\memberships',
+      path: '/clubs/archive_deadlines?kind=affiliation',
+    },
+    { kind: 'child', label: 'Other deadlines', path: '/clubs/archive_deadlines?kind=other' },
+  ],
+  [
+    { kind: 'group', Icon: Calendar, label: 'Special occasions' },
+    { kind: 'child', label: 'Birthdays', path: '/clubs/archive_events?occasion=birthdays' },
+    { kind: 'child', label: 'Day names', path: '/clubs/archive_events?occasion=name-days' },
+    { kind: 'child', label: 'Events', path: '/clubs/archive_events' },
   ],
   [
     { kind: 'affiliate', label: 'Affiliations', path: '/clubMembers/membership' },
-    { kind: 'icon', Icon: Contact2, label: 'Subscriptions to the club', path: '/clubs/subscription' },
+    {
+      kind: 'icon',
+      Icon: Contact2,
+      label: 'Subscriptions to the club\\team',
+      path: '/clubs/subscription',
+    },
+  ],
+  [
+    { kind: 'icon', Icon: Users, label: 'Archive of Members', path: '/clubMembers/memberList'},
+    { kind: 'icon', Icon: UserCog, label: 'Operators', path: '/clubs/club_operatorlist' },
+    { kind: 'icon', Icon: User, label: 'Employees', path: '/clubs/archive_employees' },
     { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '/clubs/access_list' },
   ],
   [
@@ -344,6 +408,7 @@ function renderClubAdminArchiveLeading(item: ClubAdminArchiveItem): ReactNode {
       </span>
     );
   }
+  if (item.kind === 'child') return null;
   const Icon = item.Icon;
   return <Icon className="h-3.5 w-3.5 shrink-0 opacity-95" strokeWidth={2} />;
 }
@@ -361,6 +426,8 @@ interface DarkSidebarProps {
   onPostsClick?: () => void;
   /** Member info → Registration info (purchased version details in dashboard). */
   onRegistrationInfoClick?: () => void;
+  /** Member info → Contact info & activities (central preview of contacts + selected days/activities). */
+  onContactActivitiesClick?: () => void;
   /** Messages → My feedbacks for Staff — swap center section (keep left/right sidebars) */
   onMyFeedbacksStaffClick?: () => void;
   /** My Club → Music for the club → Add songs & playlists (same as navbar "Add Songs") */
@@ -430,6 +497,7 @@ export default function DarkSidebar({
   onMyCoachingGroupClick,
   onPostsClick,
   onRegistrationInfoClick,
+  onContactActivitiesClick,
   onMyFeedbacksStaffClick,
   onClubAddSongsPlaylistsClick,
   onClubMusicPanelClick,
@@ -2180,6 +2248,20 @@ export default function DarkSidebar({
                       <UserCircle className="h-4 w-4 shrink-0 opacity-90" />
                       <span>User Profile</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onContactActivitiesClick) {
+                          onContactActivitiesClick();
+                        } else {
+                          router.push('/profile#member-info');
+                        }
+                      }}
+                      className="flex w-full items-center gap-2 border-t border-black/25 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+                    >
+                      <Phone className="h-4 w-4 shrink-0 opacity-90" />
+                      <span>Contact info & activities</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -3556,7 +3638,7 @@ export default function DarkSidebar({
                             >
                               <div className="flex min-w-0 items-center gap-2">
                                 <BookOpen className="h-4 w-4 shrink-0" />
-                                <span className="truncate text-[12px] font-semibold tracking-wide">
+                                <span className="truncate text-base font-semibold tracking-wide">
                                   User guides
                                 </span>
                               </div>
@@ -3609,7 +3691,7 @@ export default function DarkSidebar({
                             >
                               <div className="flex min-w-0 items-center gap-2">
                                 <Users2 className="h-4 w-4 shrink-0" />
-                                <span className="truncate text-[12px] font-semibold tracking-wide">
+                                <span className="truncate text-base font-semibold tracking-wide">
                                   Current Operators
                                 </span>
                               </div>
@@ -3823,7 +3905,7 @@ export default function DarkSidebar({
                                   <Shield className="h-3.5 w-3.5" />
                                   <CreditCard className="h-3.5 w-3.5" />
                                 </span>
-                                <span className="truncate text-[12px] font-semibold tracking-wide">
+                                <span className="truncate text-base font-semibold tracking-wide">
                                   Accounts and Device
                                 </span>
                               </div>
@@ -4232,7 +4314,7 @@ export default function DarkSidebar({
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <Stamp className="w-4 h-4 shrink-0" />
-                              <span className="text-[12px] font-semibold tracking-wide truncate">Administration</span>
+                              <span className="text-base font-semibold tracking-wide truncate">Administration</span>
                             </div>
                             <ChevronDown className="w-4 h-4 shrink-0 opacity-90" />
                           </button>
@@ -4251,7 +4333,7 @@ export default function DarkSidebar({
                               <div className="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 pr-2 pl-1">
                                 <div className="flex min-w-0 items-center gap-2">
                                   <Monitor className="h-4 w-4 shrink-0 opacity-95" />
-                                  <span className="truncate text-[12px] font-medium text-white">
+                                  <span className="truncate text-sm font-medium text-white">
                                     Monitorings
                                   </span>
                                 </div>
@@ -4362,7 +4444,7 @@ export default function DarkSidebar({
                               <div className="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 pr-2 pl-1">
                                 <div className="flex min-w-0 items-center gap-2">
                                   <PlusCircle className="h-4 w-4 shrink-0 opacity-95" strokeWidth={1.75} />
-                                  <span className="truncate text-[12px] font-medium text-white">
+                                  <span className="truncate text-sm font-medium text-white">
                                     Insert a new item
                                   </span>
                                 </div>
@@ -4391,7 +4473,7 @@ export default function DarkSidebar({
                                             router.push(item.path);
                                           }
                                         }}
-                                        className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${
+                                        className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[12px] font-medium text-white transition-colors hover:bg-[#333] ${
                                           ii < group.length - 1
                                             ? 'border-b border-gray-600/50'
                                             : ''
@@ -4421,7 +4503,7 @@ export default function DarkSidebar({
                               <div className="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 pr-2 pl-1">
                                 <div className="flex min-w-0 items-center gap-2">
                                   <FolderOpen className="h-4 w-4 shrink-0 opacity-95" />
-                                  <span className="truncate text-[12px] font-medium text-white">
+                                  <span className="truncate text-sm font-medium text-white">
                                     Archives
                                   </span>
                                 </div>
@@ -4441,30 +4523,54 @@ export default function DarkSidebar({
                                       gi > 0 ? 'border-t border-gray-600/70' : ''
                                     }
                                   >
-                                    {group.map((item, ii) => (
-                                      <button
-                                        key={item.label}
-                                        type="button"
-                                        onClick={() => {
-                                          if ('path' in item && item.path) {
-                                            if (isClubAccountUserType(userType)) {
-                                              writeClubWorkspaceTab('my-entity');
-                                              setCurrentTab('my-entity');
+                                    {group.map((item, ii) => {
+                                      const rowBorder =
+                                        ii < group.length - 1
+                                          ? 'border-b border-gray-600/50'
+                                          : '';
+
+                                      if (item.kind === 'group') {
+                                        const GroupIcon = item.Icon;
+                                        return (
+                                          <div
+                                            key={item.label}
+                                            className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-[12px] font-semibold text-white ${rowBorder}`}
+                                          >
+                                            <GroupIcon
+                                              className="h-3.5 w-3.5 shrink-0 opacity-95"
+                                              strokeWidth={2}
+                                            />
+                                            <span className="min-w-0 leading-snug">
+                                              {item.label}
+                                            </span>
+                                          </div>
+                                        );
+                                      }
+
+                                      const isChild = item.kind === 'child';
+                                      return (
+                                        <button
+                                          key={item.label}
+                                          type="button"
+                                          onClick={() => {
+                                            if ('path' in item && item.path) {
+                                              if (isClubAccountUserType(userType)) {
+                                                writeClubWorkspaceTab('my-entity');
+                                                setCurrentTab('my-entity');
+                                              }
+                                              router.push(item.path);
                                             }
-                                            router.push(item.path);
-                                          }
-                                          // Handle click event
-                                        }}
-                                        className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${
-                                          ii < group.length - 1
-                                            ? 'border-b border-gray-600/50'
-                                            : ''
-                                        }`}
-                                      >
-                                        {renderClubAdminArchiveLeading(item)}
-                                        <span className="min-w-0 leading-snug">{item.label}</span>
-                                      </button>
-                                    ))}
+                                            // Handle click event
+                                          }}
+                                          className={`flex w-full items-center gap-2 py-2 pr-2 text-left text-[12px] font-medium text-white transition-colors hover:bg-[#333] ${
+                                            isChild ? 'pl-9' : 'pl-3'
+                                          } ${rowBorder}`}
+                                        >
+                                          {isChild ? null : renderClubAdminArchiveLeading(item)}
+                                          <span className="min-w-0 leading-snug">{item.label}</span>
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 ))}
                               </div>
@@ -4499,7 +4605,7 @@ export default function DarkSidebar({
                                   <div className="flex min-w-0 items-center gap-2">
                                     <Icon className="h-4 w-4 shrink-0 opacity-95" />
                                     <span
-                                      className={`truncate text-[12px] font-medium ${yellow ? 'text-yellow-300' : 'text-white'}`}
+                                      className={`truncate text-sm font-medium ${yellow ? 'text-yellow-300' : 'text-white'}`}
                                     >
                                       {label}
                                     </span>
@@ -4529,7 +4635,7 @@ export default function DarkSidebar({
                                 <div className="flex min-w-0 items-center gap-2">
                                   <Settings className="h-4 w-4 shrink-0 opacity-95" />
                                   <span
-                                    className={`truncate text-[12px] font-medium ${
+                                    className={`truncate text-sm font-medium ${
                                       clubGeneralSettingsOpen ? 'text-yellow-300' : 'text-white'
                                     }`}
                                   >
@@ -4630,7 +4736,7 @@ export default function DarkSidebar({
                                           router.push(href);
                                         }
                                       }}
-                                      className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${
+                                      className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[12px] font-medium text-white transition-colors hover:bg-[#333] ${
                                         subIdx < arr.length - 1 ? 'border-b border-gray-600/70' : ''
                                       }`}
                                     >
@@ -4657,7 +4763,7 @@ export default function DarkSidebar({
                               <div className="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 pr-2 pl-1">
                                 <div className="flex min-w-0 items-center gap-2">
                                   <Lock className="h-4 w-4 shrink-0 opacity-95" />
-                                  <span className="truncate text-[12px] font-medium text-yellow-300">
+                                  <span className="truncate text-sm font-medium text-yellow-300">
                                     Security
                                   </span>
                                 </div>
@@ -4672,7 +4778,7 @@ export default function DarkSidebar({
                               <div className="border-t border-gray-600/80 bg-[#2a2a2a]">
                                 <button
                                   type="button"
-                                  className="flex w-full items-center justify-between border-b border-gray-600/70 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333]"
+                                  className="flex w-full items-center justify-between border-b border-gray-600/70 py-2 pl-3 pr-2 text-left text-[12px] font-medium text-white transition-colors hover:bg-[#333]"
                                 >
                                   <div className="flex min-w-0 items-center gap-2">
                                     <Lock className="h-3.5 w-3.5 shrink-0 opacity-95" />
@@ -4682,21 +4788,21 @@ export default function DarkSidebar({
                                 </button>
                                 <button
                                   type="button"
-                                  className="flex w-full items-center gap-2 border-b border-gray-600/70 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333]"
+                                  className="flex w-full items-center gap-2 border-b border-gray-600/70 py-2 pl-3 pr-2 text-left text-[12px] font-medium text-white transition-colors hover:bg-[#333]"
                                 >
                                   <RefreshCw className="h-3.5 w-3.5 shrink-0 opacity-95" />
                                   <span className="leading-snug">Change my password</span>
                                 </button>
                                 <button
                                   type="button"
-                                  className="flex w-full items-center gap-2 border-b border-gray-600/70 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333]"
+                                  className="flex w-full items-center gap-2 border-b border-gray-600/70 py-2 pl-3 pr-2 text-left text-[12px] font-medium text-white transition-colors hover:bg-[#333]"
                                 >
                                   <FolderOpen className="h-3.5 w-3.5 shrink-0 opacity-95" />
                                   <span className="leading-snug">Management of your database</span>
                                 </button>
                                 <button
                                   type="button"
-                                  className="flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333]"
+                                  className="flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[12px] font-medium text-white transition-colors hover:bg-[#333]"
                                 >
                                   <Check className="h-3.5 w-3.5 shrink-0 opacity-95" />
                                   <span className="leading-snug">Authorizes this computer</span>
@@ -4732,7 +4838,7 @@ export default function DarkSidebar({
                                   <div className="flex min-w-0 items-center gap-2">
                                     <Icon className="h-4 w-4 shrink-0 opacity-95" />
                                     <span
-                                      className={`truncate text-[12px] font-medium ${yellow ? 'text-yellow-300' : 'text-white'}`}
+                                      className={`truncate text-sm font-medium ${yellow ? 'text-yellow-300' : 'text-white'}`}
                                     >
                                       {label}
                                     </span>
@@ -4757,7 +4863,7 @@ export default function DarkSidebar({
                               <div className="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 pr-2 pl-1">
                                 <div className="flex min-w-0 items-center gap-2">
                                   <Monitor className="h-4 w-4 shrink-0 opacity-95" />
-                                  <span className="truncate text-[12px] font-medium text-white">
+                                  <span className="truncate text-sm font-medium text-white">
                                     Marketing
                                   </span>
                                 </div>
@@ -4772,7 +4878,7 @@ export default function DarkSidebar({
                               <div className="border-t border-gray-600/80 bg-[#2a2a2a]">
                                 <button
                                   type="button"
-                                  className="flex w-full items-center gap-2 border-b border-gray-600/50 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333]"
+                                  className="flex w-full items-center gap-2 border-b border-gray-600/50 py-2 pl-3 pr-2 text-left text-[12px] font-medium text-white transition-colors hover:bg-[#333]"
                                 >
                                   <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-400" />
                                   <span className="leading-snug">Club Presentation</span>
@@ -4892,7 +4998,7 @@ export default function DarkSidebar({
                                   <div className="flex min-w-0 items-center gap-2">
                                     <Icon className="h-4 w-4 shrink-0 opacity-95" />
                                     <span
-                                      className={`truncate text-[12px] font-medium ${yellow ? 'text-yellow-300' : 'text-white'}`}
+                                      className={`truncate text-sm font-medium ${yellow ? 'text-yellow-300' : 'text-white'}`}
                                     >
                                       {label}
                                     </span>
