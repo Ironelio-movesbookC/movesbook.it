@@ -342,12 +342,12 @@ export default function ClubMemberArchivePage({
 
   const title =
     viewMode === 'groups'
-      ? 'Archive — Members — Groups'
+      ? 'Archive — Users — Groups'
       : viewMode === 'favourites'
-        ? 'Archive — Members — Favourites'
+        ? 'Archive — Users — Favourites'
         : viewMode === 'group-members' && selectedGroupName
-          ? `Archive — Members — ${selectedGroupName}`
-          : 'Archive — Members';
+          ? `Archive — Users — ${selectedGroupName}`
+          : 'Archive — Users';
 
   const showMemberFilters = viewMode === 'all' || viewMode === 'favourites' || viewMode === 'group-members';
   const showBulkActions = viewMode === 'all';

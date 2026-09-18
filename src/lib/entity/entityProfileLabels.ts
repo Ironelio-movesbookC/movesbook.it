@@ -82,7 +82,7 @@ export function getEntityProfileLabels(kind: ManagedEntityKind): EntityProfileLa
   return LABELS[kind];
 }
 
-/** Archive of Members top-nav label for the entity profile section. */
+/** Archive of Users top-nav label for the entity profile section. */
 export function getArchiveEntityProfileSectionLabel(kind: ManagedEntityKind): string {
   switch (kind) {
     case 'team':

@@ -13,6 +13,7 @@ import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
+  canAccessClubMembersArchive,
   canAccessClubWorkspace,
   showSuggestMovesbookForTab,
 } from '@/utils/dashboardRouting';
@@ -354,19 +355,36 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     if (savedTab) setActiveTab(savedTab);
   }, [pathname, selectedClubId]);
 
+  const canUseClubShell = Boolean(user && canAccessClubWorkspace(user.userType));
+  const onMembersArchivePath = Boolean(pathname?.startsWith('/clubMembers'));
+  const canUseMembersArchive = Boolean(
+    user &&
+      (canUseClubShell ||
+        (onMembersArchivePath && canAccessClubMembersArchive(user.userType))),
+  );
+  /** Team / Coach / Group open Archive of Users without owning a club profile. */
+  const archiveOnlyMembersAccess = Boolean(
+    user &&
+      onMembersArchivePath &&
+      canAccessClubMembersArchive(user.userType) &&
+      !canAccessClubWorkspace(user.userType),
+  );
+
   useEffect(() => {
+    if (archiveOnlyMembersAccess) return;
     if (clubsLoaded && !hasFormClub && activeTab === 'my-entity') {
       setActiveTab('my-page');
       writeClubWorkspaceTab('my-page');
     }
-  }, [clubsLoaded, hasFormClub, activeTab]);
+  }, [archiveOnlyMembersAccess, clubsLoaded, hasFormClub, activeTab]);
 
   useEffect(() => {
+    if (archiveOnlyMembersAccess) return;
     if (clubsLoaded && !selectedClubId && activeTab === 'my-entity') {
       setActiveTab('my-page');
       writeClubWorkspaceTab('my-page');
     }
-  }, [clubsLoaded, selectedClubId, activeTab]);
+  }, [archiveOnlyMembersAccess, clubsLoaded, selectedClubId, activeTab]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -375,18 +393,26 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   }, [user, loading, router]);
 
   useEffect(() => {
-    if (user && !canAccessClubWorkspace(user.userType)) {
-      router.push('/my-page');
-    }
-  }, [user, router]);
+    if (!user || loading) return;
+    if (canUseMembersArchive) return;
+    router.push('/my-page');
+  }, [user, loading, router, canUseMembersArchive]);
 
   useEffect(() => {
-    if (user && canAccessClubWorkspace(user.userType)) {
+    if (!archiveOnlyMembersAccess) return;
+    setActiveTab('my-entity');
+    writeClubWorkspaceTab('my-entity');
+    setMyClubTabVisible(true);
+  }, [archiveOnlyMembersAccess]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (canUseClubShell || canUseMembersArchive) {
       void loadClubs();
       void loadBannerProfile();
       void loadTelegramAccount();
     }
-  }, [user, loadClubs, loadBannerProfile, loadTelegramAccount]);
+  }, [user, canUseClubShell, canUseMembersArchive, loadClubs, loadBannerProfile, loadTelegramAccount]);
 
   const handleTabChange = useCallback((tab: ClubWorkspaceTab) => {
     if (tab === 'my-page') {
@@ -565,7 +591,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     [pathname, router],
   );
 
-  if (loading || !user || !canAccessClubWorkspace(user.userType)) {
+  if (loading || !user || !canUseMembersArchive) {
     return null;
   }
 
@@ -625,8 +651,10 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 entities={formClubs}
                 selectedEntityId={selectedClubId}
                 clubProfileLoaded={clubsLoaded}
-                clubMyClubTabVisible={myClubTabVisible || clubDirectAccessLocked}
-                hideMyPageTab={clubDirectAccessLocked}
+                clubMyClubTabVisible={
+                  myClubTabVisible || clubDirectAccessLocked || archiveOnlyMembersAccess
+                }
+                hideMyPageTab={clubDirectAccessLocked || archiveOnlyMembersAccess}
                 onEntitySelect={handleClubSelect}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
