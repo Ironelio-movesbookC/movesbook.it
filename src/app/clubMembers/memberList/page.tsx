@@ -8,6 +8,7 @@ import ClubMemberArchivePage, { memberTypeBadge } from '@/components/club/member
 import AddMemberModal from '@/components/AddMemberModal';
 import ClubMemberArchiveHeader from './components/status';
 import MemberArchiveTopNav, {
+  type MemberArchiveNavRole,
   type MemberArchiveSection,
 } from '@/components/club/memberArchive/MemberArchiveTopNav';
 import ArchiveEntityProfilePanel from '@/components/club/memberArchive/ArchiveEntityProfilePanel';
@@ -39,6 +40,7 @@ type MemberCapacityResponse = {
 const MEMBER_ARCHIVE_SECTIONS: MemberArchiveSection[] = [
   'athletes',
   'pending',
+  'archived',
   'not-members',
   'parents',
   'staff',
@@ -46,8 +48,26 @@ const MEMBER_ARCHIVE_SECTIONS: MemberArchiveSection[] = [
   'settings',
 ];
 
+/** Coach (ID6) top nav has no Not members / Our Staff — fall back if URL has those. */
+const COACH_ARCHIVE_SECTIONS: MemberArchiveSection[] = [
+  'athletes',
+  'pending',
+  'archived',
+  'parents',
+  'club-profile',
+  'settings',
+];
+
 function parseArchiveSection(value: string | null): MemberArchiveSection | null {
   return MEMBER_ARCHIVE_SECTIONS.find((section) => section === value) ?? null;
+}
+
+function archiveNavRoleFromUserType(
+  userType: string | null | undefined,
+): MemberArchiveNavRole {
+  return managedEntityKindFromUserType(userType) === 'coaching-group'
+    ? 'coach'
+    : 'club-or-team';
 }
 
 function formatDisplayDate(value: unknown) {
@@ -77,18 +97,45 @@ function MemberListPageContent() {
   const [capacityPayload, setCapacityPayload] = useState<MemberCapacityResponse | null>(null);
   const [settingsRevision, setSettingsRevision] = useState(0);
 
-  const profileSectionLabel = useMemo(
-    () =>
-      getArchiveEntityProfileSectionLabel(
-        managedEntityKindFromUserType(user?.userType),
-      ),
+  const entityKind = useMemo(
+    () => managedEntityKindFromUserType(user?.userType),
     [user?.userType],
   );
 
-  // ?section= is the source of truth so the sidebar (Archives → User archives) and the
+  const archiveNavRole = useMemo(
+    () => archiveNavRoleFromUserType(user?.userType),
+    [user?.userType],
+  );
+
+  const profileSectionLabel = useMemo(
+    () => getArchiveEntityProfileSectionLabel(entityKind),
+    [entityKind],
+  );
+
+  // ?section= is the source of truth so the sidebar (Archives → Archive of Users) and the
   // top nav can never disagree about which section is open.
-  const archiveSection =
-    parseArchiveSection(searchParams?.get('section') ?? null) ?? 'athletes';
+  const archiveSection = useMemo(() => {
+    const parsed = parseArchiveSection(searchParams?.get('section') ?? null) ?? 'athletes';
+    if (archiveNavRole === 'coach' && !COACH_ARCHIVE_SECTIONS.includes(parsed)) {
+      return 'athletes';
+    }
+    return parsed;
+  }, [archiveNavRole, searchParams]);
+
+  // Coach menu has no Not members / Our Staff — rewrite invalid ?section= so URL matches UI.
+  useEffect(() => {
+    const raw = searchParams?.get('section') ?? null;
+    const parsed = parseArchiveSection(raw);
+    if (
+      archiveNavRole === 'coach' &&
+      parsed &&
+      !COACH_ARCHIVE_SECTIONS.includes(parsed)
+    ) {
+      const params = new URLSearchParams(searchParams?.toString() ?? '');
+      params.set('section', 'athletes');
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [archiveNavRole, pathname, router, searchParams]);
 
   const setArchiveSection = useCallback(
     (section: MemberArchiveSection) => {
@@ -360,6 +407,7 @@ function MemberListPageContent() {
         active={archiveSection}
         onChange={setArchiveSection}
         profileSectionLabel={profileSectionLabel}
+        navRole={archiveNavRole}
       />
 
       {archiveSection === 'athletes' ? (
@@ -412,17 +460,24 @@ function MemberListPageContent() {
         </>
       ) : archiveSection === 'pending' ? (
         <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
-          <h2 className="mb-2 text-lg font-bold text-gray-900">Members in pending</h2>
+          <h2 className="mb-2 text-lg font-bold text-gray-900">In pending</h2>
           <p>
-            Athletes who asked to join this club and are still waiting for approval will
+            Athletes who asked to join this club/team and are still waiting for approval will
             appear here.
+          </p>
+        </div>
+      ) : archiveSection === 'archived' ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
+          <h2 className="mb-2 text-lg font-bold text-gray-900">Archived</h2>
+          <p>
+            Members who were archived from this club/team will appear here.
           </p>
         </div>
       ) : archiveSection === 'not-members' ? (
         <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
-          <h2 className="mb-2 text-lg font-bold text-gray-900">Athletes not members</h2>
+          <h2 className="mb-2 text-lg font-bold text-gray-900">Not members</h2>
           <p>
-            Athletes linked to this club without an active membership will appear here.
+            Athletes linked to this club/team without an active membership will appear here.
           </p>
         </div>
       ) : archiveSection === 'parents' ? (
@@ -437,9 +492,9 @@ function MemberListPageContent() {
         )
       ) : archiveSection === 'staff' ? (
         <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700">
-          <h2 className="mb-2 text-lg font-bold text-gray-900">Club Staff</h2>
+          <h2 className="mb-2 text-lg font-bold text-gray-900">Our Staff</h2>
           <p className="mb-3">
-            Manage Operator / Collaborator / Coadmin staff for this club.
+            Manage Operator / Collaborator / Coadmin staff for this club/team.
           </p>
           <a
             href="/club/staff"

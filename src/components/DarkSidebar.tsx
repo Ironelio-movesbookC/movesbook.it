@@ -279,7 +279,7 @@ type ClubAdminArchiveItem =
 const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   [{ kind: 'icon', Icon: Server, label: '» Overview', path: '/clubs/archive_overview' }],
   [
-    { kind: 'group', Icon: Users, label: 'User archives' },
+    { kind: 'group', Icon: Users, label: 'Archive of Users' },
     { kind: 'child', label: 'All the users profiles', path: '/clubMembers/memberList' },
     {
       kind: 'child',
@@ -290,6 +290,11 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
       kind: 'child',
       label: 'Members in pending',
       path: '/clubMembers/memberList?section=pending',
+    },
+    {
+      kind: 'child',
+      label: 'Members archived',
+      path: '/clubMembers/memberList?section=archived',
     },
     {
       kind: 'child',
@@ -313,25 +318,37 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     },
   ],
   [
-    { kind: 'group', Icon: ClipboardCheck, label: 'Certification deadlines' },
-    {
-      kind: 'child',
-      label: 'Medical certificates',
-      path: '/clubs/archive_deadlines?kind=medical',
-    },
-    { kind: 'child', label: 'Insurances', path: '/clubs/archive_deadlines?kind=insurance' },
-    {
-      kind: 'child',
-      label: 'Affiliations\\memberships',
-      path: '/clubs/archive_deadlines?kind=affiliation',
-    },
-    { kind: 'child', label: 'Other deadlines', path: '/clubs/archive_deadlines?kind=other' },
+    { kind: 'icon', Icon: Building2, label: 'Customers', path: '/clubs/archive_customers' },
+    { kind: 'icon', Icon: Briefcase, label: 'Suppliers', path: '/clubs/archive_suppliers' },
   ],
   [
-    { kind: 'group', Icon: Calendar, label: 'Special occasions' },
+    { kind: 'group', Icon: ClipboardCheck, label: 'Checkings documents' },
+    {
+      kind: 'child',
+      label: 'Medical certifications of the members',
+      path: '/clubs/archive_deadlines?kind=medical-members',
+    },
+    {
+      kind: 'child',
+      label: 'Medical certifications of the staff',
+      path: '/clubs/archive_deadlines?kind=medical-staff',
+    },
+    {
+      kind: 'child',
+      label: 'ID card expirations',
+      path: '/clubs/archive_deadlines?kind=id-card',
+    },
+    {
+      kind: 'child',
+      label: 'Sports membership card expiration',
+      path: '/clubs/archive_deadlines?kind=sports-membership',
+    },
+  ],
+  [
+    { kind: 'group', Icon: Calendar, label: 'Recurrence check' },
     { kind: 'child', label: 'Birthdays', path: '/clubs/archive_events?occasion=birthdays' },
-    { kind: 'child', label: 'Day names', path: '/clubs/archive_events?occasion=name-days' },
-    { kind: 'child', label: 'Events', path: '/clubs/archive_events' },
+    { kind: 'child', label: 'Namedays', path: '/clubs/archive_events?occasion=name-days' },
+    { kind: 'child', label: 'Special events', path: '/clubs/archive_events?occasion=special' },
   ],
   [
     { kind: 'affiliate', label: 'Affiliations', path: '/clubMembers/membership' },
@@ -343,7 +360,7 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     },
   ],
   [
-    { kind: 'icon', Icon: Users, label: 'Archive of Members', path: '/clubMembers/memberList'},
+    { kind: 'icon', Icon: Users, label: 'Archive of Users', path: '/clubMembers/memberList' },
     { kind: 'icon', Icon: UserCog, label: 'Operators', path: '/clubs/club_operatorlist' },
     { kind: 'icon', Icon: User, label: 'Employees', path: '/clubs/archive_employees' },
     { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '/clubs/access_list' },
@@ -5058,16 +5075,125 @@ export default function DarkSidebar({
 
                 {isTeamManagerUser && (
                   <>
-                    <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
+                    <div className="w-full border-b border-teal-700">
+                      {!clubManagementOpen ? (
+                        <button
+                          type="button"
+                          onClick={() => setClubManagementOpen(true)}
+                          className="w-full bg-[#92278F] hover:bg-[#7b1f79] text-white transition-colors select-none"
+                        >
+                          <div className="flex flex-col items-center justify-center gap-1.5 py-3.5 px-3">
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="text-[13px] font-bold uppercase leading-tight tracking-wide">
+                                TEAM&apos;S MANAGEMENT
+                              </span>
+                              <Settings className="h-5 w-5 shrink-0 text-white opacity-95" aria-hidden />
+                            </div>
+                            <ChevronDown className="h-4 w-4 text-white opacity-95" strokeWidth={2.5} aria-hidden />
+                          </div>
+                        </button>
+                      ) : (
+                        <div className="w-full bg-[#3a3a3a] text-white shadow-inner">
+                          <button
+                            type="button"
+                            onClick={() => setClubManagementOpen(false)}
+                            className="w-full bg-[#7a0d1c] hover:bg-[#681018] text-white border-b border-teal-700 transition-colors"
+                          >
+                            <div className="relative px-3 pt-3 pb-1">
+                              <span className="block text-center text-[13px] font-bold uppercase tracking-wide pr-8">
+                                TEAM&apos;S MANAGEMENT
+                              </span>
+                              <Settings className="absolute right-3 top-3 w-5 h-5 text-white opacity-95 pointer-events-none" aria-hidden />
+                            </div>
+                            <div className="flex justify-center pb-2">
+                              <ChevronDown className="w-4 h-4 rotate-180 opacity-95" strokeWidth={2.5} aria-hidden />
+                            </div>
+                          </button>
+                          <div className="border-b border-gray-600/90">
+                            <button
+                              type="button"
+                              onClick={() => setClubArchivesOpen((v) => !v)}
+                              className="flex w-full items-stretch bg-[#5c5c5c] text-left text-white transition-colors hover:bg-[#656565]"
+                            >
+                              <div className="flex w-9 shrink-0 items-center justify-center border-r border-gray-600/60 py-2">
+                                <div className="flex h-6 w-6 items-center justify-center rounded-sm bg-teal-800">
+                                  <Move className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
+                                </div>
+                              </div>
+                              <div className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-2">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <FolderOpen className="h-4 w-4 shrink-0 opacity-95" />
+                                  <span className="truncate text-sm font-semibold">Archives</span>
+                                </div>
+                                <ChevronDown
+                                  className={`h-4 w-4 shrink-0 opacity-90 transition-transform duration-200 ${
+                                    clubArchivesOpen ? 'rotate-180' : ''
+                                  }`}
+                                />
+                              </div>
+                            </button>
+                            {clubArchivesOpen && (
+                              <div className="bg-[#1e272a] text-white">
+                                {CLUB_ADMIN_ARCHIVE_GROUPS.map((group, gi) => (
+                                  <div
+                                    key={gi}
+                                    className={gi > 0 ? 'border-t border-gray-600/70' : ''}
+                                  >
+                                    {group.map((item, ii) => {
+                                      const rowBorder =
+                                        ii < group.length - 1
+                                          ? 'border-b border-gray-600/50'
+                                          : '';
+                                      if (item.kind === 'group') {
+                                        const GroupIcon = item.Icon;
+                                        return (
+                                          <div
+                                            key={item.label}
+                                            className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-[12px] font-semibold text-white ${rowBorder}`}
+                                          >
+                                            <GroupIcon
+                                              className="h-3.5 w-3.5 shrink-0 opacity-95"
+                                              strokeWidth={2}
+                                            />
+                                            <span className="min-w-0 leading-snug">{item.label}</span>
+                                          </div>
+                                        );
+                                      }
+                                      const isChild = item.kind === 'child';
+                                      return (
+                                        <button
+                                          key={item.label}
+                                          type="button"
+                                          onClick={() => {
+                                            if ('path' in item && item.path) {
+                                              router.push(item.path);
+                                            }
+                                          }}
+                                          className={`flex w-full items-center gap-2 py-2 pr-2 text-left text-[12px] font-medium text-white transition-colors hover:bg-[#333] ${
+                                            isChild ? 'pl-9' : 'pl-3'
+                                          } ${rowBorder}`}
+                                        >
+                                          {isChild ? null : renderClubAdminArchiveLeading(item)}
+                                          <span className="min-w-0 leading-snug">{item.label}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/clubMembers/memberList')}
+                      className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
+                    >
                       <div className="flex items-center gap-3">
-                        <Trophy className="w-5 h-5" />
-                        <span>Team Management</span>
-                      </div>
-                    </button>
-                    <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
-                      <div className="flex items-center gap-3">
-                        <Users className="w-5 h-5" />
-                        <span>Athletes</span>
+                        <Users className="h-5 w-5" />
+                        <span>Archive of Users</span>
                       </div>
                     </button>
                   </>
@@ -5092,16 +5218,125 @@ export default function DarkSidebar({
 
                 {userType === 'COACH' && (
                   <>
-                    <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
+                    <div className="w-full border-b border-teal-700">
+                      {!clubManagementOpen ? (
+                        <button
+                          type="button"
+                          onClick={() => setClubManagementOpen(true)}
+                          className="w-full bg-[#92278F] hover:bg-[#7b1f79] text-white transition-colors select-none"
+                        >
+                          <div className="flex flex-col items-center justify-center gap-1.5 py-3.5 px-3">
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="text-[13px] font-bold uppercase leading-tight tracking-wide">
+                                COACH&apos;S MANAGEMENT
+                              </span>
+                              <Settings className="h-5 w-5 shrink-0 text-white opacity-95" aria-hidden />
+                            </div>
+                            <ChevronDown className="h-4 w-4 text-white opacity-95" strokeWidth={2.5} aria-hidden />
+                          </div>
+                        </button>
+                      ) : (
+                        <div className="w-full bg-[#3a3a3a] text-white shadow-inner">
+                          <button
+                            type="button"
+                            onClick={() => setClubManagementOpen(false)}
+                            className="w-full bg-[#7a0d1c] hover:bg-[#681018] text-white border-b border-teal-700 transition-colors"
+                          >
+                            <div className="relative px-3 pt-3 pb-1">
+                              <span className="block text-center text-[13px] font-bold uppercase tracking-wide pr-8">
+                                COACH&apos;S MANAGEMENT
+                              </span>
+                              <Settings className="absolute right-3 top-3 w-5 h-5 text-white opacity-95 pointer-events-none" aria-hidden />
+                            </div>
+                            <div className="flex justify-center pb-2">
+                              <ChevronDown className="w-4 h-4 rotate-180 opacity-95" strokeWidth={2.5} aria-hidden />
+                            </div>
+                          </button>
+                          <div className="border-b border-gray-600/90">
+                            <button
+                              type="button"
+                              onClick={() => setClubArchivesOpen((v) => !v)}
+                              className="flex w-full items-stretch bg-[#5c5c5c] text-left text-white transition-colors hover:bg-[#656565]"
+                            >
+                              <div className="flex w-9 shrink-0 items-center justify-center border-r border-gray-600/60 py-2">
+                                <div className="flex h-6 w-6 items-center justify-center rounded-sm bg-teal-800">
+                                  <Move className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
+                                </div>
+                              </div>
+                              <div className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-2">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <FolderOpen className="h-4 w-4 shrink-0 opacity-95" />
+                                  <span className="truncate text-sm font-semibold">Archives</span>
+                                </div>
+                                <ChevronDown
+                                  className={`h-4 w-4 shrink-0 opacity-90 transition-transform duration-200 ${
+                                    clubArchivesOpen ? 'rotate-180' : ''
+                                  }`}
+                                />
+                              </div>
+                            </button>
+                            {clubArchivesOpen && (
+                              <div className="bg-[#1e272a] text-white">
+                                {CLUB_ADMIN_ARCHIVE_GROUPS.map((group, gi) => (
+                                  <div
+                                    key={gi}
+                                    className={gi > 0 ? 'border-t border-gray-600/70' : ''}
+                                  >
+                                    {group.map((item, ii) => {
+                                      const rowBorder =
+                                        ii < group.length - 1
+                                          ? 'border-b border-gray-600/50'
+                                          : '';
+                                      if (item.kind === 'group') {
+                                        const GroupIcon = item.Icon;
+                                        return (
+                                          <div
+                                            key={item.label}
+                                            className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-[12px] font-semibold text-white ${rowBorder}`}
+                                          >
+                                            <GroupIcon
+                                              className="h-3.5 w-3.5 shrink-0 opacity-95"
+                                              strokeWidth={2}
+                                            />
+                                            <span className="min-w-0 leading-snug">{item.label}</span>
+                                          </div>
+                                        );
+                                      }
+                                      const isChild = item.kind === 'child';
+                                      return (
+                                        <button
+                                          key={item.label}
+                                          type="button"
+                                          onClick={() => {
+                                            if ('path' in item && item.path) {
+                                              router.push(item.path);
+                                            }
+                                          }}
+                                          className={`flex w-full items-center gap-2 py-2 pr-2 text-left text-[12px] font-medium text-white transition-colors hover:bg-[#333] ${
+                                            isChild ? 'pl-9' : 'pl-3'
+                                          } ${rowBorder}`}
+                                        >
+                                          {isChild ? null : renderClubAdminArchiveLeading(item)}
+                                          <span className="min-w-0 leading-snug">{item.label}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/clubMembers/memberList')}
+                      className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
+                    >
                       <div className="flex items-center gap-3">
-                        <Users className="w-5 h-5" />
-                        <span>Athlete Management</span>
-                      </div>
-                    </button>
-                    <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
-                      <div className="flex items-center gap-3">
-                        <Users className="w-5 h-5" />
-                        <span>Athletes</span>
+                        <Users className="h-5 w-5" />
+                        <span>Archive of Users</span>
                       </div>
                     </button>
                   </>

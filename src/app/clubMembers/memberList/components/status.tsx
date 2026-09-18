@@ -39,7 +39,7 @@ export default function ClubMemberArchiveHeader({
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">Archive of Members of the Club</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Archive of Users</h1>
 
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="grid min-w-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
