@@ -902,7 +902,8 @@ model PlannedActionTemplate {
   nameByLanguage        String?  @db.Text
   descriptionByLanguage String?  @db.Text
   color                 String   @default("#6366f1")
-  icon                  String   @default("📌")
+  /// ASCII default only — MySQL rejects emoji in DEFAULT (e.g. 📌). App still uses 📌 on create.
+  icon                  String   @default("pin")
   displayOrder          Int      @default(0)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
