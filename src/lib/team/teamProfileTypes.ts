@@ -103,6 +103,12 @@ export type TeamProfileFormPayload = {
   teamPassword: string;
 } & TeamProfileSections;
 
+/** Edit/create save payload — may include a new logo file. */
+export type TeamProfileSavePayload = TeamProfileFormPayload & {
+  logoFile?: File | null;
+  removeLogo?: boolean;
+};
+
 export type TeamProfileTabId =
   | 'team-profile'
   | 'contacts'

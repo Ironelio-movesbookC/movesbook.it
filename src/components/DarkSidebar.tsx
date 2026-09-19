@@ -113,7 +113,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import MyPageTopicsEntryRow from '@/components/club/MyPageTopicsEntryRow';
 import SelectClubForTopicsModal from '@/components/club/SelectClubForTopicsModal';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   isClubAccountUserType,
   isGroupAccountUserType,
@@ -280,41 +280,45 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   [{ kind: 'icon', Icon: Server, label: '» Overview', path: '/clubs/archive_overview' }],
   [
     { kind: 'group', Icon: Users, label: 'Archive of Users' },
-    { kind: 'child', label: 'All the users profiles', path: '/clubMembers/memberList' },
+    {
+      kind: 'child',
+      label: 'All the users profiles',
+      path: '/clubMembers/memberList?section=athletes&nav=archive',
+    },
     {
       kind: 'child',
       label: 'Athletes\\members',
-      path: '/clubMembers/memberList?section=athletes',
+      path: '/clubMembers/memberList?section=athletes&nav=athletes',
     },
     {
       kind: 'child',
       label: 'Members in pending',
-      path: '/clubMembers/memberList?section=pending',
+      path: '/clubMembers/memberList?section=pending&nav=athletes',
     },
     {
       kind: 'child',
       label: 'Members archived',
-      path: '/clubMembers/memberList?section=archived',
+      path: '/clubMembers/memberList?section=archived&nav=archive',
     },
     {
       kind: 'child',
       label: 'Athletes not members',
-      path: '/clubMembers/memberList?section=not-members',
+      path: '/clubMembers/memberList?section=not-members&nav=athletes',
     },
     {
       kind: 'child',
       label: "Athletes' parents & tutors",
-      path: '/clubMembers/memberList?section=parents',
+      path: '/clubMembers/memberList?section=parents&nav=archive',
     },
     {
       kind: 'child',
       label: 'Club\\Team Staff',
-      path: '/clubMembers/memberList?section=staff',
+      path: '/clubMembers/memberList?section=staff&nav=archive',
     },
     {
       kind: 'child',
       label: 'Club\\team profile',
-      path: '/clubMembers/memberList?section=club-profile',
+      path: '/clubMembers/memberList?section=club-profile&nav=archive',
     },
   ],
   [
@@ -360,7 +364,7 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     },
   ],
   [
-    { kind: 'icon', Icon: Users, label: 'Archive of Users', path: '/clubMembers/memberList' },
+    { kind: 'icon', Icon: Users, label: 'Archive of Users', path: '/clubMembers/memberList?section=athletes&nav=archive' },
     { kind: 'icon', Icon: UserCog, label: 'Operators', path: '/clubs/club_operatorlist' },
     { kind: 'icon', Icon: User, label: 'Employees', path: '/clubs/archive_employees' },
     { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '/clubs/access_list' },
@@ -483,6 +487,10 @@ interface DarkSidebarProps {
   onCreateClubClick?: () => void;
   /** Athlete My clubs → Become member (assignment flow TBD). */
   onBecomeMemberClick?: () => void;
+  /** Athlete memberships (Communities → My teams). */
+  athleteTeams?: Array<{ id: string; name: string; sport?: string | null }>;
+  /** Athlete selects a team under Communities → My teams. */
+  onAthleteTeamSelect?: (teamId: string) => void;
   /** Coach My Groups trained → Create a trained group. */
   onCreateGroupTrainedClick?: () => void;
   /** Team dashboard → Create a team. */
@@ -535,6 +543,8 @@ export default function DarkSidebar({
   onProfileImageSaved,
   onCreateClubClick,
   onBecomeMemberClick,
+  athleteTeams = [],
+  onAthleteTeamSelect,
   onCreateGroupTrainedClick,
   onCreateTeamClick,
   onCreateGroupClick,
@@ -545,6 +555,7 @@ export default function DarkSidebar({
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const { t } = useLanguage();
   const [allowVisiting, setAllowVisiting] = useState(true);
   const [showChangeProfilePhotoModal, setShowChangeProfilePhotoModal] = useState(false);
@@ -560,6 +571,8 @@ export default function DarkSidebar({
   const showSuggestMovesbook = showSuggestMovesbookForTab(userType, currentTab);
 
   const [communitiesOpen, setCommunitiesOpen] = useState(false);
+  const [communitiesMyTeamsOpen, setCommunitiesMyTeamsOpen] = useState(false);
+  const [selectedAthleteTeamId, setSelectedAthleteTeamId] = useState<string | null>(null);
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [myDashboardOpen, setMyDashboardOpen] = useState(false);
@@ -1001,6 +1014,47 @@ export default function DarkSidebar({
     }
   }, [clubManagementOpen]);
 
+  // Keep TEAM/CLUB Archives expanded while browsing archive routes (remount resets state).
+  useEffect(() => {
+    if (!pathname) return;
+    const onArchiveRoute =
+      pathname.startsWith('/clubMembers') ||
+      pathname.startsWith('/clubs/') ||
+      pathname.startsWith('/club/staff');
+    if (!onArchiveRoute) return;
+    if (
+      isTeamManagerUser ||
+      isCoachUser ||
+      isGroupAdminUser ||
+      isClubAccountUserType(userType)
+    ) {
+      setClubManagementOpen(true);
+      setClubArchivesOpen(true);
+    }
+  }, [pathname, userType, isTeamManagerUser, isCoachUser, isGroupAdminUser]);
+
+  // Team archive pages: keep My Team menu (TEAM'S MANAGEMENT) even if tab state lags.
+  useEffect(() => {
+    if (!isTeamManagerUser || !pathname) return;
+    const onArchiveRoute =
+      pathname.startsWith('/clubMembers') ||
+      pathname.startsWith('/clubs/') ||
+      pathname.startsWith('/club/staff');
+    if (!onArchiveRoute) return;
+    if (!selectedEntityId && formCreatedEntities.length === 0) return;
+    writeClubWorkspaceTab('my-entity');
+    if (currentTab !== 'my-entity') {
+      setCurrentTab('my-entity');
+    }
+  }, [
+    isTeamManagerUser,
+    pathname,
+    selectedEntityId,
+    formCreatedEntities.length,
+    currentTab,
+    setCurrentTab,
+  ]);
+
   useEffect(() => {
     if (!clubMarketingOpen) {
       setClubMarketingClubStaffOpen(false);
@@ -1363,6 +1417,29 @@ export default function DarkSidebar({
     [onEntitySelect, setCurrentTab, userType, isAthleteUser, onMyClubClick]
   );
 
+  const handleAthleteTeamSelect = useCallback(
+    (teamId: string) => {
+      setSelectedAthleteTeamId(teamId);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('selectedTeam', teamId);
+      }
+      onAthleteTeamSelect?.(teamId);
+    },
+    [onAthleteTeamSelect]
+  );
+
+  useEffect(() => {
+    if (!isAthleteUser || typeof window === 'undefined') return;
+    const saved = localStorage.getItem('selectedTeam');
+    if (saved && athleteTeams.some((t) => t.id === saved)) {
+      setSelectedAthleteTeamId(saved);
+    } else if (athleteTeams.length > 0) {
+      setSelectedAthleteTeamId((prev) =>
+        prev && athleteTeams.some((t) => t.id === prev) ? prev : athleteTeams[0].id
+      );
+    }
+  }, [isAthleteUser, athleteTeams]);
+
   /**
    * "My Topics" picker — after picking an entity, open topics DISPLAY
    * (never the settings editor). Real clubs → club website display;
@@ -1606,16 +1683,56 @@ export default function DarkSidebar({
               <ChevronDown className="w-4 h-4 opacity-60 rotate-[-90deg]" />
             </button>
 
-            <button
-              type="button"
-              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-750 transition-colors border-t border-gray-700"
-            >
-              <div className="flex items-center gap-2">
-                <Plus className="w-4 h-4 text-gray-300" />
-                <span className="text-sm">My teams</span>
-              </div>
-              <ChevronDown className="w-4 h-4 opacity-60 rotate-[-90deg]" />
-            </button>
+            <div className="border-t border-gray-700">
+              <button
+                type="button"
+                onClick={() => setCommunitiesMyTeamsOpen((v) => !v)}
+                aria-expanded={communitiesMyTeamsOpen}
+                className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-750 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-gray-300" />
+                  <span className="text-sm">My teams</span>
+                </div>
+                <ChevronDown
+                  className={`w-4 h-4 opacity-60 transition-transform ${
+                    communitiesMyTeamsOpen ? 'rotate-180' : 'rotate-[-90deg]'
+                  }`}
+                />
+              </button>
+              {communitiesMyTeamsOpen && (
+                <div className="bg-[#2d2d2d] px-4 py-3 border-t border-gray-700">
+                  {athleteTeams.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-2">No teams yet</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {athleteTeams.map((team) => {
+                        const isSelected = selectedAthleteTeamId === team.id;
+                        return (
+                          <li key={team.id}>
+                            <button
+                              type="button"
+                              onClick={() => handleAthleteTeamSelect(team.id)}
+                              className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
+                                isSelected ? 'bg-zinc-700/60' : ''
+                              }`}
+                            >
+                              <span
+                                className="h-2.5 w-2.5 shrink-0 rounded-full bg-lime-400 shadow-[0_0_6px_rgba(163,230,53,0.8)]"
+                                aria-hidden
+                              />
+                              <span className="min-w-0 flex-1 truncate leading-snug">
+                                {team.name?.trim() || 'Team'}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
 
             <button
               type="button"
@@ -2092,6 +2209,11 @@ export default function DarkSidebar({
                               <button
                                 type="button"
                                 onClick={() => {
+                                  if (typeof window !== 'undefined') {
+                                    localStorage.setItem('selectedClub', team.id);
+                                    localStorage.setItem('selectedTeam', team.id);
+                                  }
+                                  writeClubWorkspaceTab('my-entity');
                                   onEntitySelect?.(team.id);
                                   setCurrentTab('my-entity');
                                 }}
@@ -2854,16 +2976,56 @@ export default function DarkSidebar({
                     <ChevronDown className="w-4 h-4 opacity-60 rotate-[-90deg]" />
                   </button>
 
-                  <button
-                    type="button"
-                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-750 transition-colors border-t border-gray-700"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Plus className="w-4 h-4 text-gray-300" />
-                      <span className="text-sm">My teams</span>
-                    </div>
-                    <ChevronDown className="w-4 h-4 opacity-60 rotate-[-90deg]" />
-                  </button>
+                  <div className="border-t border-gray-700">
+                    <button
+                      type="button"
+                      onClick={() => setCommunitiesMyTeamsOpen((v) => !v)}
+                      aria-expanded={communitiesMyTeamsOpen}
+                      className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-750 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Plus className="w-4 h-4 text-gray-300" />
+                        <span className="text-sm">My teams</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-4 h-4 opacity-60 transition-transform ${
+                          communitiesMyTeamsOpen ? 'rotate-180' : 'rotate-[-90deg]'
+                        }`}
+                      />
+                    </button>
+                    {communitiesMyTeamsOpen && (
+                      <div className="bg-[#2d2d2d] px-4 py-3 border-t border-gray-700">
+                        {athleteTeams.length === 0 ? (
+                          <p className="text-xs text-gray-400 text-center py-2">No teams yet</p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {athleteTeams.map((team) => {
+                              const isSelected = selectedAthleteTeamId === team.id;
+                              return (
+                                <li key={team.id}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAthleteTeamSelect(team.id)}
+                                    className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
+                                      isSelected ? 'bg-zinc-700/60' : ''
+                                    }`}
+                                  >
+                                    <span
+                                      className="h-2.5 w-2.5 shrink-0 rounded-full bg-lime-400 shadow-[0_0_6px_rgba(163,230,53,0.8)]"
+                                      aria-hidden
+                                    />
+                                    <span className="min-w-0 flex-1 truncate leading-snug">
+                                      {team.name?.trim() || 'Team'}
+                                    </span>
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   <button
                     type="button"

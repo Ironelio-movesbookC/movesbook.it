@@ -62,7 +62,8 @@ export default function MyPage() {
     groups,
     teams,
     coachingGroups,
-    myClubs
+    myClubs,
+    myTeams,
   } = useMyPageData(user);
 
   const {
@@ -71,7 +72,8 @@ export default function MyPage() {
     handleGroupSelect,
     handleTeamSelect,
     handleCoachingGroupSelect,
-    handleMyClubSelect
+    handleMyClubSelect,
+    handleMyTeamSelect,
   } = useMyPageHandlers();
 
   useEffect(() => {
@@ -223,6 +225,10 @@ export default function MyPage() {
                   isTeamAccountUserType(user?.userType || '') ? teams :
                   isGroupAccountUserType(user?.userType || '') ? groups :
                   user?.userType === 'COACH' ? coachingGroups : []
+                }
+                athleteTeams={user?.userType === 'ATHLETE' ? myTeams : []}
+                onAthleteTeamSelect={
+                  user?.userType === 'ATHLETE' ? handleMyTeamSelect : undefined
                 }
                 selectedEntityId={
                   isClubAccountUserType(user?.userType || '') ? selectedClub :

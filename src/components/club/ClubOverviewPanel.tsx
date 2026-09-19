@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import UserProfile from '@/components/UserProfile';
 import ClubAdminInfoForm from '@/components/profile/ClubAdminInfoForm';
+import ClubInfoContactsForm from '@/components/club/ClubInfoContactsForm';
 import ClubReferencesDisplay from '@/components/club/ClubReferencesDisplay';
 import ManagedEntitySidebarAvatar from '@/components/entity/ManagedEntitySidebarAvatar';
 import {
@@ -474,12 +475,22 @@ export default function ClubOverviewPanel({
         )}
 
         {activeTab === 'contact-info' && (
-          <div className="p-6 space-y-4">
-            <p className="text-sm text-gray-600">
-              Club administrator contact details. Fields marked &quot;Show in Club admin info&quot; can
-              be shared on the club overview for members.
-            </p>
-            <ClubAdminInfoForm />
+          <div className="p-6 space-y-8">
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Club administrator contact details. Fields marked &quot;Show in Club admin info&quot; can
+                be shared on the club overview for members.
+              </p>
+              <ClubAdminInfoForm />
+            </div>
+            {club?.id ? (
+              <div className="space-y-4 border-t border-gray-200 pt-8">
+                <p className="text-sm text-gray-600">
+                  Club entity contacts (Website, Email, PEC, phones, and social links).
+                </p>
+                <ClubInfoContactsForm clubId={club.id} />
+              </div>
+            ) : null}
           </div>
         )}
 

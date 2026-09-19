@@ -26,6 +26,8 @@ export type ClubProfileFormPayload = {
   phone: string;
   website: string;
   logoUrl: string;
+  /** Wide banner shown on the club main page. */
+  bannerUrl?: string;
   directAccess: string;
   officialName: string;
   directRegistrationCode: string;
@@ -39,12 +41,20 @@ export type ClubProfileFormPayload = {
 export type ClubProfileSavePayload = ClubProfileFormPayload & {
   logoFile?: File | null;
   removeLogo?: boolean;
+  bannerFile?: File | null;
+  removeBanner?: boolean;
 };
 
 export function clubProfilePayloadForApi(
   payload: ClubProfileSavePayload,
 ): ClubProfileFormPayload {
-  const { logoFile: _logoFile, removeLogo: _removeLogo, ...rest } = payload;
+  const {
+    logoFile: _logoFile,
+    removeLogo: _removeLogo,
+    bannerFile: _bannerFile,
+    removeBanner: _removeBanner,
+    ...rest
+  } = payload;
   return rest;
 }
 
@@ -90,6 +100,7 @@ export function clubToFormPayload(club: {
     phone: meta.phone?.trim() ?? '',
     website: meta.website?.trim() || teamWebsite,
     logoUrl: meta.logoUrl?.trim() ?? '',
+    bannerUrl: meta.bannerUrl?.trim() ?? '',
     directAccess: meta.directAccess?.trim() ?? '',
     officialName: club.name?.trim() ?? '',
     directRegistrationCode: meta.directRegistrationCode?.trim() ?? '',
@@ -111,6 +122,14 @@ export function mergeClubSubscriptionDates(
     subscriptionEnd: subscriptionEnd.trim().slice(0, 10) || undefined,
   };
   return JSON.stringify(meta);
+}
+
+function storedPublicUrl(value: string | null | undefined): string | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+  // Never persist inline data/blob URLs into description JSON (truncates / corrupts meta).
+  if (raw.startsWith('data:') || raw.startsWith('blob:')) return undefined;
+  return raw;
 }
 
 export function mergeClubDescriptionForSave(
@@ -145,10 +164,18 @@ export function mergeClubDescriptionForSave(
     mail: payload.mail.trim() || undefined,
     phone: payload.phone.trim() || undefined,
     website: payload.website.trim() || undefined,
-    // Keep existing logo when the form sends a blank (e.g. blob preview not yet
-    // written into payload). Explicit removal is done via the logo DELETE API
-    // before this merge, which clears prev.logoUrl.
-    logoUrl: payload.logoUrl.trim() || prev.logoUrl?.trim() || undefined,
+    // Keep existing logo/banner when the form sends a blank (e.g. blob preview
+    // not yet written into payload). Explicit removal is done via the logo/banner
+    // DELETE API before this merge, which clears prev.logoUrl / prev.bannerUrl.
+    // Never write data:/blob: URLs — those come from local previews only.
+    logoUrl:
+      storedPublicUrl(payload.logoUrl) ||
+      storedPublicUrl(prev.logoUrl) ||
+      undefined,
+    bannerUrl:
+      storedPublicUrl(payload.bannerUrl) ||
+      storedPublicUrl(prev.bannerUrl) ||
+      undefined,
     directAccess: payload.directAccess.trim() || undefined,
     directRegistrationCode: payload.directRegistrationCode.trim() || undefined,
     clubPasswordHash: options?.clubPasswordHash ?? prev.clubPasswordHash,

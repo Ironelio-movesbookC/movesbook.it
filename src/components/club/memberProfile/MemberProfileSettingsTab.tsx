@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CheckRow,
   Field,
@@ -10,7 +10,6 @@ import {
   TextInput,
   TextSelect,
 } from '@/components/club/memberProfile/FormBits';
-import PaymentModeSelect from '@/components/club/PaymentModeSelect';
 import type { ClubMemberScopedData } from '@/lib/club/memberProfileTypes';
 import {
   ATHLETIC_LEVEL_OPTIONS,
@@ -18,6 +17,7 @@ import {
   MAIN_SPORTS,
   SHARING_DEFAULT_OPTIONS,
   TEAM_ATHLETE_STATUS_OPTIONS,
+  TEAM_FOOTBALL_PAYMENT_METHOD_OPTIONS,
 } from '@/lib/club/memberProfileTypes';
 import { getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesClient';
 import {
@@ -26,11 +26,19 @@ import {
   normalizeEntitySport,
 } from '@/lib/sport/entitySportOptions';
 import {
+  emptySportDropdownCatalog,
+  normalizeSportDropdownCatalog,
+  optionsForSportParameter,
+  parameterLabelForLanguage,
+  type SportDropdownCatalog,
+} from '@/lib/sport/sportDropdownParameters';
+import {
   MAX_DEFAULT_PAYMENT_METHODS,
   PAYMENT_STATUS_OPTIONS,
   PAYMENT_TYPE_OPTIONS,
   sanitizeDefaultPaymentMethods,
 } from '@/lib/procedures/payModes';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 type MemberTypeOption = {
   id: string;
@@ -46,6 +54,8 @@ type MemberTypeOption = {
 type Props = {
   clubId: string;
   entitySportDefault: string;
+  /** Club archive vs Team archive — drives TEAM fields labels. */
+  workspaceKind?: 'club' | 'team';
   club: ClubMemberScopedData;
   setClub: (
     next: ClubMemberScopedData | ((prev: ClubMemberScopedData) => ClubMemberScopedData),
@@ -63,6 +73,7 @@ type InstallmentKey = 'firstPayment' | 'secondPayment' | 'thirdPayment';
 export default function MemberProfileSettingsTab({
   clubId,
   entitySportDefault,
+  workspaceKind = 'club',
   club,
   setClub,
   readOnlyClub,
@@ -72,9 +83,74 @@ export default function MemberProfileSettingsTab({
   message,
   onSave,
 }: Props) {
+  const { currentLanguage } = useLanguage();
+  const lang = (currentLanguage || 'en').toLowerCase().split('-')[0] || 'en';
   const s = club.settings;
   const ac = s.accessControl;
   const ss = s.secondaryScreen;
+  const [sportDropdownCatalog, setSportDropdownCatalog] = useState<SportDropdownCatalog>(
+    emptySportDropdownCatalog(),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/admin/sport-dropdown-parameters', {
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled) {
+          setSportDropdownCatalog(normalizeSportDropdownCatalog(json.catalog));
+        }
+      } catch {
+        /* keep empty catalog */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const teamSportKey = normalizeEntitySport(
+    s.teamSport || entitySportDefault || 'Football',
+  );
+
+  const categoryOptions = useMemo(
+    () => optionsForSportParameter(sportDropdownCatalog, teamSportKey, 'category', lang),
+    [sportDropdownCatalog, teamSportKey, lang],
+  );
+  const positionOptions = useMemo(
+    () => optionsForSportParameter(sportDropdownCatalog, teamSportKey, 'position', lang),
+    [sportDropdownCatalog, teamSportKey, lang],
+  );
+  const specialtyOptions = useMemo(
+    () => optionsForSportParameter(sportDropdownCatalog, teamSportKey, 'specialty', lang),
+    [sportDropdownCatalog, teamSportKey, lang],
+  );
+
+  const categoryLabel = parameterLabelForLanguage(
+    sportDropdownCatalog,
+    teamSportKey,
+    'category',
+    lang,
+    'Category',
+  );
+  const positionLabel = parameterLabelForLanguage(
+    sportDropdownCatalog,
+    teamSportKey,
+    'position',
+    lang,
+    'Position',
+  );
+  const specialtyLabel = parameterLabelForLanguage(
+    sportDropdownCatalog,
+    teamSportKey,
+    'specialty',
+    lang,
+    'Specialty',
+  );
   const [memberTypes, setMemberTypes] = useState<MemberTypeOption[]>([]);
   const [memberTypesLoading, setMemberTypesLoading] = useState(true);
   const [defaultPaymentMethods, setDefaultPaymentMethods] = useState<string[]>([]);
@@ -783,6 +859,34 @@ export default function MemberProfileSettingsTab({
 
       {showFootballFields ? (
         <SectionCard title={`TEAM fields — ${selectedTeamSport}`}>
+          <Row2>
+            <Field label="Membership number">
+              <TextInput
+                disabled={readOnlyClub}
+                value={s.football.membershipNumber}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: { ...prev.football, membershipNumber: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Expiring date">
+              <TextInput
+                type="date"
+                disabled={readOnlyClub}
+                value={s.football.expiringDate}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: { ...prev.football, expiringDate: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+          </Row2>
+
           <Field label="Annual membership fee">
             <TextInput
               disabled={readOnlyClub}
@@ -799,15 +903,8 @@ export default function MemberProfileSettingsTab({
           <div className="mt-3 space-y-3">
             <p className="text-sm font-semibold text-gray-800">Payments</p>
             {installmentRows.map(({ key, label }) => (
-              <div key={key} className="grid grid-cols-1 gap-2 md:grid-cols-3 md:items-end">
-                <Field label={`${label} amount`}>
-                  <TextInput
-                    disabled={readOnlyClub}
-                    value={s.football[key].amount}
-                    onChange={(e) => patchInstallment(key, 'amount', e.target.value)}
-                  />
-                </Field>
-                <Field label="Date payment">
+              <div key={key} className="grid grid-cols-1 gap-2 md:grid-cols-2 md:items-end">
+                <Field label={`${label} date`}>
                   <TextInput
                     type="date"
                     disabled={readOnlyClub}
@@ -815,40 +912,57 @@ export default function MemberProfileSettingsTab({
                     onChange={(e) => patchInstallment(key, 'date', e.target.value)}
                   />
                 </Field>
-                <Field label="Status">
-                  <TextSelect
+                <Field label={`${label} amount`}>
+                  <TextInput
                     disabled={readOnlyClub}
-                    value={s.football[key].status}
-                    onChange={(e) => patchInstallment(key, 'status', e.target.value)}
-                  >
-                    <option value="">—</option>
-                    {PAYMENT_STATUS_OPTIONS.map((x) => (
-                      <option key={x} value={x}>
-                        {x}
-                      </option>
-                    ))}
-                  </TextSelect>
+                    value={s.football[key].amount}
+                    onChange={(e) => patchInstallment(key, 'amount', e.target.value)}
+                  />
                 </Field>
               </div>
             ))}
           </div>
 
-          <div className="mt-4">
+          <Row2>
             <Field label="Payment method">
-              <PaymentModeSelect
+              <TextSelect
                 disabled={readOnlyClub}
-                className="w-full rounded border border-gray-400 bg-[#fffde7] px-2 py-1.5 text-sm text-gray-900 disabled:bg-gray-100"
                 value={s.football.paymentMethod}
-                defaultPaymentMethods={defaultPaymentMethods}
-                onChange={(value) =>
+                onChange={(e) =>
                   patchSettings((prev) => ({
                     ...prev,
-                    football: { ...prev.football, paymentMethod: value },
+                    football: { ...prev.football, paymentMethod: e.target.value },
                   }))
                 }
-              />
+              >
+                <option value="">—</option>
+                {TEAM_FOOTBALL_PAYMENT_METHOD_OPTIONS.map((x) => (
+                  <option key={x} value={x}>
+                    {x}
+                  </option>
+                ))}
+              </TextSelect>
             </Field>
-          </div>
+            <Field label="Payment status">
+              <TextSelect
+                disabled={readOnlyClub}
+                value={s.football.paymentStatus}
+                onChange={(e) =>
+                  patchSettings((prev) => ({
+                    ...prev,
+                    football: { ...prev.football, paymentStatus: e.target.value },
+                  }))
+                }
+              >
+                <option value="">—</option>
+                {PAYMENT_STATUS_OPTIONS.map((x) => (
+                  <option key={x} value={x}>
+                    {x}
+                  </option>
+                ))}
+              </TextSelect>
+            </Field>
+          </Row2>
 
           <div className="mt-4">
             <Field label="Athlete status">
@@ -879,7 +993,10 @@ export default function MemberProfileSettingsTab({
           </div>
 
           <Row2>
-            <Field label="Team/Club name" labelClassName="text-lg">
+            <Field
+              label={workspaceKind === 'team' ? 'Team names' : 'Club names'}
+              labelClassName="text-lg"
+            >
               <TextInput
                 disabled={readOnlyClub}
                 value={s.football.teamNames}
@@ -946,9 +1063,9 @@ export default function MemberProfileSettingsTab({
           </Row2>
 
           <Row2>
-            <Field label="Category ** (SuperAdmin)">
+            <Field label={`${categoryLabel} **`}>
               <TextSelect
-                disabled={readOnlyClub}
+                disabled={readOnlyClub || categoryOptions.length === 0}
                 value={s.football.category}
                 onChange={(e) =>
                   patchSettings((prev) => ({
@@ -957,15 +1074,27 @@ export default function MemberProfileSettingsTab({
                   }))
                 }
               >
-                <option value="">— Select —</option>
-                {s.football.category ? (
+                <option value="">—</option>
+                {categoryOptions.map((o) => (
+                  <option key={o.id} value={o.label}>
+                    {o.label}
+                  </option>
+                ))}
+                {s.football.category &&
+                !categoryOptions.some((o) => o.label === s.football.category) ? (
                   <option value={s.football.category}>{s.football.category}</option>
                 ) : null}
               </TextSelect>
+              {categoryOptions.length === 0 ? (
+                <p className="mt-1 text-xs text-gray-500">
+                  Options from Super Admin → Sport settings → Tools Settings → Dropdown
+                  parameters for sport ({teamSportKey}).
+                </p>
+              ) : null}
             </Field>
-            <Field label="Role ** (SuperAdmin)">
+            <Field label={`${positionLabel} **`}>
               <TextSelect
-                disabled={readOnlyClub}
+                disabled={readOnlyClub || positionOptions.length === 0}
                 value={s.football.position}
                 onChange={(e) =>
                   patchSettings((prev) => ({
@@ -974,15 +1103,27 @@ export default function MemberProfileSettingsTab({
                   }))
                 }
               >
-                <option value="">— Select —</option>
-                {s.football.position ? (
+                <option value="">—</option>
+                {positionOptions.map((o) => (
+                  <option key={o.id} value={o.label}>
+                    {o.label}
+                  </option>
+                ))}
+                {s.football.position &&
+                !positionOptions.some((o) => o.label === s.football.position) ? (
                   <option value={s.football.position}>{s.football.position}</option>
                 ) : null}
               </TextSelect>
+              {positionOptions.length === 0 ? (
+                <p className="mt-1 text-xs text-gray-500">
+                  Options from Super Admin → Sport settings → Tools Settings → Dropdown
+                  parameters for sport ({teamSportKey}).
+                </p>
+              ) : null}
             </Field>
-            <Field label="Specialty ** (SuperAdmin)">
+            <Field label={`${specialtyLabel} **`}>
               <TextSelect
-                disabled={readOnlyClub}
+                disabled={readOnlyClub || specialtyOptions.length === 0}
                 value={s.football.specialty}
                 onChange={(e) =>
                   patchSettings((prev) => ({
@@ -991,11 +1132,23 @@ export default function MemberProfileSettingsTab({
                   }))
                 }
               >
-                <option value="">— Select —</option>
-                {s.football.specialty ? (
+                <option value="">—</option>
+                {specialtyOptions.map((o) => (
+                  <option key={o.id} value={o.label}>
+                    {o.label}
+                  </option>
+                ))}
+                {s.football.specialty &&
+                !specialtyOptions.some((o) => o.label === s.football.specialty) ? (
                   <option value={s.football.specialty}>{s.football.specialty}</option>
                 ) : null}
               </TextSelect>
+              {specialtyOptions.length === 0 ? (
+                <p className="mt-1 text-xs text-gray-500">
+                  Options from Super Admin → Sport settings → Tools Settings → Dropdown
+                  parameters for sport ({teamSportKey}).
+                </p>
+              ) : null}
             </Field>
           </Row2>
 

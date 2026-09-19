@@ -5,7 +5,11 @@ import type {
   OwnerProfileData,
   ParentData,
 } from '@/lib/club/memberProfileTypes';
-import { TEAM_ATHLETE_STATUS_OPTIONS } from '@/lib/club/memberProfileTypes';
+import {
+  TEAM_ATHLETE_STATUS_OPTIONS,
+  TEAM_FOOTBALL_PAYMENT_METHOD_OPTIONS,
+} from '@/lib/club/memberProfileTypes';
+import { PAYMENT_STATUS_OPTIONS } from '@/lib/procedures/payModes';
 
 function emptyParent(): ParentData {
   return {
@@ -457,11 +461,14 @@ export function emptyClubScoped(): ClubMemberScopedData {
         msgFromOtherMember: false,
       },
       football: {
+        membershipNumber: '',
+        expiringDate: '',
         annualMembershipFee: '',
         firstPayment: { amount: '', date: '', status: '' },
         secondPayment: { amount: '', date: '', status: '' },
         thirdPayment: { amount: '', date: '', status: '' },
         paymentMethod: '',
+        paymentStatus: '',
         receiptIssued: false,
         imageRelease: false,
         travelAuthorization: false,
@@ -696,12 +703,47 @@ export function mergeClubScoped(partial?: Partial<ClubMemberScopedData> | null):
           ? String(merged.athleteStatus)
           : 'Active';
 
+        const firstPayment = migrateInstallment('firstPayment', 'firstPaymentDate');
+        const secondPayment = migrateInstallment('secondPayment', 'secondPaymentDate');
+        const thirdPayment = migrateInstallment('thirdPayment', 'thirdPaymentDate');
+
+        const rawPaymentStatus = String(
+          merged.paymentStatus ||
+            incoming.paymentStatus ||
+            firstPayment.status ||
+            secondPayment.status ||
+            thirdPayment.status ||
+            '',
+        );
+        const paymentStatus = (PAYMENT_STATUS_OPTIONS as readonly string[]).includes(
+          rawPaymentStatus,
+        )
+          ? rawPaymentStatus
+          : '';
+
+        const rawMethod = String(merged.paymentMethod || '').trim();
+        const methodAliases: Record<string, string> = {
+          cash: 'Cash',
+          bank_transfer: 'Bank transfer',
+          'bank transfer': 'Bank transfer',
+          pos: 'POS',
+          sepa: 'SEPA',
+          'sepa **': 'SEPA',
+        };
+        const aliased =
+          methodAliases[rawMethod.toLowerCase()] ||
+          ((TEAM_FOOTBALL_PAYMENT_METHOD_OPTIONS as readonly string[]).includes(rawMethod)
+            ? rawMethod
+            : '');
+
         return {
           ...merged,
           athleteStatus,
-          firstPayment: migrateInstallment('firstPayment', 'firstPaymentDate'),
-          secondPayment: migrateInstallment('secondPayment', 'secondPaymentDate'),
-          thirdPayment: migrateInstallment('thirdPayment', 'thirdPaymentDate'),
+          paymentMethod: aliased,
+          paymentStatus,
+          firstPayment,
+          secondPayment,
+          thirdPayment,
           sportsPlayed: Array.isArray(partial.settings?.football?.sportsPlayed)
             ? partial.settings!.football!.sportsPlayed
             : base.settings.football.sportsPlayed,

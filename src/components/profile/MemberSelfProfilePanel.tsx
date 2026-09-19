@@ -16,26 +16,26 @@ type ClubOption = { id: string; name: string };
 type TabMeta = { id: ProfileTabId; label: string; clubScoped: boolean };
 
 const SHARED_TABS: TabMeta[] = [
-  { id: 'owner-profile', label: 'Owner profile', clubScoped: false },
-  { id: 'contacts', label: 'My Contacts', clubScoped: false },
+  { id: 'owner-profile', label: 'Member profile', clubScoped: false },
+  { id: 'contacts', label: 'Contacts', clubScoped: false },
   { id: 'activities', label: 'My Activities', clubScoped: false },
   { id: 'references', label: 'References', clubScoped: false },
 ];
 
 const CLUB_TABS: TabMeta[] = [
-  { id: 'pay-for', label: 'Pay for…', clubScoped: true },
-  { id: 'other-details', label: 'Other data', clubScoped: true },
   { id: 'parents', label: PARENTS_TAB_LABEL, clubScoped: true },
+  { id: 'pay-for', label: 'Pay for…', clubScoped: true },
+  { id: 'other-details', label: 'Other Club data', clubScoped: true },
   { id: 'settings', label: 'Settings', clubScoped: true },
-  { id: 'messages-staff', label: 'Messages', clubScoped: true },
-  { id: 'notes-coach', label: 'Notes', clubScoped: true },
+  { id: 'messages-staff', label: 'Alert posted', clubScoped: true },
+  { id: 'notes-coach', label: 'Coach notes', clubScoped: true },
   { id: 'presences', label: 'Presences', clubScoped: true },
 ];
 
 /** Short “what this section does” copy shown to members. */
 const TAB_FUNCTION_HELP: Partial<Record<ProfileTabId, string>> = {
   'owner-profile':
-    'Your personal identity data (login, address, personal and medical info). Shared across every club.',
+    'Your personal identity data (login, address, personal and medical info). Shared across every club. Managed by you (*Member profile can be shared).',
   contacts:
     'Your public contact details and social links. Managed by you; shared across every club.',
   activities:
@@ -45,13 +45,13 @@ const TAB_FUNCTION_HELP: Partial<Record<ProfileTabId, string>> = {
   'pay-for':
     'Lists other club members whose fees or purchases you pay for (family members, children, etc.). Managed by the club admin for this club.',
   'other-details':
-    'Club membership dates, privacy, tutors/coach, insurance and federation badges for this club. Managed by the club admin.',
+    'Other Club/Team data for this membership (status, membership dates, tutors, insurance, news permissions). Most fields are managed by the club/team admin; signatures and rule/privacy acceptance are managed by the member.',
   parents:
     'Parent / tutor contacts for underage members in this club. Managed by the club admin; visible only when the member is under 18.',
   settings:
     'How this club shows your profile (theme, sharing, follow-up). Managed by the club admin.',
   'messages-staff':
-    'Messages from club staff about your membership. Visible when the admin enables this label for you.',
+    'Alerts posted by club staff about your membership. Visible when the admin enables this label for you.',
   'notes-coach':
     'Notes written by coaches for you (login/logout notices, training comments). Visible when enabled by the club admin.',
   presences:
@@ -189,7 +189,14 @@ export default function MemberSelfProfilePanel({ userId, clubs }: Props) {
   const profileSource = clubs.length === 0 ? 'self' : 'club';
 
   // Always show all labels; enforce club-admin visibility after a club is selected.
-  const tabs = useMemo(() => [...SHARED_TABS, ...CLUB_TABS], []);
+  const tabs = useMemo(
+    () => ({
+      shared: SHARED_TABS,
+      club: CLUB_TABS,
+      all: [...SHARED_TABS, ...CLUB_TABS],
+    }),
+    [],
+  );
 
   const clubTabBlocked =
     Boolean(activeMeta?.clubScoped) &&
@@ -253,31 +260,60 @@ export default function MemberSelfProfilePanel({ userId, clubs }: Props) {
         </p>
       ) : null}
 
-      <nav
-        className="mb-0 grid w-full gap-px border-b border-gray-300"
-        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
-        aria-label="Member profile sections"
-      >
-        {tabs.map((tab) => {
-          const active = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              title={tab.label}
-              onClick={() => openTab(tab)}
-              className={`min-w-0 truncate rounded-t px-1 py-2 text-center text-[11px] font-medium leading-tight sm:px-1.5 sm:text-xs md:text-sm ${
-                active
-                  ? 'bg-gray-900 text-white'
-                  : tab.clubScoped
-                    ? 'bg-sky-100 text-sky-900 hover:bg-sky-200'
-                    : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
+      <nav className="mb-0 border-b border-gray-300" aria-label="Member profile sections">
+        <div className="flex w-full flex-nowrap items-end gap-px overflow-x-auto">
+          <div className="flex shrink-0 flex-col">
+            <p className="mb-1 px-1 text-[11px] font-semibold whitespace-nowrap text-gray-700 sm:text-xs">
+              Managed by the member (*Member profile can be shared)
+            </p>
+            <div className="flex flex-nowrap gap-px">
+              {tabs.shared.map((tab) => {
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    title={tab.label}
+                    onClick={() => openTab(tab)}
+                    className={`shrink-0 rounded-t px-2.5 py-2 text-center text-[11px] font-medium leading-tight whitespace-nowrap sm:px-3 sm:text-xs md:text-sm ${
+                      active
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex shrink-0 flex-col">
+            <p className="mb-1 px-1 text-[11px] font-semibold whitespace-nowrap text-red-700 sm:text-xs">
+              Managed by the Club Admin
+            </p>
+            <div className="flex flex-nowrap gap-px">
+              {tabs.club.map((tab) => {
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    title={tab.label}
+                    onClick={() => openTab(tab)}
+                    className={`shrink-0 rounded-t px-2.5 py-2 text-center text-[11px] font-medium leading-tight whitespace-nowrap sm:px-3 sm:text-xs md:text-sm ${
+                      active
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-sky-100 text-sky-900 hover:bg-sky-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </nav>
 
       <div className="rounded-b-lg border border-t-0 border-gray-300 bg-white p-4 md:p-5">
