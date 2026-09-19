@@ -19,7 +19,7 @@ import {
   type ClubProfileFormPayload,
   type ClubProfileSavePayload,
 } from '@/lib/club/clubProfilePayload';
-import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
+import { getBannerUrlFromEntityDescription, getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 import {
   getEntityProfileLabels,
   type ManagedEntityKind,
@@ -49,6 +49,10 @@ type ClubProfileEditorProps = {
   onCancel?: () => void;
 };
 
+/**
+ * Club / coach / group company profile form (single page — not the Team Profile tabs).
+ * Team admins use TeamProfileEditor instead.
+ */
 export default function ClubProfileEditor({
   mode,
   entityKind = 'club',
@@ -62,6 +66,9 @@ export default function ClubProfileEditor({
   const [clubLogoPreview, setClubLogoPreview] = useState<string | null>(null);
   const [clubLogoFile, setClubLogoFile] = useState<File | null>(null);
   const [logoRemoved, setLogoRemoved] = useState(false);
+  const [clubBannerPreview, setClubBannerPreview] = useState<string | null>(null);
+  const [clubBannerFile, setClubBannerFile] = useState<File | null>(null);
+  const [bannerRemoved, setBannerRemoved] = useState(false);
   const [clubUsername, setClubUsername] = useState('');
   const [clubMainSport, setClubMainSport] = useState(DEFAULT_ENTITY_SPORT);
   const [clubOtherSports, setClubOtherSports] = useState<string[]>([]);
@@ -86,6 +93,12 @@ export default function ClubProfileEditor({
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const showClubReferences = entityKind === 'club';
+
+  /** Stable key so parent re-renders don't wipe in-progress logo/banner picks. */
+  const hydrateKey =
+    mode === 'edit' && initialClub
+      ? `${initialClub.name}\n${initialClub.location ?? ''}\n${initialClub.description ?? ''}`
+      : mode;
 
   const profileFieldRows = useMemo(
     () =>
@@ -134,6 +147,9 @@ export default function ClubProfileEditor({
       setClubLogoPreview(null);
       setClubLogoFile(null);
       setLogoRemoved(false);
+      setClubBannerPreview(null);
+      setClubBannerFile(null);
+      setBannerRemoved(false);
       setClubUsername('');
       setClubMainSport(DEFAULT_ENTITY_SPORT);
       setClubOtherSports([]);
@@ -162,9 +178,6 @@ export default function ClubProfileEditor({
 
     if (mode === 'edit' && initialClub) {
       const payload = clubToFormPayload(initialClub);
-      setClubLogoPreview(getLogoUrlFromEntityDescription(initialClub.description));
-      setClubLogoFile(null);
-      setLogoRemoved(false);
       setClubUsername(payload.username);
       setClubMainSport(payload.category || DEFAULT_ENTITY_SPORT);
       setClubOtherSports(
@@ -180,9 +193,18 @@ export default function ClubProfileEditor({
       setClubMail(payload.mail);
       setClubPhone(payload.phone);
       setClubWebsite(payload.website);
-      setClubLogoPreview(getLogoUrlFromEntityDescription(initialClub.description) || payload.logoUrl || null);
+      setClubLogoPreview(
+        getLogoUrlFromEntityDescription(initialClub.description) || payload.logoUrl || null,
+      );
       setClubLogoFile(null);
       setLogoRemoved(false);
+      setClubBannerPreview(
+        getBannerUrlFromEntityDescription(initialClub.description) ||
+          payload.bannerUrl ||
+          null,
+      );
+      setClubBannerFile(null);
+      setBannerRemoved(false);
       setClubDirectAccess(payload.directAccess);
       setClubOfficialName(payload.officialName);
       setClubDirectRegCode(payload.directRegistrationCode);
@@ -193,7 +215,9 @@ export default function ClubProfileEditor({
       setError(null);
       setHydrated(true);
     }
-  }, [mode, initialClub]);
+    // hydrateKey is derived from initialClub content (not object identity).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: avoid wiping logoFile/bannerFile on parent re-render
+  }, [mode, hydrateKey]);
 
   const handleLogoPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -211,6 +235,27 @@ export default function ClubProfileEditor({
     setClubLogoFile(null);
     setLogoRemoved(true);
     setClubLogoPreview((prev) => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
+  const handleBannerPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setClubBannerFile(file);
+    setBannerRemoved(false);
+    setClubBannerPreview((prev) => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleRemoveBanner = () => {
+    setClubBannerFile(null);
+    setBannerRemoved(true);
+    setClubBannerPreview((prev) => {
       if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
       return null;
     });
@@ -260,7 +305,20 @@ export default function ClubProfileEditor({
         mail: clubMail.trim(),
         phone: clubPhone.trim(),
         website: clubWebsite.trim(),
-        logoUrl: logoRemoved ? '' : clubLogoPreview && !clubLogoPreview.startsWith('blob:') ? clubLogoPreview : '',
+        logoUrl:
+          logoRemoved
+            ? ''
+            : clubLogoPreview && !clubLogoPreview.startsWith('blob:')
+              ? clubLogoPreview
+              : '',
+        bannerUrl:
+          bannerRemoved
+            ? ''
+            : clubBannerPreview &&
+                !clubBannerPreview.startsWith('blob:') &&
+                !clubBannerPreview.startsWith('data:')
+              ? clubBannerPreview
+              : '',
         directAccess: clubDirectAccess.trim(),
         officialName: clubOfficialName.trim() || clubUsername.trim(),
         directRegistrationCode: clubDirectRegCode.trim(),
@@ -270,6 +328,8 @@ export default function ClubProfileEditor({
         referencesLevel: showClubReferences ? clubReferencesLevel : '1',
         logoFile: clubLogoFile,
         removeLogo: logoRemoved,
+        bannerFile: clubBannerFile,
+        removeBanner: bannerRemoved,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : labels.saveError);
@@ -293,35 +353,75 @@ export default function ClubProfileEditor({
         {title}
       </div>
 
-      <div className="space-y-4 p-4 border border-t-0 border-gray-300 bg-[#f3f3f3] rounded-b-lg">
-        <div className="flex flex-col gap-6 sm:flex-row">
-          <div className="flex shrink-0 flex-col items-start gap-2">
-            <div className="text-sm font-medium text-gray-800">{labels.logoLabel}</div>
-            <label className="relative flex h-28 w-36 cursor-pointer items-center justify-center overflow-hidden border border-gray-400 bg-white">
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={handleLogoPick}
-              />
-              {clubLogoPreview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={clubLogoPreview} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <User className="h-10 w-10 text-gray-400" />
-              )}
-            </label>
-            <button
-              type="button"
-              onClick={handleRemoveLogo}
-              className="text-sm text-blue-700 hover:underline"
-            >
-              [ Remove Logo ]
-            </button>
+      <div className="space-y-4 rounded-b-lg border border-t-0 border-gray-300 bg-[#f3f3f3] p-4">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+          {/* Club: Logo + Banner side-by-side on the left; coach/group: logo only. */}
+          <div className="flex shrink-0 flex-wrap items-start gap-4">
+            <div className="flex flex-col items-start gap-2">
+              <div className="text-sm font-medium text-gray-800">{labels.logoLabel}</div>
+              <label className="relative flex h-28 w-36 cursor-pointer items-center justify-center overflow-hidden border border-gray-400 bg-white">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={handleLogoPick}
+                />
+                {clubLogoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={clubLogoPreview} alt="" className="h-full w-full object-cover" />
+                ) : entityKind === 'club' ? (
+                  <span className="px-2 text-center text-[11px] font-semibold leading-snug text-red-600">
+                    Displayed in the left sidebar.
+                  </span>
+                ) : (
+                  <User className="h-10 w-10 text-gray-400" />
+                )}
+              </label>
+              <button
+                type="button"
+                onClick={handleRemoveLogo}
+                className="text-sm text-blue-700 hover:underline"
+              >
+                [ Remove Logo ]
+              </button>
+            </div>
+
+            {entityKind === 'club' ? (
+              <div className="flex flex-col items-start gap-2">
+                <div className="text-sm font-medium text-gray-800">Club Banner</div>
+                <label className="relative flex h-28 w-56 cursor-pointer items-center justify-center overflow-hidden border border-gray-400 bg-white sm:w-72">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={handleBannerPick}
+                  />
+                  {clubBannerPreview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={clubBannerPreview}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="px-2 text-center text-[11px] font-semibold leading-snug text-red-600">
+                      Displayed in the Club Mainpage.
+                    </span>
+                  )}
+                </label>
+                <button
+                  type="button"
+                  onClick={handleRemoveBanner}
+                  className="text-sm text-blue-700 hover:underline"
+                >
+                  [ Remove ]
+                </button>
+              </div>
+            ) : null}
           </div>
 
-          <div className="flex-1 space-y-2 text-sm">
-            <div className="grid grid-cols-[160px_1fr] items-center gap-2">
+          <div className="min-w-0 flex-1 space-y-2 text-sm">
+            <div className="grid grid-cols-[160px_minmax(0,1fr)] items-center gap-2">
               <label className="text-gray-800">Main sport</label>
               <select
                 value={clubMainSport}
@@ -330,7 +430,7 @@ export default function ClubProfileEditor({
                   setClubMainSport(next);
                   setClubOtherSports((prev) => prev.filter((s) => s !== next));
                 }}
-                className="w-full max-w-md rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
+                className="w-full max-w-xl rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
               >
                 {ENTITY_SPORT_OPTIONS.map((sport) => (
                   <option key={sport} value={sport}>
@@ -339,13 +439,16 @@ export default function ClubProfileEditor({
                 ))}
               </select>
             </div>
-            <div className="grid grid-cols-[160px_1fr] items-start gap-2">
+            <div className="grid grid-cols-[160px_minmax(0,1fr)] items-start gap-2">
               <label className="pt-1 text-gray-800">Other sports</label>
-              <div className="flex max-w-xl flex-wrap gap-x-4 gap-y-2 rounded border border-gray-400 bg-gray-100 px-2 py-2">
+              <div className="flex max-w-3xl flex-wrap gap-x-4 gap-y-2 rounded border border-gray-400 bg-gray-100 px-2 py-2">
                 {ENTITY_SPORT_OPTIONS.filter((sport) => sport !== clubMainSport).map((sport) => {
                   const checked = clubOtherSports.includes(sport);
                   return (
-                    <label key={sport} className="inline-flex items-center gap-1.5 text-sm text-gray-800">
+                    <label
+                      key={sport}
+                      className="inline-flex items-center gap-1.5 text-sm text-gray-800"
+                    >
                       <input
                         type="checkbox"
                         checked={checked}
@@ -364,7 +467,10 @@ export default function ClubProfileEditor({
               </div>
             </div>
             {profileFieldRows.map(([label, value, setter, isSelect]) => (
-              <div key={String(label)} className="grid grid-cols-[160px_1fr] items-center gap-2">
+              <div
+                key={String(label)}
+                className="grid grid-cols-[160px_minmax(0,1fr)] items-center gap-2"
+              >
                 <label className="text-gray-800">{label}</label>
                 {isSelect && label === 'Country' ? (
                   <select
@@ -373,7 +479,7 @@ export default function ClubProfileEditor({
                       setter(e.target.value);
                       setClubRegion('');
                     }}
-                    className="w-full max-w-md rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
+                    className="w-full max-w-xl rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
                   >
                     {COUNTRIES.map((c) => (
                       <option key={c} value={c}>
@@ -385,7 +491,7 @@ export default function ClubProfileEditor({
                   <select
                     value={String(value)}
                     onChange={(e) => setter(e.target.value)}
-                    className="w-full max-w-md rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
+                    className="w-full max-w-xl rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
                   >
                     <option value="">Select region</option>
                     {clubRegionOptions.map((r) => (
@@ -398,7 +504,7 @@ export default function ClubProfileEditor({
                   <input
                     value={String(value)}
                     onChange={(e) => setter(e.target.value)}
-                    className="w-full max-w-md rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
+                    className="w-full max-w-xl rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
                   />
                 )}
               </div>
@@ -408,7 +514,7 @@ export default function ClubProfileEditor({
 
         <div>
           <div className="mb-2 text-sm font-semibold text-red-700">{labels.passwordSectionTitle}</div>
-          <p className="text-xs text-gray-600 mb-2">
+          <p className="mb-2 text-xs text-gray-600">
             {mode === 'edit'
               ? 'Leave blank to keep the current company login password.'
               : labels.passwordHintCreate}
@@ -420,7 +526,13 @@ export default function ClubProfileEditor({
                 <td className="px-3 py-2">
                   <input
                     type="password"
-                    value={mode === 'create' ? clubMyPassword : hasStoredEntityPassword ? '••••••••' : ''}
+                    value={
+                      mode === 'create'
+                        ? clubMyPassword
+                        : hasStoredEntityPassword
+                          ? '••••••••'
+                          : ''
+                    }
                     onChange={(e) => {
                       if (mode === 'create') setClubMyPassword(e.target.value);
                     }}

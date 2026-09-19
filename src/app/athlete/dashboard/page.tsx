@@ -565,7 +565,6 @@ function AthleteDashboardContent() {
 
   const handleMyTeamSelect = (teamId: string) => {
     storeSelectedEntity('Team', teamId);
-    window.location.href = `/my-team?teamId=${teamId}`;
   };
 
   const handleAthleteClubSelect = (clubId: string) => {
@@ -906,6 +905,8 @@ function AthleteDashboardContent() {
               <DarkSidebar
                 userType={user?.userType || ''}
                 entities={myClubs}
+                athleteTeams={myTeams}
+                onAthleteTeamSelect={handleMyTeamSelect}
                 selectedEntityId={selectedClubId ?? myClubs[0]?.id ?? null}
                 onEntitySelect={handleAthleteClubSelect}
                 activeTab={activeTab}

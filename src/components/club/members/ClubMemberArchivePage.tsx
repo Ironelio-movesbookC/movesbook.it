@@ -16,6 +16,13 @@ import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
 import { fetchClubArchive, type ArchiveFetchParams } from '@/lib/club/archives/clubArchiveClient';
 import { clubApiFetch, getAuthHeaders, withSelectedClubId } from '@/lib/club/servicePurchasesClient';
+import {
+  memberArchiveStatusDotClass,
+  memberArchiveStatusLabel,
+  memberArchiveStatusTextClass,
+  normalizeMemberArchiveStatus,
+  type MemberArchiveStatus,
+} from '@/lib/club/memberArchiveStatus';
 import type { Column, Member } from '@/types/clubTable';
 
 type ViewMode = 'all' | 'groups' | 'favourites' | 'group-members';
@@ -33,6 +40,14 @@ type Props = {
   footerHint?: string;
   refreshKey?: number;
   addMemberAction?: ReactNode;
+  /**
+   * Filter list by archive status.
+   * `all` = All the users profiles (A+B+C).
+   * `member` / `pending` / `not_member` = dedicated sections.
+   */
+  membershipStatusFilter?: MemberArchiveStatus | 'all';
+  /** Called after a successful status change so parent can refresh. */
+  onMembershipStatusChanged?: () => void;
 };
 
 function memberTypeBadge(value: unknown) {
@@ -78,6 +93,8 @@ export default function ClubMemberArchivePage({
   footerHint,
   refreshKey = 0,
   addMemberAction,
+  membershipStatusFilter = 'all',
+  onMembershipStatusChanged,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('all');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -102,11 +119,6 @@ export default function ClubMemberArchivePage({
   const [showGroupNameModal, setShowGroupNameModal] = useState(false);
   const [groupNameInput, setGroupNameInput] = useState('');
   const [saving, setSaving] = useState(false);
-
-  const tableColumns = useMemo(
-    () => columns.filter((col) => col.key !== 'checked'),
-    [columns]
-  );
 
   const loadGroups = useCallback(async () => {
     setGroupsLoading(true);
@@ -169,6 +181,7 @@ export default function ClubMemberArchivePage({
           page,
           pageSize,
           ...appliedFilters,
+          membershipStatus: membershipStatusFilter,
         });
         res = { items: archiveRes.items as Member[], total: archiveRes.total };
       }
@@ -183,7 +196,15 @@ export default function ClubMemberArchivePage({
       setLoading(false);
     }
     void refreshKey; // parent bump forces reload
-  }, [appliedFilters, page, pageSize, selectedGroupId, viewMode, refreshKey]);
+  }, [
+    appliedFilters,
+    membershipStatusFilter,
+    page,
+    pageSize,
+    selectedGroupId,
+    viewMode,
+    refreshKey,
+  ]);
 
   useEffect(() => {
     if (viewMode === 'groups') {
@@ -197,7 +218,109 @@ export default function ClubMemberArchivePage({
     setSelectedIds(new Set());
     setViewSelectedOnly(false);
     setPage(1);
-  }, [viewMode, selectedGroupId]);
+  }, [viewMode, selectedGroupId, membershipStatusFilter]);
+
+  const changeMembershipStatus = useCallback(
+    async (row: Member, next: MemberArchiveStatus) => {
+      const memberId = String(row.memberId || row.id || '').trim();
+      if (!memberId || row.isStaffOnly) return;
+      setSaving(true);
+      setError('');
+      try {
+        const res = await fetch(withSelectedClubId('/api/club/members/membership-status'), {
+          method: 'PATCH',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ memberId, membershipStatus: next }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            typeof payload.error === 'string' ? payload.error : 'Failed to update status',
+          );
+        }
+        setActionMessage(`Updated to ${memberArchiveStatusLabel(next)}.`);
+        onMembershipStatusChanged?.();
+        await loadMembers();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to update status');
+      } finally {
+        setSaving(false);
+      }
+    },
+    [loadMembers, onMembershipStatusChanged],
+  );
+
+  const handleStatusDotClick = useCallback(
+    (row: Member) => {
+      if (row.isStaffOnly || saving) return;
+      const status = normalizeMemberArchiveStatus(row.membershipStatus);
+      if (status === 'member') return;
+
+      if (status === 'pending') {
+        const ok = window.confirm(
+          'Put this user as official Athlete\\Member?',
+        );
+        if (ok) void changeMembershipStatus(row, 'member');
+        return;
+      }
+
+      // not_member — ask official or pending
+      const choice = window.prompt(
+        'Choose status for this athlete:\n1 = Official Athlete\\Member\n2 = Member in pending\n\nEnter 1 or 2:',
+        '1',
+      );
+      if (choice === '1') void changeMembershipStatus(row, 'member');
+      else if (choice === '2') void changeMembershipStatus(row, 'pending');
+    },
+    [changeMembershipStatus, saving],
+  );
+
+  const tableColumns = useMemo(() => {
+    const base = columns.filter((col) => col.key !== 'checked');
+    return base.map((col) => {
+      if (col.key !== 'image') return col;
+      const originalRender = col.render;
+      return {
+        ...col,
+        render: (value: unknown, row: Member) => {
+          const status = normalizeMemberArchiveStatus(row.membershipStatus);
+          const clickable = !row.isStaffOnly && status !== 'member';
+          const imageNode = originalRender ? (
+            originalRender(value, row)
+          ) : value ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={String(value)}
+              alt=""
+              className="h-10 w-10 rounded-full object-cover"
+            />
+          ) : (
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-xs text-gray-400">
+              —
+            </span>
+          );
+          return (
+            <div className="flex items-center justify-center gap-2">
+              <button
+                type="button"
+                title={memberArchiveStatusLabel(status)}
+                disabled={!clickable || saving}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleStatusDotClick(row);
+                }}
+                className={`h-3.5 w-3.5 shrink-0 rounded-full border border-black/10 ${memberArchiveStatusDotClass(
+                  status,
+                )} ${clickable ? 'cursor-pointer' : 'cursor-default opacity-90'}`}
+                aria-label={memberArchiveStatusLabel(status)}
+              />
+              {imageNode}
+            </div>
+          );
+        },
+      };
+    });
+  }, [columns, handleStatusDotClick, saving]);
 
   const displayedRows = useMemo(() => {
     if (!viewSelectedOnly) return data;
@@ -640,6 +763,11 @@ export default function ClubMemberArchivePage({
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onToggleSelectAll={toggleSelectAll}
+            getRowClassName={(row) =>
+              memberArchiveStatusTextClass(
+                normalizeMemberArchiveStatus(row.membershipStatus),
+              )
+            }
           />
         )}
       </ProcedureArchiveShell>

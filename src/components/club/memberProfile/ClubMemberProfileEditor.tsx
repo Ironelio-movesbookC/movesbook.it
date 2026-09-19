@@ -142,11 +142,15 @@ export default function ClubMemberProfileEditor({
     setOrigin(typeof window !== 'undefined' ? window.location.origin : '');
   }, []);
 
-  /** View-only club member profile — default payload encoded in the user QR. */
+  /** View-only member profile — default payload encoded in the user QR. */
   const defaultProfileViewUrl = useMemo(() => {
     if (!origin || !data.memberId || !data.clubId) return '';
-    return `${origin}/clubMembers/memberProfile/${encodeURIComponent(data.memberId)}?clubId=${encodeURIComponent(data.clubId)}&mode=view`;
-  }, [origin, data.memberId, data.clubId]);
+    const q = new URLSearchParams();
+    if (data.workspaceKind === 'team') q.set('teamId', data.clubId);
+    else q.set('clubId', data.clubId);
+    q.set('mode', 'view');
+    return `${origin}/clubMembers/memberProfile/${encodeURIComponent(data.memberId)}?${q.toString()}`;
+  }, [origin, data.memberId, data.clubId, data.workspaceKind]);
 
   const residenceRegionOptions = useMemo(
     () => resolveRegionsForCountryName(data.owner.address.country || ''),
@@ -2012,10 +2016,25 @@ export default function ClubMemberProfileEditor({
   if (activeTab === 'other-details') {
     const od = club.otherDetails;
     const customQuestions = data.customQuestions || [];
+    const entityNoun = data.workspaceKind === 'team' ? 'Team' : 'Club';
+    const byAdmin = `managed by the ${entityNoun} admin`;
+    const byMember = 'managed by the member';
     return (
       <div>
+        <div className="mb-4 border-b border-gray-200 pb-3">
+          <p className="text-sm font-semibold text-gray-900">
+            Other {entityNoun} data · {data.clubName}
+          </p>
+          <p className="mt-1 text-xs text-gray-600">
+            Sections marked <span className="font-semibold">({byAdmin})</span> are edited by the{' '}
+            {entityNoun.toLowerCase()} admin. Sections marked{' '}
+            <span className="font-semibold">({byMember})</span> are filled by the athlete (rules /
+            privacy acceptance and signature).
+          </p>
+        </div>
+
         {data.viewer.isClubAdmin ? (
-          <SectionCard title="Member visibility" tone="purple">
+          <SectionCard title={`Member visibility (${byAdmin})`} tone="purple">
             <CheckRow
               label="Allow member to read Other member's details"
               checked={club.visibility.otherDetails}
@@ -2030,7 +2049,7 @@ export default function ClubMemberProfileEditor({
           </SectionCard>
         ) : null}
 
-        <SectionCard title="Athlete status">
+        <SectionCard title={`Athlete status (${byAdmin})`}>
           <div className="flex flex-wrap gap-4">
             {ATHLETE_STATUS_OPTIONS.map((status) => (
               <label key={status} className="inline-flex items-center gap-2 text-sm text-gray-800">
@@ -2055,29 +2074,7 @@ export default function ClubMemberProfileEditor({
           </div>
         </SectionCard>
 
-        <SectionCard title="Duplicate existing user data">
-          <Field label="Do you want to duplicate the data of an existing user?">
-            <TextSelect
-              disabled={readOnlyClub}
-              value={od.duplicateFromUserId}
-              onChange={(e) =>
-                setClub((c) => ({
-                  ...c,
-                  otherDetails: { ...c.otherDetails, duplicateFromUserId: e.target.value },
-                }))
-              }
-            >
-              <option value="">— Select user —</option>
-              {data.clubMembersForPayFor.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </TextSelect>
-          </Field>
-        </SectionCard>
-
-        <SectionCard title="Group trained">
+        <SectionCard title={`Group trained (${byAdmin})`}>
           <Field label="Connect member to a group trained">
             <TextSelect
               disabled={readOnlyClub}
@@ -2094,7 +2091,7 @@ export default function ClubMemberProfileEditor({
           </Field>
         </SectionCard>
 
-        <SectionCard title="Last Membership to the Club">
+        <SectionCard title={`Last Membership to the ${entityNoun} (${byAdmin})`}>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm text-blue-800">
             <span>Edit dates below</span>
             <div className="flex flex-wrap gap-2">
@@ -2201,7 +2198,7 @@ export default function ClubMemberProfileEditor({
           </Row2>
         </SectionCard>
 
-        <SectionCard title="Privacy">
+        <SectionCard title={`Privacy (${byAdmin})`}>
           <CheckRow
             label="User authorizes data treatments"
             disabled={readOnlyClub}
@@ -2244,7 +2241,7 @@ export default function ClubMemberProfileEditor({
           </p>
         </SectionCard>
 
-        <SectionCard title="Club / Team tutors and External tutors">
+        <SectionCard title={`Club / Team tutors and External tutors (${byAdmin})`}>
           <div className="grid grid-cols-1 border border-gray-200 sm:grid-cols-[9rem_1fr]">
             <div className="bg-gray-50 px-3 py-3 text-sm font-bold text-gray-800 sm:flex sm:items-start sm:justify-end">
               Vendors
@@ -2505,7 +2502,12 @@ export default function ClubMemberProfileEditor({
         </SectionCard>
 
         {!underage ? (
-          <SectionCard title="Signatures (overage member)">
+          <SectionCard title={`Signatures — overage member (${byMember})`}>
+            <p className="mb-2 text-xs text-gray-600">
+              The athlete accepts club/team rules and privacy, and draws the signature. The{' '}
+              {entityNoun.toLowerCase()} admin can view these fields but only the member (or an
+              admin with signature permission) can change them.
+            </p>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <CheckRow
                 label="Acceptance of the rules of the club/team"
@@ -2571,7 +2573,7 @@ export default function ClubMemberProfileEditor({
           </SectionCard>
         ) : null}
 
-        <SectionCard title="Section News">
+        <SectionCard title={`Section News (${byAdmin})`}>
           <div className="grid grid-cols-1 border border-gray-200 sm:grid-cols-[11rem_1fr]">
             <div className="bg-gray-50 px-3 py-3 text-sm font-bold text-gray-800 sm:flex sm:items-start sm:justify-end">
               Enable the reading of news
@@ -2643,7 +2645,7 @@ export default function ClubMemberProfileEditor({
           </div>
         </SectionCard>
 
-        <SectionCard title="Section Messages">
+        <SectionCard title={`Section Messages (${byAdmin})`}>
           <CheckRow
             label="Generic automatic messages — Yes"
             disabled={readOnlyClub}
@@ -2662,7 +2664,7 @@ export default function ClubMemberProfileEditor({
           />
         </SectionCard>
 
-        <SectionCard title="Affiliation and consent">
+        <SectionCard title={`Affiliation and consent (${byAdmin})`}>
           <Row2>
             <Field label="Date of initial affiliation">
               <TextInput
@@ -2709,7 +2711,7 @@ export default function ClubMemberProfileEditor({
           </Row2>
         </SectionCard>
 
-        <SectionCard title="Answers to personalized questions">
+        <SectionCard title={`Answers to personalized questions (${byAdmin})`}>
           {customQuestions.length === 0 ? (
             <p className="text-sm text-gray-500">
               No customized questions yet.{' '}
@@ -3367,6 +3369,7 @@ export default function ClubMemberProfileEditor({
       <MemberProfileSettingsTab
         clubId={data.clubId}
         entitySportDefault={data.entitySportDefault || 'Football'}
+        workspaceKind={data.workspaceKind === 'team' ? 'team' : 'club'}
         club={club}
         setClub={setClub}
         readOnlyClub={readOnlyClub}

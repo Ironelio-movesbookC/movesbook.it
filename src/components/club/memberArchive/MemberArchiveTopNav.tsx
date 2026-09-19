@@ -15,6 +15,13 @@ export type MemberArchiveSection =
 /** Archive top-nav audience: Club Admin (ID8) / Team Admin (ID7) vs Coach (ID6). */
 export type MemberArchiveNavRole = 'club-or-team' | 'coach';
 
+/**
+ * One-row header variants:
+ * - `archive` — Archive of Users: Members + other tabs, **without** In pending / Not members
+ * - `athletes` — Athletes\\Members: Members + In pending + Not members + other tabs
+ */
+export type MemberArchiveNavMode = 'archive' | 'athletes';
+
 type Props = {
   active: MemberArchiveSection;
   onChange: (section: MemberArchiveSection) => void;
@@ -22,46 +29,83 @@ type Props = {
   profileSectionLabel?: string;
   /** Controls which black-menu voices are shown. */
   navRole?: MemberArchiveNavRole;
+  /** Which one-row header set to show (club/team only). */
+  navMode?: MemberArchiveNavMode;
 };
+
+type NavItem = { id: MemberArchiveSection; label: string };
+
+function clubOrTeamSections(
+  navMode: MemberArchiveNavMode,
+  profileSectionLabel: string,
+): NavItem[] {
+  const members: NavItem = { id: 'athletes', label: 'Members' };
+  const pending: NavItem = { id: 'pending', label: 'In pending' };
+  const notMembers: NavItem = { id: 'not-members', label: 'Not members' };
+  const others: NavItem[] = [
+    { id: 'archived', label: 'Archived' },
+    { id: 'parents', label: 'Parents & Tutors' },
+    { id: 'staff', label: 'Staff' },
+    { id: 'club-profile', label: profileSectionLabel || 'Team\\Club profile' },
+    { id: 'settings', label: 'Settings' },
+  ];
+
+  if (navMode === 'athletes') {
+    return [members, pending, notMembers, ...others];
+  }
+  // Archive of Users — no In pending / Not members
+  return [members, ...others];
+}
+
+function coachSections(profileSectionLabel: string): NavItem[] {
+  return [
+    { id: 'athletes', label: 'Members' },
+    { id: 'pending', label: 'In pending' },
+    { id: 'archived', label: 'Archived' },
+    { id: 'parents', label: 'Parents & Tutors' },
+    { id: 'club-profile', label: profileSectionLabel || 'Coach profile' },
+    { id: 'settings', label: 'Settings' },
+  ];
+}
+
+/** Sections visible for a given role + nav mode (used by the page for URL guards). */
+export function memberArchiveNavSections(
+  navRole: MemberArchiveNavRole,
+  navMode: MemberArchiveNavMode,
+  profileSectionLabel = 'Club Profile',
+): MemberArchiveSection[] {
+  const items =
+    navRole === 'coach'
+      ? coachSections(profileSectionLabel)
+      : clubOrTeamSections(navMode, profileSectionLabel);
+  return items.map((i) => i.id);
+}
 
 /**
  * Top section switcher on Archive of Users (Club / Team / Coach).
- * ID7 Team Admin & ID8 Club Admin share one page layout; Coach (ID6) gets a shorter menu.
+ * Single row only. Club/Team use `navMode` to include/exclude pending & not-members.
  */
 export default function MemberArchiveTopNav({
   active,
   onChange,
   profileSectionLabel = 'Club Profile',
   navRole = 'club-or-team',
+  navMode = 'archive',
 }: Props) {
   const sections = useMemo(() => {
-    if (navRole === 'coach') {
-      return [
-        { id: 'athletes' as const, label: 'Members' },
-        { id: 'pending' as const, label: 'In pending' },
-        { id: 'archived' as const, label: 'Archived' },
-        { id: 'parents' as const, label: 'Parents & Tutors' },
-        { id: 'club-profile' as const, label: profileSectionLabel || 'Coach profile' },
-        { id: 'settings' as const, label: 'Settings' },
-      ];
-    }
+    if (navRole === 'coach') return coachSections(profileSectionLabel);
+    return clubOrTeamSections(navMode, profileSectionLabel);
+  }, [navRole, navMode, profileSectionLabel]);
 
-    return [
-      { id: 'athletes' as const, label: 'Members' },
-      { id: 'pending' as const, label: 'In pending' },
-      { id: 'archived' as const, label: 'Archived' },
-      { id: 'not-members' as const, label: 'Not members' },
-      { id: 'parents' as const, label: 'Parents & Tutors' },
-      { id: 'staff' as const, label: 'Our Staff' },
-      { id: 'club-profile' as const, label: profileSectionLabel },
-      { id: 'settings' as const, label: 'Settings' },
-    ];
-  }, [navRole, profileSectionLabel]);
-
+  const count = sections.length;
   const colClass =
-    navRole === 'coach'
-      ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6'
-      : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-8';
+    count <= 5
+      ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'
+      : count === 6
+        ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6'
+        : count === 7
+          ? 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-7'
+          : 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-8';
 
   return (
     <nav

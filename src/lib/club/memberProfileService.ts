@@ -27,6 +27,7 @@ import type {
   ActivitiesData,
   ClubMemberScopedData,
   ContactsData,
+  DuplicateMemberSection,
   MemberProfileBundle,
   OwnerProfileData,
   ParentData,
@@ -199,6 +200,15 @@ type ProfileRow = {
   signatureDataUrl: string | null;
 };
 
+type TeamProfileRow = {
+  id: string;
+  teamMemberId: string;
+  profileJson: string;
+  medicalImageUrl: string | null;
+  medicalPdfUrl: string | null;
+  signatureDataUrl: string | null;
+};
+
 type NoteRow = {
   id: string;
   clubMemberId: string;
@@ -233,6 +243,71 @@ async function getClubProfile(clubMemberId: string): Promise<ProfileRow | null> 
     clubMemberId,
   );
   return rows[0] ?? null;
+}
+
+let teamMemberProfilesTableReady = false;
+
+async function ensureTeamMemberProfilesTable() {
+  if (teamMemberProfilesTableReady) return;
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS team_member_profiles (
+      id VARCHAR(191) NOT NULL,
+      teamMemberId VARCHAR(191) NOT NULL,
+      profileJson LONGTEXT NOT NULL,
+      medicalImageUrl VARCHAR(191) NULL,
+      medicalPdfUrl VARCHAR(191) NULL,
+      signatureDataUrl LONGTEXT NULL,
+      createdAt DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      updatedAt DATETIME(3) NOT NULL,
+      PRIMARY KEY (id),
+      UNIQUE KEY team_member_profiles_teamMemberId_key (teamMemberId)
+    )
+  `);
+  teamMemberProfilesTableReady = true;
+}
+
+async function getTeamProfile(teamMemberId: string): Promise<TeamProfileRow | null> {
+  await ensureTeamMemberProfilesTable();
+  const rows = await prisma.$queryRawUnsafe<TeamProfileRow[]>(
+    `SELECT * FROM team_member_profiles WHERE teamMemberId = ? LIMIT 1`,
+    teamMemberId,
+  );
+  return rows[0] ?? null;
+}
+
+async function upsertTeamProfile(opts: {
+  teamMemberId: string;
+  profileJson: string;
+  signatureDataUrl?: string | null;
+  medicalImageUrl?: string | null;
+  medicalPdfUrl?: string | null;
+}) {
+  await ensureTeamMemberProfilesTable();
+  const now = new Date();
+  const existing = await getTeamProfile(opts.teamMemberId);
+  if (existing) {
+    await prisma.$executeRawUnsafe(
+      `UPDATE team_member_profiles SET profileJson=?, signatureDataUrl=?, medicalImageUrl=COALESCE(?, medicalImageUrl), medicalPdfUrl=COALESCE(?, medicalPdfUrl), updatedAt=? WHERE teamMemberId=?`,
+      opts.profileJson,
+      opts.signatureDataUrl ?? existing.signatureDataUrl,
+      opts.medicalImageUrl ?? null,
+      opts.medicalPdfUrl ?? null,
+      now,
+      opts.teamMemberId,
+    );
+    return;
+  }
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO team_member_profiles (id, teamMemberId, profileJson, medicalImageUrl, medicalPdfUrl, signatureDataUrl, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)`,
+    cuid(),
+    opts.teamMemberId,
+    opts.profileJson,
+    opts.medicalImageUrl ?? null,
+    opts.medicalPdfUrl ?? null,
+    opts.signatureDataUrl ?? null,
+    now,
+    now,
+  );
 }
 
 async function getNotes(clubMemberId: string): Promise<NoteRow[]> {
@@ -280,6 +355,269 @@ async function ensureNoteImageColumn() {
   noteImageColumnReady = true;
 }
 
+/** Team Admin Archive of Users — shared owner tabs + empty team-scoped dossier. */
+async function loadTeamMemberProfileBundle(opts: {
+  clubId: string;
+  memberUserId: string;
+  viewerUserId: string;
+}): Promise<MemberProfileBundle | { error: string; status: number }> {
+  const team = await prisma.team.findUnique({
+    where: { id: opts.clubId },
+    select: { id: true, name: true, adminId: true, description: true, sport: true },
+  });
+  if (!team) return { error: 'Club or team not found', status: 404 };
+
+  const teamMember = await prisma.teamMember.findUnique({
+    where: {
+      teamId_athleteId: { teamId: opts.clubId, athleteId: opts.memberUserId },
+    },
+    include: {
+      athlete: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          name: true,
+          firstName: true,
+          surname: true,
+          gender: true,
+          birthdate: true,
+          country: true,
+          image: true,
+        },
+      },
+    },
+  });
+  if (!teamMember) return { error: 'Member not found in this team', status: 404 };
+
+  const isClubAdmin = team.adminId === opts.viewerUserId;
+  const isSelf = teamMember.athleteId === opts.viewerUserId;
+  if (!isClubAdmin && !isSelf) {
+    return { error: 'Access denied', status: 403 };
+  }
+
+  const extras = await getExtras(opts.memberUserId);
+  const teamProfile = await getTeamProfile(teamMember.id);
+  const ownerStored = safeJsonParse(extras?.ownerJson, emptyOwnerProfile());
+  const contactsRaw = safeJsonParse(extras?.contactsJson, emptyContacts());
+  const activitiesRaw = safeJsonParse(extras?.activitiesJson, emptyActivities());
+  const contacts: ContactsData = normalizeContacts(contactsRaw);
+  const activities: ActivitiesData = normalizeActivities(activitiesRaw);
+
+  const teamMeta = parseClubDescriptionMeta(team.description);
+  const entitySportDefault = normalizeEntitySport(
+    team.sport || teamMeta.category || '',
+  );
+
+  const clubScoped = mergeClubScoped(
+    teamProfile?.profileJson
+      ? (safeJsonParse(teamProfile.profileJson, {}) as Partial<ClubMemberScopedData>)
+      : ({
+          settings: {
+            memberSettingKind: 'team',
+            clubGymEnabled: false,
+            teamFootballEnabled: true,
+            sportMode: 'TEAM-FOOTBALL',
+            teamSport: entitySportDefault || 'Football',
+            accessFunctionsEnabled: false,
+          },
+          visibility: {
+            payFor: true,
+            otherDetails: true,
+            parents: true,
+            settings: true,
+            messagesStaff: false,
+            notesCoach: false,
+            presences: true,
+          },
+        } as Partial<ClubMemberScopedData>),
+  );
+
+  if (!clubScoped.settings.teamSport?.trim()) {
+    clubScoped.settings.teamSport = entitySportDefault || 'Football';
+  } else {
+    clubScoped.settings.teamSport = normalizeEntitySport(clubScoped.settings.teamSport);
+  }
+  // Team archive hides staff/coach notes until a notes store exists.
+  clubScoped.visibility = {
+    ...clubScoped.visibility,
+    messagesStaff: false,
+    notesCoach: false,
+  };
+
+  const birthIso = teamMember.athlete.birthdate
+    ? teamMember.athlete.birthdate.toISOString().slice(0, 10)
+    : ownerStored.personal.dateOfBirth || '';
+  const age = calcAge(birthIso);
+  const underage = age != null && age < 18;
+
+  const owner: OwnerProfileData = emptyOwnerProfile({
+    ...ownerStored,
+    privateSettings: {
+      disallowClubAdmins: Boolean(extras?.disallowClubAdmins),
+    },
+    photoUrl: teamMember.athlete.image || ownerStored.photoUrl || '',
+    qrCodeUrl: normalizeStoredQrCodeUrl(extras?.qrCodeUrl || ownerStored.qrCodeUrl || ''),
+    login: {
+      ...emptyOwnerProfile().login,
+      ...ownerStored.login,
+      username: teamMember.athlete.username,
+      firstName: teamMember.athlete.firstName || ownerStored.login?.firstName || '',
+      lastName: teamMember.athlete.surname || ownerStored.login?.lastName || '',
+      email: teamMember.athlete.email,
+      newPassword: '',
+      repeatPassword: '',
+    },
+    address: {
+      ...emptyOwnerProfile().address,
+      ...ownerStored.address,
+      country: teamMember.athlete.country || ownerStored.address?.country || '',
+    },
+    personal: {
+      ...emptyOwnerProfile().personal,
+      ...ownerStored.personal,
+      gender: teamMember.athlete.gender || ownerStored.personal?.gender || '',
+      dateOfBirth: birthIso,
+      age,
+      otherSports: Array.isArray(ownerStored.personal?.otherSports)
+        ? ownerStored.personal.otherSports
+        : [],
+    },
+    administrative: {
+      ...emptyOwnerProfile().administrative,
+      ...ownerStored.administrative,
+    },
+    documents: {
+      ...emptyOwnerProfile().documents,
+      ...(ownerStored.documents || {}),
+      idCard: {
+        ...emptyOwnerProfile().documents.idCard,
+        ...(ownerStored.documents?.idCard || {}),
+      },
+      drivingLicence: {
+        ...emptyOwnerProfile().documents.drivingLicence,
+        ...(ownerStored.documents?.drivingLicence || {}),
+      },
+      healthInsuranceCard: {
+        ...emptyOwnerProfile().documents.healthInsuranceCard,
+        ...(ownerStored.documents?.healthInsuranceCard || {}),
+      },
+      passport: {
+        ...emptyOwnerProfile().documents.passport,
+        ...(ownerStored.documents?.passport || {}),
+      },
+      residencePermit: {
+        ...emptyOwnerProfile().documents.residencePermit,
+        ...(ownerStored.documents?.residencePermit || {}),
+      },
+    },
+    medical: {
+      ...emptyOwnerProfile().medical,
+      ...ownerStored.medical,
+      imageUrl: ownerStored.medical?.imageUrl || '',
+      pdfUrl: ownerStored.medical?.pdfUrl || '',
+      ecgUrl: ownerStored.medical?.ecgUrl || '',
+    },
+    bodyMeasurements: {
+      ...emptyOwnerProfile().bodyMeasurements,
+      ...(ownerStored.bodyMeasurements || {}),
+    },
+    otherReferences: {
+      ...emptyOwnerProfile().otherReferences,
+      ...ownerStored.otherReferences,
+    },
+  });
+
+  clubScoped.otherDetails.userUnderage = underage;
+  syncSignatureFromColumn(clubScoped, teamProfile?.signatureDataUrl, underage);
+
+  const disallow = Boolean(extras?.disallowClubAdmins);
+  const canEditOwner = isSelf || (isClubAdmin && !disallow);
+  const canEditContactsActivitiesReferences = isSelf;
+  const canEditClubScoped = isClubAdmin;
+  const canEditMemberSignature = isClubAdmin || isSelf;
+
+  const allMembers = await prisma.teamMember.findMany({
+    where: { teamId: opts.clubId },
+    include: {
+      athlete: {
+        select: { id: true, firstName: true, surname: true, name: true, username: true },
+      },
+    },
+    orderBy: { joinedAt: 'desc' },
+  });
+
+  const customQuestions = Array.isArray(teamMeta.customQuestions)
+    ? teamMeta.customQuestions
+        .map((q, i) => ({
+          id: String(q?.id || `cq-${i}`),
+          question: String(q?.question || '').trim(),
+          answerType:
+            q?.answerType === 'checkbox' ||
+            q?.answerType === 'yes_no' ||
+            q?.answerType === 'list' ||
+            q?.answerType === 'free'
+              ? q.answerType
+              : ('free' as const),
+          visibleInRegistration: Boolean(q?.visibleInRegistration),
+          mandatory: Boolean(q?.mandatory),
+          listOptions: String(q?.listOptions || ''),
+        }))
+        .filter((q) => q.question)
+    : [];
+
+  return {
+    clubId: team.id,
+    workspaceKind: 'team',
+    clubName: team.name,
+    entitySportDefault,
+    clubMemberId: teamMember.id,
+    memberId: teamMember.athleteId,
+    role: teamMember.role,
+    membershipType: teamMember.role,
+    viewer: {
+      isClubAdmin,
+      isSelf,
+      canEditOwner,
+      canEditContactsActivitiesReferences,
+      canEditClubScoped,
+      canEditMemberSignature,
+    },
+    user: {
+      id: teamMember.athlete.id,
+      username: teamMember.athlete.username,
+      email: teamMember.athlete.email,
+      name: teamMember.athlete.name,
+      firstName: teamMember.athlete.firstName,
+      surname: teamMember.athlete.surname,
+      gender: teamMember.athlete.gender,
+      birthdate: birthIso || null,
+      country: teamMember.athlete.country,
+      image: teamMember.athlete.image,
+    },
+    owner,
+    contacts,
+    activities,
+    referencesHtml: extras?.referencesHtml || '',
+    referencesLevel: String(extras?.referencesLevel || '1').trim() || '1',
+    club: clubScoped,
+    clubMembersForPayFor: allMembers
+      .filter((m) => m.athleteId !== opts.memberUserId)
+      .map((m) => ({
+        id: m.athleteId,
+        label:
+          formatName(m.athlete.firstName, m.athlete.surname, m.athlete.name) ||
+          m.athlete.username,
+      })),
+    vendorCoachOptions: [],
+    coachOptions: [],
+    clubParentsCatalog: [],
+    customQuestions,
+    staffNotes: [],
+    coachNotes: [],
+  };
+}
+
 export async function loadMemberProfileBundle(opts: {
   clubId: string;
   memberUserId: string;
@@ -289,7 +627,9 @@ export async function loadMemberProfileBundle(opts: {
     where: { id: opts.clubId },
     select: { id: true, name: true, adminId: true, description: true },
   });
-  if (!club) return { error: 'Club not found', status: 404 };
+  if (!club) {
+    return loadTeamMemberProfileBundle(opts);
+  }
 
   const clubMember = await prisma.clubMember.findUnique({
     where: {
@@ -589,6 +929,7 @@ export async function loadMemberProfileBundle(opts: {
 
   return {
     clubId: club.id,
+    workspaceKind: 'club',
     clubName: club.name,
     entitySportDefault,
     clubMemberId: clubMember.id,
@@ -709,6 +1050,134 @@ async function upsertExtras(opts: {
   }
 }
 
+/** Persist shared (user) profile fields for a team athlete; team-scoped dossier is not stored yet. */
+async function saveTeamMemberSharedProfile(opts: {
+  memberUserId: string;
+  loaded: MemberProfileBundle;
+  payload: {
+    owner?: OwnerProfileData;
+    contacts?: ContactsData;
+    activities?: ActivitiesData;
+    referencesHtml?: string;
+    referencesLevel?: string;
+    club?: ClubMemberScopedData;
+  };
+}): Promise<{ ok: true } | { error: string; status: number }> {
+  const { loaded, payload } = opts;
+
+  if (payload.owner && loaded.viewer.canEditOwner) {
+    const owner = payload.owner;
+    const userUpdate: Record<string, unknown> = {
+      firstName: owner.login.firstName || null,
+      surname: owner.login.lastName || null,
+      name:
+        [owner.login.firstName, owner.login.lastName].filter(Boolean).join(' ') ||
+        loaded.user.name,
+      gender: owner.personal.gender || null,
+      country: owner.address.country || null,
+      image: owner.photoUrl || null,
+    };
+    if (owner.personal.dateOfBirth) {
+      const d = new Date(owner.personal.dateOfBirth);
+      if (!Number.isNaN(d.getTime())) userUpdate.birthdate = d;
+    }
+    if (owner.login.email && owner.login.email !== loaded.user.email) {
+      userUpdate.email = owner.login.email.trim();
+    }
+    if (
+      owner.login.newPassword &&
+      owner.login.newPassword === owner.login.repeatPassword &&
+      owner.login.newPassword.length >= 4
+    ) {
+      userUpdate.password = await hashPassword(owner.login.newPassword);
+    }
+
+    await prisma.user.update({
+      where: { id: opts.memberUserId },
+      data: userUpdate,
+    });
+
+    const ownerToStore: OwnerProfileData = {
+      ...owner,
+      login: { ...owner.login, newPassword: '', repeatPassword: '' },
+    };
+
+    await upsertExtras({
+      userId: opts.memberUserId,
+      disallowClubAdmins: loaded.viewer.isSelf
+        ? Boolean(owner.privateSettings.disallowClubAdmins)
+        : loaded.owner.privateSettings.disallowClubAdmins,
+      qrCodeUrl: normalizeStoredQrCodeUrl(owner.qrCodeUrl) || null,
+      ownerJson: JSON.stringify({
+        ...ownerToStore,
+        privateSettings: {
+          disallowClubAdmins: loaded.viewer.isSelf
+            ? Boolean(owner.privateSettings.disallowClubAdmins)
+            : loaded.owner.privateSettings.disallowClubAdmins,
+        },
+      }),
+      contactsJson: JSON.stringify(loaded.contacts),
+      activitiesJson: JSON.stringify(loaded.activities),
+      referencesHtml: loaded.referencesHtml || null,
+      referencesLevel: loaded.referencesLevel || '1',
+    });
+  }
+
+  if (
+    (payload.contacts ||
+      payload.activities ||
+      typeof payload.referencesHtml === 'string' ||
+      typeof payload.referencesLevel === 'string') &&
+    loaded.viewer.canEditContactsActivitiesReferences
+  ) {
+    const contacts = normalizeContacts(payload.contacts ?? loaded.contacts);
+    const activities = payload.activities ?? loaded.activities;
+    const referencesHtml =
+      typeof payload.referencesHtml === 'string'
+        ? payload.referencesHtml
+        : loaded.referencesHtml;
+    const referencesLevel =
+      typeof payload.referencesLevel === 'string'
+        ? payload.referencesLevel
+        : loaded.referencesLevel;
+
+    await upsertExtras({
+      userId: opts.memberUserId,
+      disallowClubAdmins: loaded.owner.privateSettings.disallowClubAdmins,
+      qrCodeUrl: normalizeStoredQrCodeUrl(loaded.owner.qrCodeUrl) || null,
+      ownerJson: JSON.stringify(loaded.owner),
+      contactsJson: JSON.stringify(contacts),
+      activitiesJson: JSON.stringify(activities),
+      referencesHtml: referencesHtml || null,
+      referencesLevel,
+    });
+  }
+
+  if (payload.club) {
+    const canSaveClub =
+      loaded.viewer.canEditClubScoped || loaded.viewer.canEditMemberSignature;
+    if (canSaveClub) {
+      let clubData = payload.club;
+      if (!loaded.viewer.canEditClubScoped && loaded.viewer.isSelf) {
+        clubData = mergeMemberSelfClubSave(loaded.club, clubData);
+      }
+      const age = calcAge(loaded.owner.personal.dateOfBirth);
+      const underage = age != null && age < 18;
+      clubData.otherDetails.userUnderage = underage;
+      const signatureDataUrl = resolveSignatureDataUrl(clubData, underage);
+      await upsertTeamProfile({
+        teamMemberId: loaded.clubMemberId,
+        profileJson: JSON.stringify(clubScopedForProfileJson(clubData)),
+        signatureDataUrl,
+        medicalImageUrl: loaded.owner.medical.imageUrl || null,
+        medicalPdfUrl: loaded.owner.medical.pdfUrl || null,
+      });
+    }
+  }
+
+  return { ok: true };
+}
+
 export async function saveMemberProfileBundle(opts: {
   clubId: string;
   memberUserId: string;
@@ -728,6 +1197,14 @@ export async function saveMemberProfileBundle(opts: {
     viewerUserId: opts.viewerUserId,
   });
   if ('error' in loaded) return loaded;
+
+  if (loaded.workspaceKind === 'team') {
+    return saveTeamMemberSharedProfile({
+      memberUserId: opts.memberUserId,
+      loaded,
+      payload: opts.payload,
+    });
+  }
 
   const clubMember = await prisma.clubMember.findUnique({
     where: {
@@ -1236,4 +1713,163 @@ export async function deleteMemberNotes(opts: {
       opts.noteId,
     );
   }
+}
+
+/** Copy selected dossier sections from one club/team member onto another (admin only). */
+export async function duplicateMemberProfileSections(opts: {
+  clubId: string;
+  targetMemberUserId: string;
+  sourceMemberUserId: string;
+  viewerUserId: string;
+  sections: DuplicateMemberSection[];
+}): Promise<{ ok: true; copied: DuplicateMemberSection[] } | { error: string; status: number }> {
+  if (opts.sourceMemberUserId === opts.targetMemberUserId) {
+    return { error: 'Choose a different user to duplicate from', status: 400 };
+  }
+  if (!opts.sections.length) {
+    return { error: 'Select at least one section to duplicate', status: 400 };
+  }
+
+  const source = await loadMemberProfileBundle({
+    clubId: opts.clubId,
+    memberUserId: opts.sourceMemberUserId,
+    viewerUserId: opts.viewerUserId,
+  });
+  if ('error' in source) return source;
+  if (!source.viewer.isClubAdmin) {
+    return { error: 'Only the Club/Team admin can duplicate member data', status: 403 };
+  }
+
+  const target = await loadMemberProfileBundle({
+    clubId: opts.clubId,
+    memberUserId: opts.targetMemberUserId,
+    viewerUserId: opts.viewerUserId,
+  });
+  if ('error' in target) return target;
+  if (!target.viewer.isClubAdmin) {
+    return { error: 'Only the Club/Team admin can duplicate member data', status: 403 };
+  }
+
+  const copied: DuplicateMemberSection[] = [];
+  const isTeam = target.workspaceKind === 'team';
+
+  if (opts.sections.includes('member-profile')) {
+    const owner = {
+      ...source.owner,
+      login: {
+        ...source.owner.login,
+        username: target.owner.login.username,
+        email: target.owner.login.email,
+        newPassword: '',
+        repeatPassword: '',
+      },
+      privateSettings: target.owner.privateSettings,
+    };
+    const userUpdate: Record<string, unknown> = {
+      firstName: owner.login.firstName || null,
+      surname: owner.login.lastName || null,
+      name:
+        [owner.login.firstName, owner.login.lastName].filter(Boolean).join(' ') ||
+        target.user.name,
+      gender: owner.personal.gender || null,
+      country: owner.address.country || null,
+      image: owner.photoUrl || null,
+    };
+    if (owner.personal.dateOfBirth) {
+      const d = new Date(owner.personal.dateOfBirth);
+      if (!Number.isNaN(d.getTime())) userUpdate.birthdate = d;
+    }
+    await prisma.user.update({
+      where: { id: opts.targetMemberUserId },
+      data: userUpdate,
+    });
+    await upsertExtras({
+      userId: opts.targetMemberUserId,
+      disallowClubAdmins: Boolean(target.owner.privateSettings.disallowClubAdmins),
+      qrCodeUrl: normalizeStoredQrCodeUrl(owner.qrCodeUrl) || null,
+      ownerJson: JSON.stringify({
+        ...owner,
+        login: { ...owner.login, newPassword: '', repeatPassword: '' },
+      }),
+      contactsJson: JSON.stringify(target.contacts),
+      activitiesJson: JSON.stringify(target.activities),
+      referencesHtml: target.referencesHtml || null,
+      referencesLevel: target.referencesLevel || '1',
+    });
+    copied.push('member-profile');
+  }
+
+  const needsClubScoped =
+    opts.sections.includes('parents') ||
+    opts.sections.includes('other-data') ||
+    opts.sections.includes('settings');
+
+  if (needsClubScoped) {
+    let clubData = { ...target.club };
+    if (opts.sections.includes('parents')) {
+      clubData = { ...clubData, parents: source.club.parents };
+      copied.push('parents');
+    }
+    if (opts.sections.includes('other-data')) {
+      clubData = {
+        ...clubData,
+        otherDetails: {
+          ...source.club.otherDetails,
+          duplicateFromUserId: opts.sourceMemberUserId,
+        },
+        visibility: source.club.visibility,
+        payForMemberIds: source.club.payForMemberIds,
+      };
+      copied.push('other-data');
+    }
+    if (opts.sections.includes('settings')) {
+      clubData = { ...clubData, settings: source.club.settings };
+      copied.push('settings');
+    }
+    const saved = await saveMemberProfileBundle({
+      clubId: opts.clubId,
+      memberUserId: opts.targetMemberUserId,
+      viewerUserId: opts.viewerUserId,
+      payload: { club: clubData },
+    });
+    if ('error' in saved) return saved;
+  }
+
+  const copyRootNotes = async (kind: 'staff' | 'coach') => {
+    if (isTeam) return;
+    const sourceNotes = await getNotes(source.clubMemberId);
+    const roots = sourceNotes.filter((n) => n.kind === kind && !n.parentId);
+    await deleteMemberNotes({
+      clubMemberId: target.clubMemberId,
+      resetKind: kind,
+    });
+    for (const n of roots) {
+      await createMemberNote({
+        clubMemberId: target.clubMemberId,
+        kind,
+        title: n.title,
+        body: n.body,
+        authorId: opts.viewerUserId,
+        parentId: null,
+        visibleToMember: Boolean(n.visibleToMember),
+        commentsEnabled: Boolean(n.commentsEnabled),
+        imageUrls: parseSupportImageUrlsJson(n.imageUrlsJson),
+        enableFrom: n.enableFrom,
+        enableTo: n.enableTo,
+        showAtLogin: Boolean(n.showAtLogin),
+        showAtLogout: Boolean(n.showAtLogout),
+      });
+    }
+  };
+
+  if (opts.sections.includes('alert-posted') && !isTeam) {
+    await copyRootNotes('staff');
+    copied.push('alert-posted');
+  }
+  if (opts.sections.includes('coach-notes') && !isTeam) {
+    await copyRootNotes('coach');
+    copied.push('coach-notes');
+  }
+
+  return { ok: true, copied };
 }

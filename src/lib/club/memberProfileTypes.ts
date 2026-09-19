@@ -302,6 +302,8 @@ export type ClubMemberScopedData = {
     /** Primary view: Club vs Team (derived from memberSettingKind for older UI). */
     sportMode: 'CLUB-GYM' | 'TEAM-FOOTBALL';
     football: {
+      membershipNumber: string;
+      expiringDate: string;
       annualMembershipFee: string;
       firstPayment: {
         amount: string;
@@ -319,6 +321,8 @@ export type ClubMemberScopedData = {
         status: string;
       };
       paymentMethod: string;
+      /** Single overall payment status (Paid / Pending / Not paid). */
+      paymentStatus: string;
       receiptIssued: boolean;
       imageRelease: boolean;
       travelAuthorization: boolean;
@@ -356,7 +360,10 @@ export type ClubMemberScopedData = {
 };
 
 export type MemberProfileBundle = {
+  /** Club id, or team id when `workspaceKind` is `team`. */
   clubId: string;
+  /** `team` when opened from Team Admin Archive of Users. */
+  workspaceKind?: 'club' | 'team';
   clubName: string;
   /** Sport from Club/Team profile (category) — default for Settings team-type dropdown. */
   entitySportDefault: string;
@@ -459,6 +466,23 @@ export const TEAM_ATHLETE_STATUS_OPTIONS = [
   'Injured',
   'Suspended',
 ] as const;
+
+/** TEAM-FOOTBALL Settings → Payment method (spec list). */
+export const TEAM_FOOTBALL_PAYMENT_METHOD_OPTIONS = [
+  'Cash',
+  'Bank transfer',
+  'POS',
+  'SEPA',
+] as const;
+
+/** Sections an admin can copy when duplicating another member's dossier. */
+export type DuplicateMemberSection =
+  | 'member-profile'
+  | 'parents'
+  | 'other-data'
+  | 'settings'
+  | 'alert-posted'
+  | 'coach-notes';
 
 export const INSURANCE_COMPANY_OPTIONS = [
   'ACSI SPORT',

@@ -9,7 +9,9 @@ import ClubProfileEditor, {
   type ClubProfileSavePayload,
 } from '@/components/club/ClubProfileEditor';
 import { clubProfilePayloadForApi } from '@/lib/club/clubProfilePayload';
-import { applyEntityLogoOnSave } from '@/lib/entity/applyEntityLogoOnSave';
+import {
+  applyEntityImagesOnSave,
+} from '@/lib/entity/applyEntityLogoOnSave';
 import { useAuth } from '@/hooks/useAuth';
 import { isClubCreatedFromForm } from '@/lib/club/clubSidebarLabel';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
@@ -79,11 +81,7 @@ function EditClubProfileContent() {
 
     setSaving(true);
     try {
-      let logoUrl = String(payload.logoUrl ?? '').trim();
-      if (payload.logoFile || payload.removeLogo) {
-        const uploaded = await applyEntityLogoOnSave('club', clubId, payload);
-        logoUrl = payload.removeLogo ? '' : (uploaded ?? logoUrl);
-      }
+      const { logoUrl, bannerUrl } = await applyEntityImagesOnSave('club', clubId, payload);
       const res = await fetch(`/api/clubs/${clubId}`, {
         method: 'PATCH',
         headers: {
@@ -94,8 +92,11 @@ function EditClubProfileContent() {
           clubProfilePayloadForApi({
             ...payload,
             logoUrl,
+            bannerUrl,
             logoFile: undefined,
             removeLogo: false,
+            bannerFile: undefined,
+            removeBanner: false,
           }),
         ),
       });

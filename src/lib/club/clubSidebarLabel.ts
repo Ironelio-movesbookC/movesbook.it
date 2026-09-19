@@ -35,12 +35,19 @@ export type ClubDescriptionMeta = {
   defaultPaymentMethods?: string[];
   /** Public path under `/uploads/entity_logos/` (or data URL / absolute URL). */
   logoUrl?: string;
+  /** Wide banner for the club main page. */
+  bannerUrl?: string;
   /** Phone for club/team account. */
   phone?: string;
   /** Province for club account (team uses legalSite.province). */
   province?: string;
   /** Website for club account (team uses contacts.website). */
   website?: string;
+  /**
+   * Club Info contacts (my-club Contact Info → Club Info).
+   * Same field set as Team Contacts.
+   */
+  clubContacts?: import('@/lib/team/teamProfileTypes').TeamContacts;
   /** Sports multicheck (primary also mirrored to category). */
   sports?: string[];
   /** Customized profile questions for members of this club. */
